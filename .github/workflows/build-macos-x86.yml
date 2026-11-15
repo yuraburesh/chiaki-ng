@@ -51,7 +51,7 @@ jobs:
             if port -q info "$c" >/dev/null 2>&1; then FF=$c; break; fi
           done
           echo "FFmpeg port: $FF"
-          sudo port -N install pkgconfig nasm ninja openssl3 libopus libplacebo protobuf3-cpp "$FF"
+          sudo port -N install pkgconfig nasm ninja openssl3 libopus libplacebo protobuf3-cpp vulkan-headers "$FF"
           for opt in speexdsp json-c miniupnpc libevent; do sudo port -N install "$opt" || echo "optional port $opt skipped"; done
           PCDIR=$(dirname "$(find /opt/local -name libavcodec.pc | head -1)")
           echo "FFmpeg pkgconfig: $PCDIR"
@@ -74,7 +74,7 @@ jobs:
 
       - name: Build chiaki-ng
         run: |
-          export CPATH=$FFMPEG_INC
+          export CPATH=$FFMPEG_INC:/opt/local/include
           cmake --build build --config Release --clean-first --target chiaki
 
       - name: Deploy chiaki-ng

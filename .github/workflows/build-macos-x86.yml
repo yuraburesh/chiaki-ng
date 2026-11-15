@@ -11,6 +11,7 @@ jobs:
   build-mac_x86_64:
     name: Build macOSX Intel version
     runs-on: macos-15-intel
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
         with:
@@ -19,13 +20,43 @@ jobs:
       - name: Install protobuf
         run: |
           pip3 install --user 'protobuf>=5,<6' --break-system-packages
-      - name: Install brew dependencies
+
+      # Homebrew no longer ships Intel bottles (Tier 3), so Qt comes from the official
+      # universal build and the C libraries from MacPorts' prebuilt x86_64 archives.
+      - name: Setup Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.10.*"
+          host: 'mac'
+          target: 'desktop'
+          modules: 'qtwebengine qtpositioning qtwebchannel qtwebsockets qtserialport'
+
+      - name: Install MacPorts
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          brew update
-          brew uninstall pkgconfig || true
-          brew install --force qt@6 ffmpeg pkgconfig opus openssl@3 cmake ninja nasm protobuf@29 speexdsp libplacebo wget python-setuptools json-c miniupnpc libevent
-          # OpenSSL 4 headers in the Homebrew prefix would shadow openssl@3; the bundled curl needs 3
-          brew unlink openssl@4 || true
+          url=$(gh api repos/macports/macports-base/releases/latest --jq '.assets[] | select(.name|test("-15-Sequoia.pkg$")) | .browser_download_url')
+          echo "MacPorts: $url"
+          curl -fsSL -o macports.pkg "$url"
+          sudo installer -pkg macports.pkg -target /
+          echo "/opt/local/bin" >> $GITHUB_PATH
+          echo "/opt/local/sbin" >> $GITHUB_PATH
+
+      - name: Install MacPorts dependencies
+        run: |
+          export PATH=/opt/local/bin:/opt/local/sbin:$PATH
+          sudo port -q selfupdate
+          FF=""
+          for c in ffmpeg8 ffmpeg7 ffmpeg6; do
+            if port -q info "$c" >/dev/null 2>&1; then FF=$c; break; fi
+          done
+          echo "FFmpeg port: $FF"
+          sudo port -N install pkgconfig nasm cmake ninja wget openssl3 opus speexdsp libplacebo json-c miniupnpc libevent "$FF" || sudo port -N install pkgconfig nasm cmake ninja wget openssl3 opus speexdsp libplacebo json-c miniupnpc libevent "$FF"
+          PCDIR=$(dirname "$(find /opt/local -name libavcodec.pc | head -1)")
+          echo "FFmpeg pkgconfig: $PCDIR"
+          echo "PKG_CONFIG_PATH=$PCDIR:/opt/local/lib/pkgconfig:/usr/local/lib/pkgconfig" >> $GITHUB_ENV
+          echo "FFMPEG_INC=$(dirname "$PCDIR")/../include" >> $GITHUB_ENV
+          echo "FFMPEG_LIBDIR=$(dirname "$PCDIR")" >> $GITHUB_ENV
 
       - name: Install sdl2-compat
         run: |
@@ -34,11 +65,15 @@ jobs:
 
       - name: Configure chiaki-ng
         run: |
-          cmake -S . -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCHIAKI_ENABLE_CLI=OFF -DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF -DOPENSSL_ROOT_DIR="$(brew --prefix)/opt/openssl@3" -DOPENSSL_INCLUDE_DIR="$(brew --prefix)/opt/openssl@3/include" -DOPENSSL_CRYPTO_LIBRARY="$(brew --prefix)/opt/openssl@3/lib/libcrypto.dylib" -DOPENSSL_SSL_LIBRARY="$(brew --prefix)/opt/openssl@3/lib/libssl.dylib" -DCMAKE_PREFIX_PATH="$(brew --prefix)/opt/openssl@3;$(brew --prefix)/opt/qt@6;$(brew --prefix)/opt/protobuf@29"
+          cmake -S . -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCHIAKI_ENABLE_CLI=OFF -DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF \
+            -DOPENSSL_ROOT_DIR=/opt/local/libexec/openssl3 \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;/opt/local/libexec/openssl3;/opt/local" \
+            -DCMAKE_FIND_FRAMEWORK=LAST
 
       - name: Build chiaki-ng
         run: |
-          export CPATH=$(brew --prefix)/opt/ffmpeg/include
+          export CPATH=$FFMPEG_INC
           cmake --build build --config Release --clean-first --target chiaki
 
       - name: Deploy chiaki-ng
@@ -46,11 +81,11 @@ jobs:
           rm -rf AnyPlay.app chiaki-ng.dmg
           cp -a build/gui/chiaki.app AnyPlay.app
           cp scripts/qtwebengine_import.qml gui/src/qml/
-          $(brew --prefix)/opt/qt@6/bin/macdeployqt AnyPlay.app -qmldir="$PWD/gui/src/qml" -libpath=$(brew --prefix)/lib
+          "$QT_ROOT_DIR/bin/macdeployqt" AnyPlay.app -qmldir="$PWD/gui/src/qml" -libpath=/opt/local/lib -libpath="$FFMPEG_LIBDIR"
           mkdir -p AnyPlay.app/Contents/Resources/vulkan/icd.d
           wget https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-macos.tar && tar xf MoltenVK-macos.tar
           cp MoltenVK/MoltenVK/dynamic/dylib/macOS/* AnyPlay.app/Contents/Resources/vulkan/icd.d
-          $(brew --prefix)/opt/qt@6/bin/macdeployqt AnyPlay.app -qmldir="$PWD/gui/src/qml" -libpath=$(brew --prefix)/lib
+          "$QT_ROOT_DIR/bin/macdeployqt" AnyPlay.app -qmldir="$PWD/gui/src/qml" -libpath=/opt/local/lib -libpath="$FFMPEG_LIBDIR"
           if [[ -d AnyPlay.app/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app ]]
           then
             ln -s ../../../../../../../Frameworks AnyPlay.app/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app/Contents

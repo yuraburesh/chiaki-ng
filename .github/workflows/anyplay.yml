@@ -13,11 +13,13 @@ jobs:
     uses: ./.github/workflows/build-windows-x86.yml
   macos:
     uses: ./.github/workflows/build-macos-arm.yml
+  macos_intel:
+    uses: ./.github/workflows/build-macos-x86.yml
   linux:
     uses: ./.github/workflows/build-appimage-x64.yml
 
   release:
-    needs: [windows, macos, linux]
+    needs: [windows, macos, macos_intel, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -30,6 +32,10 @@ jobs:
           path: out/mac
       - uses: actions/download-artifact@v4
         with:
+          name: chiaki-ng-macos_x86_64-Release
+          path: out/mac-intel
+      - uses: actions/download-artifact@v4
+        with:
           name: chiaki-ng.AppImage_x86_64
           path: out/linux
       - name: Rename files
@@ -37,6 +43,7 @@ jobs:
           mkdir -p dist
           cp out/win/*.exe "dist/AnyPlay-chiaki-ng-Windows.exe"
           cp out/mac/*.dmg "dist/AnyPlay-chiaki-ng-Mac.dmg"
+          cp out/mac-intel/*.dmg "dist/AnyPlay-chiaki-ng-Mac-Intel.dmg"
           cp out/linux/*.AppImage "dist/AnyPlay-chiaki-ng-Linux.AppImage"
           ls -la dist
       - uses: softprops/action-gh-release@v2
@@ -46,5 +53,5 @@ jobs:
           make_latest: true
           body: |
             chiaki-ng з керуванням камерою мишею (режим Right Stick) і розкладкою клавіш у стилі GTA.
-            Windows — AnyPlay-chiaki-ng-Windows.exe · Mac (Apple Silicon) — AnyPlay-chiaki-ng-Mac.dmg · Linux / Steam Deck — AppImage.
+            Windows — AnyPlay-chiaki-ng-Windows.exe · Mac (Apple M1 і новіші) — AnyPlay-chiaki-ng-Mac.dmg · Mac (Intel) — AnyPlay-chiaki-ng-Mac-Intel.dmg · Linux / Steam Deck — AppImage.
           files: dist/*

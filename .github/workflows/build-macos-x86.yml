@@ -51,7 +51,8 @@ jobs:
             if port -q info "$c" >/dev/null 2>&1; then FF=$c; break; fi
           done
           echo "FFmpeg port: $FF"
-          sudo port -N install pkgconfig nasm cmake ninja wget openssl3 opus speexdsp libplacebo json-c miniupnpc libevent "$FF" || sudo port -N install pkgconfig nasm cmake ninja wget openssl3 opus speexdsp libplacebo json-c miniupnpc libevent "$FF"
+          sudo port -N install pkgconfig nasm ninja openssl3 libopus libplacebo "$FF"
+          for opt in speexdsp json-c miniupnpc libevent; do sudo port -N install "$opt" || echo "optional port $opt skipped"; done
           PCDIR=$(dirname "$(find /opt/local -name libavcodec.pc | head -1)")
           echo "FFmpeg pkgconfig: $PCDIR"
           echo "PKG_CONFIG_PATH=$PCDIR:/opt/local/lib/pkgconfig:/usr/local/lib/pkgconfig" >> $GITHUB_ENV
@@ -83,7 +84,7 @@ jobs:
           cp scripts/qtwebengine_import.qml gui/src/qml/
           "$QT_ROOT_DIR/bin/macdeployqt" AnyPlay.app -qmldir="$PWD/gui/src/qml" -libpath=/opt/local/lib -libpath="$FFMPEG_LIBDIR"
           mkdir -p AnyPlay.app/Contents/Resources/vulkan/icd.d
-          wget https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-macos.tar && tar xf MoltenVK-macos.tar
+          curl -fsSL -O https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-macos.tar && tar xf MoltenVK-macos.tar
           cp MoltenVK/MoltenVK/dynamic/dylib/macOS/* AnyPlay.app/Contents/Resources/vulkan/icd.d
           "$QT_ROOT_DIR/bin/macdeployqt" AnyPlay.app -qmldir="$PWD/gui/src/qml" -libpath=/opt/local/lib -libpath="$FFMPEG_LIBDIR"
           if [[ -d AnyPlay.app/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app ]]

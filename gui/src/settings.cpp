@@ -987,15 +987,71 @@ void Settings::SetKeyboardEnabled(bool enabled)
 	settings.setValue("settings/keyboard_enabled", enabled);
 }
 
+MouseInputMode Settings::GetMouseInputMode() const
+{
+	if(!settings.contains("settings/mouse_input_mode"))
+		return MouseInputMode::RightStick;  // AnyPlay: миша одразу керує камерою (правим стіком)
+	const int saved_mode = settings.value("settings/mouse_input_mode").toInt();
+	if(saved_mode == static_cast<int>(MouseInputMode::Disabled))
+		return MouseInputMode::Disabled;
+	if(saved_mode == static_cast<int>(MouseInputMode::RightStick))
+		return MouseInputMode::RightStick;
+	return MouseInputMode::Touchpad;
+}
+
+void Settings::SetMouseInputMode(MouseInputMode mode)
+{
+	settings.setValue("settings/mouse_input_mode", static_cast<int>(mode));
+	settings.setValue("settings/mouse_touch_enabled", mode == MouseInputMode::Touchpad);
+}
+
 bool Settings::GetMouseTouchEnabled() const
 {
-	return settings.value("settings/mouse_touch_enabled", true).toBool();
+	return GetMouseInputMode() == MouseInputMode::Touchpad;
 }
 void Settings::SetMouseTouchEnabled(bool enabled)
 {
-	settings.setValue("settings/mouse_touch_enabled", enabled);
+	SetMouseInputMode(enabled ? MouseInputMode::Touchpad : MouseInputMode::Disabled);
 }
 
+bool Settings::GetMouseRightStickEnabled() const
+{
+	return GetMouseInputMode() == MouseInputMode::RightStick;
+}
+
+int Settings::GetMouseStickHorizontal() const
+{
+	return qBound(10, settings.value("settings/mouse_stick_horizontal", 100).toInt(), 400);
+}
+void Settings::SetMouseStickHorizontal(int percent)
+{
+	settings.setValue("settings/mouse_stick_horizontal", qBound(10, percent, 400));
+}
+
+int Settings::GetMouseStickVertical() const
+{
+	return qBound(10, settings.value("settings/mouse_stick_vertical", 100).toInt(), 400);
+}
+void Settings::SetMouseStickVertical(int percent)
+{
+	settings.setValue("settings/mouse_stick_vertical", qBound(10, percent, 400));
+}
+
+int Settings::GetMouseStickDeadzone() const
+{
+	return qBound(0, settings.value("settings/mouse_stick_deadzone", 15).toInt(), 40);
+}
+void Settings::SetMouseStickDeadzone(int percent)
+{
+	settings.setValue("settings/mouse_stick_deadzone", qBound(0, percent, 40));
+}
+
+void Settings::ResetMouseStick()
+{
+	settings.remove("settings/mouse_stick_horizontal");
+	settings.remove("settings/mouse_stick_vertical");
+	settings.remove("settings/mouse_stick_deadzone");
+}
 
 bool Settings::GetDpadTouchEnabled() const
 {
@@ -2397,10 +2453,65 @@ QString Settings::GetChiakiControllerButtonName(int button)
 	}
 }
 
+namespace {
+// Stored names of the mappable mouse inputs (not translated, they are saved in the settings)
+struct MouseKeyName
+{
+	MouseKey key;
+	const char *name;
+};
+const MouseKeyName mouse_key_names[] = {
+	{MouseKey::Left, "MouseLeft"},
+	{MouseKey::Right, "MouseRight"},
+	{MouseKey::Middle, "MouseMiddle"},
+	{MouseKey::WheelUp, "MouseWheelUp"},
+	{MouseKey::WheelDown, "MouseWheelDown"}
+};
+}
+
+bool Settings::IsMouseKey(Qt::Key key)
+{
+	return static_cast<int>(key) >= static_cast<int>(MouseKey::Left)
+		&& static_cast<int>(key) <= static_cast<int>(MouseKey::WheelDown);
+}
+
+QString Settings::KeyToString(Qt::Key key)
+{
+	for(const auto &entry : mouse_key_names)
+	{
+		if(static_cast<int>(entry.key) == static_cast<int>(key))
+			return QString::fromLatin1(entry.name);
+	}
+	return QKeySequence(key).toString();
+}
+
+Qt::Key Settings::KeyFromString(const QString &str)
+{
+	for(const auto &entry : mouse_key_names)
+	{
+		if(str == QLatin1String(entry.name))
+			return static_cast<Qt::Key>(static_cast<int>(entry.key));
+	}
+	return QKeySequence(str)[0].key();
+}
+
+QString Settings::GetKeyDisplayName(Qt::Key key)
+{
+	switch(static_cast<int>(key))
+	{
+		case static_cast<int>(MouseKey::Left)      : return tr("Left Click");
+		case static_cast<int>(MouseKey::Right)     : return tr("Right Click");
+		case static_cast<int>(MouseKey::Middle)    : return tr("Middle Click");
+		case static_cast<int>(MouseKey::WheelUp)   : return tr("Wheel Up");
+		case static_cast<int>(MouseKey::WheelDown) : return tr("Wheel Down");
+		default: return QKeySequence(key).toString();
+	}
+}
+
 void Settings::SetControllerButtonMapping(int chiaki_button, Qt::Key key)
 {
 	auto button_name = GetChiakiControllerButtonName(chiaki_button).replace(' ', '_').toLower();
-	settings.setValue("keymap/" + button_name, QKeySequence(key).toString());
+	settings.setValue("keymap/" + button_name, KeyToString(key));
 }
 
 QMap<int, Qt::Key> Settings::GetControllerMapping()
@@ -2408,32 +2519,33 @@ QMap<int, Qt::Key> Settings::GetControllerMapping()
 	// Initialize with default values
 	QMap<int, Qt::Key> result =
 	{
-		{CHIAKI_CONTROLLER_BUTTON_CROSS     , Qt::Key::Key_Return},
-		{CHIAKI_CONTROLLER_BUTTON_MOON      , Qt::Key::Key_Backspace},
-		{CHIAKI_CONTROLLER_BUTTON_BOX       , Qt::Key::Key_Backslash},
-		{CHIAKI_CONTROLLER_BUTTON_PYRAMID   , Qt::Key::Key_C},
+		// AnyPlay: розкладка «як GTA на ПК» — WASD рух, миша камера/приціл (режим Right Stick)
+		{CHIAKI_CONTROLLER_BUTTON_CROSS     , Qt::Key::Key_Space},
+		{CHIAKI_CONTROLLER_BUTTON_MOON      , Qt::Key::Key_Escape},
+		{CHIAKI_CONTROLLER_BUTTON_BOX       , Qt::Key::Key_Shift},
+		{CHIAKI_CONTROLLER_BUTTON_PYRAMID   , Qt::Key::Key_F},
 		{CHIAKI_CONTROLLER_BUTTON_DPAD_LEFT , Qt::Key::Key_Left},
 		{CHIAKI_CONTROLLER_BUTTON_DPAD_RIGHT, Qt::Key::Key_Right},
 		{CHIAKI_CONTROLLER_BUTTON_DPAD_UP   , Qt::Key::Key_Up},
 		{CHIAKI_CONTROLLER_BUTTON_DPAD_DOWN , Qt::Key::Key_Down},
-		{CHIAKI_CONTROLLER_BUTTON_L1        , Qt::Key::Key_2},
-		{CHIAKI_CONTROLLER_BUTTON_R1        , Qt::Key::Key_3},
-		{CHIAKI_CONTROLLER_BUTTON_L3        , Qt::Key::Key_5},
-		{CHIAKI_CONTROLLER_BUTTON_R3        , Qt::Key::Key_6},
-		{CHIAKI_CONTROLLER_BUTTON_OPTIONS   , Qt::Key::Key_O},
-		{CHIAKI_CONTROLLER_BUTTON_SHARE     , Qt::Key::Key_F},
-		{CHIAKI_CONTROLLER_BUTTON_TOUCHPAD  , Qt::Key::Key_T},
-		{CHIAKI_CONTROLLER_BUTTON_PS        , Qt::Key::Key_Escape},
-		{CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 , Qt::Key::Key_1},
-		{CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 , Qt::Key::Key_4},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_UP)   , Qt::Key::Key_BracketRight},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_DOWN) , Qt::Key::Key_BracketLeft},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_UP)   , Qt::Key::Key_Insert},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_DOWN) , Qt::Key::Key_Delete},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_UP)  , Qt::Key::Key_Equal},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_DOWN), Qt::Key::Key_Minus},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_UP)  , Qt::Key::Key_PageUp},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_DOWN), Qt::Key::Key_PageDown}
+		{CHIAKI_CONTROLLER_BUTTON_L1        , Qt::Key::Key_Tab},
+		{CHIAKI_CONTROLLER_BUTTON_R1        , Qt::Key::Key_Q},
+		{CHIAKI_CONTROLLER_BUTTON_L3        , Qt::Key::Key_X},
+		{CHIAKI_CONTROLLER_BUTTON_R3        , Qt::Key::Key_C},
+		{CHIAKI_CONTROLLER_BUTTON_OPTIONS   , Qt::Key::Key_Return},
+		{CHIAKI_CONTROLLER_BUTTON_SHARE     , Qt::Key::Key_M},
+		{CHIAKI_CONTROLLER_BUTTON_TOUCHPAD  , Qt::Key::Key_V},
+		{CHIAKI_CONTROLLER_BUTTON_PS        , Qt::Key::Key_Home},
+		{CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 , static_cast<Qt::Key>(static_cast<int>(MouseKey::Right))},
+		{CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 , static_cast<Qt::Key>(static_cast<int>(MouseKey::Left))},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_UP)   , Qt::Key::Key_D},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_DOWN) , Qt::Key::Key_A},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_UP)   , Qt::Key::Key_W},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_DOWN) , Qt::Key::Key_S},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_UP)  , Qt::Key::Key_L},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_DOWN), Qt::Key::Key_J},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_UP)  , Qt::Key::Key_I},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_DOWN), Qt::Key::Key_K}
 	};
 
 	// Then fill in from settings
@@ -2442,7 +2554,7 @@ QMap<int, Qt::Key> Settings::GetControllerMapping()
 	{
 		auto button_name = GetChiakiControllerButtonName(chiaki_button).replace(' ', '_').toLower();
 		if(settings.contains("keymap/" + button_name))
-			result[static_cast<int>(chiaki_button)] = QKeySequence(settings.value("keymap/" + button_name).toString())[0].key();
+			result[static_cast<int>(chiaki_button)] = KeyFromString(settings.value("keymap/" + button_name).toString());
 	}
 
 	return result;
@@ -2453,32 +2565,33 @@ void Settings::ClearKeyMapping()
 	// Initialize with default values
 	QMap<int, Qt::Key> result =
 	{
-		{CHIAKI_CONTROLLER_BUTTON_CROSS     , Qt::Key::Key_Return},
-		{CHIAKI_CONTROLLER_BUTTON_MOON      , Qt::Key::Key_Backspace},
-		{CHIAKI_CONTROLLER_BUTTON_BOX       , Qt::Key::Key_Backslash},
-		{CHIAKI_CONTROLLER_BUTTON_PYRAMID   , Qt::Key::Key_C},
+		// AnyPlay: розкладка «як GTA на ПК» — WASD рух, миша камера/приціл (режим Right Stick)
+		{CHIAKI_CONTROLLER_BUTTON_CROSS     , Qt::Key::Key_Space},
+		{CHIAKI_CONTROLLER_BUTTON_MOON      , Qt::Key::Key_Escape},
+		{CHIAKI_CONTROLLER_BUTTON_BOX       , Qt::Key::Key_Shift},
+		{CHIAKI_CONTROLLER_BUTTON_PYRAMID   , Qt::Key::Key_F},
 		{CHIAKI_CONTROLLER_BUTTON_DPAD_LEFT , Qt::Key::Key_Left},
 		{CHIAKI_CONTROLLER_BUTTON_DPAD_RIGHT, Qt::Key::Key_Right},
 		{CHIAKI_CONTROLLER_BUTTON_DPAD_UP   , Qt::Key::Key_Up},
 		{CHIAKI_CONTROLLER_BUTTON_DPAD_DOWN , Qt::Key::Key_Down},
-		{CHIAKI_CONTROLLER_BUTTON_L1        , Qt::Key::Key_2},
-		{CHIAKI_CONTROLLER_BUTTON_R1        , Qt::Key::Key_3},
-		{CHIAKI_CONTROLLER_BUTTON_L3        , Qt::Key::Key_5},
-		{CHIAKI_CONTROLLER_BUTTON_R3        , Qt::Key::Key_6},
-		{CHIAKI_CONTROLLER_BUTTON_OPTIONS   , Qt::Key::Key_O},
-		{CHIAKI_CONTROLLER_BUTTON_SHARE     , Qt::Key::Key_F},
-		{CHIAKI_CONTROLLER_BUTTON_TOUCHPAD  , Qt::Key::Key_T},
-		{CHIAKI_CONTROLLER_BUTTON_PS        , Qt::Key::Key_Escape},
-		{CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 , Qt::Key::Key_1},
-		{CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 , Qt::Key::Key_4},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_UP)   , Qt::Key::Key_BracketRight},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_DOWN) , Qt::Key::Key_BracketLeft},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_UP)   , Qt::Key::Key_Insert},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_DOWN) , Qt::Key::Key_Delete},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_UP)  , Qt::Key::Key_Equal},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_DOWN), Qt::Key::Key_Minus},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_UP)  , Qt::Key::Key_PageUp},
-		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_DOWN), Qt::Key::Key_PageDown}
+		{CHIAKI_CONTROLLER_BUTTON_L1        , Qt::Key::Key_Tab},
+		{CHIAKI_CONTROLLER_BUTTON_R1        , Qt::Key::Key_Q},
+		{CHIAKI_CONTROLLER_BUTTON_L3        , Qt::Key::Key_X},
+		{CHIAKI_CONTROLLER_BUTTON_R3        , Qt::Key::Key_C},
+		{CHIAKI_CONTROLLER_BUTTON_OPTIONS   , Qt::Key::Key_Return},
+		{CHIAKI_CONTROLLER_BUTTON_SHARE     , Qt::Key::Key_M},
+		{CHIAKI_CONTROLLER_BUTTON_TOUCHPAD  , Qt::Key::Key_V},
+		{CHIAKI_CONTROLLER_BUTTON_PS        , Qt::Key::Key_Home},
+		{CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 , static_cast<Qt::Key>(static_cast<int>(MouseKey::Right))},
+		{CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 , static_cast<Qt::Key>(static_cast<int>(MouseKey::Left))},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_UP)   , Qt::Key::Key_D},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_DOWN) , Qt::Key::Key_A},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_UP)   , Qt::Key::Key_W},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_DOWN) , Qt::Key::Key_S},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_UP)  , Qt::Key::Key_L},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_DOWN), Qt::Key::Key_J},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_UP)  , Qt::Key::Key_I},
+		{static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_DOWN), Qt::Key::Key_K}
 	};
 
 	// Then fill in from settings

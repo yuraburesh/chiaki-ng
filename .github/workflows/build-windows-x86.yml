@@ -2,6 +2,7 @@ name: Build chiaki-ng Windows x86_64 (VC)
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

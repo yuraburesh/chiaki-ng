@@ -1,4 +1,6 @@
 #include "qmlbackend.h"
+#include <QClipboard>
+#include <QGuiApplication>
 #include "qmlsettings.h"
 #include "qmlmainwindow.h"
 #include "streamsession.h"
@@ -2525,6 +2527,12 @@ QString QmlBackend::openPlaceboOptionsLink()
     QDesktopServices::openUrl(url);
     url = psnLoginUrl();
     return QString(url.toEncoded());
+}
+
+QString QmlBackend::clipboardText() const
+{
+    QClipboard *cb = QGuiApplication::clipboard();
+    return cb ? cb->text().trimmed() : QString();
 }
 
 bool QmlBackend::checkPsnRedirectURL(const QUrl &url) const

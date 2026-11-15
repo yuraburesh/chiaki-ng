@@ -27,7 +27,7 @@ DialogView {
         {
             nativeLoginForm.visible = true;
             nativeLoginForm.forceActiveFocus(Qt.TabFocusReason);
-            if(Qt.platform.os == "linux" || Qt.platform.os == "osx")
+            if(Qt.platform.os == "linux")
                 extBrowserButton.clicked();
         }
         else
@@ -36,6 +36,26 @@ DialogView {
             usernameField.forceActiveFocus(Qt.TabFocusReason)
             usernameField.readOnly = false;
             Qt.inputMethod.show();
+        }
+    }
+    // AnyPlay: якщо клієнт увійшов у звичайному браузері й скопіював адресу сторінки
+    // «redirect» — підхоплюємо її з буфера обміну і продовжуємо самі.
+    property Timer anyplayClipWatchTimer: Timer {
+        id: anyplayClipWatch
+        interval: 700
+        repeat: true
+        running: dialog.buttonVisible
+        property string last: ""
+        onTriggered: {
+            const t = Chiaki.clipboardText();
+            if (!t || t === last)
+                return;
+            last = t;
+            if (Chiaki.checkPsnRedirectURL(t) && url.text.trim() !== t) {
+                url.text = t;
+                if (dialog.buttonEnabled)
+                    dialog.accepted();
+            }
         }
     }
     function close() {

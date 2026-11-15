@@ -83,6 +83,46 @@ RegisteredHost RegisteredHost::LoadFromSettings(QSettings *settings)
 	return r;
 }
 
+QVariantMap RegisteredHost::ToVariantMap() const
+{
+	QVariantMap m;
+	m["target"] = (int)target;
+	m["ap_ssid"] = ap_ssid;
+	m["ap_bssid"] = ap_bssid;
+	m["ap_key"] = ap_key;
+	m["ap_name"] = ap_name;
+	m["server_nickname"] = server_nickname;
+	m["server_mac"] = QString::fromLatin1(QByteArray((const char *)server_mac.GetMAC(), 6).toBase64());
+	m["rp_regist_key"] = QString::fromLatin1(QByteArray(rp_regist_key, sizeof(rp_regist_key)).toBase64());
+	m["rp_key_type"] = (qulonglong)rp_key_type;
+	m["rp_key"] = QString::fromLatin1(QByteArray((const char *)rp_key, sizeof(rp_key)).toBase64());
+	m["console_pin"] = console_pin;
+	return m;
+}
+
+RegisteredHost RegisteredHost::FromVariantMap(const QVariantMap &m)
+{
+	RegisteredHost r;
+	r.target = (ChiakiTarget)m.value("target").toInt();
+	r.ap_ssid = m.value("ap_ssid").toString();
+	r.ap_bssid = m.value("ap_bssid").toString();
+	r.ap_key = m.value("ap_key").toString();
+	r.ap_name = m.value("ap_name").toString();
+	r.server_nickname = m.value("server_nickname").toString();
+	QByteArray mac = QByteArray::fromBase64(m.value("server_mac").toString().toLatin1());
+	if(mac.size() == 6)
+		r.server_mac = HostMAC((const uint8_t *)mac.constData());
+	QByteArray regist = QByteArray::fromBase64(m.value("rp_regist_key").toString().toLatin1());
+	if(regist.size() == sizeof(r.rp_regist_key))
+		memcpy(r.rp_regist_key, regist.constData(), sizeof(r.rp_regist_key));
+	r.rp_key_type = m.value("rp_key_type").toUInt();
+	QByteArray key = QByteArray::fromBase64(m.value("rp_key").toString().toLatin1());
+	if(key.size() == sizeof(r.rp_key))
+		memcpy(r.rp_key, key.constData(), sizeof(r.rp_key));
+	r.console_pin = m.value("console_pin").toString();
+	return r;
+}
+
 void HiddenHost::SaveToSettings(QSettings *settings) const
 {
 	settings->setValue("server_nickname", server_nickname);

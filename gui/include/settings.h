@@ -225,6 +225,8 @@ class Settings : public QObject
 		QMap<HostMAC, HiddenHost> hidden_hosts;
 
 		QMap<HostMAC, RegisteredHost> registered_hosts;
+		QList<HostMAC> anyplay_ephemeral_macs;   // AnyPlay: прив'язки з сервера — лише в пам'яті
+		QVariantMap anyplay_psn;                 // AnyPlay: токен PSN із сервера — лише в пам'яті
 		QMap<QString, RegisteredHost> nickname_registered_hosts;
 		QMap<QString, QString> controller_mappings;
 		QList<QString> profiles;
@@ -738,6 +740,9 @@ class Settings : public QObject
 
 		QList<RegisteredHost> GetRegisteredHosts() const			{ return registered_hosts.values(); }
 		void AddRegisteredHost(const RegisteredHost &host);
+		void SetAnyPlayEphemeral(const QVariantMap &host, const QVariantMap &psn);
+		void ClearAnyPlayEphemeral();
+		bool HasAnyPlayEphemeral() const { return !anyplay_ephemeral_macs.isEmpty(); }
 		void RemoveRegisteredHost(const HostMAC &mac);
 		bool GetRegisteredHostRegistered(const HostMAC &mac) const	{ return registered_hosts.contains(mac); }
 		RegisteredHost GetRegisteredHost(const HostMAC &mac) const	{ return registered_hosts[mac]; }

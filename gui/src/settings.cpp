@@ -943,31 +943,52 @@ void Settings::SetEchoSuppressLevel(int reduceby)
 
 QString Settings::GetPsnAuthToken() const
 {
+	if(!anyplay_psn.isEmpty())
+		return anyplay_psn.value("auth_token").toString();
 	return settings.value("settings/psn_auth_token").toString();
 }
 
 void Settings::SetPsnAuthToken(QString auth_token)
 {
+	if(!anyplay_psn.isEmpty())
+	{
+		anyplay_psn["auth_token"] = auth_token;
+		return;
+	}
 	settings.setValue("settings/psn_auth_token", auth_token);
 }
 
 QString Settings::GetPsnRefreshToken() const
 {
+	if(!anyplay_psn.isEmpty())
+		return anyplay_psn.value("refresh_token").toString();
 	return settings.value("settings/psn_refresh_token").toString();
 }
 
 void Settings::SetPsnRefreshToken(QString refresh_token)
 {
+	if(!anyplay_psn.isEmpty())
+	{
+		anyplay_psn["refresh_token"] = refresh_token;
+		return;
+	}
 	settings.setValue("settings/psn_refresh_token", refresh_token);
 }
 
 QString Settings::GetPsnAuthTokenExpiry() const
 {
+	if(!anyplay_psn.isEmpty())
+		return anyplay_psn.value("expiry").toString();
 	return settings.value("settings/psn_auth_token_expiry").toString();
 }
 
 void Settings::SetPsnAuthTokenExpiry(QString expiry_date)
 {
+	if(!anyplay_psn.isEmpty())
+	{
+		anyplay_psn["expiry"] = expiry_date;
+		return;
+	}
 	settings.setValue("settings/psn_auth_token_expiry", expiry_date);
 }
 
@@ -1151,6 +1172,8 @@ void Settings::SetStreamMenuShortcut4(uint button) {
 
 QString Settings::GetPsnAccountId() const
 {
+	if(!anyplay_psn.isEmpty())
+		return anyplay_psn.value("account_id").toString();
 	return settings.value("settings/psn_account_id").toString();
 }
 
@@ -2250,11 +2273,43 @@ void Settings::SaveRegisteredHosts(QSettings *qsettings)
 	int i=0;
 	for(const auto &host : registered_hosts)
 	{
+		if(anyplay_ephemeral_macs.contains(host.GetServerMAC()))
+			continue; // AnyPlay: прив'язку з сервера на диск не пишемо
 		qsettings->setArrayIndex(i);
 		host.SaveToSettings(qsettings);
 		i++;
 	}
 	qsettings->endArray();
+}
+
+void Settings::SetAnyPlayEphemeral(const QVariantMap &host, const QVariantMap &psn)
+{
+	RegisteredHost r = RegisteredHost::FromVariantMap(host);
+	if(!anyplay_ephemeral_macs.contains(r.GetServerMAC()) && registered_hosts.contains(r.GetServerMAC()))
+		; // своя справжня прив'язка вже є — не чіпаємо її збереження
+	else if(!anyplay_ephemeral_macs.contains(r.GetServerMAC()))
+		anyplay_ephemeral_macs.append(r.GetServerMAC());
+	registered_hosts[r.GetServerMAC()] = r;
+	nickname_registered_hosts[r.GetServerNickname()] = r;
+	anyplay_psn = psn;
+	emit RegisteredHostsUpdated();
+}
+
+void Settings::ClearAnyPlayEphemeral()
+{
+	if(anyplay_ephemeral_macs.isEmpty() && anyplay_psn.isEmpty())
+		return;
+	for(const auto &mac : anyplay_ephemeral_macs)
+	{
+		if(registered_hosts.contains(mac))
+		{
+			nickname_registered_hosts.remove(registered_hosts[mac].GetServerNickname());
+			registered_hosts.remove(mac);
+		}
+	}
+	anyplay_ephemeral_macs.clear();
+	anyplay_psn.clear();
+	emit RegisteredHostsUpdated();
 }
 
 void Settings::AddRegisteredHost(const RegisteredHost &host)

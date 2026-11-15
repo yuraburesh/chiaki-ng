@@ -418,6 +418,136 @@ Pane {
         text: Qt.application.version
     }
 
+    // ── AnyPlay: вхід через Telegram і час броні ──
+    Rectangle {
+        id: anyplayPanel
+        property var cloud: Chiaki.cloud
+        property int tick: 0
+        anchors {
+            horizontalCenter: parent.horizontalCenter
+            bottom: parent.bottom
+            bottomMargin: 24
+        }
+        width: Math.min(parent.width - 220, 760)
+        height: anyplayCol.implicitHeight + 28
+        radius: 18
+        z: 5
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "#3b1a8f" }
+            GradientStop { position: 1.0; color: "#b0247a" }
+        }
+        border.color: "#ffffff30"
+
+        Timer { interval: 1000; running: true; repeat: true; onTriggered: anyplayPanel.tick++ }
+
+        function left() {
+            tick;
+            const now = Math.floor(Date.now() / 1000) + cloud.clockSkew;
+            const s = Math.max(0, cloud.endTs - now);
+            const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+            return (h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(x).padStart(2, "0");
+        }
+
+        ColumnLayout {
+            id: anyplayCol
+            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 18 }
+            spacing: 8
+
+            RowLayout {
+                spacing: 14
+                Image {
+                    source: "qrc:/icons/anyplay-icon.png"
+                    Layout.preferredWidth: 44; Layout.preferredHeight: 44
+                    sourceSize: Qt.size(88, 88)
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Layout.fillWidth: true
+                    Label {
+                        Layout.fillWidth: true
+                        font.pixelSize: 19; font.bold: true; color: "white"
+                        wrapMode: Text.WordWrap
+                        text: {
+                            const c = anyplayPanel.cloud;
+                            switch (c.state) {
+                            case "login": return qsTr("Увійди через Telegram, щоб грати");
+                            case "pairing": return qsTr("Підтверди вхід у Telegram — натисни «Start» у боті");
+                            case "offline": return qsTr("Немає зв'язку із сервером AnyPlay");
+                            case "no_console": return qsTr("Приставка ще не підключена до сервера");
+                            case "play": return c.admin ? qsTr("Режим адміна · %1").arg(c.userName)
+                                                        : qsTr("Можна грати! Лишилось %1").arg(anyplayPanel.left());
+                            default: return c.nextStart ? qsTr("Твоя гра: %1–%2").arg(c.formatTime(c.nextStart)).arg(c.formatTime(c.nextEnd))
+                                                        : qsTr("Немає оплачених броней");
+                            }
+                        }
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        font.pixelSize: 14; color: "#ffe6f6"
+                        wrapMode: Text.WordWrap
+                        text: {
+                            const c = anyplayPanel.cloud;
+                            switch (c.state) {
+                            case "login": return qsTr("Приставка відкриється автоматично в час твоєї оплаченої броні.");
+                            case "pairing": return qsTr("Відкрився Telegram з ботом @play_any_bot. Після «Start» повернись сюди.");
+                            case "play": return c.admin ? qsTr("Тут можна передати свою PS5 і вхід PSN на сервер для клієнтів.")
+                                                        : qsTr("Натисни на PS5 у списку вгорі. До %1, потім гра завершиться сама.").arg(c.formatTime(c.endTs));
+                            case "no_console": return qsTr("Напиши консультанту в боті — кнопка «🆘 Допомога».");
+                            case "offline": return qsTr("Перевір інтернет — спробуємо ще раз за хвилину.");
+                            default: return c.nextStart ? qsTr("Доступ відкриється за кілька хвилин до початку. Програму можна не закривати.")
+                                                        : qsTr("Забронюй час у боті — і повертайся сюди.");
+                            }
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                spacing: 10
+                Button {
+                    visible: anyplayPanel.cloud.state === "login"
+                    text: qsTr("Увійти через Telegram")
+                    highlighted: true
+                    onClicked: anyplayPanel.cloud.login()
+                }
+                Button {
+                    visible: anyplayPanel.cloud.state === "pairing"
+                    text: qsTr("Скасувати")
+                    onClicked: anyplayPanel.cloud.cancelLogin()
+                }
+                Button {
+                    visible: anyplayPanel.cloud.loggedIn && anyplayPanel.cloud.state !== "play"
+                    text: qsTr("Забронювати в боті")
+                    onClicked: anyplayPanel.cloud.openBot()
+                }
+                Button {
+                    visible: anyplayPanel.cloud.admin
+                    text: qsTr("Передати PS5 на сервер")
+                    onClicked: anyplayPanel.cloud.uploadConsole()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    visible: anyplayPanel.cloud.loggedIn
+                    flat: true
+                    text: qsTr("Вийти")
+                    onClicked: anyplayPanel.cloud.logout()
+                }
+            }
+            Label {
+                id: anyplayToast
+                Layout.fillWidth: true
+                visible: text !== ""
+                color: "#fff3a6"; font.pixelSize: 14; font.bold: true
+                wrapMode: Text.WordWrap
+                Timer { id: anyplayToastTimer; interval: 8000; onTriggered: anyplayToast.text = "" }
+                Connections {
+                    target: Chiaki.cloud
+                    function onMessage(text) { anyplayToast.text = text; anyplayToastTimer.restart(); }
+                }
+            }
+        }
+    }
+
     Image {
         id: logoImage
         anchors.centerIn: parent

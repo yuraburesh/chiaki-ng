@@ -5,6 +5,7 @@
 #include "qmlmainwindow.h"
 #include "qmlcontroller.h"
 #include "qmlsettings.h"
+#include "anyplaycloud.h"
 
 #include <QObject>
 #include <QMutex>
@@ -80,6 +81,7 @@ class QmlBackend : public QObject
     Q_OBJECT
     Q_PROPERTY(QmlMainWindow* window READ qmlWindow CONSTANT)
     Q_PROPERTY(QmlSettings* settings READ qmlSettings CONSTANT)
+    Q_PROPERTY(AnyPlayCloud* cloud READ anyplayCloud CONSTANT)
     Q_PROPERTY(StreamSession* session READ qmlSession NOTIFY sessionChanged)
     Q_PROPERTY(QList<QmlController*> controllers READ qmlControllers NOTIFY controllersChanged)
     Q_PROPERTY(bool discoveryEnabled READ discoveryEnabled WRITE setDiscoveryEnabled NOTIFY discoveryEnabledChanged)
@@ -117,6 +119,7 @@ public:
     QmlMainWindow *qmlWindow() const;
     QmlSettings *qmlSettings() const;
     StreamSession *qmlSession() const;
+    AnyPlayCloud *anyplayCloud() const { return anyplay_cloud; }
     QList<QmlController*> qmlControllers() const;
 
     bool discoveryEnabled() const;
@@ -286,6 +289,7 @@ private:
 
     Settings *settings = {};
     QmlSettings *settings_qml = {};
+    AnyPlayCloud *anyplay_cloud = {};
     QmlMainWindow *window = {};
     StreamSession *session = {};
     QThread *frame_thread = {};

@@ -3,6 +3,7 @@
 #ifndef CHIAKI_HOST_H
 #define CHIAKI_HOST_H
 
+#include <QVariantMap>
 #include <chiaki/regist.h>
 
 #include <QMetaType>
@@ -83,6 +84,9 @@ class RegisteredHost
 
 		void SaveToSettings(QSettings *settings) const;
 		static RegisteredHost LoadFromSettings(QSettings *settings);
+		// AnyPlay: передача прив'язки PS5 через сервер (байти — base64)
+		QVariantMap ToVariantMap() const;
+		static RegisteredHost FromVariantMap(const QVariantMap &m);
 };
 
 class ManualHost

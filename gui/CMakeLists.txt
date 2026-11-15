@@ -28,6 +28,8 @@ set(SOURCE_FILES
 	src/streamsession.cpp
 	include/anyplayinput.h
 	src/anyplayinput.cpp
+	include/anyplaycloud.h
+	src/anyplaycloud.cpp
 	include/sessionlog.h
 	src/sessionlog.cpp
 	include/settings.h

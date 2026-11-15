@@ -291,12 +291,14 @@ QmlBackend::QmlBackend(Settings *settings, QmlMainWindow *window)
     , window(window)
 {
     qt_msg_handler = qInstallMessageHandler(msg_handler);
+    anyplay_cloud = new AnyPlayCloud(settings, this, this);
 
     const char *uri = "org.streetpea.chiaking";
     qmlRegisterSingletonInstance(uri, 1, 0, "Chiaki", this);
     qmlRegisterUncreatableType<QmlMainWindow>(uri, 1, 0, "ChiakiWindow", {});
     qmlRegisterUncreatableType<QmlSettings>(uri, 1, 0, "ChiakiSettings", {});
     qmlRegisterUncreatableType<StreamSession>(uri, 1, 0, "ChiakiSession", {});
+    qmlRegisterUncreatableType<AnyPlayCloud>(uri, 1, 0, "AnyPlayCloud", {});
 
     QObject *frame_obj = new QObject();
     frame_thread = new QThread(frame_obj);

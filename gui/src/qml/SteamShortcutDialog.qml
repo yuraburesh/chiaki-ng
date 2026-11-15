@@ -12,15 +12,15 @@ DialogView {
     property bool opening: false
     property bool succeeded: false
     property bool fromReminder
-    title: qsTr("Create Non-Steam Game")
-    buttonText: qsTr("Create")
+    title: qsTr("Створити гру поза Steam")
+    buttonText: qsTr("Створити")
     buttonEnabled: name.text.trim() && !opening
     function close() {
         root.closeDialog();
         if(dialog.fromReminder && Chiaki.settings.remotePlayAsk)
         {
             if(!Chiaki.settings.psnRefreshToken || !Chiaki.settings.psnAuthToken || !Chiaki.settings.psnAuthTokenExpiry || !Chiaki.settings.psnAccountId)
-                root.showRemindDialog(qsTr("Remote Play via PSN"), qsTr("Would you like to connect to PSN?\nThis enables:\n- Automatic registration\n- Playing outside of your home network without port forwarding?") + "\n\n" + qsTr("(Note: If you select no now and want to do this later, go to the Config section of the settings.)"), true, () => root.showPSNTokenDialog(false));
+                root.showRemindDialog(qsTr("Remote Play через PSN"), qsTr("Підключитися до PSN?\nЦе дає:\n- автоматичну прив'язку\n- гру не з домашньої мережі без перенаправлення портів") + "\n\n" + qsTr("(Якщо зараз відмовитеся, зробити це можна пізніше в розділі «Конфігурація» налаштувань.)"), true, () => root.showPSNTokenDialog(false));
             else
                 Chiaki.settings.remotePlayAsk = false;
         }
@@ -60,19 +60,19 @@ DialogView {
 
             Label {
                 Layout.alignment: Qt.AlignRight
-                text: qsTr("Steam Game Name")
+                text: qsTr("Назва гри в Steam")
             }
 
             C.TextField {
                 id: name
                 Layout.preferredWidth: 400
-                text: Chiaki.settings.currentProfile ? qsTr("chiaki-ng ") + Chiaki.settings.currentProfile: qsTr("chiaki-ng")
+                text: Chiaki.settings.currentProfile ? qsTr("AnyPlay ") + Chiaki.settings.currentProfile: qsTr("AnyPlay")
                 firstInFocusChain: true
             }
 
             Label {
                 Layout.alignment: Qt.AlignRight
-                text: qsTr("Launch Options [Optional]")
+                text: qsTr("Параметри запуску [необов'язково]")
             }
 
             C.TextField {
@@ -83,7 +83,7 @@ DialogView {
 
             Label {
                 Layout.alignment: Qt.AlignRight
-                text: qsTr("Custom Steam Base Path (Optional)")
+                text: qsTr("Власна папка Steam (необов'язково)")
             }
 
             Label {
@@ -97,7 +97,7 @@ DialogView {
 
             C.Button {
                 id: choosePathButton
-                text: qsTr("Choose new steam base path")
+                text: qsTr("Вибрати нову папку Steam")
                 onClicked: {
                     shortcutGrid.steamBasePath = Chiaki.settings.chooseSteamBasePath();
                 }
@@ -111,7 +111,7 @@ DialogView {
                 parent: Overlay.overlay
                 x: Math.round((root.width - width) / 2)
                 y: Math.round((root.height - height) / 2)
-                title: qsTr("Create non-Steam game")
+                title: qsTr("Створити гру поза Steam")
                 modal: true
                 closePolicy: Popup.NoAutoClose
                 standardButtons: Dialog.Cancel
@@ -164,7 +164,7 @@ DialogView {
             parent: Overlay.overlay
             x: Math.round((root.width - width) / 2)
             y: Math.round((root.height - height) / 2)
-            title: qsTr("Please Restart Steam")
+            title: qsTr("Перезапустіть Steam")
             modal: true
             closePolicy: Popup.NoAutoClose
             standardButtons: Dialog.Close
@@ -184,7 +184,7 @@ DialogView {
 
                 Label {
                     id: restartArea
-                    text: "In order for " + name.text.trim() + " to appear in Steam,\nSteam must be restarted!"
+                    text: "Щоб " + name.text.trim() + " з'явилася в Steam,\nперезапустіть Steam!"
                     wrapMode: Text.Wrap
                     Keys.onReturnPressed: if (restartDialog.standardButtons == Dialog.Close) restartDialog.close()
                     Keys.onEscapePressed: restartDialog.close()

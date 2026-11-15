@@ -20,7 +20,7 @@ Rectangle {
             return;
         allowClose = false;
         cancelling = true;
-        infoLabel.text = qsTr("Cancelling connection with console over PSN ...");
+        infoLabel.text = qsTr("Скасування підключення до консолі через PSN…");
         Chiaki.psnCancel(false);
     }
 
@@ -57,7 +57,7 @@ Rectangle {
         anchors.centerIn: parent
         opacity: textVisible ? 1.0: 0.0
         visible: opacity
-        text: qsTr("Establishing connection with console over PSN ...")
+        text: qsTr("Встановлюємо з'єднання з консоллю через PSN…")
         Behavior on opacity { NumberAnimation { duration: 250 } }
     }
 
@@ -86,8 +86,8 @@ Rectangle {
             opacity: (textVisible && !cancelling) ? 1.0: 0.0
             visible: opacity
             text: {
-                var typeString = registOnly ? qsTr("automatic registration") : qsTr("remote connection via PSN")
-                qsTr("Press %1 to cancel %2").arg(Chiaki.controllers.length ? (root.controllerButton("circle").includes("deck") ? "B" : "Circle") : "escape or right-click").arg(typeString)
+                var typeString = registOnly ? qsTr("автоматичну прив'язку") : qsTr("віддалене підключення через PSN")
+                qsTr("Натисніть %1, щоб скасувати %2").arg(Chiaki.controllers.length ? (root.controllerButton("circle").includes("deck") ? "B" : "Circle") : "escape or right-click").arg(typeString)
             }
         }
 
@@ -142,7 +142,7 @@ Rectangle {
         parent: Overlay.overlay
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
-        title: qsTr("Console Login PIN")
+        title: qsTr("PIN-код входу на консоль")
         modal: true
         closePolicy: Popup.NoAutoClose
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -181,18 +181,18 @@ Rectangle {
             switch(Chiaki.connectState)
             {
                 case Chiaki.PsnConnectState.LinkingConsole:
-                    infoLabel.text = registOnly ? qsTr("Registering PlayStation console with chiaki-ng ...") : qsTr("Linking chiaki-ng with PlayStation console ...")
+                    infoLabel.text = registOnly ? qsTr("Прив'язуємо консоль PlayStation до AnyPlay…") : qsTr("Прив'язка AnyPlay до консолі PlayStation…")
                     view.allowClose = false
                     break
                 case Chiaki.PsnConnectState.RegisteringConsole:
                     view.registOnly = true;
                     break
                 case Chiaki.PsnConnectState.RegistrationFinished:
-                    infoLabel.text = qsTr("Successfully registered console")
+                    infoLabel.text = qsTr("Консоль успішно прив'язано")
                     failTimer.restart()
                     break
                 case Chiaki.PsnConnectState.DataConnectionStart:
-                    infoLabel.text = qsTr("Console Linked ... Establishing data connection with console over PSN ...")
+                    infoLabel.text = qsTr("Консоль прив'язано… Встановлюємо з'єднання з консоллю через PSN…")
                     view.allowClose = true
                     break
                 case Chiaki.PsnConnectState.DataConnectionFinished:
@@ -200,21 +200,21 @@ Rectangle {
                     break
                 case Chiaki.PsnConnectState.ConnectFailed:
                     if(!cancelling)
-                        infoLabel.text = qsTr("Connection over PSN failed closing ...")
+                        infoLabel.text = qsTr("Не вдалося підключитися через PSN, закриваємо…")
                     failTimer.running = true
                     break
                 case Chiaki.PsnConnectState.ConnectFailedStart:
                     if(!cancelling)
-                        infoLabel.text = qsTr("PSN couldn't establish connection with PlayStation. Please try again ...")
+                        infoLabel.text = qsTr("PSN не зміг з'єднатися з PlayStation. Спробуйте ще раз…")
                     failTimer.running = true
                     break
                 case Chiaki.PsnConnectState.ConnectFailedConsoleUnreachable:
                     if(!cancelling)
-                        infoLabel.text = qsTr("Couldn't contact PlayStation over established connection, likely unsupported network type")
+                        infoLabel.text = qsTr("Не вдалося зв'язатися з PlayStation через встановлене з'єднання — ймовірно, тип мережі не підтримується")
                     failTimer.running = true
                     break
                 case Chiaki.PsnConnectState.WaitingForInternet:
-                    infoLabel.text = qsTr("Establishing Internet Connection to PSN...")
+                    infoLabel.text = qsTr("Підключення до PSN через інтернет…")
                     break
             }
         }

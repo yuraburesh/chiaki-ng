@@ -37,8 +37,8 @@ DialogView {
         LinearLight
     }
     id: dialog
-    title: qsTr("Color Mapping Settings")
-    header: qsTr("* Defaults in () to right of value or marked with (Default)")
+    title: qsTr("Налаштування відображення кольорів")
+    header: qsTr("* Стандартні значення вказані в дужках праворуч або позначені «(За замовчуванням)»")
     buttonVisible: false
     Keys.onPressed: (event) => {
         if (event.modifiers)
@@ -66,27 +66,27 @@ DialogView {
             }
 
             TabButton {
-                text: qsTr("Gamut Mapping 1")
+                text: qsTr("Відображення гамуту 1")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Gamut Mapping 2")
+                text: qsTr("Відображення гамуту 2")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Tone-mapping 1")
+                text: qsTr("Тонування 1")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Tone-mapping 2")
+                text: qsTr("Тонування 2")
                 focusPolicy: Qt.NoFocus
             }
 
            TabButton {
-                text: qsTr("Tone-mapping 3")
+                text: qsTr("Тонування 3")
                 focusPolicy: Qt.NoFocus
             }
         }
@@ -115,25 +115,25 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Gamut Mapping Function:")
+                        text: qsTr("Функція відображення гамуту:")
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
                         firstInFocusChain: true
-                        model: [qsTr("Clip"), qsTr("Perceptual"), qsTr("Soft Clip"), qsTr("Relative"), qsTr("Saturation"), qsTr("Absolute"), qsTr("Desaturate"), qsTr("Darken"), qsTr("Highlight"), qsTr("Linear")]
+                        model: [qsTr("Clip"), qsTr("Перцептивний"), qsTr("М'яке обрізання"), qsTr("Відносний"), qsTr("Насиченість"), qsTr("Абсолютний"), qsTr("Знебарвлення"), qsTr("Затемнення"), qsTr("Світлі тони"), qsTr("Лінійний")]
                         currentIndex: Chiaki.settings.placeboGamutMappingFunction
                         onActivated: index => Chiaki.settings.placeboGamutMappingFunction = index
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Perceptual)")
+                        text: qsTr("(Перцептивний)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Perceptual Deadzone:")
+                        text: qsTr("Перцептивна мертва зона:")
                         visible: Chiaki.settings.placeboGamutMappingFunction == PlaceboColorMappingDialog.GamutMappingFunction.Perceptual
                     }
 
@@ -164,7 +164,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Perceptual Strength:")
+                        text: qsTr("Перцептивна сила:")
                         visible: Chiaki.settings.placeboGamutMappingFunction == PlaceboColorMappingDialog.GamutMappingFunction.Perceptual
                     }
 
@@ -196,7 +196,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Colorimetric Gamma:")
+                        text: qsTr("Колориметрична гамма:")
                         visible: Chiaki.settings.placeboGamutMappingFunction == PlaceboColorMappingDialog.GamutMappingFunction.Relative || Chiaki.settings.placeboGamutMappingFunction == PlaceboColorMappingDialog.GamutMappingFunction.Absolute || Chiaki.settings.placeboGamutMappingFunction == PlaceboColorMappingDialog.GamutMappingFunction.Darken
                     }
 
@@ -227,7 +227,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Soft Clip Knee:")
+                        text: qsTr("Коліно м'якого обрізання:")
                         visible: Chiaki.settings.placeboGamutMappingFunction == PlaceboColorMappingDialog.GamutMappingFunction.Perceptual || Chiaki.settings.placeboGamutMappingFunction == PlaceboColorMappingDialog.GamutMappingFunction.SoftClip
                     }
 
@@ -258,7 +258,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Soft Clip Desaturation:")
+                        text: qsTr("Знебарвлення м'якого обрізання:")
                         visible: Chiaki.settings.placeboGamutMappingFunction == PlaceboColorMappingDialog.GamutMappingFunction.SoftClip
                     }
 
@@ -387,34 +387,34 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("LUT 3D Tricubic Enabled:")
+                        text: qsTr("Трикубічна 3D LUT:")
                     }
 
                     C.CheckBox {
-                        text: qsTr("Enable Tricubic Interpolation for 3DLUTs")
+                        text: qsTr("Увімкнути трикубічну інтерполяцію для 3D LUT")
                         checked: Chiaki.settings.placeboGamutMappingLut3dTricubicEnabled
                         onToggled: Chiaki.settings.placeboGamutMappingLut3dTricubicEnabled = checked
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Unchecked)")
+                        text: qsTr("(Вимкнено)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Gamut Expansion Enabled:")
+                        text: qsTr("Розширення гамуту:")
                     }
 
                     C.CheckBox {
-                        text: qsTr("Enable Gamut Expansion")
+                        text: qsTr("Увімкнути розширення гамуту")
                         checked: Chiaki.settings.placeboGamutMappingGamutExpansionEnabled
                         onToggled: Chiaki.settings.placeboGamutMappingGamutExpansionEnabled = checked
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Unchecked)")
+                        text: qsTr("(Вимкнено)")
                     }
                 }
             }
@@ -433,13 +433,13 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Tone-mapping Function:")
+                        text: qsTr("Функція тонування:")
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
                         firstInFocusChain: true
-                        model: [qsTr("Clip"), qsTr("Spline"), qsTr("St2094-40"), qsTr("St-2094-10"), qsTr("Bt2390"), qsTr("Bt2446a"), qsTr("Reinhard"), qsTr("Mobius"), qsTr("Hable"), qsTr("Gamma"), qsTr("Linear"), qsTr("Linear Light")]
+                        model: [qsTr("Clip"), qsTr("Spline"), qsTr("St2094-40"), qsTr("St-2094-10"), qsTr("Bt2390"), qsTr("Bt2446a"), qsTr("Reinhard"), qsTr("Mobius"), qsTr("Hable"), qsTr("Гамма"), qsTr("Лінійний"), qsTr("Лінійне світло")]
                         currentIndex: Chiaki.settings.placeboToneMappingFunction
                         onActivated: index => Chiaki.settings.placeboToneMappingFunction = index
                     }
@@ -451,7 +451,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Knee Adaptation:")
+                        text: qsTr("Адаптація коліна:")
                         visible: Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Spline || Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.St209440 || Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.St209410
                     }
 
@@ -483,7 +483,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Knee Minimum:")
+                        text: qsTr("Мінімум коліна:")
                         visible: kneeadaptation.visible
                     }
 
@@ -514,7 +514,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Knee Maximum:")
+                        text: qsTr("Максимум коліна:")
                         visible: kneeadaptation.visible
                     }
 
@@ -545,7 +545,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Knee Default:")
+                        text: qsTr("Коліно за замовчуванням:")
                     }
 
                     C.Slider {
@@ -573,7 +573,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Knee Offset:")
+                        text: qsTr("Зсув коліна:")
                         visible: Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Bt2390
                     }
 
@@ -618,7 +618,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Slope Tuning:")
+                        text: qsTr("Налаштування нахилу:")
                         visible: Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Spline
                     }
 
@@ -650,7 +650,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Slope Offset:")
+                        text: qsTr("Зсув нахилу:")
                         visible: Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Spline
                     }
 
@@ -681,7 +681,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Spline Contrast:")
+                        text: qsTr("Контраст сплайна:")
                         visible: Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Spline
                     }
 
@@ -712,7 +712,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Reinhard Contrast:")
+                        text: qsTr("Контраст Reinhard:")
                         visible: Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Reinhard
                     }
 
@@ -743,7 +743,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Linear Knee:")
+                        text: qsTr("Лінійне коліно:")
                         visible: Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Mobius || Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Gamma
                     }
 
@@ -774,7 +774,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Exposure:")
+                        text: qsTr("Експозиція:")
                         visible: Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.Linear || Chiaki.settings.placeboToneMappingFunction == PlaceboColorMappingDialog.ToneMappingFunction.LinearLight
                     }
 
@@ -819,41 +819,41 @@ DialogView {
 
                    Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Inverse Tone-mapping Enabled:")
+                        text: qsTr("Зворотне тонування:")
                     }
 
                     C.CheckBox {
-                        text: qsTr("Enable Inverse Tone-mapping")
+                        text: qsTr("Увімкнути зворотне тонування")
                         checked: Chiaki.settings.placeboToneMappingInverseToneMappingEnabled
                         onToggled: Chiaki.settings.placeboToneMappingInverseToneMappingEnabled = checked
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Unchecked)")
+                        text: qsTr("(Вимкнено)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Tone-mapping Metadata:")
+                        text: qsTr("Метадані тонування:")
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
                         firstInFocusChain: true
-                        model: [qsTr("Any"), qsTr("None"), qsTr("HDR10"), qsTr("HDR10 Plus"), qsTr("Cie_y")]
+                        model: [qsTr("Будь-який"), qsTr("Немає"), qsTr("HDR10"), qsTr("HDR10 Plus"), qsTr("Cie_y")]
                         currentIndex: Chiaki.settings.placeboToneMappingMetadata
                         onActivated: index => Chiaki.settings.placeboToneMappingMetadata = index
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Any)")
+                        text: qsTr("(Будь-який)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Tone LUT Size:")
+                        text: qsTr("Розмір LUT тонування:")
                     }
 
                     C.Slider {
@@ -881,7 +881,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Contrast Recovery:")
+                        text: qsTr("Відновлення контрасту:")
                     }
 
                     C.Slider {
@@ -909,7 +909,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Contrast Smoothness:")
+                        text: qsTr("Плавність контрасту:")
                     }
 
                     C.Slider {

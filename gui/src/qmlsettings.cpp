@@ -1,5 +1,6 @@
 #include "qmlsettings.h"
 #include "sessionlog.h"
+#include "anyplayinput.h"
 
 #include <QSet>
 #include <QFutureWatcher>
@@ -2116,9 +2117,9 @@ void QmlSettings::exportSettings()
     QString profile = settings->GetCurrentProfile();
     if(profile.isEmpty())
         profile = "Default";
-    QString fileName = QFileDialog::getSaveFileName(QApplication::focusWidget(), tr("Export %1 Profile To File").arg(profile),
+    QString fileName = QFileDialog::getSaveFileName(QApplication::focusWidget(), tr("Експортувати профіль %1 у файл").arg(profile),
                                                     QStandardPaths::writableLocation(QStandardPaths::DesktopLocation) + "/chiaki-ng-" + profile,
-                                                    tr("Settings files (*.ini)"),
+                                                    tr("Файли налаштувань (*.ini)"),
                                                     nullptr,
                                                     QFileDialog::DontUseNativeDialog | QFileDialog::DontConfirmOverwrite);
     if(fileName.isEmpty())
@@ -2128,9 +2129,9 @@ void QmlSettings::exportSettings()
 
 void QmlSettings::importSettings()
 {
-    QString fileName = QFileDialog::getOpenFileName(QApplication::focusWidget(), tr("Import Profile From File"),
+    QString fileName = QFileDialog::getOpenFileName(QApplication::focusWidget(), tr("Імпортувати профіль з файлу"),
                                                     QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
-                                                    tr("Settings files (*.ini)"),
+                                                    tr("Файли налаштувань (*.ini)"),
                                                     nullptr,
                                                     QFileDialog::DontUseNativeDialog);
     if(fileName.isEmpty())
@@ -2141,7 +2142,7 @@ void QmlSettings::importSettings()
 
 QString QmlSettings::chooseSteamBasePath()
 {
-    QString fileName = QFileDialog::getExistingDirectory(QApplication::focusWidget(), tr("Choose Steam Base Path"),
+    QString fileName = QFileDialog::getExistingDirectory(QApplication::focusWidget(), tr("Виберіть папку Steam"),
                                                     QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
                                                     QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks | QFileDialog::DontUseNativeDialog);
     printf("Chosen filename: %s", fileName.toUtf8().constData());
@@ -2150,9 +2151,9 @@ QString QmlSettings::chooseSteamBasePath()
 
 void QmlSettings::exportPlaceboSettings()
 {
-    QString fileName = QFileDialog::getSaveFileName(QApplication::focusWidget(), tr("Export Placebo Renderer Settings To File"),
+    QString fileName = QFileDialog::getSaveFileName(QApplication::focusWidget(), tr("Експортувати налаштування рендерера Placebo у файл"),
                                                     QStandardPaths::writableLocation(QStandardPaths::DesktopLocation) + "/chiaki-ng-placebo",
-                                                    tr("Settings files (*.ini)"),
+                                                    tr("Файли налаштувань (*.ini)"),
                                                     nullptr,
                                                     QFileDialog::DontUseNativeDialog | QFileDialog::DontConfirmOverwrite);
     if(fileName.isEmpty())
@@ -2162,13 +2163,73 @@ void QmlSettings::exportPlaceboSettings()
 
 void QmlSettings::importPlaceboSettings()
 {
-    QString fileName = QFileDialog::getOpenFileName(QApplication::focusWidget(), tr("Import Placebo Renderer Settings From File"),
+    QString fileName = QFileDialog::getOpenFileName(QApplication::focusWidget(), tr("Імпортувати налаштування рендерера Placebo з файлу"),
                                                     QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
-                                                    tr("Settings files (*.ini)"),
+                                                    tr("Файли налаштувань (*.ini)"),
                                                     nullptr,
                                                     QFileDialog::DontUseNativeDialog);
     if(fileName.isEmpty())
         return;
     settings->ImportPlaceboSettings(std::move(fileName));;
     refreshAllPlaceboKeys();
+}
+
+// ── AnyPlay controls editor ──
+QVariantList QmlSettings::anyplayProfiles() const
+{
+    return AnyPlayInput::ProfilesForEditor();
+}
+
+QString QmlSettings::anyplayKeyName(int key, int modifiers, const QString &text) const
+{
+    return AnyPlayInput::KeyNameFromQml(key, modifiers, text);
+}
+
+QString QmlSettings::anyplayMouseName(int button) const
+{
+    return AnyPlayInput::MouseButtonName(static_cast<Qt::MouseButton>(button));
+}
+
+QString QmlSettings::anyplayDisplayName(const QString &key) const
+{
+    return AnyPlayInput::DisplayName(key);
+}
+
+void QmlSettings::setAnyplayKey(const QString &profile, const QString &id, const QString &key)
+{
+    if (key.isEmpty())
+        return;
+    // A key does one thing per mode: whoever had it before gets this action's old key (a swap).
+    // Shared keys ("global") clash with every mode, and every mode clashes with the shared keys.
+    const QVariantList profiles = AnyPlayInput::ProfilesForEditor();
+    QString old_key;
+    for (const QVariant &p : profiles) {
+        const QVariantMap pm = p.toMap();
+        if (pm.value("id").toString() != profile)
+            continue;
+        for (const QVariant &b : pm.value("bindings").toList())
+            if (b.toMap().value("id").toString() == id)
+                old_key = b.toMap().value("key").toString();
+    }
+    if (old_key == key)
+        return;
+    for (const QVariant &p : profiles) {
+        const QVariantMap pm = p.toMap();
+        const QString pid = pm.value("id").toString();
+        const bool clashes = pid == profile || pid == QLatin1String("global") || profile == QLatin1String("global");
+        if (!clashes)
+            continue;
+        for (const QVariant &b : pm.value("bindings").toList()) {
+            const QVariantMap bm = b.toMap();
+            if (bm.value("key").toString().compare(key, Qt::CaseInsensitive) == 0
+                && !(pid == profile && bm.value("id").toString() == id))
+                AnyPlayInput::SetKeyOverride(pid, bm.value("id").toString(), old_key);
+        }
+    }
+    AnyPlayInput::SetKeyOverride(profile, id, key);
+}
+
+void QmlSettings::resetAnyplayKeys()
+{
+    AnyPlayInput::ResetKeyOverrides();
 }

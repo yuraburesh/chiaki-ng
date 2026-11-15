@@ -14,11 +14,11 @@ Pane {
         {
             root.initialAsk = true;
             if(Chiaki.settings.addSteamShortcutAsk && (typeof Chiaki.createSteamShortcut === "function"))
-                root.showRemindDialog(qsTr("Official Steam artwork + controller layout"), qsTr("Would you like to either create a new non-Steam game for chiaki-ng\nor update an existing non-Steam game with the official artwork and controller layout?") + "\n\n" + qsTr("(Note: If you select no now and want to do this later, click the button or press R3 from the main menu.)"), false, () => root.showSteamShortcutDialog(true));
+                root.showRemindDialog(qsTr("Офіційне оформлення Steam + розкладка геймпада"), qsTr("Створити нову гру поза Steam для AnyPlay\nабо оновити наявну офіційним оформленням і розкладкою геймпада?") + "\n\n" + qsTr("(Якщо зараз відмовитеся, зробити це можна пізніше кнопкою або R3 у головному меню.)"), false, () => root.showSteamShortcutDialog(true));
             else if(Chiaki.settings.remotePlayAsk)
             {
                 if(!Chiaki.settings.psnRefreshToken || !Chiaki.settings.psnAuthToken || !Chiaki.settings.psnAuthTokenExpiry || !Chiaki.settings.psnAccountId)
-                    root.showRemindDialog(qsTr("Remote Play via PSN"), qsTr("Would you like to connect to PSN?\nThis enables:\n- Automatic registration\n- Playing outside of your home network without port forwarding?") + "\n\n" + qsTr("(Note: If you select no now and want to do this later, go to the Config section of the settings.)"), true, () => root.showPSNTokenDialog(false));
+                    root.showRemindDialog(qsTr("Remote Play через PSN"), qsTr("Підключитися до PSN?\nЦе дає:\n- автоматичну прив'язку\n- гру не з домашньої мережі без перенаправлення портів") + "\n\n" + qsTr("(Якщо зараз відмовитеся, зробити це можна пізніше в розділі «Конфігурація» налаштувань.)"), true, () => root.showPSNTokenDialog(false));
                 else
                     Chiaki.settings.remotePlayAsk = false;
             }
@@ -44,7 +44,7 @@ Pane {
     Keys.onReturnPressed: if (hostsView.currentItem) hostsView.currentItem.connectToHost()
     Keys.onYesPressed: if (hostsView.currentItem) hostsView.currentItem.wakeUpHost()
     Keys.onNoPressed: if (hostsView.currentItem) hostsView.currentItem.deleteHost()
-    Keys.onEscapePressed: root.showConfirmDialog(qsTr("Quit"), qsTr("Are you sure you want to quit?"), () => Qt.quit())
+    Keys.onEscapePressed: root.showConfirmDialog(qsTr("Вийти"), qsTr("Точно вийти?"), () => Qt.quit())
     Keys.onPressed: (event) => {
         if (event.modifiers)
             return;
@@ -101,7 +101,7 @@ Pane {
                 Layout.fillHeight: true
                 Layout.preferredWidth: 350
                 flat: true
-                text: "Create Steam Shortcut"
+                text: "Створити ярлик у Steam"
                 focusPolicy: Qt.NoFocus
                 onClicked: root.showSteamShortcutDialog(false)
                 Material.roundedScale: Material.SmallScale
@@ -123,7 +123,7 @@ Pane {
                 Layout.fillHeight: true
                 Layout.preferredWidth: 400
                 flat: true
-                text: "Refresh PSN Hosts"
+                text: "Оновити консолі PSN"
                 icon.source: "qrc:/icons/r1.svg"
                 focusPolicy: Qt.NoFocus
                 onClicked: Chiaki.refreshPsnToken();
@@ -144,7 +144,7 @@ Pane {
                 Layout.fillHeight: true
                 Layout.preferredWidth: 300
                 flat: true
-                text: "Add Manual Host"
+                text: "Додати консоль вручну"
                 focusPolicy: Qt.NoFocus
                 onClicked: root.showManualHostDialog()
                 Material.roundedScale: Material.SmallScale
@@ -227,10 +227,10 @@ Pane {
 
             function deleteHost() {
                 if (modelData.manual)
-                    root.showConfirmDialog(qsTr("Delete Console"), qsTr("Are you sure you want to delete this console?"), () => {Chiaki.deleteHost(index)});
+                    root.showConfirmDialog(qsTr("Видалити консоль"), qsTr("Точно видалити цю консоль?"), () => {Chiaki.deleteHost(index)});
                         
                 else if (modelData.discovered && !modelData.registered)
-                    root.showConfirmDialog(qsTr("Hide Console"), qsTr("Are you sure you want to hide this console?") + "\n\n" + qsTr("Note: You can unhide from the Consoles section of the Settings under Hidden Consoles"), () => Chiaki.hideHost(modelData.mac, modelData.name));
+                    root.showConfirmDialog(qsTr("Сховати консоль"), qsTr("Точно сховати цю консоль?") + "\n\n" + qsTr("Показати знову можна в налаштуваннях: «Консолі» → «Приховані консолі»"), () => Chiaki.hideHost(modelData.mac, modelData.name));
 
             }
 
@@ -263,15 +263,15 @@ Pane {
                         if (modelData.name)
                             t += modelData.name + "\n";
                         if (modelData.address)
-                            t += qsTr("Address: %1").arg(Chiaki.settings.streamerMode ? "hidden" : modelData.address);
+                            t += qsTr("Адреса: %1").arg(Chiaki.settings.streamerMode ? "hidden" : modelData.address);
                         if (modelData.mac)
-                            t += "\n" + qsTr("ID: %1 (%2)").arg(Chiaki.settings.streamerMode ? "hidden" : modelData.mac).arg(modelData.registered ? qsTr("registered") : qsTr("unregistered"));
+                            t += "\n" + qsTr("ID: %1 (%2)").arg(Chiaki.settings.streamerMode ? "hidden" : modelData.mac).arg(modelData.registered ? qsTr("прив'язана") : qsTr("не прив'язана"));
                         if (modelData.duid)
                         {
                             if(modelData.discovered)
-                                t += "\n" + qsTr("Automatic Registration Available");
+                                t += "\n" + qsTr("Доступна автоматична реєстрація");
                             else
-                                t += "\n" + qsTr("Remote Connection via PSN");
+                                t += "\n" + qsTr("Віддалене підключення через PSN");
                         } 
                         else
                         {
@@ -279,12 +279,12 @@ Pane {
                             if(modelData.discovered)
                             {
                                 if(modelData.manual)
-                                    t += qsTr("discovered + manual")
+                                    t += qsTr("знайдені + вручну")
                                 else
-                                    t += qsTr("discovered");
+                                    t += qsTr("знайдені");
                             }
                             else
-                                t += qsTr("manual");
+                                t += qsTr("вручну");
                         }
                         return t;
                     }
@@ -296,13 +296,13 @@ Pane {
                         let t = "";
                         if(modelData.duid)
                             return t;
-                        t += qsTr("State: %1").arg(modelData.state);
+                        t += qsTr("Стан: %1").arg(modelData.state);
                         if(!modelData.discovered)
                             return t;
                         if (modelData.app)
-                            t += "\n" + qsTr("App: %1").arg(modelData.app);
+                            t += "\n" + qsTr("Програма: %1").arg(modelData.app);
                         if (modelData.titleId)
-                            t += "\n" + qsTr("Title ID: %1").arg(modelData.titleId);
+                            t += "\n" + qsTr("ID гри: %1").arg(modelData.titleId);
                         return t;
                     }
                 }
@@ -315,7 +315,7 @@ Pane {
 
                     Button {
                         Layout.alignment: Qt.AlignCenter
-                        text: modelData.manual ? qsTr("Delete") : qsTr("Hide")
+                        text: modelData.manual ? qsTr("Видалити") : qsTr("Сховати")
                         flat: true
                         padding: 20
                         leftPadding: delegate.highlighted ? 50 : undefined
@@ -340,7 +340,7 @@ Pane {
 
                     Button {
                         Layout.alignment: Qt.AlignCenter
-                        text: qsTr("Wake Up")
+                        text: qsTr("Розбудити")
                         flat: true
                         padding: 20
                         leftPadding: delegate.highlighted ? 50 : undefined
@@ -365,7 +365,7 @@ Pane {
 
                     Button {
                         Layout.alignment: Qt.AlignCenter
-                        text: qsTr("Update Console Pin")
+                        text: qsTr("Оновити PIN консолі")
                         flat: true
                         padding: 20
                         leftPadding: delegate.highlighted ? 50 : undefined

@@ -524,6 +524,13 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 	chiaki_controller_state_set_idle(&keyboard_state);
 	chiaki_controller_state_set_idle(&mouse_state);
 	chiaki_controller_state_set_idle(&touch_state);
+	if(keyboard_controller_enabled)
+	{
+		anyplay = new AnyPlayInput(this);
+		anyplay->Load();
+		connect(anyplay, &AnyPlayInput::Changed, this, &StreamSession::SendFeedbackState);
+		connect(anyplay, &AnyPlayInput::ProfileChanged, this, &StreamSession::ControlProfileChanged);
+	}
 	touch_tracker=QMap<int, uint8_t>();
 	mouse_touch_id=-1;
 	dpad_touch_id =-1;
@@ -554,7 +561,7 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		chiaki_connect_info.holepunch_session = holepunch_session;
         QByteArray psn_account_id = QByteArray::fromBase64(connect_info.psn_account_id.toUtf8());
         if (psn_account_id.size() != CHIAKI_PSN_ACCOUNT_ID_SIZE) {
-            throw ChiakiException((tr("Invalid Account-ID"), tr("The PSN Account-ID must be exactly %1 bytes encoded as base64.")).arg(CHIAKI_PSN_ACCOUNT_ID_SIZE));
+            throw ChiakiException((tr("Неправильний ID акаунта"), tr("ID акаунта PSN має бути рівно %1 байт у base64.")).arg(CHIAKI_PSN_ACCOUNT_ID_SIZE));
         }
         memcpy(chiaki_connect_info.psn_account_id, psn_account_id.constData(), CHIAKI_PSN_ACCOUNT_ID_SIZE);
 	}
@@ -925,7 +932,7 @@ bool MouseKeyForButton(Qt::MouseButton button, MouseKey *key)
 
 bool StreamSession::IsMouseInputMapped(MouseKey mouse_key) const
 {
-	return keyboard_controller_enabled && key_map.contains(static_cast<Qt::Key>(static_cast<int>(mouse_key)));
+	return !anyplay && keyboard_controller_enabled && key_map.contains(static_cast<Qt::Key>(static_cast<int>(mouse_key)));
 }
 
 // If the mouse input is mapped to a controller button, presses/releases that button and returns true
@@ -946,6 +953,12 @@ bool StreamSession::HandleMouseWheelEvent(QWheelEvent *event)
 	if(event->inverted())
 		delta = -delta;
 	const MouseKey mouse_key = delta > 0 ? MouseKey::WheelUp : MouseKey::WheelDown;
+	if(anyplay)
+	{
+		if(event->phase() == Qt::ScrollMomentum)
+			return true;
+		return anyplay->Tap(delta > 0 ? QStringLiteral("WheelUp") : QStringLiteral("WheelDown"));
+	}
 	if(!IsMouseInputMapped(mouse_key))
 		return false;
 	// trackpad inertia would keep pressing the button after the fingers left
@@ -960,6 +973,8 @@ bool StreamSession::HandleMouseWheelEvent(QWheelEvent *event)
 
 void StreamSession::HandleMousePressEvent(QMouseEvent *event)
 {
+	if(anyplay && anyplay->HandleInput(AnyPlayInput::MouseButtonName(event->button()), true))
+		return;
 	// a mouse button mapped to a controller button takes priority over the touchpad behavior
 	MouseKey mouse_key = MouseKey::Left;
 	if(MouseKeyForButton(event->button(), &mouse_key) && HandleMappedMouseInput(mouse_key, true))
@@ -974,6 +989,8 @@ void StreamSession::HandleMousePressEvent(QMouseEvent *event)
 
 void StreamSession::HandleMouseReleaseEvent(QMouseEvent *event)
 {
+	if(anyplay && anyplay->HandleInput(AnyPlayInput::MouseButtonName(event->button()), false))
+		return;
 	MouseKey mouse_key = MouseKey::Left;
 	if(MouseKeyForButton(event->button(), &mouse_key) && HandleMappedMouseInput(mouse_key, false))
 		return;
@@ -1108,6 +1125,24 @@ void StreamSession::HandleKeyboardEvent(QKeyEvent *event)
 {
 	if(!keyboard_controller_enabled)
 		return;
+	if(anyplay)
+	{
+		if(event->isAutoRepeat())
+			return;
+		const QString name = AnyPlayInput::KeyName(event);
+		const bool press = event->type() == QEvent::Type::KeyPress;
+#ifdef Q_OS_MACOS
+		// macOS reports Caps Lock as a toggle: "press" when it turns on, "release" when it turns off
+		if(name == QLatin1String("CapsLock"))
+		{
+			anyplay->HandleInput(name, true);
+			anyplay->HandleInput(name, false);
+			return;
+		}
+#endif
+		anyplay->HandleInput(name, press);
+		return;
+	}
 	Qt::Key key = Qt::Key(event->key());
 	if(!key_map.contains(key))
 	{
@@ -1462,6 +1497,8 @@ void StreamSession::DpadSendFeedbackState()
 #if CHIAKI_GUI_ENABLE_STEAMDECK_NATIVE
 	chiaki_controller_state_or(&state, &state, &sdeck_state);
 #endif
+	if(anyplay)
+		anyplay->ApplyTo(&keyboard_state);
 	chiaki_controller_state_or(&state, &state, &keyboard_state);
 	chiaki_controller_state_or(&state, &state, &touch_state);
 	chiaki_controller_state_or(&state, &state, &mouse_state);
@@ -1519,6 +1556,8 @@ void StreamSession::SendFeedbackState()
 #if CHIAKI_GUI_ENABLE_STEAMDECK_NATIVE
 	chiaki_controller_state_or(&state, &state, &sdeck_state);
 #endif
+	if(anyplay)
+		anyplay->ApplyTo(&keyboard_state);
 	chiaki_controller_state_or(&state, &state, &keyboard_state);
 	chiaki_controller_state_or(&state, &state, &touch_state);
 	chiaki_controller_state_or(&state, &state, &mouse_state);

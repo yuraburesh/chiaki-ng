@@ -12,8 +12,8 @@ import "controls" as C
 DialogView {
     id: dialog
     property string options_url: ""
-    title: qsTr("Placebo Renderer Settings")
-    header: qsTr("* Defaults in () to right of value or marked with (Default)")
+    title: qsTr("Налаштування рендерера Placebo")
+    header: qsTr("* Стандартні значення вказані в дужках праворуч або позначені «(За замовчуванням)»")
     buttonVisible: false
     Keys.onPressed: (event) => {
         if (event.modifiers)
@@ -41,42 +41,42 @@ DialogView {
             }
 
             TabButton {
-                text: qsTr("Config")
+                text: qsTr("Конфігурація")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Scaling")
+                text: qsTr("Масштабування")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Deinterlace")
+                text: qsTr("Деінтерлейсинг")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Debanding")
+                text: qsTr("Дебандинг")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Sigmoidization")
+                text: qsTr("Сигмоїдизація")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Color")
+                text: qsTr("Колір")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Peak Detection")
+                text: qsTr("Визначення піку")
                 focusPolicy: Qt.NoFocus
             }
 
             TabButton {
-                text: qsTr("Color Mapping")
+                text: qsTr("Відображення кольорів")
                 focusPolicy: Qt.NoFocus
             }
         }
@@ -104,13 +104,13 @@ DialogView {
                     columnSpacing: 20
 
                     Label {
-                        text: qsTr("Libplacebo Renderer Options Details")
+                        text: qsTr("Докладно про параметри рендерера libplacebo")
                         visible: !options_url
                     }
 
                     C.Button {
                         id: openwebpage
-                        text: qsTr("Open Documentation")
+                        text: qsTr("Відкрити документацію")
                         onClicked: {
                             options_url = Chiaki.openPlaceboOptionsLink()
                         }
@@ -118,7 +118,7 @@ DialogView {
                     }
 
                     Label {
-                        text: qsTr("Open Documentation in Web Browser with copied URL")
+                        text: qsTr("Відкрити документацію в браузері (адресу скопійовано)")
                         visible: options_url
                     }
 
@@ -132,7 +132,7 @@ DialogView {
 
                     C.Button {
                         id: copyUrl
-                        text: qsTr("Click to Re-Copy URL")
+                        text: qsTr("Натисніть, щоб скопіювати адресу ще раз")
                         onClicked: {
                             openurl.selectAll()
                             openurl.copy()
@@ -141,12 +141,12 @@ DialogView {
                     }
 
                     Label {
-                        text: qsTr("Export Render Settings to File")
+                        text: qsTr("Експортувати налаштування рендерингу у файл")
                     }
 
                     C.Button {
                         id: exportButton
-                        text: qsTr("Export")
+                        text: qsTr("Експорт")
                         onClicked: {
                             Chiaki.settings.exportPlaceboSettings();
                         }
@@ -156,13 +156,13 @@ DialogView {
                     }
 
                     Label {
-                        text: qsTr("Import Render Settings from File")
+                        text: qsTr("Імпортувати налаштування рендерингу з файлу")
                     }
 
                     C.Button {
                         id: importButton
                         lastInFocusChain: true
-                        text: qsTr("Import")
+                        text: qsTr("Імпорт")
                         onClicked: {
                             Chiaki.settings.importPlaceboSettings();
                         }
@@ -187,13 +187,13 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Upscaler:")
+                        text: qsTr("Апскейлер:")
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
                         firstInFocusChain: true
-                        model: [qsTr("Custom"), qsTr("Nearest"), qsTr("Bilinear"), qsTr("Oversample"), qsTr("Bicubic"), qsTr("Gaussian"), qsTr("Catmull Rom"), qsTr("Lanczos"), qsTr("EwaLanczos"), qsTr("EwaLanczosSharp"), qsTr("EwaLanczosSharpest"), qsTr("FSR"), qsTr("FSRCNNX x2 8-0-4-1"), qsTr("FSRCNNX x2 16-0-4-1")]
+                        model: [qsTr("Власний"), qsTr("Найближчий"), qsTr("Bilinear"), qsTr("Oversample"), qsTr("Bicubic"), qsTr("Gaussian"), qsTr("Catmull Rom"), qsTr("Lanczos"), qsTr("EwaLanczos"), qsTr("EwaLanczosSharp"), qsTr("EwaLanczosSharpest"), qsTr("FSR"), qsTr("FSRCNNX x2 8-0-4-1"), qsTr("FSRCNNX x2 16-0-4-1")]
                         currentIndex: Chiaki.settings.placeboUpscaler
                         onActivated: index => Chiaki.settings.placeboUpscaler = index
                     }
@@ -205,31 +205,31 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Plane Upscaler:")
+                        text: qsTr("Апскейлер площини:")
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
                         firstInFocusChain: true
-                        model: [qsTr("Chosen Upscaler"), qsTr("Nearest"), qsTr("Bilinear"), qsTr("Oversample"), qsTr("Bicubic"), qsTr("Gaussian"), qsTr("Catmull Rom"), qsTr("Lanczos"), qsTr("EwaLanczos"), qsTr("EwaLanczosSharp"), qsTr("EwaLanczosSharpest")]
+                        model: [qsTr("Вибраний апскейлер"), qsTr("Найближчий"), qsTr("Bilinear"), qsTr("Oversample"), qsTr("Bicubic"), qsTr("Gaussian"), qsTr("Catmull Rom"), qsTr("Lanczos"), qsTr("EwaLanczos"), qsTr("EwaLanczosSharp"), qsTr("EwaLanczosSharpest")]
                         currentIndex: Chiaki.settings.placeboPlaneUpscaler
                         onActivated: index => Chiaki.settings.placeboPlaneUpscaler = index
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Chosen Upscaler)")
+                        text: qsTr("(Вибраний апскейлер)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Downscaler:")
+                        text: qsTr("Даунскейлер:")
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
                         firstInFocusChain: true
-                        model: [qsTr("Custom"), qsTr("Box"), qsTr("Hermite"), qsTr("Bilinear"), qsTr("Bicubic"), qsTr("Gaussian"), qsTr("Catmull Rom"), qsTr("Mitchell"), qsTr("Lanczos")]
+                        model: [qsTr("Власний"), qsTr("Box"), qsTr("Hermite"), qsTr("Bilinear"), qsTr("Bicubic"), qsTr("Gaussian"), qsTr("Catmull Rom"), qsTr("Mitchell"), qsTr("Lanczos")]
                         currentIndex: Chiaki.settings.placeboDownscaler
                         onActivated: index => Chiaki.settings.placeboDownscaler = index
                     }
@@ -241,25 +241,25 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Plane Downscaler:")
+                        text: qsTr("Даунскейлер площини:")
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
                         firstInFocusChain: true
-                        model: [qsTr("Chosen Downscaler"), qsTr("Box"), qsTr("Hermite"), qsTr("Bilinear"), qsTr("Bicubic"), qsTr("Gaussian"), qsTr("Catmull Rom"), qsTr("Mitchell"), qsTr("Lanczos")]
+                        model: [qsTr("Вибраний даунскейлер"), qsTr("Box"), qsTr("Hermite"), qsTr("Bilinear"), qsTr("Bicubic"), qsTr("Gaussian"), qsTr("Catmull Rom"), qsTr("Mitchell"), qsTr("Lanczos")]
                         currentIndex: Chiaki.settings.placeboPlaneDownscaler
                         onActivated: index => Chiaki.settings.placeboPlaneDownscaler = index
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Chosen Downscaler)")
+                        text: qsTr("(Вибраний даунскейлер)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Anti-ringing Strength:")
+                        text: qsTr("Сила антиринґінгу:")
                     }
 
                     C.Slider {
@@ -301,7 +301,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Enable Deinterlace:")
+                        text: qsTr("Деінтерлейсинг:")
                     }
 
                     C.CheckBox {
@@ -311,18 +311,18 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(no)")
+                        text: qsTr("(ні)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Preset:")
+                        text: qsTr("Пресет:")
                         visible: Chiaki.settings.placeboDeinterlaceEnabled
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
-                        model: [qsTr("Default")]
+                        model: [qsTr("За замовчуванням")]
                         currentIndex: Chiaki.settings.placeboDeinterlacePreset
                         enabled: Chiaki.settings.placeboDeinterlaceEnabled
                         visible: Chiaki.settings.placeboDeinterlaceEnabled
@@ -331,13 +331,13 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Default)")
+                        text: qsTr("(За замовчуванням)")
                         visible: Chiaki.settings.placeboDeinterlaceEnabled
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Algorithm:")
+                        text: qsTr("Алгоритм:")
                         visible: Chiaki.settings.placeboDeinterlaceEnabled
                     }
 
@@ -358,7 +358,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Skip spatial check:")
+                        text: qsTr("Пропустити просторову перевірку:")
                         visible: Chiaki.settings.placeboDeinterlaceEnabled
                     }
 
@@ -372,7 +372,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(no)")
+                        text: qsTr("(ні)")
                         visible: Chiaki.settings.placeboDeinterlaceEnabled
                     }
                 }
@@ -392,11 +392,11 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Deband Enabled:")
+                        text: qsTr("Дебандинг:")
                     }
 
                     C.CheckBox {
-                        text: qsTr("Enable Debanding")
+                        text: qsTr("Увімкнути дебандинг")
                         checked: Chiaki.settings.placeboDebandEnabled
                         onToggled: Chiaki.settings.placeboDebandEnabled = checked
                     }
@@ -404,18 +404,18 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Checked)")
+                        text: qsTr("(Увімкнено)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Deband Preset:")
+                        text: qsTr("Пресет дебандингу:")
                         visible: Chiaki.settings.placeboDebandEnabled
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
-                        model: [qsTr("Custom"), qsTr("Default")]
+                        model: [qsTr("Власний"), qsTr("За замовчуванням")]
                         currentIndex: Chiaki.settings.placeboDebandPreset
                         onActivated: index => Chiaki.settings.placeboDebandPreset = index
                         visible: Chiaki.settings.placeboDebandEnabled
@@ -423,13 +423,13 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Custom)")
+                        text: qsTr("(Власний)")
                         visible: Chiaki.settings.placeboDebandEnabled
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Deband Iterations:")
+                        text: qsTr("Ітерації дебандингу:")
                         visible: Chiaki.settings.placeboDebandEnabled && (Chiaki.settings.placeboDebandPreset == 0)
                     }
 
@@ -460,7 +460,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Deband Threshold:")
+                        text: qsTr("Поріг дебандингу:")
                         visible: Chiaki.settings.placeboDebandEnabled && (Chiaki.settings.placeboDebandPreset == 0)
                     }
 
@@ -491,7 +491,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Deband Radius:")
+                        text: qsTr("Радіус дебандингу:")
                         visible: Chiaki.settings.placeboDebandEnabled && (Chiaki.settings.placeboDebandPreset == 0)
                     }
 
@@ -522,7 +522,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Deband Grain:")
+                        text: qsTr("Зерно дебандингу:")
                         visible: Chiaki.settings.placeboDebandEnabled && (Chiaki.settings.placeboDebandPreset == 0)
                     }
 
@@ -567,29 +567,29 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Sigmoidization Enabled:")
+                        text: qsTr("Сигмоїдизація:")
                     }
 
                     C.CheckBox {
-                        text: qsTr("Enable Sigmoidization")
+                        text: qsTr("Увімкнути сигмоїдизацію")
                         checked: Chiaki.settings.placeboSigmoidEnabled
                         onToggled: Chiaki.settings.placeboSigmoidEnabled = checked
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Checked)")
+                        text: qsTr("(Увімкнено)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Sigmoid Preset:")
+                        text: qsTr("Пресет сигмоїди:")
                         visible: Chiaki.settings.placeboSigmoidEnabled
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
-                        model: [qsTr("Custom"), qsTr("Default")]
+                        model: [qsTr("Власний"), qsTr("За замовчуванням")]
                         currentIndex: Chiaki.settings.placeboSigmoidPreset
                         onActivated: index => Chiaki.settings.placeboSigmoidPreset = index
                         visible: Chiaki.settings.placeboSigmoidEnabled
@@ -597,13 +597,13 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Custom)")
+                        text: qsTr("(Власний)")
                         visible: Chiaki.settings.placeboSigmoidEnabled
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Sigmoid Center:")
+                        text: qsTr("Центр сигмоїди:")
                         visible: Chiaki.settings.placeboSigmoidEnabled && (Chiaki.settings.placeboSigmoidPreset == 0)
                     }
 
@@ -634,7 +634,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Sigmoid Slope:")
+                        text: qsTr("Нахил сигмоїди:")
                         visible: Chiaki.settings.placeboSigmoidEnabled && (Chiaki.settings.placeboSigmoidPreset == 0)
                     }
 
@@ -679,29 +679,29 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Color Adjustment Enabled:")
+                        text: qsTr("Корекція кольору:")
                     }
 
                     C.CheckBox {
-                        text: qsTr("Enable Color Adjustment")
+                        text: qsTr("Увімкнути корекцію кольору")
                         checked: Chiaki.settings.placeboColorAdjustmentEnabled
                         onToggled: Chiaki.settings.placeboColorAdjustmentEnabled = checked
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Checked)")
+                        text: qsTr("(Увімкнено)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Color Adjustment Preset:")
+                        text: qsTr("Пресет корекції кольору:")
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
-                        model: [qsTr("Custom"), qsTr("Neutral")]
+                        model: [qsTr("Власний"), qsTr("Нейтральний")]
                         currentIndex: Chiaki.settings.placeboColorAdjustmentPreset
                         onActivated: index => Chiaki.settings.placeboColorAdjustmentPreset = index
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled
@@ -709,13 +709,13 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Custom)")
+                        text: qsTr("(Власний)")
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Brightness:")
+                        text: qsTr("Яскравість:")
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled && (Chiaki.settings.placeboColorAdjustmentPreset == 0)
                     }
 
@@ -746,7 +746,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Contrast:")
+                        text: qsTr("Контраст:")
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled && (Chiaki.settings.placeboColorAdjustmentPreset == 0)
                     }
 
@@ -777,7 +777,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Saturation:")
+                        text: qsTr("Насиченість:")
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled && (Chiaki.settings.placeboColorAdjustmentPreset == 0)
                     }
 
@@ -808,7 +808,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Hue:")
+                        text: qsTr("Відтінок:")
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled && (Chiaki.settings.placeboColorAdjustmentPreset == 0)
                     }
 
@@ -839,7 +839,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Gamma:")
+                        text: qsTr("Гамма:")
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled && (Chiaki.settings.placeboColorAdjustmentPreset == 0)
                     }
 
@@ -870,7 +870,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Temperature:")
+                        text: qsTr("Температура:")
                         visible: Chiaki.settings.placeboColorAdjustmentEnabled && (Chiaki.settings.placeboColorAdjustmentPreset == 0)
                     }
 
@@ -915,29 +915,29 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("HDR Peak Detection Enabled:")
+                        text: qsTr("Визначення піку HDR:")
                     }
 
                     C.CheckBox {
-                        text: qsTr("Enable HDR Peak Detection")
+                        text: qsTr("Увімкнути визначення піку HDR")
                         checked: Chiaki.settings.placeboPeakDetectionEnabled
                         onToggled: Chiaki.settings.placeboPeakDetectionEnabled = checked
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Checked)")
+                        text: qsTr("(Увімкнено)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Peak Detection Preset:")
+                        text: qsTr("Пресет визначення піку:")
                         visible: Chiaki.settings.placeboPeakDetectionEnabled
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
-                        model: [qsTr("Custom"), qsTr("Default"), qsTr("High Quality")]
+                        model: [qsTr("Власний"), qsTr("За замовчуванням"), qsTr("Висока якість")]
                         currentIndex: Chiaki.settings.placeboPeakDetectionPreset
                         onActivated: index => Chiaki.settings.placeboPeakDetectionPreset = index
                         visible: Chiaki.settings.placeboPeakDetectionEnabled
@@ -945,13 +945,13 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(High Quality)")
+                        text: qsTr("(Висока якість)")
                         visible: Chiaki.settings.placeboPeakDetectionEnabled
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Peak Smoothing Period:")
+                        text: qsTr("Період згладжування піку:")
                         visible: Chiaki.settings.placeboPeakDetectionEnabled && (Chiaki.settings.placeboPeakDetectionPreset == 0)
                     }
 
@@ -982,7 +982,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Scene Threshold Low:")
+                        text: qsTr("Нижній поріг сцени:")
                         visible: Chiaki.settings.placeboPeakDetectionEnabled && (Chiaki.settings.placeboPeakDetectionPreset == 0)
                     }
 
@@ -1013,7 +1013,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Scene Threshold High:")
+                        text: qsTr("Верхній поріг сцени:")
                         visible: Chiaki.settings.placeboPeakDetectionEnabled && (Chiaki.settings.placeboPeakDetectionPreset == 0)
                     }
 
@@ -1044,7 +1044,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Peak Percentile:")
+                        text: qsTr("Перцентиль піку:")
                         visible: Chiaki.settings.placeboPeakDetectionEnabled && (Chiaki.settings.placeboPeakDetectionPreset == 0)
                     }
 
@@ -1075,7 +1075,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Black Cutoff:")
+                        text: qsTr("Відсікання чорного:")
                         visible: Chiaki.settings.placeboPeakDetectionEnabled && (Chiaki.settings.placeboPeakDetectionPreset == 0)
                     }
 
@@ -1106,12 +1106,12 @@ DialogView {
 
                     Label {
                     Layout.alignment: Qt.AlignRight
-                    text: qsTr("Allow Delayed Peak:")
+                    text: qsTr("Дозволити відкладений пік:")
                     visible: Chiaki.settings.placeboPeakDetectionEnabled && (Chiaki.settings.placeboPeakDetectionPreset == 0)
                     }   
 
                     C.CheckBox {
-                        text: qsTr("Enable 1-Frame Delayed Peak")
+                        text: qsTr("Увімкнути пік із затримкою в 1 кадр")
                         checked: Chiaki.settings.placeboPeakDetectionAllowDelayedPeak
                         onToggled: Chiaki.settings.placeboPeakDetectionAllowDelayedPeak = checked
                         visible: Chiaki.settings.placeboPeakDetectionEnabled && (Chiaki.settings.placeboPeakDetectionPreset == 0)
@@ -1119,7 +1119,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Unchecked)")
+                        text: qsTr("(Вимкнено)")
                         visible: Chiaki.settings.placeboPeakDetectionEnabled && (Chiaki.settings.placeboPeakDetectionPreset == 0)
                     }
                 }
@@ -1139,29 +1139,29 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Color Mapping Enabled:")
+                        text: qsTr("Відображення кольорів:")
                     }
 
                     C.CheckBox {
-                        text: qsTr("Use Color Mapping Settings")
+                        text: qsTr("Використати налаштування відображення кольорів")
                         checked: Chiaki.settings.placeboColorMappingEnabled
                         onToggled: Chiaki.settings.placeboColorMappingEnabled = checked
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Checked)")
+                        text: qsTr("(Увімкнено)")
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Color Mapping Preset:")
+                        text: qsTr("Пресет відображення кольорів:")
                         visible: Chiaki.settings.placeboColorMappingEnabled
                     }
 
                     C.ComboBox {
                         Layout.preferredWidth: 400
-                        model: [qsTr("Custom"), qsTr("Default"), qsTr("High Quality")]
+                        model: [qsTr("Власний"), qsTr("За замовчуванням"), qsTr("Висока якість")]
                         currentIndex: Chiaki.settings.placeboColorMappingPreset
                         onActivated: index => Chiaki.settings.placeboColorMappingPreset = index
                         visible: Chiaki.settings.placeboColorMappingEnabled
@@ -1169,18 +1169,18 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(High Quality)")
+                        text: qsTr("(Висока якість)")
                         visible: Chiaki.settings.placeboColorMappingEnabled
                     }
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("Color Mapping Settings:")
+                        text: qsTr("Налаштування відображення кольорів:")
                         visible: Chiaki.settings.placeboColorMappingEnabled && Chiaki.settings.placeboColorMappingPreset == 0
                     }
 
                     C.Button {
-                        text: qsTr("Open")
+                        text: qsTr("Відкрити")
                         onClicked: root.showPlaceboColorMappingDialog()
                         visible: Chiaki.settings.placeboColorMappingEnabled && Chiaki.settings.placeboColorMappingPreset == 0
                         Material.roundedScale: Material.SmallScale

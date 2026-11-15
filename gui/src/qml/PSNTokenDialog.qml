@@ -14,11 +14,11 @@ DialogView {
     property bool closing: false
     title: {
         if(expired)
-            qsTr("Credentials Expired: Refresh PSN Remote Connection")
+            qsTr("Дані входу застаріли: оновіть віддалене підключення PSN")
         else
-            qsTr("Setup Automatic PSN Remote Connection")
+            qsTr("Налаштувати автоматичне віддалене підключення PSN")
     }
-    buttonText: qsTr("Setup")
+    buttonText: qsTr("Налаштувати")
     buttonEnabled: url.text.trim()
     buttonVisible: false
     onAccepted: {
@@ -94,7 +94,7 @@ DialogView {
                         Layout.fillHeight: true
                         Layout.preferredWidth: 350
                         flat: true
-                        text: "reload + clear cookies"
+                        text: "перезавантажити + очистити cookie"
                         Image {
                             anchors {
                                 left: parent.left
@@ -137,7 +137,7 @@ DialogView {
                             source: "qrc:/icons/r1.svg"
                         }
                         focusPolicy: Qt.NoFocus
-                        text: "Use external browser"
+                        text: "Відкрити у звичайному браузері"
                         onClicked: {
                             nativeTokenForm.visible = false;
                             psnTokenToolbar.visible = false;
@@ -189,7 +189,7 @@ DialogView {
                 columnSpacing: 20
                 Label {
                     id: nativeErrorHeader
-                    text: "Retrieving PSN account ID failed with error: "
+                    text: "Не вдалося отримати ID акаунта PSN, помилка: "
                     Layout.fillHeight: true
                     Layout.preferredWidth: 400
                     Layout.leftMargin: 20
@@ -204,7 +204,7 @@ DialogView {
 
                 Label {
                     id: retryButton
-                    text: "Retry process"
+                    text: "Повторити"
                     Layout.fillHeight: true
                     Layout.preferredWidth: 300
                     Layout.leftMargin: 20
@@ -212,7 +212,7 @@ DialogView {
                 C.Button {
                     firstInFocusChain: true
                     lastInFocusChain: true
-                    text: "Retry"
+                    text: "Ще раз"
                     onClicked: {
                         nativeErrorGrid.visible = false;
                         nativeErrorLabel.text = "";
@@ -303,7 +303,7 @@ DialogView {
             columnSpacing: 20
 
             Label {
-                text: qsTr("Open Web Browser with copied URL")
+                text: qsTr("Відкрити браузер (адресу скопійовано)")
                 visible: psnurl
             }
 
@@ -317,7 +317,7 @@ DialogView {
 
             C.Button {
                 id: copyUrl
-                text: qsTr("Click to Re-Copy URL")
+                text: qsTr("Натисніть, щоб скопіювати адресу ще раз")
                 onClicked: {
                     openurl.selectAll()
                     openurl.copy()
@@ -329,7 +329,7 @@ DialogView {
             }
 
             Label {
-                text: qsTr("Redirect URL from Web Browser")
+                text: qsTr("Адреса переадресації з браузера")
             }
 
             TextField {
@@ -352,7 +352,7 @@ DialogView {
                 KeyNavigation.right: pasteUrl
                 C.Button {
                     id: pasteUrl
-                    text: qsTr("Click to Paste URL")
+                    text: qsTr("Натисніть, щоб вставити адресу")
                     anchors {
                         left: parent.right
                         verticalCenter: parent.verticalCenter
@@ -378,7 +378,7 @@ DialogView {
                 parent: Overlay.overlay
                 x: Math.round((root.width - width) / 2)
                 y: Math.round((root.height - height) / 2)
-                title: qsTr("Create PSN Automatic Remote Connection Token")
+                title: qsTr("Створити токен автоматичного віддаленого підключення PSN")
                 modal: true
                 closePolicy: Popup.NoAutoClose
                 standardButtons: Dialog.Cancel

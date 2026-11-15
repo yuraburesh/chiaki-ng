@@ -21,7 +21,7 @@ Rectangle {
         if(!allowClose)
             return;
         view.textVisible = false;
-        infoLabel.text = qsTr("Cancelling connection...");
+        infoLabel.text = qsTr("Скасування підключення…");
         failTimer.start();
     }
 
@@ -44,7 +44,7 @@ Rectangle {
         anchors.centerIn: parent
         opacity: view.allowClose ? 1.0 : 0.0
         visible: opacity
-        text: qsTr("Waiting for console...")
+        text: qsTr("Очікування консолі…")
 
         Behavior on opacity { NumberAnimation { duration: 250 } }
     }
@@ -73,7 +73,7 @@ Rectangle {
             }
             opacity: textVisible ? 1.0: 0.0
             visible: opacity
-            text: qsTr("Press %1 to cancel connection").arg(Chiaki.controllers.length ? (root.controllerButton("circle").includes("deck") ? "B" : "Circle") : "escape or right-click")
+            text: qsTr("Натисніть %1, щоб скасувати підключення").arg(Chiaki.controllers.length ? (root.controllerButton("circle").includes("deck") ? "B" : "Circle") : "escape or right-click")
         }
     }
 
@@ -98,7 +98,7 @@ Rectangle {
 
         function onWakeupStartFailed() {
             view.textVisible = false;
-            infoLabel.text = qsTr("Timed out waiting for console. Exiting...");
+            infoLabel.text = qsTr("Консоль не відповіла вчасно. Вихід…");
             failTimer.start();
         }
     }

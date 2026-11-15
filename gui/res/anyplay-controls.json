@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "start": "foot",
+  "profiles": [
+    {
+      "id": "global",
+      "name": "У всіх режимах",
+      "bindings": [
+        {"id": "phone", "name": "Телефон / навігація вгору", "key": "Up", "btn": ["DPAD_UP"]},
+        {"id": "nav_down", "name": "Навігація вниз", "key": "Down", "btn": ["DPAD_DOWN"]},
+        {"id": "nav_left", "name": "Навігація вліво", "key": "Left", "btn": ["DPAD_LEFT"]},
+        {"id": "nav_right", "name": "Навігація вправо", "key": "Right", "btn": ["DPAD_RIGHT"]},
+        {"id": "select", "name": "Вибрати (✕)", "key": "Enter", "btn": ["CROSS"]},
+        {"id": "back", "name": "Назад / закрити (○)", "key": "Backspace", "btn": ["MOON"]},
+        {"id": "pause", "name": "Пауза / меню", "key": "Esc", "btn": ["OPTIONS"]},
+        {"id": "map", "name": "Карта (тачпад)", "key": "P", "btn": ["TOUCHPAD"]},
+        {"id": "ps", "name": "Кнопка PS", "key": "Home", "btn": ["PS"]},
+        {"id": "mode_foot", "name": "Режим «Пішки»", "key": "F1", "do": "none", "profile": "foot"},
+        {"id": "mode_vehicle", "name": "Режим «Транспорт»", "key": "F2", "do": "none", "profile": "vehicle"},
+        {"id": "mode_air", "name": "Режим «Авіація»", "key": "F3", "do": "none", "profile": "air"}
+      ]
+    },
+    {
+      "id": "foot",
+      "name": "🚶 Пішки",
+      "bindings": [
+        {"id": "up", "name": "Рух вперед", "key": "W", "l": [0, -1]},
+        {"id": "left", "name": "Рух вліво", "key": "A", "l": [-1, 0]},
+        {"id": "down", "name": "Рух назад", "key": "S", "l": [0, 1]},
+        {"id": "right", "name": "Рух вправо", "key": "D", "l": [1, 0]},
+        {"id": "sprint", "name": "Біг (спринт)", "key": "Shift", "do": "turbo", "btn": ["CROSS"]},
+        {"id": "jump", "name": "Стрибок / перелізти", "key": "Space", "btn": ["BOX"]},
+        {"id": "stealth", "name": "Режим стелсу (присісти)", "key": "Ctrl", "do": "tap", "btn": ["L3"]},
+        {"id": "cover", "name": "Укриття", "key": "Q", "btn": ["R1"]},
+        {"id": "fire", "name": "Вогонь / удар", "key": "MouseLeft", "btn": ["R2"]},
+        {"id": "aim", "name": "Прицілювання", "key": "MouseRight", "btn": ["L2"]},
+        {"id": "wheel", "name": "Колесо зброї (утримувати)", "key": "Tab", "btn": ["L1"]},
+        {"id": "weapon_prev", "name": "Попередня зброя", "key": "WheelUp", "do": "tap", "btn": ["DPAD_LEFT"]},
+        {"id": "weapon_next", "name": "Наступна зброя", "key": "WheelDown", "do": "tap", "btn": ["DPAD_RIGHT"]},
+        {"id": "slot1", "name": "Зброя 1 — кулаки", "key": "1", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [0, 1], "ms": 260}, {"ms": 40}]},
+        {"id": "slot2", "name": "Зброя 2 — холодна", "key": "2", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [0, 1], "ms": 260}, {"ms": 40}]},
+        {"id": "slot3", "name": "Зброя 3 — пістолети", "key": "3", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [0, -1], "ms": 260}, {"ms": 40}]},
+        {"id": "slot4", "name": "Зброя 4 — пістолети-кулемети", "key": "4", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [0.71, -0.71], "ms": 260}, {"ms": 40}]},
+        {"id": "slot5", "name": "Зброя 5 — дробовики", "key": "5", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [-0.71, 0.71], "ms": 260}, {"ms": 40}]},
+        {"id": "slot6", "name": "Зброя 6 — штурмові гвинтівки", "key": "6", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [1, 0], "ms": 260}, {"ms": 40}]},
+        {"id": "slot7", "name": "Зброя 7 — снайперські", "key": "7", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [0.71, 0.71], "ms": 260}, {"ms": 40}]},
+        {"id": "slot8", "name": "Зброя 8 — важка", "key": "8", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [-1, 0], "ms": 260}, {"ms": 40}]},
+        {"id": "slot9", "name": "Зброя 9 — метальна", "key": "9", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [-0.71, -0.71], "ms": 260}, {"ms": 40}]},
+        {"id": "reload", "name": "Перезарядка", "key": "R", "btn": ["MOON"]},
+        {"id": "grenade", "name": "Кинути гранату", "key": "G", "do": "macro", "steps": [{"btn": ["L1"], "ms": 120}, {"btn": ["L1"], "r": [-0.71, -0.71], "ms": 260}, {"ms": 450}, {"btn": ["R2"], "ms": 120}, {"ms": 40}]},
+        {"id": "interact", "name": "Взаємодія", "key": "E", "btn": ["DPAD_RIGHT"]},
+        {"id": "vehicle", "name": "Сісти в транспорт", "key": "F", "do": "tap", "btn": ["PYRAMID"], "profile": "toggle"},
+        {"id": "ability", "name": "Особлива здібність", "key": "CapsLock", "do": "tap", "btn": ["L3", "R3"]},
+        {"id": "camera", "name": "Змінити камеру", "key": "V", "do": "tap", "btn": ["SHARE"]},
+        {"id": "look_back", "name": "Подивитися назад", "key": "C", "btn": ["R3"]},
+        {"id": "char_wheel", "name": "Колесо персонажів (утримувати)", "key": "Alt", "btn": ["DPAD_DOWN"]},
+        {"id": "char_michael", "name": "Майкл", "key": "F5", "do": "macro", "steps": [{"btn": ["DPAD_DOWN"], "ms": 150}, {"btn": ["DPAD_DOWN"], "r": [-1, 0], "ms": 300}, {"ms": 40}]},
+        {"id": "char_franklin", "name": "Франклін", "key": "F6", "do": "macro", "steps": [{"btn": ["DPAD_DOWN"], "ms": 150}, {"btn": ["DPAD_DOWN"], "r": [0, -1], "ms": 300}, {"ms": 40}]},
+        {"id": "char_trevor", "name": "Тревор", "key": "F7", "do": "macro", "steps": [{"btn": ["DPAD_DOWN"], "ms": 150}, {"btn": ["DPAD_DOWN"], "r": [1, 0], "ms": 300}, {"ms": 40}]},
+        {"id": "char_online", "name": "GTA Online", "key": "F8", "do": "macro", "steps": [{"btn": ["DPAD_DOWN"], "ms": 150}, {"btn": ["DPAD_DOWN"], "r": [0, 1], "ms": 300}, {"ms": 40}]},
+        {"id": "radar", "name": "Масштаб радара", "key": "Z", "do": "tap", "btn": ["DPAD_DOWN"]},
+        {"id": "interaction_menu", "name": "Меню взаємодії", "key": "M", "btn": ["SHARE"]},
+        {"id": "point", "name": "Показати пальцем (Online)", "key": "B", "do": "macro", "steps": [{"btn": ["R3"], "ms": 70}, {"ms": 70}, {"btn": ["R3"], "ms": 70}, {"ms": 40}]}
+      ]
+    },
+    {
+      "id": "vehicle",
+      "name": "🚗 Транспорт",
+      "bindings": [
+        {"id": "gas", "name": "Газ", "key": "W", "btn": ["R2"]},
+        {"id": "brake", "name": "Гальмо / задній хід", "key": "S", "btn": ["L2"]},
+        {"id": "steer_left", "name": "Кермо вліво", "key": "A", "l": [-1, 0]},
+        {"id": "steer_right", "name": "Кермо вправо", "key": "D", "l": [1, 0]},
+        {"id": "handbrake", "name": "Ручне гальмо", "key": "Space", "btn": ["R1"]},
+        {"id": "exit", "name": "Вийти з транспорту", "key": "F", "do": "tap", "btn": ["PYRAMID"], "profile": "foot"},
+        {"id": "horn", "name": "Клаксон", "key": "E", "btn": ["L3"]},
+        {"id": "lights", "name": "Фари", "key": "H", "do": "tap", "btn": ["DPAD_RIGHT"]},
+        {"id": "radio", "name": "Радіо (колесо станцій)", "key": "Q", "btn": ["DPAD_LEFT"]},
+        {"id": "cinematic", "name": "Кінематографічна камера", "key": "R", "btn": ["MOON"]},
+        {"id": "duck", "name": "Пригнутися", "key": "X", "btn": ["CROSS"]},
+        {"id": "driveby_aim", "name": "Прицілитися з авто", "key": "MouseRight", "btn": ["L1"]},
+        {"id": "driveby_fire", "name": "Стріляти з авто", "key": "MouseLeft", "btn": ["R1"]},
+        {"id": "camera", "name": "Змінити камеру", "key": "V", "do": "tap", "btn": ["SHARE"]},
+        {"id": "look_back", "name": "Подивитися назад", "key": "C", "btn": ["R3"]},
+        {"id": "ability", "name": "Особлива здібність", "key": "CapsLock", "do": "tap", "btn": ["L3", "R3"]},
+        {"id": "vehicle_weapon", "name": "Зброя транспорту", "key": "G", "do": "tap", "btn": ["BOX"]}
+      ]
+    },
+    {
+      "id": "air",
+      "name": "✈️ Авіація",
+      "bindings": [
+        {"id": "throttle", "name": "Газ (тяга)", "key": "W", "btn": ["R2"]},
+        {"id": "descend", "name": "Гальмо / зниження", "key": "S", "btn": ["L2"]},
+        {"id": "roll_left", "name": "Крен вліво", "key": "A", "l": [-1, 0]},
+        {"id": "roll_right", "name": "Крен вправо", "key": "D", "l": [1, 0]},
+        {"id": "pitch_down", "name": "Ніс вниз", "key": "Num8", "l": [0, -1]},
+        {"id": "pitch_up", "name": "Ніс вгору", "key": "Num5", "l": [0, 1]},
+        {"id": "yaw_left", "name": "Кермо напряму вліво", "key": "Num4", "btn": ["L1"]},
+        {"id": "yaw_right", "name": "Кермо напряму вправо", "key": "Num6", "btn": ["R1"]},
+        {"id": "gear", "name": "Шасі", "key": "G", "do": "tap", "btn": ["L3"]},
+        {"id": "air_fire", "name": "Зброя", "key": "MouseLeft", "btn": ["BOX"]},
+        {"id": "air_camera", "name": "Камера зброї", "key": "MouseRight", "btn": ["R3"]},
+        {"id": "exit", "name": "Вийти", "key": "F", "do": "tap", "btn": ["PYRAMID"], "profile": "foot"},
+        {"id": "camera", "name": "Змінити камеру", "key": "V", "do": "tap", "btn": ["SHARE"]}
+      ]
+    }
+  ]
+}

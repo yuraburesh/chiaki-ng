@@ -137,7 +137,7 @@ Window {
                         horizontalCenter: parent.horizontalCenter
                         leftMargin: 10
                     }
-                    text: ((parent.value / 128.0) * 100).toFixed(0) + qsTr("% Volume")
+                    text: ((parent.value / 128.0) * 100).toFixed(0) + qsTr("% гучність")
                 }
             }
 
@@ -149,7 +149,7 @@ Window {
             ToolButton {
                 id: muteButton
                 Layout.rightMargin: 20
-                text: qsTr("Mic")
+                text: qsTr("Мікрофон")
                 padding: 10
                 checkable: true
                 enabled: Chiaki.session && Chiaki.session.connected
@@ -163,7 +163,7 @@ Window {
 
             ToolButton {
                 id: zoomButton
-                text: qsTr("Zoom")
+                text: qsTr("Наблизити")
                 padding: 10
                 checkable: true
                 checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
@@ -196,7 +196,7 @@ Window {
                     }
                     text: {
                         if (parent.value === -1)
-                            return qsTr("No Black Bars");
+                            return qsTr("Без чорних смуг");
                         if (parent.value >= 0)
                             return qsTr((parent.value + 1).toFixed(2)) + qsTr(" x");
                         return qsTr(parent.value.toFixed(2)) + qsTr(" x");
@@ -212,7 +212,7 @@ Window {
             ToolButton {
                 id: stretchButton
                 Layout.rightMargin: 50
-                text: qsTr("Stretch")
+                text: qsTr("Розтягнути")
                 padding: 10
                 checkable: true
                 checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Stretch
@@ -225,7 +225,7 @@ Window {
 
             ToolButton {
                 id: defaultButton
-                text: qsTr("Default")
+                text: qsTr("За замовчуванням")
                 padding: 10
                 checkable: true
                 checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.Default
@@ -246,7 +246,7 @@ Window {
 
             ToolButton {
                 id: highQualityButton
-                text: qsTr("High Quality")
+                text: qsTr("Висока якість")
                 padding: 10
                 checkable: true
                 checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.HighQuality
@@ -299,7 +299,7 @@ Window {
 
             ToolButton {
                 id: customButton
-                text: qsTr("Custom")
+                text: qsTr("Власний")
                 Layout.rightMargin: 40
                 padding: 10
                 checkable: true
@@ -316,7 +316,7 @@ Window {
 
             ToolButton {
                 id: displaySettingsButton
-                text: qsTr("Display")
+                text: qsTr("Екран")
                 padding: 10
                 checkable: false
                 icon.source: "qrc:/icons/settings-20px.svg"
@@ -347,7 +347,7 @@ Window {
                 bottom: consoleNameLabel.top
                 bottomMargin: 5
             }
-            text: "Mbps"
+            text: "Мбіт/с"
             font.pixelSize: 18
             visible: Chiaki.session
 
@@ -375,8 +375,8 @@ Window {
                 if (!Chiaki.session)
                     return "";
                 if (Chiaki.session.connected)
-                    return qsTr("Connected to <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
-                return qsTr("Connecting to <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
+                    return qsTr("Підключено до <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
+                return qsTr("Підключення до <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
             }
 
             RowLayout {
@@ -387,7 +387,7 @@ Window {
                 }
 
                 Label {
-                    text: qsTr("packet loss")
+                    text: qsTr("втрати пакетів")
                     font.pixelSize: 15
                     opacity: parent.visible && Chiaki.session ? 1.0 : 0.0
                     visible: opacity
@@ -409,7 +409,7 @@ Window {
 
                 Label {
                     Layout.leftMargin: droppedFramesLabel.width + 6
-                    text: qsTr("dropped frames")
+                    text: qsTr("пропущені кадри")
                     font.pixelSize: 15
                     opacity: parent.visible && Chiaki.window.droppedFrames ? 1.0 : 0.0
                     visible: opacity

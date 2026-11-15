@@ -26,6 +26,8 @@ set(SOURCE_FILES
 	src/discoverymanager.cpp
 	include/streamsession.h
 	src/streamsession.cpp
+	include/anyplayinput.h
+	src/anyplayinput.cpp
 	include/sessionlog.h
 	src/sessionlog.cpp
 	include/settings.h

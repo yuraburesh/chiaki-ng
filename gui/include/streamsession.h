@@ -4,6 +4,7 @@
 #define CHIAKI_STREAMSESSION_H
 
 #include <chiaki/session.h>
+#include "anyplayinput.h"
 #include <chiaki/opusdecoder.h>
 #include <chiaki/opusencoder.h>
 #include <chiaki/ffmpegdecoder.h>
@@ -164,6 +165,7 @@ class StreamSession : public QObject
 	Q_PROPERTY(bool muted READ GetMuted WRITE SetMuted NOTIFY MutedChanged)
 	Q_PROPERTY(bool cantDisplay READ GetCantDisplay NOTIFY CantDisplayChanged)
 	Q_PROPERTY(int framesLost READ GetFramesLost NOTIFY FramesLostChanged)
+	Q_PROPERTY(QString controlProfile READ GetControlProfile NOTIFY ControlProfileChanged)
 
 	private:
 		SessionLog log;
@@ -225,6 +227,7 @@ class StreamSession : public QObject
 		bool rumble_haptics_on;
 		float PS_TOUCHPAD_MAX_X, PS_TOUCHPAD_MAX_Y;
 		ChiakiControllerState keyboard_state;
+		AnyPlayInput *anyplay = nullptr; // AnyPlay: game-style keyboard/mouse profiles (replaces key_map)
 		ChiakiControllerState touch_state;
 		QMap<int, uint8_t> touch_tracker;
 		int8_t mouse_touch_id;
@@ -381,6 +384,8 @@ class StreamSession : public QObject
 		void HandleMouseDeltaEvent(qreal dx, qreal dy);
 		void ResetMouseRightStick();
 		bool GetMouseRightStickEnabled() const { return mouse_right_stick_enabled; }
+		QString GetControlProfile() const { return anyplay ? anyplay->CurrentProfileName() : QString(); }
+		bool AnyPlayControlsActive() const { return anyplay != nullptr; }
 		ChiakiControllerState mouse_state;
 		qreal mouse_accum_x = 0;
 		qreal mouse_accum_y = 0;
@@ -398,7 +403,8 @@ class StreamSession : public QObject
 		void DrainMicRingBuffer();
 		void ReadMic(const QByteArray &micdata);
 
-		void BlockInput(bool block) { input_block = block ? 1 : 2; SendFeedbackState(); }
+		void BlockInput(bool block) { if(block && anyplay) anyplay->ReleaseAll(); input_block = block ? 1 : 2; SendFeedbackState(); }
+		void ReleaseAnyPlayInputs() { if(anyplay) anyplay->ReleaseAll(); }
 
 	signals:
 		void FfmpegFrameAvailable();
@@ -419,6 +425,7 @@ class StreamSession : public QObject
 		void MutedChanged();
 		void CantDisplayChanged(bool cant_display);
 		void FecFailure();
+		void ControlProfileChanged();
 
 	private slots:
 		void UpdateGamepads();

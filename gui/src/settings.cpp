@@ -2432,33 +2432,33 @@ QString Settings::GetChiakiControllerButtonName(int button)
 		case CHIAKI_CONTROLLER_BUTTON_MOON       : return tr("Moon");
 		case CHIAKI_CONTROLLER_BUTTON_BOX        : return tr("Box");
 		case CHIAKI_CONTROLLER_BUTTON_PYRAMID    : return tr("Pyramid");
-		case CHIAKI_CONTROLLER_BUTTON_DPAD_LEFT  : return tr("D-Pad Left");
-		case CHIAKI_CONTROLLER_BUTTON_DPAD_RIGHT : return tr("D-Pad Right");
-		case CHIAKI_CONTROLLER_BUTTON_DPAD_UP    : return tr("D-Pad Up");
-		case CHIAKI_CONTROLLER_BUTTON_DPAD_DOWN  : return tr("D-Pad Down");
+		case CHIAKI_CONTROLLER_BUTTON_DPAD_LEFT  : return tr("Хрестовина вліво");
+		case CHIAKI_CONTROLLER_BUTTON_DPAD_RIGHT : return tr("Хрестовина вправо");
+		case CHIAKI_CONTROLLER_BUTTON_DPAD_UP    : return tr("Хрестовина вгору");
+		case CHIAKI_CONTROLLER_BUTTON_DPAD_DOWN  : return tr("Хрестовина вниз");
 		case CHIAKI_CONTROLLER_BUTTON_L1         : return tr("L1");
 		case CHIAKI_CONTROLLER_BUTTON_R1         : return tr("R1");
 		case CHIAKI_CONTROLLER_BUTTON_L3         : return tr("L3");
 		case CHIAKI_CONTROLLER_BUTTON_R3         : return tr("R3");
 		case CHIAKI_CONTROLLER_BUTTON_OPTIONS    : return tr("Options");
 		case CHIAKI_CONTROLLER_BUTTON_SHARE      : return tr("Share");
-		case CHIAKI_CONTROLLER_BUTTON_TOUCHPAD   : return tr("Touchpad");
+		case CHIAKI_CONTROLLER_BUTTON_TOUCHPAD   : return tr("Тачпад");
 		case CHIAKI_CONTROLLER_BUTTON_PS         : return tr("PS");
 		case CHIAKI_CONTROLLER_ANALOG_BUTTON_L2  : return tr("L2");
 		case CHIAKI_CONTROLLER_ANALOG_BUTTON_R2  : return tr("R2");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_UP)    : return tr("Left Stick Right");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_UP)    : return tr("Left Stick Up");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_UP)   : return tr("Right Stick Right");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_UP)   : return tr("Right Stick Up");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_DOWN)  : return tr("Left Stick Left");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_DOWN)  : return tr("Left Stick Down");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_DOWN) : return tr("Right Stick Left");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_DOWN) : return tr("Right Stick Down");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X) : return tr("Left Stick X");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y) : return tr("Left Stick Y");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X) : return tr("Right Stick X");
-		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y) : return tr("Right Stick Y");
-		case static_cast<int>(ControllerButtonExt::MISC1) : return tr("MIC");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_UP)    : return tr("Лівий стік вправо");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_UP)    : return tr("Лівий стік вгору");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_UP)   : return tr("Правий стік вправо");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_UP)   : return tr("Правий стік вгору");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X_DOWN)  : return tr("Лівий стік вліво");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y_DOWN)  : return tr("Лівий стік вниз");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X_DOWN) : return tr("Правий стік вліво");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y_DOWN) : return tr("Правий стік вниз");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_X) : return tr("Лівий стік X");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_LEFT_Y) : return tr("Лівий стік Y");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_X) : return tr("Правий стік X");
+		case static_cast<int>(ControllerButtonExt::ANALOG_STICK_RIGHT_Y) : return tr("Правий стік Y");
+		case static_cast<int>(ControllerButtonExt::MISC1) : return tr("МІК");
 		default: return "Unknown";
 	}
 }
@@ -2509,11 +2509,11 @@ QString Settings::GetKeyDisplayName(Qt::Key key)
 {
 	switch(static_cast<int>(key))
 	{
-		case static_cast<int>(MouseKey::Left)      : return tr("Left Click");
-		case static_cast<int>(MouseKey::Right)     : return tr("Right Click");
-		case static_cast<int>(MouseKey::Middle)    : return tr("Middle Click");
-		case static_cast<int>(MouseKey::WheelUp)   : return tr("Wheel Up");
-		case static_cast<int>(MouseKey::WheelDown) : return tr("Wheel Down");
+		case static_cast<int>(MouseKey::Left)      : return tr("ЛКМ");
+		case static_cast<int>(MouseKey::Right)     : return tr("ПКМ");
+		case static_cast<int>(MouseKey::Middle)    : return tr("Клік коліщатком");
+		case static_cast<int>(MouseKey::WheelUp)   : return tr("Коліщатко ↑");
+		case static_cast<int>(MouseKey::WheelDown) : return tr("Коліщатко ↓");
 		default: return QKeySequence(key).toString();
 	}
 }

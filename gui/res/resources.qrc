@@ -1,4 +1,7 @@
 <RCC>
+  <qresource prefix="/anyplay">
+    <file>anyplay-controls.json</file>
+  </qresource>
   <qresource prefix="/icons">
     <file>settings-20px.svg</file>
     <file>add-24px.svg</file>

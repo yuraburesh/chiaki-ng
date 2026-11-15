@@ -177,16 +177,16 @@ Item {
                     if(Chiaki.settings.dpadTouchEnabled)
                     {
                         if(Chiaki.settings.audioVideoDisabled == 0x01)
-                            qsTr("Audio Disabled in settings\n") + qsTr("Press %1 to open stream menu").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : "Ctrl+O") + "\n" + qsTr("Press %1 to toggle between regular dpad and dpad touch").arg(Chiaki.settings.stringForDpadShortcut())
+                            qsTr("Звук вимкнено в налаштуваннях\n") + qsTr("Натисніть %1, щоб відкрити меню").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O")) + "\n" + qsTr("Натисніть %1, щоб перемкнути хрестовину / тачпад").arg(Chiaki.settings.stringForDpadShortcut())
                         else
-                            qsTr("Press %1 to open stream menu").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : "Ctrl+O") + "\n" + qsTr("Press %1 to toggle between regular dpad and dpad touch").arg(Chiaki.settings.stringForDpadShortcut())
+                            qsTr("Натисніть %1, щоб відкрити меню").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O")) + "\n" + qsTr("Натисніть %1, щоб перемкнути хрестовину / тачпад").arg(Chiaki.settings.stringForDpadShortcut())
                     }
                     else
                     {
                         if(Chiaki.settings.audioVideoDisabled == 0x01)
-                            qsTr("Audio Disabled in settings\n") + qsTr("Press %1 to open stream menu").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : "Ctrl+O")
+                            qsTr("Звук вимкнено в налаштуваннях\n") + qsTr("Натисніть %1, щоб відкрити меню").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"))
                         else
-                            qsTr("Press %1 to open stream menu").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : "Ctrl+O")
+                            qsTr("Натисніть %1, щоб відкрити меню").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"))
                     }
                 }
                 visible: sessionLoading
@@ -198,7 +198,7 @@ Item {
                     bottom: spinner.top
                     horizontalCenter: spinner.horizontalCenter
                 }
-                text: (Chiaki.settings.audioVideoDisabled & 0x01) ? qsTr("Audio and Video Disabled") : qsTr("Video Disabled")
+                text: (Chiaki.settings.audioVideoDisabled & 0x01) ? qsTr("Звук і відео вимкнено") : qsTr("Відео вимкнено")
                 font.pixelSize: 24
                 visible: !sessionLoading && !sessionError && (Chiaki.settings.audioVideoDisabled & 0x02)
             }
@@ -212,7 +212,7 @@ Item {
                 }
                 horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: 20
-                text: (Chiaki.settings.audioVideoDisabled & 0x01) ? qsTr("You have disabled audio and video in your settings.\nTo re-enable change Audio/Video to Audio and Video Enabled in the General tab of the settings.") : qsTr("You have disabled video in your settings.\nTo re-enable change Audio/Video to Audio and Video Enabled in the General tab of the settings.")
+                text: (Chiaki.settings.audioVideoDisabled & 0x01) ? qsTr("Звук і відео вимкнено в налаштуваннях.\nЩоб увімкнути, у вкладці «Загальні» встановіть «Звук/відео» → «Звук і відео увімкнено».") : qsTr("Відео вимкнено в налаштуваннях.\nЩоб увімкнути, у вкладці «Загальні» встановіть «Звук/відео» → «Звук і відео увімкнено».")
                 visible: !sessionLoading && !sessionError && (Chiaki.settings.audioVideoDisabled & 0x02)
             }
 
@@ -263,14 +263,14 @@ Item {
 
         Label {
             Layout.alignment: Qt.AlignCenter
-            text: qsTr("The screen contains content that can't be displayed using Remote Play.")
+            text: qsTr("На екрані вміст, який не можна показати через Remote Play.")
         }
 
         Button {
             id: goToHomeButton
             Layout.alignment: Qt.AlignCenter
             Layout.preferredHeight: 60
-            text: qsTr("Go to Home Screen")
+            text: qsTr("На головний екран")
             Material.background: activeFocus ? parent.Material.accent : undefined
             Material.roundedScale: Material.SmallScale
             onClicked: Chiaki.sessionGoHome()
@@ -317,7 +317,7 @@ Item {
 
                 Label {
                     Layout.alignment: Qt.AlignRight
-                    text: "Mbps"
+                    text: "Мбіт/с"
                     font.pixelSize: 18
                     visible: Chiaki.session ? true : false
 
@@ -336,7 +336,7 @@ Item {
 
                 Label {
                     Layout.alignment: Qt.AlignRight
-                    text: qsTr("queue depth avg")
+                    text: qsTr("середня глибина черги")
                     font.pixelSize: 15
                     opacity: Chiaki.session ? 1 : 0
                     visible: opacity > 0
@@ -358,7 +358,7 @@ Item {
 
                 Label {
                     Layout.alignment: Qt.AlignRight
-                    text: qsTr("pending frame age")
+                    text: qsTr("вік кадру в черзі")
                     font.pixelSize: 15
                     opacity: Chiaki.session ? 1 : 0
                     visible: opacity > 0
@@ -371,7 +371,7 @@ Item {
                             baseline: parent.baseline
                             rightMargin: 5
                         }
-                        text: parent.visible ? qsTr("%1 ms").arg((Chiaki.window.pendingFrameAge * 1000.0).toFixed(0)) : ""
+                        text: parent.visible ? qsTr("%1 мс").arg((Chiaki.window.pendingFrameAge * 1000.0).toFixed(0)) : ""
                         font.bold: true
                         color: "#90caf9"
                         font.pixelSize: 18
@@ -381,7 +381,7 @@ Item {
                 Label {
                     Layout.alignment: Qt.AlignRight
                     id: statsPacketLossLabel
-                    text: qsTr("packet loss")
+                    text: qsTr("втрати пакетів")
                     font.pixelSize: 15
                     opacity: Chiaki.session ? 1 : 0
                     visible: opacity > 0
@@ -403,7 +403,7 @@ Item {
 
                 Label {
                     Layout.alignment: Qt.AlignRight
-                    text: qsTr("dropped frames")
+                    text: qsTr("пропущені кадри")
                     font.pixelSize: 15
                     opacity: Chiaki.session ? 1 : 0
                     visible: opacity > 0
@@ -426,7 +426,7 @@ Item {
 
                 Label {
                     Layout.alignment: Qt.AlignRight
-                    text: qsTr("lost frames")
+                    text: qsTr("втрачені кадри")
                     font.pixelSize: 15
                     opacity: Chiaki.session ? 1 : 0
                     visible: opacity > 0
@@ -524,7 +524,7 @@ Item {
                         leftMargin: 10
                     }
                     text: {
-                        ((parent.value / 128.0) * 100).toFixed(0) + qsTr("% Volume")
+                        ((parent.value / 128.0) * 100).toFixed(0) + qsTr("% гучність")
                     }
                 }
             }
@@ -537,7 +537,7 @@ Item {
             ToolButton {
                 id: muteButton
                 Layout.rightMargin: 20
-                text: qsTr("Mic")
+                text: qsTr("Мікрофон")
                 padding: 10
                 checkable: true
                 enabled: Chiaki.session && Chiaki.session.connected
@@ -551,7 +551,7 @@ Item {
 
             ToolButton {
                 id: zoomButton
-                text: qsTr("Zoom")
+                text: qsTr("Наблизити")
                 padding: 10
                 checkable: true
                 checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
@@ -588,7 +588,7 @@ Item {
                     }
                     text: {
                         if(parent.value === -1)
-                            qsTr("No Black Bars")
+                            qsTr("Без чорних смуг")
                         else if(parent.value >= 0)
                             qsTr((parent.value + 1).toFixed(2)) + qsTr(" x")
                         else
@@ -606,7 +606,7 @@ Item {
             ToolButton {
                 id: stretchButton
                 Layout.rightMargin: 50
-                text: qsTr("Stretch")
+                text: qsTr("Розтягнути")
                 padding: 10
                 checkable: true
                 checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Stretch
@@ -624,7 +624,7 @@ Item {
 
             ToolButton {
                 id: defaultButton
-                text: qsTr("Default")
+                text: qsTr("За замовчуванням")
                 padding: 10
                 checkable: true
                 checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.Default
@@ -645,7 +645,7 @@ Item {
 
             ToolButton {
                 id: highQualityButton
-                text: qsTr("High Quality")
+                text: qsTr("Висока якість")
                 padding: 10
                 checkable: true
                 checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.HighQuality
@@ -698,7 +698,7 @@ Item {
 
             ToolButton {
                 id: customButton
-                text: qsTr("Custom")
+                text: qsTr("Власний")
                 Layout.rightMargin: 40
                 padding: 10
                 checkable: true
@@ -715,7 +715,7 @@ Item {
 
             ToolButton {
                 id: displaySettingsButton
-                text: qsTr("Display")
+                text: qsTr("Екран")
                 padding: 10
                 checkable: false
                 icon.source: "qrc:/icons/settings-20px.svg";
@@ -758,7 +758,7 @@ Item {
                     bottomMargin: 5
 
                 }
-                text: "Mbps"
+                text: "Мбіт/с"
                 font.pixelSize: 18
                 visible: Chiaki.session
 
@@ -786,8 +786,8 @@ Item {
                     if (!Chiaki.session)
                         return "";
                     if (Chiaki.session.connected)
-                        return qsTr("Connected to <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
-                    return qsTr("Connecting to <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
+                        return qsTr("Підключено до <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
+                    return qsTr("Підключення до <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
                 }
 
                 RowLayout {
@@ -798,7 +798,7 @@ Item {
                     }
 
                     Label {
-                        text: qsTr("packet loss")
+                        text: qsTr("втрати пакетів")
                         font.pixelSize: 15
                         opacity: parent.visible && Chiaki.session ? 1.0 : 0.0
                         visible: opacity
@@ -820,7 +820,7 @@ Item {
 
                     Label {
                         Layout.leftMargin: droppedFramesLabel.width + 6
-                        text: qsTr("dropped frames")
+                        text: qsTr("пропущені кадри")
                         font.pixelSize: 15
                         opacity: parent.visible && Chiaki.window.droppedFrames ? 1.0 : 0.0
                         visible: opacity
@@ -933,7 +933,7 @@ Item {
         ColumnLayout {
             Label {
                 Layout.alignment: Qt.AlignCenter
-                text: qsTr("Disconnect Session")
+                text: qsTr("Завершити сеанс")
                 font.bold: true
                 font.pixelSize: 24
             }
@@ -941,7 +941,7 @@ Item {
             Label {
                 Layout.topMargin: 10
                 Layout.alignment: Qt.AlignCenter
-                text: qsTr("Do you want the Console to go into sleep mode?")
+                text: qsTr("Перевести консоль у режим спокою?")
                 font.pixelSize: 20
             }
 
@@ -955,7 +955,7 @@ Item {
                     Layout.preferredWidth: 200
                     Layout.minimumHeight: 80
                     Layout.maximumHeight: 80
-                    text: qsTr("Sleep")
+                    text: qsTr("Режим спокою")
                     font.pixelSize: 24
                     Material.roundedScale: Material.SmallScale
                     Material.background: activeFocus ? parent.Material.accent : undefined
@@ -974,7 +974,7 @@ Item {
                     Layout.preferredWidth: 200
                     Layout.minimumHeight: 80
                     Layout.maximumHeight: 80
-                    text: qsTr("No")
+                    text: qsTr("Ні")
                     font.pixelSize: 24
                     Material.roundedScale: Material.SmallScale
                     Material.background: activeFocus ? parent.Material.accent : undefined
@@ -1032,7 +1032,7 @@ Item {
 
             Label {
                 Layout.alignment: Qt.AlignCenter
-                text: qsTr("Disconnect Session")
+                text: qsTr("Завершити сеанс")
                 font.bold: true
                 font.pixelSize: 24
             }
@@ -1040,7 +1040,7 @@ Item {
             Label {
                 Layout.topMargin: 10
                 Layout.alignment: Qt.AlignCenter
-                text: qsTr("Do you want the Console to go into sleep mode?")
+                text: qsTr("Перевести консоль у режим спокою?")
                 font.pixelSize: 20
             }
 
@@ -1054,7 +1054,7 @@ Item {
                     Layout.preferredWidth: 200
                     Layout.minimumHeight: 80
                     Layout.maximumHeight: 80
-                    text: qsTr("Sleep")
+                    text: qsTr("Режим спокою")
                     font.pixelSize: 24
                     Material.roundedScale: Material.SmallScale
                     Material.background: activeFocus ? parent.Material.accent : undefined
@@ -1072,7 +1072,7 @@ Item {
                     Layout.preferredWidth: 200
                     Layout.minimumHeight: 80
                     Layout.maximumHeight: 80
-                    text: qsTr("No")
+                    text: qsTr("Ні")
                     font.pixelSize: 24
                     Material.roundedScale: Material.SmallScale
                     Material.background: activeFocus ? parent.Material.accent : undefined
@@ -1093,7 +1093,7 @@ Item {
         parent: Overlay.overlay
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
-        title: qsTr("Console Login PIN")
+        title: qsTr("PIN-код входу на консоль")
         modal: true
         closePolicy: Popup.NoAutoClose
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -1168,7 +1168,7 @@ Item {
 
             Label {
                 Layout.alignment: Qt.AlignCenter
-                text: qsTr("Console Login PIN")
+                text: qsTr("PIN-код входу на консоль")
                 font.bold: true
                 font.pixelSize: 24
             }
@@ -1189,7 +1189,7 @@ Item {
                 spacing: 16
 
                 Button {
-                    text: qsTr("Cancel")
+                    text: qsTr("Скасувати")
                     Keys.onReturnPressed: clicked()
                     onClicked: {
                         separateSessionPinWindow.visible = false;
@@ -1300,6 +1300,37 @@ Item {
         function onConnectedChanged() {
             if (Chiaki.settings.audioVideoDisabled & 0x02)
                 sessionLoading = false;
+        }
+
+        // AnyPlay: show the control mode (on foot / vehicle / aircraft) for a moment when it changes
+        function onControlProfileChanged() {
+            anyplayProfileLabel.opacity = 1;
+            anyplayProfileTimer.restart();
+        }
+    }
+
+    Label {
+        id: anyplayProfileLabel
+        z: 100
+        anchors {
+            top: parent.top
+            horizontalCenter: parent.horizontalCenter
+            topMargin: 28
+        }
+        text: Chiaki.session ? Chiaki.session.controlProfile : ""
+        font.pixelSize: 26
+        font.bold: true
+        color: "white"
+        style: Text.Outline
+        styleColor: "black"
+        opacity: 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 300 } }
+
+        Timer {
+            id: anyplayProfileTimer
+            interval: 1600
+            onTriggered: anyplayProfileLabel.opacity = 0
         }
     }
 }

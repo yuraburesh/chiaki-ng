@@ -168,8 +168,8 @@ Item {
     }
 
     function showRendererFallbackDialog(reason) {
-        showInfoDialog(qsTr("Renderer Fallback"),
-                       qsTr("Vulkan renderer is unavailable and chiaki-ng switched to OpenGL.\n\nReason: %1").arg(reason));
+        showInfoDialog(qsTr("Запасний рендерер"),
+                       qsTr("Рендерер Vulkan недоступний, програма перейшла на OpenGL.\n\nПричина: %1").arg(reason));
     }
 
     function showRemindDialog(title, text, remotePlay, callback) {
@@ -551,9 +551,9 @@ Item {
             else
             {
                 if(ps5)
-                    root.showConfirmDialog(qsTr("Registration Type"), qsTr("Would you like to use automatic registration?"), () => root.autoRegister(true, host, ps5), () => root.autoRegister(false, host, ps5))
+                    root.showConfirmDialog(qsTr("Тип прив'язки"), qsTr("Використати автоматичну прив'язку?"), () => root.autoRegister(true, host, ps5), () => root.autoRegister(false, host, ps5))
                 else
-                    root.showConfirmDialog(qsTr("Registration Type"), qsTr("Would you like to use automatic registration (must be main PS4 console registered to your PSN)?"), () => root.autoRegister(true, host, ps5), () => root.autoRegister(false, host, ps5))
+                    root.showConfirmDialog(qsTr("Тип прив'язки"), qsTr("Використати автоматичну прив'язку (PS4 має бути основною консоллю вашого PSN)?"), () => root.autoRegister(true, host, ps5), () => root.autoRegister(false, host, ps5))
             }
         }
 

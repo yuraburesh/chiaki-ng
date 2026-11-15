@@ -179,12 +179,12 @@ public:
         valueFont.setPixelSize(18);
         valueFont.setBold(true);
 
-        bitrateRow = makeRow(tr("Mbps"), QColor(QStringLiteral("#00a7ff")), titleFont, valueFont, bitrateValue);
-        queueRow = makeRow(tr("queue depth avg"), QColor(QStringLiteral("#90caf9")), titleFont, valueFont, queueDepthValue);
-        pendingRow = makeRow(tr("pending frame age"), QColor(QStringLiteral("#90caf9")), titleFont, valueFont, pendingAgeValue);
-        packetLossRow = makeRow(tr("packet loss"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, packetLossValue);
-        droppedFramesRow = makeRow(tr("dropped frames"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, droppedFramesValue);
-        lostFramesRow = makeRow(tr("lost frames"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, lostFramesValue);
+        bitrateRow = makeRow(tr("Мбіт/с"), QColor(QStringLiteral("#00a7ff")), titleFont, valueFont, bitrateValue);
+        queueRow = makeRow(tr("середня глибина черги"), QColor(QStringLiteral("#90caf9")), titleFont, valueFont, queueDepthValue);
+        pendingRow = makeRow(tr("вік кадру в черзі"), QColor(QStringLiteral("#90caf9")), titleFont, valueFont, pendingAgeValue);
+        packetLossRow = makeRow(tr("втрати пакетів"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, packetLossValue);
+        droppedFramesRow = makeRow(tr("пропущені кадри"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, droppedFramesValue);
+        lostFramesRow = makeRow(tr("втрачені кадри"), QColor(QStringLiteral("#ef9a9a")), titleFont, valueFont, lostFramesValue);
 
         outer->addWidget(panel, 0, Qt::AlignRight | Qt::AlignVCenter);
 
@@ -265,7 +265,7 @@ public:
         queueRow->setVisible(true);
         queueDepthValue->setText(QString::number(owner ? owner->queueDepthAverage() : 0.0, 'f', 1));
         pendingRow->setVisible(true);
-        pendingAgeValue->setText(tr("%1 ms").arg((owner ? owner->pendingFrameAge() : 0.0) * 1000.0, 0, 'f', 0));
+        pendingAgeValue->setText(tr("%1 мс").arg((owner ? owner->pendingFrameAge() : 0.0) * 1000.0, 0, 'f', 0));
 
         packetLossRow->setVisible(hasSession);
         if (hasSession) {
@@ -6129,9 +6129,9 @@ void QmlMainWindow::createSwapchain()
                 << "surface_renderable=" << surface_renderable;
             if (surface_renderable && failures >= 60 && failure_duration_us >= 3000000) {
                 handleVulkanRendererFallback(
-                    tr("Vulkan renderer stalled"),
-                    tr("The Vulkan surface could not recover. Chiaki-ng will relaunch with OpenGL for this run only."),
-                    tr("Vulkan surface creation failed repeatedly while the window was visible. OpenGL is being used for this launch only."));
+                    tr("Рендерер Vulkan завис"),
+                    tr("Поверхня Vulkan не відновилася. Програма перезапуститься з OpenGL лише на цей раз."),
+                    tr("Не вдалося створити поверхню Vulkan. На цей запуск використовується OpenGL."));
             } else {
                 swapchain_recreate_pending.storeRelease(1);
                 QMetaObject::invokeMethod(this, [this]() {
@@ -6527,9 +6527,9 @@ void QmlMainWindow::confirmVulkanStartup()
 void QmlMainWindow::handleVulkanDeviceLost(const QString &reason)
 {
     handleVulkanRendererFallback(
-        tr("Vulkan device lost"),
-        tr("The Vulkan renderer stopped responding. Chiaki-ng will relaunch with OpenGL for this run only.\n\nReason: %1").arg(reason),
-        tr("Vulkan device was lost. OpenGL is being used for this launch only. Reason: %1").arg(reason));
+        tr("Пристрій Vulkan втрачено"),
+        tr("Рендерер Vulkan перестав відповідати. Програма перезапуститься з OpenGL лише на цей раз.\n\nПричина: %1").arg(reason),
+        tr("Пристрій Vulkan втрачено. На цей запуск використовується OpenGL. Причина: %1").arg(reason));
 }
 
 void QmlMainWindow::handleVulkanRendererFallback(const QString &title, const QString &message, const QString &fallback_reason)
@@ -7136,9 +7136,9 @@ void QmlMainWindow::render()
                 << "surface_renderable=" << surface_renderable;
             if (surface_renderable && failures >= 60 && failure_duration_us >= 3000000) {
                 handleVulkanRendererFallback(
-                    tr("Vulkan renderer stalled"),
-                    tr("The Vulkan swapchain could not recover. Chiaki-ng will relaunch with OpenGL for this run only."),
-                    tr("Vulkan swapchain failed repeatedly while the window was visible. OpenGL is being used for this launch only."));
+                    tr("Рендерер Vulkan завис"),
+                    tr("Ланцюжок обміну Vulkan не відновився. Програма перезапуститься з OpenGL лише на цей раз."),
+                    tr("Ланцюжок обміну Vulkan не працює. На цей запуск використовується OpenGL."));
             } else {
                 swapchain_recreate_pending.storeRelease(1);
                 QMetaObject::invokeMethod(this, [this]() {
@@ -7792,6 +7792,9 @@ bool QmlMainWindow::handleShortcut(QKeyEvent *event)
     int shortcut_key = event->key();
     if (const Qt::Key physical = Settings::PhysicalKey(event))
         shortcut_key = physical;  // AnyPlay: Cmd/Ctrl+O works with a Ukrainian layout too
+    // AnyPlay: Ctrl is the stealth key in game, so only Ctrl/Cmd+O (stream menu) stays a shortcut
+    if (session && session->AnyPlayControlsActive() && shortcut_key != Qt::Key_O)
+        return false;
     switch (shortcut_key) {
     case Qt::Key_S:
         if (has_video)
@@ -7937,6 +7940,9 @@ bool QmlMainWindow::event(QEvent *event)
         break;
     case QEvent::WindowActivate:
     case QEvent::WindowDeactivate:
+        // AnyPlay: key releases are lost while another app has focus, so let go of everything
+        if (event->type() == QEvent::WindowDeactivate && session)
+            session->ReleaseAnyPlayInputs();
         updateMouseLookCapture();
         break;
     default:

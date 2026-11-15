@@ -614,6 +614,13 @@ public:
     Q_INVOKABLE void refreshAudioDevices();
     Q_INVOKABLE QString changeControllerKey(int button, int key);
     Q_INVOKABLE QString changeControllerMouseInput(int button, const QString &mouse_input);
+    // AnyPlay controls editor
+    Q_INVOKABLE QVariantList anyplayProfiles() const;
+    Q_INVOKABLE QString anyplayKeyName(int key, int modifiers, const QString &text) const;
+    Q_INVOKABLE QString anyplayMouseName(int button) const;
+    Q_INVOKABLE QString anyplayDisplayName(const QString &key) const;
+    Q_INVOKABLE void setAnyplayKey(const QString &profile, const QString &id, const QString &key);
+    Q_INVOKABLE void resetAnyplayKeys();
     Q_INVOKABLE void clearKeyMapping();
     Q_INVOKABLE void exportSettings();
     Q_INVOKABLE QString chooseSteamBasePath();

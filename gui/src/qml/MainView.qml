@@ -421,14 +421,14 @@ Pane {
     Image {
         id: logoImage
         anchors.centerIn: parent
-        source: "qrc:/icons/chiaking-logo-white.svg"
-        sourceSize: Qt.size(Math.min(parent.width, parent.height) / 2, Math.min(parent.width, parent.height) / 2)
+        source: "qrc:/icons/anyplay-logo.png"
+        sourceSize: Qt.size(Math.min(parent.width, parent.height) / 2.4, Math.min(parent.width, parent.height) / 2.4)
 
         PropertyAnimation {
             target: logoImage
             property: "opacity"
-            from: 0.05
-            to: 0.20
+            from: 0.1
+            to: 0.55
             duration: 1000
             easing.type: Easing.OutCubic
             running: true

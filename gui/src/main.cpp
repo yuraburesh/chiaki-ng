@@ -144,9 +144,9 @@ int real_main(int argc, char *argv[])
 	QApplication app(argc, argv);
 
 #ifdef Q_OS_MACOS
-	QGuiApplication::setWindowIcon(QIcon(":/icons/chiaking_macos.svg"));
+	QGuiApplication::setWindowIcon(QIcon(":/icons/anyplay-icon.png"));
 #else
-	QGuiApplication::setWindowIcon(QIcon(":/icons/chiaking.svg"));
+	QGuiApplication::setWindowIcon(QIcon(":/icons/anyplay-icon.png"));
 #endif
 
 	QCommandLineParser parser;

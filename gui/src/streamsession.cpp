@@ -1108,13 +1108,19 @@ void StreamSession::HandleKeyboardEvent(QKeyEvent *event)
 {
 	if(!keyboard_controller_enabled)
 		return;
-	if(key_map.contains(Qt::Key(event->key())) == false)
-		return;
+	Qt::Key key = Qt::Key(event->key());
+	if(!key_map.contains(key))
+	{
+		// AnyPlay: non-Latin layout (e.g. Ukrainian) — use the key at the same physical position
+		key = Settings::PhysicalKey(event);
+		if(!key || !key_map.contains(key))
+			return;
+	}
 
 	if(event->isAutoRepeat())
 		return;
 
-	int button = key_map[Qt::Key(event->key())];
+	int button = key_map[key];
 	bool press_event = event->type() == QEvent::Type::KeyPress;
 	ApplyMappedButton(button, press_event);
 }

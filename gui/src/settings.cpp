@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QUrl>
 #include <QKeySequence>
+#include <QKeyEvent>
 #include <QCoreApplication>
 
 #include <chiaki/config.h>
@@ -278,6 +279,15 @@ Settings::Settings(const QString &conf, QObject *parent) : QObject(parent),
 	LoadHiddenHosts();
 	LoadManualHosts();
 	LoadControllerMappings();
+	// AnyPlay: once per install, replace keys and mouse mode left over from a regular chiaki-ng with the GTA layout
+	if(settings.value("anyplay/defaults_version", 0).toInt() < 1)
+	{
+		ClearKeyMapping();
+		settings.remove("settings/mouse_input_mode");
+		settings.remove("settings/mouse_touch_enabled");
+		settings.setValue("settings/keyboard_enabled", true);
+		settings.setValue("anyplay/defaults_version", 1);
+	}
 	default_settings.setFallbacksEnabled(false);
 	MigrateSettings(&default_settings);
 	MigrateVideoProfile(&default_settings);
@@ -2558,6 +2568,46 @@ QMap<int, Qt::Key> Settings::GetControllerMapping()
 	}
 
 	return result;
+}
+
+
+Qt::Key Settings::PhysicalKey(const QKeyEvent *event)
+{
+	if(!event)
+		return static_cast<Qt::Key>(0);
+	const quint32 vk = event->nativeVirtualKey();
+#if defined(Q_OS_MACOS)
+	// macOS virtual key codes (kVK_ANSI_*) are tied to the physical key position, not the layout
+	static const QMap<quint32, Qt::Key> mac_keys = {
+		{0x00, Qt::Key_A}, {0x01, Qt::Key_S}, {0x02, Qt::Key_D}, {0x03, Qt::Key_F}, {0x04, Qt::Key_H},
+		{0x05, Qt::Key_G}, {0x06, Qt::Key_Z}, {0x07, Qt::Key_X}, {0x08, Qt::Key_C}, {0x09, Qt::Key_V},
+		{0x0B, Qt::Key_B}, {0x0C, Qt::Key_Q}, {0x0D, Qt::Key_W}, {0x0E, Qt::Key_E}, {0x0F, Qt::Key_R},
+		{0x10, Qt::Key_Y}, {0x11, Qt::Key_T}, {0x12, Qt::Key_1}, {0x13, Qt::Key_2}, {0x14, Qt::Key_3},
+		{0x15, Qt::Key_4}, {0x16, Qt::Key_6}, {0x17, Qt::Key_5}, {0x18, Qt::Key_Equal}, {0x19, Qt::Key_9},
+		{0x1A, Qt::Key_7}, {0x1B, Qt::Key_Minus}, {0x1C, Qt::Key_8}, {0x1D, Qt::Key_0}, {0x1E, Qt::Key_BracketRight},
+		{0x1F, Qt::Key_O}, {0x20, Qt::Key_U}, {0x21, Qt::Key_BracketLeft}, {0x22, Qt::Key_I}, {0x23, Qt::Key_P},
+		{0x25, Qt::Key_L}, {0x26, Qt::Key_J}, {0x27, Qt::Key_Apostrophe}, {0x28, Qt::Key_K}, {0x29, Qt::Key_Semicolon},
+		{0x2A, Qt::Key_Backslash}, {0x2B, Qt::Key_Comma}, {0x2C, Qt::Key_Slash}, {0x2D, Qt::Key_N}, {0x2E, Qt::Key_M},
+		{0x2F, Qt::Key_Period}, {0x32, Qt::Key_QuoteLeft},
+	};
+	return mac_keys.value(vk, static_cast<Qt::Key>(0));
+#elif defined(Q_OS_WIN)
+	// Windows virtual key codes for letters and digits do not depend on the layout
+	if((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9'))
+		return static_cast<Qt::Key>(vk);
+	return static_cast<Qt::Key>(0);
+#else
+	// X11/Wayland: the native key code is a hardware scan code (evdev + 8)
+	static const QMap<quint32, Qt::Key> x_keys = {
+		{24, Qt::Key_Q}, {25, Qt::Key_W}, {26, Qt::Key_E}, {27, Qt::Key_R}, {28, Qt::Key_T}, {29, Qt::Key_Y},
+		{30, Qt::Key_U}, {31, Qt::Key_I}, {32, Qt::Key_O}, {33, Qt::Key_P}, {38, Qt::Key_A}, {39, Qt::Key_S},
+		{40, Qt::Key_D}, {41, Qt::Key_F}, {42, Qt::Key_G}, {43, Qt::Key_H}, {44, Qt::Key_J}, {45, Qt::Key_K},
+		{46, Qt::Key_L}, {52, Qt::Key_Z}, {53, Qt::Key_X}, {54, Qt::Key_C}, {55, Qt::Key_V}, {56, Qt::Key_B},
+		{57, Qt::Key_N}, {58, Qt::Key_M}, {10, Qt::Key_1}, {11, Qt::Key_2}, {12, Qt::Key_3}, {13, Qt::Key_4},
+		{14, Qt::Key_5}, {15, Qt::Key_6}, {16, Qt::Key_7}, {17, Qt::Key_8}, {18, Qt::Key_9}, {19, Qt::Key_0},
+	};
+	return x_keys.value(event->nativeScanCode(), static_cast<Qt::Key>(0));
+#endif
 }
 
 void Settings::ClearKeyMapping()

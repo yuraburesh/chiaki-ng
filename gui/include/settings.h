@@ -12,6 +12,8 @@
 #include <QMap>
 #include <QRect>
 
+class QKeyEvent;
+
 enum class ControllerButtonExt
 {
 	// must not overlap with ChiakiControllerButton and ChiakiControllerAnalogButton
@@ -763,6 +765,8 @@ class Settings : public QObject
 		static bool IsMouseKey(Qt::Key key);
 		static QString KeyToString(Qt::Key key);
 		static Qt::Key KeyFromString(const QString &str);
+		// AnyPlay: the key at the same physical position on a US keyboard (so WASD works with a Ukrainian/Russian layout), or 0
+		static Qt::Key PhysicalKey(const QKeyEvent *event);
 		static QString GetKeyDisplayName(Qt::Key key);
 		void SetControllerButtonMapping(int, Qt::Key);
 		QMap<int, Qt::Key> GetControllerMapping();

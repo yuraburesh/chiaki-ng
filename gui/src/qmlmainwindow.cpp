@@ -7789,7 +7789,10 @@ bool QmlMainWindow::handleShortcut(QKeyEvent *event)
     if (!event->modifiers().testFlag(Qt::ControlModifier))
         return false;
 
-    switch (event->key()) {
+    int shortcut_key = event->key();
+    if (const Qt::Key physical = Settings::PhysicalKey(event))
+        shortcut_key = physical;  // AnyPlay: Cmd/Ctrl+O works with a Ukrainian layout too
+    switch (shortcut_key) {
     case Qt::Key_S:
         if (has_video)
             setVideoMode(videoMode() == VideoMode::Stretch ? VideoMode::Normal : VideoMode::Stretch);

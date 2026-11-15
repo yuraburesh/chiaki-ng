@@ -73,7 +73,7 @@ QString NameForQtKey(int key, bool keypad)
 	if(keypad && key >= Qt::Key_0 && key <= Qt::Key_9)
 		return QStringLiteral("Num%1").arg(key - Qt::Key_0);
 	if((key >= Qt::Key_A && key <= Qt::Key_Z) || (key >= Qt::Key_0 && key <= Qt::Key_9))
-		return QString(QChar(key));
+		return QString(QChar(static_cast<char16_t>(key)));
 	if(key >= Qt::Key_F1 && key <= Qt::Key_F24)
 		return QStringLiteral("F%1").arg(key - Qt::Key_F1 + 1);
 	switch(key)
@@ -377,7 +377,7 @@ QString AnyPlayInput::KeyName(const QKeyEvent *event)
 	{
 		const Qt::Key physical = Settings::PhysicalKey(event);
 		if((physical >= Qt::Key_A && physical <= Qt::Key_Z) || (physical >= Qt::Key_0 && physical <= Qt::Key_9))
-			return QString(QChar(physical));
+			return QString(QChar(static_cast<char16_t>(physical)));
 	}
 	const QString name = NameForQtKey(event->key(), keypad);
 	if(!name.isEmpty())

@@ -4,18 +4,26 @@ on:
   push:
     branches: [anyplay]
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Що збирати: all — усе, mac — лише Mac (швидше)"
+        type: choice
+        options: [all, mac]
+        default: all
 
 permissions:
   contents: write
 
 jobs:
   windows:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' }}
     uses: ./.github/workflows/build-windows-x86.yml
   macos:
     uses: ./.github/workflows/build-macos-arm.yml
   macos_intel:
     uses: ./.github/workflows/build-macos-x86.yml
   linux:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' }}
     uses: ./.github/workflows/build-appimage-x64.yml
 
   release:

@@ -10,9 +10,9 @@ Pane {
     id: consolePane
     StackView.onActivated: {
         forceActiveFocus(Qt.TabFocusReason);
-        if(!Chiaki.cloud.admin)
+        if(anyplayHome.visible)
             anyplayHome.forceActiveFocus();
-        if(Chiaki.cloud.admin && !Chiaki.autoConnect && !root.initialAsk && !Chiaki.window.directStream)
+        if(Chiaki.cloud.admin && anyplayHome.serviceMode && !Chiaki.autoConnect && !root.initialAsk && !Chiaki.window.directStream)
         {
             root.initialAsk = true;
             if(Chiaki.settings.addSteamShortcutAsk && (typeof Chiaki.createSteamShortcut === "function"))
@@ -421,12 +421,12 @@ Pane {
         text: Qt.application.version
     }
 
-    // ── AnyPlay: головний екран клієнта (адмін бачить повний інтерфейс під ним) ──
+    // ── AnyPlay: головний екран (адмін може відкрити повний інтерфейс кнопкою «Сервіс») ──
     AnyPlayHome {
         id: anyplayHome
         anchors.fill: parent
         z: 100
-        visible: !Chiaki.cloud.admin
+        visible: !(Chiaki.cloud.admin && anyplayHome.serviceMode)
         onVisibleChanged: if (visible) forceActiveFocus()
         onOpenKeys: root.showSettingsDialogTab(5)
     }
@@ -537,6 +537,11 @@ Pane {
                     visible: anyplayPanel.cloud.admin
                     text: qsTr("Передати PS5 на сервер")
                     onClicked: anyplayPanel.cloud.uploadConsole()
+                }
+                Button {
+                    visible: anyplayPanel.cloud.admin
+                    text: qsTr("← Панель AnyPlay")
+                    onClicked: anyplayHome.serviceMode = false
                 }
                 Button {
                     visible: anyplayPanel.cloud.clientMode

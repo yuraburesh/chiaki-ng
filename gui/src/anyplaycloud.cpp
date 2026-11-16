@@ -181,6 +181,9 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	user_ = o.value("user").toString();
 	my_psn_ = o.value("myPsn").toString();
 	my_psn_ready_ = o.value("myPsnReady").toBool();
+	closed_ = o.value("closed").toBool();
+	if(admin_)
+		refreshAdmin();
 	QJsonObject next = o.value("next").toObject();
 	next_start_ = next.value("start").toVariant().toLongLong();
 	next_end_ = next.value("end").toVariant().toLongLong();
@@ -334,5 +337,49 @@ void AnyPlayCloud::uploadConsole()
 		emit message(status == 200 && o.value("ok").toBool()
 			? tr("✅ PS5 і вхід PSN передано на сервер. Клієнти гратимуть через нього.")
 			: tr("Не вдалося передати PS5 на сервер (помилка %1).").arg(status));
+	});
+}
+
+void AnyPlayCloud::refreshAdmin()
+{
+	if(!admin_ || token_.isEmpty())
+		return;
+	request("GET", "/api/app/admin", QJsonObject(), [this](int status, const QJsonObject &o) {
+		if(status != 200 || !o.value("ok").toBool())
+			return;
+		admin_info_ = o.toVariantMap();
+		emit adminChanged();
+	});
+}
+
+void AnyPlayCloud::adminKick(qint64 bookingId)
+{
+	if(!admin_)
+		return;
+	QJsonObject body;
+	body["action"] = "kick";
+	body["bookingId"] = bookingId;
+	request("POST", "/api/app/admin", body, [this](int status, const QJsonObject &o) {
+		emit message(status == 200 && o.value("ok").toBool()
+			? tr("⛔ Гру клієнта завершено. Йому прийшло повідомлення в боті.")
+			: tr("Не вдалося завершити гру (помилка %1).").arg(status));
+		refreshAdmin();
+	});
+}
+
+void AnyPlayCloud::adminSetClosed(bool closed)
+{
+	if(!admin_)
+		return;
+	QJsonObject body;
+	body["action"] = closed ? "close" : "open";
+	request("POST", "/api/app/admin", body, [this, closed](int status, const QJsonObject &o) {
+		if(status == 200 && o.value("ok").toBool())
+			emit message(closed
+				? tr("🔒 Доступ закрито: клієнти не можуть грати, бот показує «технічні роботи».")
+				: tr("🔓 Доступ відкрито: клієнти знову грають у свій час."));
+		else
+			emit message(tr("Не вдалося змінити доступ (помилка %1).").arg(status));
+		refreshAdmin();
 	});
 }

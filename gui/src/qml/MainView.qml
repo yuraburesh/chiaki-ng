@@ -11,7 +11,10 @@ Pane {
     StackView.onActivated: {
         forceActiveFocus(Qt.TabFocusReason);
         if(anyplayHome.visible)
+        {
             anyplayHome.forceActiveFocus();
+            anyplayHome.resume();
+        }
         if(Chiaki.cloud.admin && anyplayHome.serviceMode && !Chiaki.autoConnect && !root.initialAsk && !Chiaki.window.directStream)
         {
             root.initialAsk = true;

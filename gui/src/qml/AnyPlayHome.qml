@@ -16,6 +16,8 @@ Rectangle {
     readonly property bool isAdmin: cloud.loggedIn && cloud.admin
     readonly property var adm: cloud.adminInfo || ({})
     readonly property var cur: adm.current || null
+    readonly property int tileCount: isAdmin ? 6 : 5
+    readonly property real tileW: Math.min(172, (width - 60 - 14 * (tileCount - 1)) / tileCount)
     signal openKeys()
     color: "#0b0618"
     focus: visible
@@ -371,6 +373,12 @@ Rectangle {
         }
         HomeTile {
             visible: home.isAdmin
+            icon: "🎮"; title: qsTr("Свої PSN")
+            subtitle: (home.adm.psnClients || []).length ? qsTr("чекають: %1").arg(home.adm.psnClients.length) : qsTr("немає заявок")
+            onClicked: clientsPopup.open()
+        }
+        HomeTile {
+            visible: home.isAdmin
             icon: "📊"; title: qsTr("CRM"); subtitle: qsTr("броні й клієнти")
             onClicked: { home.cloud.openBot(); toast.show(qsTr("У боті натисни кнопку «📊 CRM» внизу зліва")); }
         }
@@ -382,7 +390,7 @@ Rectangle {
         HomeTile {
             visible: home.cloud.loggedIn && !home.isAdmin
             icon: "🎮"; title: qsTr("Мій PSN")
-            subtitle: home.cloud.myPsn ? home.cloud.myPsn : qsTr("спільний акаунт")
+            subtitle: !home.cloud.myPsn ? qsTr("спільний акаунт") : (home.cloud.myPsnStatus === "ready" ? home.cloud.myPsn + " ✅" : qsTr("підключаємо…"))
             onClicked: psnPopup.open()
         }
         HomeTile {
@@ -478,55 +486,179 @@ Rectangle {
         }
     }
 
-    // ── свій акаунт PSN ──
+    // ── свій акаунт PSN: навіщо + 4 кроки ──
+    property bool qrAutoShown: false
+    property bool reopenPsn: false
+    function resume() { if (reopenPsn) { reopenPsn = false; psnPopup.open(); } }
+    Connections {
+        target: Chiaki.cloud
+        function onChanged() {
+            if (home.cloud.myPsnQr && !home.qrAutoShown && home.visible && !home.isAdmin) {
+                home.qrAutoShown = true;
+                psnPopup.open();
+            }
+            if (!home.cloud.myPsnQr)
+                home.qrAutoShown = false;
+        }
+    }
     Popup {
         id: psnPopup
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: Math.min(home.width - 60, 640)
+        width: Math.min(home.width - 60, 720)
+        height: Math.min(home.height - 40, psnCol.implicitHeight + 56)
         modal: true
         padding: 28
         background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
-        onOpened: { psnField.text = home.cloud.myPsn; psnField.forceActiveFocus(); }
-        ColumnLayout {
+        onOpened: psnField.text = home.cloud.myPsn
+        readonly property string st: home.cloud.myPsnStatus
+        readonly property int step: !home.cloud.myPsn ? 1 : (!home.cloud.myPsnLinked ? 2 : (st === "ready" ? 5 : (st === "signed_in" ? 4 : 3)))
+        ScrollView {
             anchors.fill: parent
-            spacing: 14
-            Label { text: qsTr("Мій акаунт PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
-            Label {
-                Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 15
-                text: home.cloud.myPsn
-                    ? (home.cloud.myPsnReady
-                        ? qsTr("✅ Твій профіль уже додано на приставку.")
-                        : qsTr("Ми отримали твій акаунт. Щойно додамо його на приставку, бот надішле в Telegram QR-код для входу."))
-                    : qsTr("Зараз ти граєш на спільному акаунті AnyPlay — нічого налаштовувати не треба. Хочеш свої збереження, трофеї й друзів? Впиши свій PSN ID (нік у PlayStation Network).")
-            }
-            TextField {
-                id: psnField
-                Layout.fillWidth: true
-                placeholderText: qsTr("Наприклад, MyNickname_7")
-                font.pixelSize: 18
-                onAccepted: psnSave.clicked()
-            }
-            Label {
-                Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 13; color: home.cDim; opacity: 0.85
-                text: qsTr("🔒 Пароль від PSN вводити не треба — ніде й нікому. Вхід ти підтверджуєш сам на приставці за QR-кодом.")
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 10
-                HomeButton {
-                    visible: home.cloud.myPsn !== ""
-                    text: qsTr("Грати на спільному")
-                    onClicked: { home.cloud.setMyPsn(""); psnPopup.close(); }
+            contentWidth: availableWidth
+            clip: true
+            ColumnLayout {
+                id: psnCol
+                width: parent.width
+                spacing: 12
+                Label { text: qsTr("🎮 Мій акаунт PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
+
+                // навіщо свій акаунт
+                Rectangle {
+                    Layout.fillWidth: true
+                    visible: psnPopup.step <= 2
+                    radius: 16; color: "#1f1240"
+                    implicitHeight: whyCol.implicitHeight + 24
+                    ColumnLayout {
+                        id: whyCol
+                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 14 }
+                        spacing: 4
+                        Label { text: qsTr("Навіщо грати на своєму акаунті?"); font.bold: true; font.pixelSize: 16; color: home.cSun }
+                        Repeater {
+                            model: [
+                                qsTr("💾 Твій прогрес — лише твій: сюжет, персонаж GTA Online, гроші, авто й нерухомість."),
+                                qsTr("🔒 Ніхто з інших орендарів не зайде у твого персонажа і не зіпсує збереження."),
+                                qsTr("🔁 Наступна оренда — продовжуєш з того самого місця, нічого не налаштовуючи."),
+                                qsTr("👥 Твої друзі, трофеї й гра з друзями онлайн."),
+                                qsTr("🆓 Акаунт PSN безкоштовний, а гра вже є на нашій приставці — купувати нічого не треба.")
+                            ]
+                            Label { required property string modelData; Layout.fillWidth: true; wrapMode: Text.WordWrap; text: modelData; color: "white"; font.pixelSize: 14 }
+                        }
+                        Label {
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 13; color: home.cDim
+                            text: qsTr("На спільному акаунті AnyPlay грають усі клієнти — прогрес там спільний і може змінитися.")
+                        }
+                        HomeButton {
+                            text: qsTr("Ще немає акаунта? Створити безкоштовно ↗")
+                            flat: true
+                            onClicked: Qt.openUrlExternally("https://my.account.sony.com/")
+                        }
+                    }
                 }
-                Item { Layout.fillWidth: true }
-                HomeButton { text: qsTr("Скасувати"); onClicked: psnPopup.close() }
+
+                // крок 1: нік
+                PsnStep {
+                    num: 1; done: psnPopup.step > 1; active: psnPopup.step === 1
+                    title: home.cloud.myPsn ? qsTr("Нік PSN: %1").arg(home.cloud.myPsn) : qsTr("Впиши свій нік PSN (Online ID)")
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: psnPopup.step === 1
+                    spacing: 10
+                    TextField {
+                        id: psnField
+                        Layout.fillWidth: true
+                        placeholderText: qsTr("Наприклад, MyNickname_7")
+                        font.pixelSize: 18
+                        onAccepted: psnSave.clicked()
+                    }
+                    HomeButton {
+                        id: psnSave
+                        primary: true
+                        text: qsTr("Далі")
+                        enabled: psnField.text.trim().length >= 3
+                        onClicked: home.cloud.setMyPsn(psnField.text)
+                    }
+                }
+
+                // крок 2: вхід у PSN через сторінку Sony
+                PsnStep {
+                    num: 2; done: psnPopup.step > 2; active: psnPopup.step === 2
+                    title: qsTr("Увійди в PSN — на офіційній сторінці Sony")
+                }
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: psnPopup.step === 2
+                    color: home.cDim; font.pixelSize: 14
+                    text: qsTr("🔒 Пароль вводиш лише на сайті Sony — ні ми, ні програма його не бачимо. Це потрібно, щоб приставка відкривалась саме під твоїм акаунтом.")
+                }
                 HomeButton {
-                    id: psnSave
+                    visible: psnPopup.step === 2
                     primary: true
-                    text: qsTr("Зберегти")
-                    enabled: psnField.text.trim().length >= 3
-                    onClicked: { home.cloud.setMyPsn(psnField.text); psnPopup.close(); }
+                    text: qsTr("Увійти через сайт Sony")
+                    onClicked: {
+                        if (home.cloud.beginMyPsnLogin()) {
+                            home.reopenPsn = true;
+                            psnPopup.close();
+                            root.showPSNTokenDialog(false, false);
+                        }
+                    }
+                }
+
+                // крок 3: вхід на приставці за QR
+                PsnStep {
+                    num: 3; done: psnPopup.step > 3; active: psnPopup.step === 3
+                    title: qsTr("Увійди на приставці — відскануй QR-код телефоном")
+                }
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    visible: psnPopup.step === 3 && !home.cloud.myPsnQr
+                    color: home.cDim; font.pixelSize: 14
+                    text: qsTr("⏳ Адміністратор готує приставку — QR-код з'явиться тут за кілька хвилин (і в Telegram). Вікно можна закрити: щойно код буде, воно відкриється саме.")
+                }
+                Image {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: psnPopup.step === 3 && home.cloud.myPsnQr
+                    source: visible ? home.cloud.qrUrl : ""
+                    Layout.preferredWidth: 280; Layout.preferredHeight: 280
+                    fillMode: Image.PreserveAspectFit
+                    cache: false
+                }
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    visible: psnPopup.step === 3 && home.cloud.myPsnQr
+                    color: "white"; font.pixelSize: 14
+                    text: qsTr("Наведи камеру телефона на код, відкрий посилання і увійди у свій акаунт PSN. Потім натисни кнопку нижче.")
+                }
+                HomeButton {
+                    visible: psnPopup.step === 3 && home.cloud.myPsnQr
+                    primary: true
+                    text: qsTr("✅ Я увійшов на приставці")
+                    onClicked: home.cloud.myPsnDone()
+                }
+
+                // крок 4: адмін завершує
+                PsnStep {
+                    num: 4; done: psnPopup.step > 4; active: psnPopup.step === 4
+                    title: psnPopup.step === 5 ? qsTr("Готово! Ти граєш на своєму акаунті ✅") : qsTr("Адміністратор завершує підключення (1–2 хв)")
+                }
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: psnPopup.step === 5
+                    color: "#3dff9a"; font.pixelSize: 15
+                    text: qsTr("Твій акаунт збережено: наступного разу просто бронюй і грай — приставка сама відкриється під ним.")
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+                    HomeButton {
+                        visible: home.cloud.myPsn !== ""
+                        flat: true
+                        text: qsTr("Грати на спільному")
+                        onClicked: root.showConfirmDialog(qsTr("Спільний акаунт"), qsTr("Перейти на спільний акаунт AnyPlay? Свій акаунт доведеться підключати заново."),
+                                                          () => { home.cloud.setMyPsn(""); psnPopup.close(); })
+                    }
+                    Item { Layout.fillWidth: true }
+                    HomeButton { text: qsTr("Закрити"); onClicked: psnPopup.close() }
                 }
             }
         }
@@ -550,6 +682,98 @@ Rectangle {
                 HomeButton { text: qsTr("Відкрити Telegram"); onClicked: home.cloud.openBot() }
                 Item { Layout.fillWidth: true }
                 HomeButton { text: qsTr("Закрити"); flat: true; onClicked: extendPopup.close() }
+            }
+        }
+    }
+
+    // ── адмін: клієнти зі своїм PSN — прив'язати приставку до їхнього акаунта ──
+    Popup {
+        id: clientsPopup
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(home.width - 60, 760)
+        height: Math.min(home.height - 40, clientsCol.implicitHeight + 56)
+        modal: true
+        padding: 28
+        property string result: ""
+        property bool resultOk: true
+        onOpened: { result = ""; home.cloud.refreshAdmin(); }
+        background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
+        Connections {
+            target: Chiaki.cloud
+            function onLinkResult(ok, text) { clientsPopup.result = text; clientsPopup.resultOk = ok; }
+        }
+        ScrollView {
+            anchors.fill: parent
+            contentWidth: availableWidth
+            clip: true
+            ColumnLayout {
+                id: clientsCol
+                width: parent.width
+                spacing: 12
+                Label { text: qsTr("Клієнти зі своїм PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 14
+                    text: qsTr("1) Бот надішле тобі заявку — натисни «📷 Надіслати QR клієнту» і сфотографуй QR з PS5 (Перемкнути користувача → Додати → Увійти).\n2) Клієнт сканує QR і входить.\n3) На PS5 перемкнись на його профіль → Налаштування → Система → Дистанційне відтворення → Прив'язати пристрій. Введи 8 цифр тут і натисни «Прив'язати» (комп'ютер і PS5 — в одній мережі).")
+                }
+                Label {
+                    visible: !(home.adm.psnClients || []).length
+                    text: qsTr("Зараз заявок немає.")
+                    color: "white"; font.pixelSize: 16
+                }
+                Repeater {
+                    model: home.adm.psnClients || []
+                    Rectangle {
+                        id: cRow
+                        required property var modelData
+                        Layout.fillWidth: true
+                        radius: 16; color: "#1f1240"; border.color: "#33ffffff"
+                        implicitHeight: cCol.implicitHeight + 24
+                        ColumnLayout {
+                            id: cCol
+                            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 14 }
+                            spacing: 8
+                            Label {
+                                text: qsTr("%1 · PSN: %2").arg(cRow.modelData.user).arg(cRow.modelData.psn)
+                                color: "white"; font.bold: true; font.pixelSize: 17
+                            }
+                            Label {
+                                color: home.cDim; font.pixelSize: 14
+                                text: {
+                                    const m = cRow.modelData;
+                                    const acc = m.accountId ? qsTr("увійшов у PSN у програмі ✅") : qsTr("ще не увійшов у PSN у програмі");
+                                    const st = { requested: qsTr("чекає QR-код"), qr_sent: qsTr("QR надіслано, чекаємо входу"),
+                                                 signed_in: qsTr("увійшов на PS5 — лишилось прив'язати ⬇") }[m.status] || m.status;
+                                    return st + " · " + acc;
+                                }
+                            }
+                            RowLayout {
+                                spacing: 10
+                                TextField {
+                                    id: pinField
+                                    placeholderText: qsTr("8 цифр з PS5")
+                                    inputMethodHints: Qt.ImhDigitsOnly
+                                    maximumLength: 9
+                                    Layout.preferredWidth: 200
+                                    font.pixelSize: 18
+                                }
+                                HomeButton {
+                                    primary: true
+                                    text: home.cloud.busy ? qsTr("Прив'язую…") : qsTr("🔗 Прив'язати")
+                                    enabled: !home.cloud.busy && !!cRow.modelData.accountId && pinField.text.replace(/\D/g, "").length === 8
+                                    onClicked: { clientsPopup.result = ""; home.cloud.linkClientConsole(cRow.modelData.userId, cRow.modelData.accountId, pinField.text); }
+                                }
+                            }
+                        }
+                    }
+                }
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    visible: clientsPopup.result !== ""
+                    text: clientsPopup.result
+                    color: clientsPopup.resultOk ? "#3dff9a" : "#ff4d6d"; font.pixelSize: 15; font.bold: true
+                }
+                HomeButton { Layout.alignment: Qt.AlignRight; text: qsTr("Закрити"); onClicked: clientsPopup.close() }
             }
         }
     }
@@ -638,13 +862,33 @@ Rectangle {
         }
     }
 
+    component PsnStep: RowLayout {
+        id: ps
+        property int num
+        property string title
+        property bool done
+        property bool active
+        Layout.fillWidth: true
+        spacing: 10
+        Rectangle {
+            width: 30; height: 30; radius: 15
+            color: ps.done ? "#3dff9a" : (ps.active ? "#ff2e9a" : "#33ffffff")
+            Label { anchors.centerIn: parent; text: ps.done ? "✓" : ps.num; color: ps.done ? "#0b0618" : "white"; font.bold: true }
+        }
+        Label {
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+            text: ps.title; font.pixelSize: 16; font.bold: ps.active
+            color: ps.active || ps.done ? "white" : "#88ffffff"
+        }
+    }
+
     component HomeTile: Rectangle {
         id: tile
         property string icon
         property string title
         property string subtitle
         signal clicked()
-        implicitWidth: 172; implicitHeight: 104
+        implicitWidth: home.tileW; implicitHeight: 104
         radius: 20
         color: tileMouse.containsMouse ? "#2a1650" : "#cc160d2b"
         border.color: tileMouse.containsMouse ? "#22e4ff" : "#33ffffff"

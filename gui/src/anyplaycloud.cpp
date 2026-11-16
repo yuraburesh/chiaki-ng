@@ -2,7 +2,9 @@
 #include "settings.h"
 #include "qmlbackend.h"
 
+#include <QClipboard>
 #include <QDateTime>
+#include <QGuiApplication>
 #include <QDesktopServices>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -11,6 +13,7 @@
 #include <QSysInfo>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QRegularExpression>
 
 static const char *DEFAULT_SERVER = "https://34-123-25-16.sslip.io";
 static const int POLL_MS = 60 * 1000;
@@ -29,6 +32,17 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 	connect(&poll_timer, &QTimer::timeout, this, &AnyPlayCloud::refresh);
 	beat_timer.setInterval(BEAT_MS);
 	connect(&beat_timer, &QTimer::timeout, this, &AnyPlayCloud::heartbeat);
+	psn_wait_timer.setInterval(1000);
+	connect(&psn_wait_timer, &QTimer::timeout, this, &AnyPlayCloud::sendMyPsnLogin);
+	pay_timer.setInterval(5000);
+	connect(&pay_timer, &QTimer::timeout, this, [this]() {
+		if(++pay_polls_ > 40)   // ~3 хв, далі адмін підтвердить вручну
+		{
+			pay_timer.stop();
+			return;
+		}
+		loadExtend();
+	});
 	pair_timer.setInterval(PAIR_MS);
 	connect(&pair_timer, &QTimer::timeout, this, [this]() {
 		if(++pair_tries_ > PAIR_MAX_TRIES)
@@ -182,6 +196,17 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	my_psn_ = o.value("myPsn").toString();
 	my_psn_ready_ = o.value("myPsnReady").toBool();
 	closed_ = o.value("closed").toBool();
+	{
+		QString st = o.value("myPsnStatus").toString();
+		bool qr = o.value("myPsnQr").toBool();
+		if(qr && (!my_psn_qr_ || st != my_psn_status_))
+			qr_rev_++;
+		if(st == "ready" && my_psn_status_ != "ready" && !my_psn_status_.isEmpty())
+			emit message(tr("✅ Твій акаунт PSN підключено — можна грати на своєму акаунті!"));
+		my_psn_status_ = st;
+		my_psn_qr_ = qr;
+		my_psn_linked_ = o.value("myPsnLinked").toBool();
+	}
 	if(admin_)
 		refreshAdmin();
 	QJsonObject next = o.value("next").toObject();
@@ -205,10 +230,13 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 			psn["account_id"] = remote.value("account_id").toString();
 			qint64 exp = remote.value("expiry").toVariant().toLongLong();
 			psn["expiry"] = QDateTime::fromSecsSinceEpoch(exp - skew_).toString(settings->GetTimeFormat());
-			bool first = !settings->HasAnyPlayEphemeral();
-			settings->SetAnyPlayEphemeral(console.value("host").toObject().toVariantMap(), psn);
-			if(first)
-				backend->refreshPsnToken(); // оновити список PS5 через PSN
+			if(!psn_login_active_)   // поки клієнт входить у свій PSN, не підміняємо його вхід
+			{
+				bool first = !settings->HasAnyPlayEphemeral();
+				settings->SetAnyPlayEphemeral(console.value("host").toObject().toVariantMap(), psn);
+				if(first)
+					backend->refreshPsnToken(); // оновити список PS5 через PSN
+			}
 		}
 		if(!playing_)
 		{
@@ -255,6 +283,8 @@ void AnyPlayCloud::heartbeat()
 		if(end_ > 0 && end > end_)
 		{
 			emit message(tr("✅ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
+			emit extendResult(true, tr("✅ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
+			pay_timer.stop();
 			loadExtend();
 		}
 		end_ = end;
@@ -402,16 +432,18 @@ void AnyPlayCloud::loadExtend()
 	});
 }
 
-void AnyPlayCloud::extend(int hours)
+void AnyPlayCloud::extend(int hours, const QString &method)
 {
 	QJsonObject body;
 	body["hours"] = hours;
+	if(!method.isEmpty())
+		body["method"] = method;
 	request("POST", "/api/app/extend", body, [this, hours](int status, const QJsonObject &o) {
 		if(status == 200 && o.value("ok").toBool())
 		{
 			QJsonObject p = o.value("pending").toObject();
 			qint64 hold = p.value("holdUntil").toVariant().toLongLong() - (QDateTime::currentSecsSinceEpoch() + skew_);
-			emit extendResult(true, tr("Час %1–%2 закріплено за тобою на %3 хв. Реквізити і кнопку «✅ Я оплатив» ми надіслали в Telegram — оплати, і гра продовжиться сама, без перезапуску.")
+			emit extendResult(true, tr("Час %1–%2 закріплено за тобою на %3 хв. Оплати за реквізитами нижче й натисни «✅ Я оплатив» — гра продовжиться сама, без перезапуску.")
 				.arg(formatTime(p.value("start").toVariant().toLongLong())).arg(formatTime(p.value("end").toVariant().toLongLong()))
 				.arg(qMax<qint64>(1, hold / 60)));
 		}
@@ -424,5 +456,163 @@ void AnyPlayCloud::extend(int hours)
 				: tr("Не вдалося продовжити (помилка %1). Спробуй у боті.").arg(status));
 		}
 		loadExtend();
+	});
+}
+
+void AnyPlayCloud::payExtend(qint64 bookingId, const QString &sender)
+{
+	QJsonObject body;
+	body["bookingId"] = bookingId;
+	body["sender"] = sender.trimmed();
+	setBusy(true);
+	request("POST", "/api/app/extend/paid", body, [this](int status, const QJsonObject &o) {
+		setBusy(false);
+		if(status == 200 && o.value("ok").toBool())
+		{
+			if(o.value("paid").toBool())
+				emit extendResult(true, tr("✅ Оплату вже отримано!"));
+			else if(o.value("auto").toBool())
+				emit extendResult(true, tr("⏳ Шукаємо твій платіж у виписці — зазвичай до хвилини. Можна повертатися до гри."));
+			else
+				emit extendResult(true, tr("⏳ Адміністратор перевіряє оплату — зазвичай кілька хвилин. Гра не перерветься, якщо оплата прийде до кінця часу."));
+			pay_polls_ = 0;
+			pay_timer.start();
+		}
+		else
+			emit extendResult(false, o.value("error").toString() == "busy"
+				? tr("На жаль, цей час уже зайняли — обери інший варіант.")
+				: tr("Не вдалося надіслати оплату (помилка %1). Спробуй ще раз.").arg(status));
+		loadExtend();
+	});
+}
+
+void AnyPlayCloud::copyText(const QString &text)
+{
+	if(QGuiApplication::clipboard())
+		QGuiApplication::clipboard()->setText(text);
+	emit message(tr("Скопійовано: %1").arg(text));
+}
+
+QString AnyPlayCloud::qrUrl() const
+{
+	if(!my_psn_qr_ || token_.isEmpty())
+		return QString();
+	QUrl url(server_ + "/api/app/psn/qr");
+	QUrlQuery q;
+	q.addQueryItem("t", token_);
+	q.addQueryItem("r", QString::number(qr_rev_));
+	url.setQuery(q);
+	return url.toString();
+}
+
+bool AnyPlayCloud::beginMyPsnLogin()
+{
+	if(backend->qmlSession())
+	{
+		emit message(tr("Спершу заверши гру (або зроби це до її початку) — вхід у PSN займе хвилину."));
+		return false;
+	}
+	psn_login_active_ = true;
+	settings->ClearAnyPlayEphemeral();   // далі вхід PSN запишеться саме для клієнта
+	settings->SetPsnRefreshToken(QString());
+	settings->SetPsnAuthToken(QString());
+	settings->SetPsnAccountId(QString());
+	psn_wait_tries_ = 0;
+	psn_wait_timer.start();
+	return true;
+}
+
+void AnyPlayCloud::sendMyPsnLogin()
+{
+	QString acc = settings->GetPsnAccountId(), rt = settings->GetPsnRefreshToken();
+	if(acc.isEmpty() || rt.isEmpty())
+	{
+		if(++psn_wait_tries_ > 600)   // 10 хв без входу — скасовуємо
+		{
+			psn_wait_timer.stop();
+			psn_login_active_ = false;
+			refresh();
+		}
+		return;
+	}
+	psn_wait_timer.stop();
+	QJsonObject body;
+	body["accountId"] = acc;
+	body["refresh_token"] = rt;
+	body["auth_token"] = settings->GetPsnAuthToken();
+	QDateTime exp = QDateTime::fromString(settings->GetPsnAuthTokenExpiry(), settings->GetTimeFormat());
+	body["expiry"] = exp.isValid() ? exp.toSecsSinceEpoch() + skew_ : 0;
+	request("POST", "/api/app/psn/link", body, [this](int status, const QJsonObject &o) {
+		psn_login_active_ = false;
+		if(status == 200 && o.value("ok").toBool())
+			emit message(tr("✅ Вхід у PSN виконано. Тепер адміністратор додасть твій профіль на приставку — це кілька хвилин."));
+		else
+			emit message(tr("Не вдалося передати вхід PSN (помилка %1). Спробуй ще раз.").arg(status));
+		refresh();
+	});
+}
+
+void AnyPlayCloud::myPsnDone()
+{
+	request("POST", "/api/app/psn/done", QJsonObject(), [this](int status, const QJsonObject &o) {
+		emit message(status == 200 && o.value("ok").toBool()
+			? tr("Дякуємо! Адміністратор завершує підключення — ще 1–2 хвилини.")
+			: tr("Не вдалося надіслати (помилка %1).").arg(status));
+		refresh();
+	});
+}
+
+void AnyPlayCloud::linkClientConsole(qint64 userId, const QString &accountId, const QString &pin)
+{
+	if(!admin_)
+		return;
+	QByteArray account = QByteArray::fromBase64(accountId.toUtf8());
+	if(account.size() != CHIAKI_PSN_ACCOUNT_ID_SIZE)
+	{
+		emit linkResult(false, tr("Клієнт ще не увійшов у PSN у своїй програмі — попроси його натиснути «Увійти в PSN»."));
+		return;
+	}
+	QString digits = pin;
+	digits.remove(QRegularExpression("[^0-9]"));
+	if(digits.size() != 8)
+	{
+		emit linkResult(false, tr("Код має бути з 8 цифр — він на екрані PS5."));
+		return;
+	}
+	ChiakiRegistInfo info = {};
+	QByteArray hostb = QByteArrayLiteral("255.255.255.255");
+	info.host = hostb.constData();
+	info.target = CHIAKI_TARGET_PS5_1;
+	info.broadcast = true;
+	info.pin = (uint32_t)digits.toULong();
+	info.console_pin = 0;
+	info.holepunch_info = nullptr;
+	info.rudp = nullptr;
+	info.psn_online_id = nullptr;
+	memcpy(info.psn_account_id, account.constData(), CHIAKI_PSN_ACCOUNT_ID_SIZE);
+	setBusy(true);
+	auto regist = new QmlRegist(info, settings->GetLogLevelMask(), this);
+	connect(regist, &QmlRegist::failed, this, [this, regist]() {
+		setBusy(false);
+		emit linkResult(false, tr("PS5 не прийняла код. Перевір, що комп'ютер і PS5 в одній мережі, код свіжий (діє 5 хв) і згенерований під профілем клієнта."));
+		regist->deleteLater();
+	});
+	connect(regist, &QmlRegist::success, this, [this, regist, userId](const RegisteredHost &rhost) {
+		regist->deleteLater();
+		// прив'язку клієнта НЕ зберігаємо в цій програмі — лише передаємо на сервер (своя прив'язка адміна лишається)
+		QJsonObject body;
+		body["host"] = QJsonObject::fromVariantMap(rhost.ToVariantMap());
+		body["ownerUserId"] = userId;
+		body["label"] = rhost.GetServerNickname();
+		request("POST", "/api/app/console", body, [this](int status, const QJsonObject &o) {
+			setBusy(false);
+			if(status == 200 && o.value("ok").toBool())
+				emit linkResult(true, tr("✅ Готово! Клієнт тепер грає на своєму акаунті — і наступного разу теж. Йому прийшло повідомлення."));
+			else
+				emit linkResult(false, o.value("error").toString() == "client_psn"
+					? tr("Клієнт ще не увійшов у PSN у своїй програмі.")
+					: tr("Не вдалося зберегти на сервері (помилка %1).").arg(status));
+			refreshAdmin();
+		});
 	});
 }

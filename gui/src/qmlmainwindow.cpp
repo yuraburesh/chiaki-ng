@@ -53,7 +53,9 @@ extern "C" {
 #include <QOpenGLFramebufferObject>
 #include <QOffscreenSurface>
 #include <QSurfaceFormat>
+#if QT_CONFIG(vulkan)
 #include <QVulkanInstance>
+#endif
 #include <QQuickItem>
 #include <QQmlEngine>
 #include <QQmlComponent>
@@ -2702,7 +2704,9 @@ QmlMainWindow::~QmlMainWindow()
     } else {
         pl_opengl_destroy(&placebo_opengl);
     }
+#if QT_CONFIG(vulkan)
     delete qt_vk_inst;
+#endif
     delete qt_gl_offscreen_surface;
     delete qt_gl_context;
     pl_options_free(&renderparams_opts);
@@ -4958,6 +4962,10 @@ void QmlMainWindow::init(Settings *settings, bool exit_app_on_stream_exit)
 {
     bypass_frame_queue = settings->GetDirectFrameMapping();
     render_backend = settings->GetRenderBackend();
+#if !QT_CONFIG(vulkan)
+    // Qt зібрано без Vulkan (офіційні збірки для macOS на Intel) — малюємо через OpenGL
+    render_backend = RenderBackend::OpenGL;
+#endif
     setSurfaceType(render_backend == RenderBackend::Vulkan ? QWindow::VulkanSurface : QWindow::OpenGLSurface);
     qparams = {};
     qparams.drift_compensation = 1e-3;
@@ -5209,6 +5217,7 @@ vulkan_setup_done:
             qFatal("Failed initializing OpenGL backend");
     }
 
+#if QT_CONFIG(vulkan)
     if (render_backend == RenderBackend::Vulkan) {
         qt_vk_inst = new QVulkanInstance;
         qt_vk_inst->setVkInstance(placebo_vk_inst->instance);
@@ -5218,6 +5227,7 @@ vulkan_setup_done:
             fallbackToOpenGL(QStringLiteral("Failed to create QVulkanInstance"));
         }
     }
+#endif
 
 renderer_backend_ready:
     struct pl_cache_params cache_params = {
@@ -5254,7 +5264,9 @@ renderer_backend_ready:
     QQuickWindow::setGraphicsApi(render_backend == RenderBackend::Vulkan ? QSGRendererInterface::Vulkan : QSGRendererInterface::OpenGL);
     quick_window = new QQuickWindow(quick_render);
     if (render_backend == RenderBackend::Vulkan) {
+#if QT_CONFIG(vulkan)
         quick_window->setVulkanInstance(qt_vk_inst);
+#endif
         quick_window->setGraphicsDevice(QQuickGraphicsDevice::fromDeviceObjects(placebo_vulkan->phys_device, placebo_vulkan->device, placebo_vulkan->queue_graphics.index));
     } else {
         quick_window->setGraphicsDevice(QQuickGraphicsDevice::fromOpenGLContext(qt_gl_context));

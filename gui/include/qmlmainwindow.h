@@ -8,6 +8,10 @@
 #include <QAtomicInteger>
 #include <QWindow>
 #include <QQuickWindow>
+#include <QtGui/qtguiglobal.h>
+#if QT_CONFIG(vulkan)
+class QVulkanInstance;
+#endif
 #include <QLoggingCategory>
 #include <deque>
 #include <atomic>
@@ -44,7 +48,6 @@ class QmlBackend;
 class QOffscreenSurface;
 class QOpenGLContext;
 class QOpenGLFramebufferObject;
-class QVulkanInstance;
 class QWidget;
 class QLabel;
 class QVBoxLayout;
@@ -419,7 +422,9 @@ private:
     bool vulkan_deferred_swap_enabled = false;
     bool present_vsync_enabled = true;
 
+#if QT_CONFIG(vulkan)
     QVulkanInstance *qt_vk_inst = {};
+#endif
     QOpenGLContext *qt_gl_context = {};
     QOffscreenSurface *qt_gl_offscreen_surface = {};
     QQmlEngine *qml_engine = {};

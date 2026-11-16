@@ -449,11 +449,38 @@ Item {
         }
     }
 
+    // ── AnyPlay: нагадування в кінці гри ──
+    Rectangle {
+        id: anyplayEndBanner
+        property int tick: 0
+        readonly property int left: { tick; return Chiaki.cloud.endTs - Math.floor(Date.now() / 1000) - Chiaki.cloud.clockSkew; }
+        visible: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin && Chiaki.cloud.state === "play" && Chiaki.cloud.endTs > 0
+                 && left > 0 && left <= 10 * 60 && !(menuController.open || menuController.closing)
+        z: 50
+        anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 16 }
+        width: endBannerText.implicitWidth + 36
+        height: endBannerText.implicitHeight + 18
+        radius: 14
+        color: "#d90b0618"
+        border.color: "#ff2e9a"
+        Timer { interval: 1000; repeat: true; running: Chiaki.cloud.state === "play"; onTriggered: anyplayEndBanner.tick++ }
+        Label {
+            id: endBannerText
+            anchors.centerIn: parent
+            font.pixelSize: 16; font.bold: true; color: "white"
+            text: qsTr("⏳ Лишилось %1 хв · %2 → «⏱ Продовжити»")
+                .arg(Math.ceil(anyplayEndBanner.left / 60))
+                .arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"))
+        }
+    }
+
     Component {
         id: menuContentComponent
 
         Item {
+            id: menuContent
             property Item initialFocusItem: closeButton
+            property bool extOpen: false   // AnyPlay: панель продовження гри
             anchors.fill: parent
 
             Canvas {
@@ -471,7 +498,38 @@ Item {
                 }
             }
 
+            // ── AnyPlay: продовжити гру, не виходячи з неї ──
             RowLayout {
+                visible: menuContent.extOpen
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    bottom: parent.bottom
+                    leftMargin: 30
+                    rightMargin: 30
+                    bottomMargin: 24
+                }
+                spacing: 20
+                ToolButton {
+                    id: extBackButton
+                    text: "←"
+                    font.pixelSize: 40
+                    padding: 10
+                    down: activeFocus
+                    onClicked: { menuContent.extOpen = false; closeButton.forceActiveFocus(); }
+                    Keys.onReturnPressed: clicked()
+                    Keys.onEscapePressed: clicked()
+                }
+                ExtendPanel {
+                    id: streamExtend
+                    Layout.fillWidth: true
+                    compact: true
+                    visible: menuContent.extOpen
+                }
+            }
+
+            RowLayout {
+                visible: !menuContent.extOpen
                 anchors {
                     left: parent.left
                     bottom: parent.bottom
@@ -479,6 +537,32 @@ Item {
                     bottomMargin: 40
                 }
                 spacing: 0
+
+                ToolButton {
+                    id: extendButton
+                    visible: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin && Chiaki.cloud.state === "play"
+                    Layout.rightMargin: 16
+                    text: qsTr("⏱ Продовжити")
+                    padding: 14
+                    font.pixelSize: 20
+                    font.bold: true
+                    down: activeFocus
+                    onClicked: { menuContent.extOpen = true; extBackButton.forceActiveFocus(); }
+                    KeyNavigation.right: closeButton
+                    Keys.onReturnPressed: clicked()
+                    Keys.onEscapePressed: menuController.close()
+                    background: Rectangle {
+                        radius: 14
+                        border.color: extendButton.activeFocus ? "#22e4ff" : "transparent"
+                        border.width: 2
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0.0; color: "#ff9a3c" }
+                            GradientStop { position: 0.5; color: "#ff2e9a" }
+                            GradientStop { position: 1.0; color: "#7b2cff" }
+                        }
+                    }
+                }
 
                 ToolButton {
                     id: closeButton
@@ -494,6 +578,7 @@ Item {
                             root.showMainView();
                     }
                     KeyNavigation.right: volumeSlider
+                    KeyNavigation.left: extendButton.visible ? extendButton : null
                     Keys.onReturnPressed: clicked()
                     Keys.onEscapePressed: menuController.close()
                 }

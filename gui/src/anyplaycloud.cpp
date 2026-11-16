@@ -251,7 +251,13 @@ void AnyPlayCloud::heartbeat()
 			refresh();
 			return;
 		}
-		end_ = o.value("end").toVariant().toLongLong();
+		qint64 end = o.value("end").toVariant().toLongLong();
+		if(end_ > 0 && end > end_)
+		{
+			emit message(tr("✅ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
+			loadExtend();
+		}
+		end_ = end;
 		emit changed();
 	});
 }
@@ -381,5 +387,42 @@ void AnyPlayCloud::adminSetClosed(bool closed)
 		else
 			emit message(tr("Не вдалося змінити доступ (помилка %1).").arg(status));
 		refreshAdmin();
+	});
+}
+
+void AnyPlayCloud::loadExtend()
+{
+	if(token_.isEmpty())
+		return;
+	request("GET", "/api/app/extend", QJsonObject(), [this](int status, const QJsonObject &o) {
+		if(status != 200 || !o.value("ok").toBool())
+			return;
+		extend_info_ = o.toVariantMap();
+		emit extendChanged();
+	});
+}
+
+void AnyPlayCloud::extend(int hours)
+{
+	QJsonObject body;
+	body["hours"] = hours;
+	request("POST", "/api/app/extend", body, [this, hours](int status, const QJsonObject &o) {
+		if(status == 200 && o.value("ok").toBool())
+		{
+			QJsonObject p = o.value("pending").toObject();
+			qint64 hold = p.value("holdUntil").toVariant().toLongLong() - (QDateTime::currentSecsSinceEpoch() + skew_);
+			emit extendResult(true, tr("Час %1–%2 закріплено за тобою на %3 хв. Реквізити і кнопку «✅ Я оплатив» ми надіслали в Telegram — оплати, і гра продовжиться сама, без перезапуску.")
+				.arg(formatTime(p.value("start").toVariant().toLongLong())).arg(formatTime(p.value("end").toVariant().toLongLong()))
+				.arg(qMax<qint64>(1, hold / 60)));
+		}
+		else
+		{
+			QString e = o.value("error").toString();
+			emit extendResult(false, e == "busy" ? tr("На жаль, наступні %1 год уже хтось забронював. Спробуй менше годин.").arg(hours)
+				: e == "no_session" ? tr("Продовжити можна лише під час своєї гри.")
+				: e == "pending" ? tr("Твою оплату продовження вже перевіряють — зачекай трохи.")
+				: tr("Не вдалося продовжити (помилка %1). Спробуй у боті.").arg(status));
+		}
+		loadExtend();
 	});
 }

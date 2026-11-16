@@ -387,6 +387,11 @@ Rectangle {
         }
         HomeTile {
             visible: home.cloud.loggedIn && !home.isAdmin && home.cloud.state === "play"
+            icon: "⏱"; title: qsTr("Продовжити"); subtitle: qsTr("+1, +2, +3 год")
+            onClicked: extendPopup.open()
+        }
+        HomeTile {
+            visible: home.cloud.loggedIn && !home.isAdmin && home.cloud.state === "play"
             icon: "📅"; title: qsTr("Бронювання"); subtitle: qsTr("у боті")
             onClicked: home.cloud.openBot()
         }
@@ -523,6 +528,28 @@ Rectangle {
                     enabled: psnField.text.trim().length >= 3
                     onClicked: { home.cloud.setMyPsn(psnField.text); psnPopup.close(); }
                 }
+            }
+        }
+    }
+
+    // ── продовження гри ──
+    Popup {
+        id: extendPopup
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(home.width - 60, 660)
+        modal: true
+        padding: 28
+        background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 14
+            ExtendPanel { Layout.fillWidth: true; visible: extendPopup.opened }
+            RowLayout {
+                Layout.fillWidth: true
+                HomeButton { text: qsTr("Відкрити Telegram"); onClicked: home.cloud.openBot() }
+                Item { Layout.fillWidth: true }
+                HomeButton { text: qsTr("Закрити"); flat: true; onClicked: extendPopup.close() }
             }
         }
     }

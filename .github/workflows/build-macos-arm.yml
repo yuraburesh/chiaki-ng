@@ -89,6 +89,13 @@ jobs:
           done
           bad=$(find AnyPlay.app/Contents -type f \( -name '*.dylib' -o -perm -u+x \) -exec otool -L {} \; 2>/dev/null | grep -E '^[[:space:]]+/(opt/local|usr/local|opt/homebrew)/' || true)
           if [[ -n "$bad" ]]; then echo "Залишились зовнішні бібліотеки:"; echo "$bad"; exit 1; fi
+          # AnyPlay: лишаємо в бібліотеках тільки одну архітектуру — файл удвічі менший
+          find AnyPlay.app -type f | while read -r f; do
+            if lipo -archs "$f" 2>/dev/null | grep -q " "; then
+              lipo -archs "$f" | grep -qw arm64 && lipo "$f" -thin arm64 -output "$f.thin" && mv "$f.thin" "$f" && chmod +x "$f"
+            fi
+          done
+          du -sh AnyPlay.app
           codesign --force --entitlements gui/entitlements.xml --deep --sign - AnyPlay.app
           rm -f chiaki-ng.dmg
           rm -rf dmgroot && mkdir dmgroot && cp -a AnyPlay.app dmgroot/ && ln -s /Applications dmgroot/Applications

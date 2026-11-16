@@ -453,9 +453,9 @@ Item {
     Rectangle {
         id: anyplayEndBanner
         property int tick: 0
-        readonly property int left: { tick; return Chiaki.cloud.endTs - Math.floor(Date.now() / 1000) - Chiaki.cloud.clockSkew; }
+        readonly property int secsLeft: { tick; return Chiaki.cloud.endTs - Math.floor(Date.now() / 1000) - Chiaki.cloud.clockSkew; }
         visible: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin && Chiaki.cloud.state === "play" && Chiaki.cloud.endTs > 0
-                 && left > 0 && left <= 10 * 60 && !(menuController.open || menuController.closing)
+                 && secsLeft > 0 && secsLeft <= 10 * 60 && !(menuController.open || menuController.closing)
         z: 50
         anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 16 }
         width: endBannerText.implicitWidth + 36
@@ -469,7 +469,7 @@ Item {
             anchors.centerIn: parent
             font.pixelSize: 16; font.bold: true; color: "white"
             text: qsTr("⏳ Лишилось %1 хв · %2 → «⏱ Продовжити»")
-                .arg(Math.ceil(anyplayEndBanner.left / 60))
+                .arg(Math.ceil(anyplayEndBanner.secsLeft / 60))
                 .arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"))
         }
     }

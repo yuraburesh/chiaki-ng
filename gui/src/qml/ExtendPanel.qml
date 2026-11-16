@@ -154,8 +154,14 @@ ColumnLayout {
                     onClicked: panel.cloud.copyText(panel.pending.amount)
                 }
                 Item { Layout.fillWidth: true }
+                Button {   // у меню гри: оплата одним натиском, якщо є посилання
+                    visible: panel.compact && !!panel.pending && !!panel.pending.payUrl
+                    text: qsTr("💳 Оплатити")
+                    font.bold: true
+                    onClicked: Qt.openUrlExternally(panel.pending.payUrl)
+                }
                 Repeater {   // у меню гри — реквізити тим самим рядком
-                    model: panel.compact && panel.pending ? panel.pending.requisites.slice(0, 1) : []
+                    model: panel.compact && panel.pending && !panel.pending.payUrl ? panel.pending.requisites.slice(0, 1) : []
                     Button {
                         required property var modelData
                         text: modelData.label + ": " + modelData.value + "  📋"
@@ -173,6 +179,33 @@ ColumnLayout {
                     enabled: !panel.cloud.busy
                     onClicked: panel.cloud.payExtend(panel.pending.id, "")
                 }
+            }
+            Button {   // головне: відкрити оплату одразу з потрібною сумою
+                visible: !panel.compact && !!panel.pending && !!panel.pending.payUrl
+                Layout.fillWidth: true
+                Layout.preferredHeight: 58
+                font.pixelSize: 19; font.bold: true
+                text: qsTr("💳 Оплатити %1").arg(panel.pending ? panel.pending.price : "")
+                onClicked: Qt.openUrlExternally(panel.pending.payUrl)
+                contentItem: Label {
+                    text: parent.text; font: parent.font; color: "white"
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 16
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: "#ff9a3c" }
+                        GradientStop { position: 0.5; color: "#ff2e9a" }
+                        GradientStop { position: 1.0; color: "#7b2cff" }
+                    }
+                }
+            }
+            Label {
+                visible: !panel.compact && !!panel.pending && !!panel.pending.payUrl
+                Layout.fillWidth: true; wrapMode: Text.WordWrap
+                color: "#bfaed8"; font.pixelSize: 13
+                text: qsTr("Відкриється сторінка оплати з уже вписаною сумою — карткою, Apple Pay чи Google Pay. Або переказ за реквізитами:")
             }
             Repeater {
                 model: !panel.compact && panel.pending ? panel.pending.requisites : []

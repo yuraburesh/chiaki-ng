@@ -102,6 +102,27 @@ jobs:
           install_name_tool -change @rpath/libSDL2-2.0.0.dylib @executable_path/libSDL2-2.0.0.dylib AnyPlay.app/Contents/MacOS/chiaki || true
           install_name_tool -change /opt/homebrew/lib/libSDL2-2.0.0.dylib @executable_path/libSDL2-2.0.0.dylib AnyPlay.app/Contents/MacOS/chiaki || true
           ln -s libvulkan.1.dylib AnyPlay.app/Contents/Frameworks/vulkan
+          # AnyPlay: усі бібліотеки — лише всередині програми (у клієнтів немає MacPorts/Homebrew)
+          rm -f AnyPlay.app/Contents/PlugIns/sqldrivers/libqsqlmimer.dylib AnyPlay.app/Contents/PlugIns/sqldrivers/libqsqlodbc.dylib AnyPlay.app/Contents/PlugIns/sqldrivers/libqsqlpsql.dylib
+          for pass in 1 2 3 4; do
+            changed=0
+            while IFS= read -r f; do
+              for dep in $(otool -L "$f" 2>/dev/null | tail -n +2 | awk '{print $1}' | grep -E '^/(opt/local|usr/local|opt/homebrew)/' || true); do
+                base=$(basename "$dep")
+                if [[ ! -e "AnyPlay.app/Contents/Frameworks/$base" ]]; then
+                  cp -L "$dep" "AnyPlay.app/Contents/Frameworks/$base"
+                  chmod u+w "AnyPlay.app/Contents/Frameworks/$base"
+                  install_name_tool -id "@executable_path/../Frameworks/$base" "AnyPlay.app/Contents/Frameworks/$base"
+                fi
+                echo "fix: $f -> $base"
+                install_name_tool -change "$dep" "@executable_path/../Frameworks/$base" "$f"
+                changed=1
+              done
+            done < <(find AnyPlay.app/Contents/Frameworks AnyPlay.app/Contents/MacOS AnyPlay.app/Contents/PlugIns -type f \( -name '*.dylib' -o -perm -u+x \))
+            [[ $changed = 0 ]] && break
+          done
+          bad=$(find AnyPlay.app/Contents -type f \( -name '*.dylib' -o -perm -u+x \) -exec otool -L {} \; 2>/dev/null | grep -E '^[[:space:]]+/(opt/local|usr/local|opt/homebrew)/' || true)
+          if [[ -n "$bad" ]]; then echo "Залишились зовнішні бібліотеки:"; echo "$bad"; exit 1; fi
           codesign --force --entitlements gui/entitlements.xml --deep --sign - AnyPlay.app
           rm -f chiaki-ng.dmg
           rm -rf dmgroot && mkdir dmgroot && cp -a AnyPlay.app dmgroot/ && ln -s /Applications dmgroot/Applications

@@ -131,16 +131,27 @@ DialogView {
             return portGuessSocketSlider;
         return remoteFlick;
     }
+    // перемикання вкладок із пропуском тих, що сховані для клієнтів
+    function stepTab(step) {
+        for (let i = 0; i < bar.count; i++) {
+            const next = (bar.currentIndex + step * (i + 1) + bar.count * (i + 2)) % bar.count;
+            if (bar.itemAt(next) && bar.itemAt(next).visible) {
+                bar.currentIndex = next;
+                return;
+            }
+        }
+    }
+
     Keys.onPressed: (event) => {
         if (event.modifiers)
             return;
         switch (event.key) {
         case Qt.Key_PageUp:
-            bar.decrementCurrentIndex();
+            dialog.stepTab(-1);
             event.accepted = true;
             break;
         case Qt.Key_PageDown:
-            bar.incrementCurrentIndex();
+            dialog.stepTab(1);
             event.accepted = true;
             break;
         case Qt.Key_Up:
@@ -222,7 +233,8 @@ DialogView {
             }
 
             TabButton {
-                id: stream
+                visible: !Chiaki.cloud.clientMode
+                                id: stream
                 text: qsTr("Стрім")
                 focusPolicy: Qt.NoFocus
                 Image {
@@ -282,7 +294,8 @@ DialogView {
             }
 
             TabButton {
-                text: qsTr("Консолі")
+                visible: !Chiaki.cloud.clientMode
+                                text: qsTr("Консолі")
                 id: consoles
                 focusPolicy: Qt.NoFocus
                 Image {
@@ -372,7 +385,8 @@ DialogView {
             }
 
             TabButton {
-                text: qsTr("Віддалено")
+                visible: !Chiaki.cloud.clientMode
+                                text: qsTr("Віддалено")
                 id: remote
                 focusPolicy: Qt.NoFocus
                 Image {
@@ -402,7 +416,8 @@ DialogView {
             }
 
             TabButton {
-                text: qsTr("Конфігурація")
+                visible: !Chiaki.cloud.clientMode
+                                text: qsTr("Конфігурація")
                 id: config
                 focusPolicy: Qt.NoFocus
                 Image {

@@ -105,7 +105,7 @@ Pane {
                 focusPolicy: Qt.NoFocus
                 onClicked: root.showSteamShortcutDialog(false)
                 Material.roundedScale: Material.SmallScale
-                visible: typeof Chiaki.createSteamShortcut === "function"
+                visible: typeof Chiaki.createSteamShortcut === "function" && !Chiaki.cloud.clientMode
                 Image {
                     anchors {
                         right: parent.right
@@ -128,7 +128,7 @@ Pane {
                 focusPolicy: Qt.NoFocus
                 onClicked: Chiaki.refreshPsnToken();
                 Material.roundedScale: Material.SmallScale
-                visible: Chiaki.settings.psnAuthToken
+                visible: Chiaki.settings.psnAuthToken && !Chiaki.cloud.clientMode
             }
 
             Button {
@@ -137,7 +137,7 @@ Pane {
                 flat: true
                 focusPolicy: Qt.NoFocus
                 Material.roundedScale: Material.SmallScale
-                visible: !Chiaki.settings.psnAuthToken
+                visible: !Chiaki.settings.psnAuthToken && !Chiaki.cloud.clientMode
             }
 
             Button {
@@ -148,6 +148,7 @@ Pane {
                 focusPolicy: Qt.NoFocus
                 onClicked: root.showManualHostDialog()
                 Material.roundedScale: Material.SmallScale
+                visible: !Chiaki.cloud.clientMode
                 Image {
                     anchors {
                         left: parent.left
@@ -525,6 +526,12 @@ Pane {
                     text: qsTr("Передати PS5 на сервер")
                     onClicked: anyplayPanel.cloud.uploadConsole()
                 }
+                Button {
+                    visible: anyplayPanel.cloud.clientMode
+                    text: anyplayPanel.cloud.myPsn ? qsTr("Мій акаунт PSN: %1").arg(anyplayPanel.cloud.myPsn)
+                                                   : qsTr("Додати свій акаунт PSN")
+                    onClicked: psnAccountDialog.open()
+                }
                 Item { Layout.fillWidth: true }
                 Button {
                     visible: anyplayPanel.cloud.loggedIn
@@ -543,6 +550,65 @@ Pane {
                 Connections {
                     target: Chiaki.cloud
                     function onMessage(text) { anyplayToast.text = text; anyplayToastTimer.restart(); }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: psnAccountDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 620
+        modal: true
+        title: qsTr("Свій акаунт PSN")
+        standardButtons: Dialog.NoButton
+        onOpened: { psnField.text = Chiaki.cloud.myPsn; psnField.forceActiveFocus(); }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: Chiaki.cloud.myPsn
+                    ? (Chiaki.cloud.myPsnReady
+                        ? qsTr("Твій профіль уже доданий на приставку — обирай його на PS5 після підключення.")
+                        : qsTr("Ми отримали твій акаунт. Щойно додамо його на приставку, бот надішле код для входу в Telegram."))
+                    : qsTr("За замовчуванням гра йде на спільному акаунті AnyPlay. Якщо хочеш свої збереження, трофеї та друзів — впиши свій PSN ID (нік у PlayStation Network).")
+            }
+            TextField {
+                id: psnField
+                Layout.fillWidth: true
+                placeholderText: qsTr("Наприклад, MyNickname_7")
+                onAccepted: saveButton.clicked()
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 13
+                opacity: 0.75
+                text: qsTr("Пароль від PSN вводити не треба — ніколи й нікому. Вхід підтверджуєш сам на приставці за QR-кодом, який надішле бот.")
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                Button {
+                    visible: Chiaki.cloud.myPsn !== ""
+                    text: qsTr("Грати на спільному")
+                    onClicked: { Chiaki.cloud.setMyPsn(""); psnAccountDialog.close(); }
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: qsTr("Скасувати")
+                    onClicked: psnAccountDialog.close()
+                }
+                Button {
+                    id: saveButton
+                    text: qsTr("Зберегти")
+                    highlighted: true
+                    enabled: psnField.text.trim().length >= 3
+                    onClicked: { Chiaki.cloud.setMyPsn(psnField.text); psnAccountDialog.close(); }
                 }
             }
         }

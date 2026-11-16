@@ -179,6 +179,8 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	skew_ = o.value("now").toVariant().toLongLong() - QDateTime::currentSecsSinceEpoch();
 	admin_ = o.value("admin").toBool();
 	user_ = o.value("user").toString();
+	my_psn_ = o.value("myPsn").toString();
+	my_psn_ready_ = o.value("myPsnReady").toBool();
 	QJsonObject next = o.value("next").toObject();
 	next_start_ = next.value("start").toVariant().toLongLong();
 	next_end_ = next.value("end").toVariant().toLongLong();
@@ -270,6 +272,29 @@ void AnyPlayCloud::stopPlay(const QString &reason)
 	}
 	end_ = 0;
 	emit changed();
+}
+
+void AnyPlayCloud::setMyPsn(const QString &psn)
+{
+	QString name = psn.trimmed();
+	QJsonObject body;
+	body["psn"] = name;
+	request("POST", "/api/app/psn", body, [this, name](int status, const QJsonObject &o) {
+		if(status == 200 && o.value("ok").toBool())
+		{
+			my_psn_ = o.value("psn").toString();
+			my_psn_ready_ = false;
+			emit changed();
+			emit message(name.isEmpty()
+				? tr("Готово — гратимеш на спільному акаунті AnyPlay.")
+				: tr("Акаунт %1 передано. Додамо його на PS5 і надішлемо в Telegram код для входу.").arg(name));
+			refresh();
+		}
+		else if(o.value("error").toString() == "psn_format")
+			emit message(tr("Схоже, це не схоже на PSN ID: лише літери, цифри, «-» і «_», від 3 до 16 символів."));
+		else
+			emit message(tr("Не вдалося зберегти акаунт (помилка %1). Спробуй ще раз.").arg(status));
+	});
 }
 
 void AnyPlayCloud::uploadConsole()

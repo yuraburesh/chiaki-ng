@@ -24,6 +24,9 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(qint64 clockSkew READ clockSkew NOTIFY changed)   // сервер − комп'ютер, секунди
 	Q_PROPERTY(QString consoleName READ consoleName NOTIFY changed)
 	Q_PROPERTY(QString notice READ notice NOTIFY changed)
+	Q_PROPERTY(bool clientMode READ clientMode NOTIFY changed)  // звичайний клієнт: ховаємо зайві налаштування
+	Q_PROPERTY(QString myPsn READ myPsn NOTIFY changed)         // власний акаунт PSN клієнта
+	Q_PROPERTY(bool myPsnReady READ myPsnReady NOTIFY changed)
 
 public:
 	AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent = nullptr);
@@ -38,13 +41,17 @@ public:
 	qint64 clockSkew() const { return skew_; }
 	QString consoleName() const { return console_; }
 	QString notice() const { return notice_; }
+	bool clientMode() const { return loggedIn() && !admin_; }
+	QString myPsn() const { return my_psn_; }
+	bool myPsnReady() const { return my_psn_ready_; }
 
 	Q_INVOKABLE void login();
 	Q_INVOKABLE void cancelLogin();
 	Q_INVOKABLE void logout();
 	Q_INVOKABLE void refresh();
 	Q_INVOKABLE void openBot();
-	Q_INVOKABLE void uploadConsole();        // адмін: передати свою прив'язку PS5 і вхід PSN на сервер
+	Q_INVOKABLE void uploadConsole();                // адмін: передати свою прив'язку PS5 і вхід PSN на сервер
+	Q_INVOKABLE void setMyPsn(const QString &psn);   // клієнт: додати/прибрати свій акаунт PSN
 	Q_INVOKABLE QString formatTime(qint64 ts) const;
 
 signals:
@@ -64,8 +71,8 @@ private:
 	QmlBackend *backend;
 	QNetworkAccessManager nam;
 	QTimer poll_timer, pair_timer, beat_timer;
-	QString server_, token_, pair_code_, state_ = "login", user_, console_, notice_;
-	bool admin_ = false, playing_ = false;
+	QString server_, token_, pair_code_, state_ = "login", user_, console_, notice_, my_psn_;
+	bool admin_ = false, playing_ = false, my_psn_ready_ = false;
 	qint64 end_ = 0, next_start_ = 0, next_end_ = 0, skew_ = 0;
 	int pair_tries_ = 0;
 };

@@ -10,7 +10,9 @@ Pane {
     id: consolePane
     StackView.onActivated: {
         forceActiveFocus(Qt.TabFocusReason);
-        if(!Chiaki.autoConnect && !root.initialAsk && !Chiaki.window.directStream)
+        if(!Chiaki.cloud.admin)
+            anyplayHome.forceActiveFocus();
+        if(Chiaki.cloud.admin && !Chiaki.autoConnect && !root.initialAsk && !Chiaki.window.directStream)
         {
             root.initialAsk = true;
             if(Chiaki.settings.addSteamShortcutAsk && (typeof Chiaki.createSteamShortcut === "function"))
@@ -417,6 +419,16 @@ Pane {
             margins: 20
         }
         text: Qt.application.version
+    }
+
+    // ── AnyPlay: головний екран клієнта (адмін бачить повний інтерфейс під ним) ──
+    AnyPlayHome {
+        id: anyplayHome
+        anchors.fill: parent
+        z: 100
+        visible: !Chiaki.cloud.admin
+        onVisibleChanged: if (visible) forceActiveFocus()
+        onOpenKeys: root.showSettingsDialogTab(5)
     }
 
     // ── AnyPlay: вхід через Telegram і час броні ──

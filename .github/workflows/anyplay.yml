@@ -20,31 +20,36 @@ jobs:
 
   release:
     needs: [windows, macos, macos_intel, linux]
+    if: ${{ always() && (needs.windows.result == 'success' || needs.macos.result == 'success' || needs.macos_intel.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: chiaki-ng-win_x64-VC-installer.zip
           path: out/win
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: chiaki-ng-macos_arm64-Release
           path: out/mac
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: chiaki-ng-macos_x86_64-Release
           path: out/mac-intel
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: chiaki-ng.AppImage_x86_64
           path: out/linux
       - name: Rename files
         run: |
           mkdir -p dist
-          cp out/win/*.exe "dist/AnyPlay-chiaki-ng-Windows.exe"
-          cp out/mac/*.dmg "dist/AnyPlay-chiaki-ng-Mac.dmg"
-          cp out/mac-intel/*.dmg "dist/AnyPlay-chiaki-ng-Mac-Intel.dmg"
-          cp out/linux/*.AppImage "dist/AnyPlay-chiaki-ng-Linux.AppImage"
+          cp out/win/*.exe "dist/AnyPlay-chiaki-ng-Windows.exe" || true
+          cp out/mac/*.dmg "dist/AnyPlay-chiaki-ng-Mac.dmg" || true
+          cp out/mac-intel/*.dmg "dist/AnyPlay-chiaki-ng-Mac-Intel.dmg" || true
+          cp out/linux/*.AppImage "dist/AnyPlay-chiaki-ng-Linux.AppImage" || true
           ls -la dist
       - uses: softprops/action-gh-release@v2
         with:
@@ -52,6 +57,6 @@ jobs:
           name: AnyPlay chiaki-ng (збірка ${{ github.run_number }})
           make_latest: true
           body: |
-            chiaki-ng з керуванням камерою мишею (режим Right Stick) і розкладкою клавіш у стилі GTA.
+            AnyPlay — програма для оренди PS5: вхід через Telegram, доступ лише в час оплаченої броні, якість, клавіші та свій акаунт PSN.
             Windows — AnyPlay-chiaki-ng-Windows.exe · Mac (Apple M1 і новіші) — AnyPlay-chiaki-ng-Mac.dmg · Mac (Intel) — AnyPlay-chiaki-ng-Mac-Intel.dmg · Linux / Steam Deck — AppImage.
           files: dist/*

@@ -16,7 +16,9 @@ DialogView {
     }
     property int selectedConsole: SettingsDialog.Console.PS5
     property bool quitControllerMapping: true
+    property int startTab: -1
     id: dialog
+    Component.onCompleted: if (startTab >= 0) bar.currentIndex = startTab
     title: qsTr("Налаштування")
     header: qsTr("* Стандартні значення вказані в дужках праворуч або позначені «(За замовчуванням)»")
     buttonVisible: false
@@ -185,7 +187,8 @@ DialogView {
                 topMargin: 5
             }
             TabButton {
-                id: general
+                visible: !Chiaki.cloud.clientMode
+                                id: general
                 text: qsTr("Загальні")
                 focusPolicy: Qt.NoFocus
                 Image {
@@ -203,7 +206,8 @@ DialogView {
             }
 
             TabButton {
-                id: video
+                visible: !Chiaki.cloud.clientMode
+                                id: video
                 text: qsTr("Відео")
                 focusPolicy: Qt.NoFocus
                 Image {
@@ -264,7 +268,8 @@ DialogView {
             }
 
             TabButton {
-                text: qsTr("Звук/Wi-Fi")
+                visible: !Chiaki.cloud.clientMode
+                                text: qsTr("Звук/Wi-Fi")
                 id: audio
                 focusPolicy: Qt.NoFocus
                 Image {

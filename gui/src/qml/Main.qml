@@ -190,6 +190,10 @@ Item {
         stack.push(settingsDialogComponent);
     }
 
+    function showSettingsDialogTab(tab) {
+        stack.push(settingsDialogComponent, {startTab: tab});
+    }
+
     function showDisplaySettingsDialog() {
         stack.push(displaySettingsDialogComponent);
     }

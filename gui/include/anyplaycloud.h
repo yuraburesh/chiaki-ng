@@ -41,7 +41,7 @@ public:
 	qint64 clockSkew() const { return skew_; }
 	QString consoleName() const { return console_; }
 	QString notice() const { return notice_; }
-	bool clientMode() const { return loggedIn() && !admin_; }
+	bool clientMode() const { return !admin_; }  // доки не зайшов адмін — простий інтерфейс клієнта
 	QString myPsn() const { return my_psn_; }
 	bool myPsnReady() const { return my_psn_ready_; }
 

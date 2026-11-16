@@ -76,10 +76,12 @@ jobs:
                 if [[ ! -e "AnyPlay.app/Contents/Frameworks/$base" ]]; then
                   cp -L "$dep" "AnyPlay.app/Contents/Frameworks/$base"
                   chmod u+w "AnyPlay.app/Contents/Frameworks/$base"
-                  install_name_tool -id "@executable_path/../Frameworks/$base" "AnyPlay.app/Contents/Frameworks/$base"
+                  install_name_tool -id "@loader_path/$base" "AnyPlay.app/Contents/Frameworks/$base"
                 fi
-                echo "fix: $f -> $base"
-                install_name_tool -change "$dep" "@executable_path/../Frameworks/$base" "$f"
+                # короткий шлях (@loader_path) вміщується в заголовок бібліотеки, довгий — ні
+                if [[ "$(dirname "$f")" == "AnyPlay.app/Contents/Frameworks" ]]; then new="@loader_path/$base"; else new="@executable_path/../Frameworks/$base"; fi
+                echo "fix: $f -> $new"
+                install_name_tool -change "$dep" "$new" "$f"
                 changed=1
               done
             done < <(find AnyPlay.app/Contents/Frameworks AnyPlay.app/Contents/MacOS AnyPlay.app/Contents/PlugIns -type f \( -name '*.dylib' -o -perm -u+x \))

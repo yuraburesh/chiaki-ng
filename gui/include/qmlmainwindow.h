@@ -44,6 +44,7 @@ class QmlBackend;
 class QOffscreenSurface;
 class QOpenGLContext;
 class QOpenGLFramebufferObject;
+class QVulkanInstance;
 class QWidget;
 class QLabel;
 class QVBoxLayout;

@@ -5267,7 +5267,9 @@ renderer_backend_ready:
 #if QT_CONFIG(vulkan)
         quick_window->setVulkanInstance(qt_vk_inst);
 #endif
+#if QT_CONFIG(vulkan)
         quick_window->setGraphicsDevice(QQuickGraphicsDevice::fromDeviceObjects(placebo_vulkan->phys_device, placebo_vulkan->device, placebo_vulkan->queue_graphics.index));
+#endif
     } else {
         quick_window->setGraphicsDevice(QQuickGraphicsDevice::fromOpenGLContext(qt_gl_context));
     }
@@ -6474,11 +6476,13 @@ void QmlMainWindow::beginFrame()
         logQuickBeginWaitStats(quick_wait_after_us, quick_begin_wait_last_us);
     }
 
+#if QT_CONFIG(vulkan)
     quick_window->setRenderTarget(QQuickRenderTarget::fromVulkanImage(
         quick_vk_image,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         quick_vk_format,
         swapchain_size));
+#endif
     if (startup_video_visible_pending.loadAcquire() != 0)
         scheduleUpdate(false, UpdateRequestReason::PendingFrame);
     quick_frame = true;

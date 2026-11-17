@@ -43,6 +43,15 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 		}
 		loadExtend();
 	});
+	book_timer.setInterval(5000);
+	connect(&book_timer, &QTimer::timeout, this, [this]() {
+		if(++book_polls_ > 60)   // ~5 хв, далі адмін підтвердить вручну
+		{
+			book_timer.stop();
+			return;
+		}
+		loadBook();
+	});
 	pair_timer.setInterval(PAIR_MS);
 	connect(&pair_timer, &QTimer::timeout, this, [this]() {
 		if(++pair_tries_ > PAIR_MAX_TRIES)
@@ -483,6 +492,111 @@ void AnyPlayCloud::payExtend(qint64 bookingId, const QString &sender)
 				? tr("На жаль, цей час уже зайняли — обери інший варіант.")
 				: tr("Не вдалося надіслати оплату (помилка %1). Спробуй ще раз.").arg(status));
 		loadExtend();
+	});
+}
+
+// ── Бронювання прямо в програмі ──
+void AnyPlayCloud::loadBook()
+{
+	if(token_.isEmpty())
+		return;
+	request("GET", "/api/app/book", QJsonObject(), [this](int status, const QJsonObject &o) {
+		if(status != 200 || !o.value("ok").toBool())
+			return;
+		book_info_ = o.toVariantMap();
+		// оплату знайдено / бронь підтверджено — перестаємо опитувати
+		bool waiting = false;
+		for(const auto &v : o.value("mine").toArray())
+			waiting |= v.toObject().value("status").toString() == "pending_review";
+		if(!waiting)
+			book_timer.stop();
+		emit bookChanged();
+	});
+}
+
+void AnyPlayCloud::loadBookStarts(const QString &day, const QString &code)
+{
+	if(token_.isEmpty() || day.isEmpty() || code.isEmpty())
+		return;
+	const QString key = day + "|" + code;
+	book_starts_key_ = key;
+	book_starts_.clear();
+	book_starts_loading_ = true;
+	emit bookStartsChanged();
+	request("GET", QString("/api/app/book/starts?day=%1&code=%2").arg(day, code), QJsonObject(), [this, key](int status, const QJsonObject &o) {
+		if(key != book_starts_key_)
+			return;   // уже обрали інший день чи тариф
+		book_starts_loading_ = false;
+		book_starts_ = (status == 200 && o.value("ok").toBool()) ? o.value("starts").toArray().toVariantList() : QVariantList();
+		emit bookStartsChanged();
+	});
+}
+
+void AnyPlayCloud::book(qint64 start, const QString &code, const QString &method)
+{
+	QJsonObject body;
+	body["start"] = start;
+	body["code"] = code;
+	body["method"] = method;
+	setBusy(true);
+	request("POST", "/api/app/book", body, [this](int status, const QJsonObject &o) {
+		setBusy(false);
+		if(status == 200 && o.value("ok").toBool())
+		{
+			QJsonObject p = o.value("pending").toObject();
+			qint64 hold = p.value("holdUntil").toVariant().toLongLong() - (QDateTime::currentSecsSinceEpoch() + skew_);
+			emit bookResult(true, tr("Час закріплено за тобою на %1 хв. Оплати й натисни «✅ Я оплатив».").arg(qMax<qint64>(1, hold / 60)));
+		}
+		else
+		{
+			const QString e = o.value("error").toString();
+			emit bookResult(false, e == "busy" ? tr("Цей час щойно зайняли — обери інший.")
+				: e == "limit" ? tr("У тебе вже максимум активних броней (%1). Оплати або скасуй одну з них.").arg(o.value("limit").toInt())
+				: e == "closed" ? tr("Зараз технічні роботи — бронювання тимчасово недоступне.")
+				: tr("Не вдалося забронювати (помилка %1). Спробуй ще раз.").arg(status));
+		}
+		loadBook();
+		refresh();
+	});
+}
+
+void AnyPlayCloud::cancelBooking(qint64 bookingId)
+{
+	QJsonObject body;
+	body["bookingId"] = bookingId;
+	request("POST", "/api/app/book/cancel", body, [this](int status, const QJsonObject &o) {
+		emit bookResult(status == 200 && o.value("ok").toBool(),
+			status == 200 && o.value("ok").toBool() ? tr("Бронь скасовано, час звільнено.")
+			: tr("Цю бронь уже не можна скасувати тут — напиши в підтримку в боті."));
+		loadBook();
+		refresh();
+	});
+}
+
+void AnyPlayCloud::payBooking(qint64 bookingId, const QString &sender)
+{
+	QJsonObject body;
+	body["bookingId"] = bookingId;
+	body["sender"] = sender.trimmed();
+	setBusy(true);
+	request("POST", "/api/app/extend/paid", body, [this](int status, const QJsonObject &o) {
+		setBusy(false);
+		if(status == 200 && o.value("ok").toBool())
+		{
+			if(o.value("paid").toBool())
+				emit bookResult(true, tr("✅ Оплату вже отримано — бронь підтверджено!"));
+			else if(o.value("auto").toBool())
+				emit bookResult(true, tr("⏳ Шукаємо твій платіж — зазвичай до хвилини. Бронь підтвердиться сама."));
+			else
+				emit bookResult(true, tr("⏳ Адміністратор перевіряє оплату — зазвичай кілька хвилин. Час уже закріплено за тобою."));
+			book_polls_ = 0;
+			book_timer.start();
+		}
+		else
+			emit bookResult(false, o.value("error").toString() == "busy"
+				? tr("На жаль, час на оплату минув і цей слот уже зайняли — обери інший.")
+				: tr("Не вдалося надіслати (помилка %1). Спробуй ще раз.").arg(status));
+		loadBook();
 	});
 }
 

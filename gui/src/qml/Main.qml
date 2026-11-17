@@ -242,6 +242,11 @@ Item {
         stack.push(psnTokenDialogComponent, {psnurl: psnurl, expired: expired});
     }
 
+    // AnyPlay: вхід у PSN через звичайний браузер (create — клієнт ще не має акаунта)
+    function showAnyPlayPsnLogin(create) {
+        stack.push(anyplayPsnLoginComponent, {create: !!create});
+    }
+
     function showControllerMappingDialog() {
         stack.push(controllerMappingDialogComponent)
     }
@@ -629,6 +634,11 @@ Item {
     Component {
         id: psnTokenDialogComponent
         PSNTokenDialog { }
+    }
+
+    Component {
+        id: anyplayPsnLoginComponent
+        AnyPlayPsnLogin { }
     }
 
     Component {

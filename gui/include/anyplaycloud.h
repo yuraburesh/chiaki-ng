@@ -35,6 +35,9 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)                // іде прив'язка / перевірка
 	Q_PROPERTY(QVariantMap extendInfo READ extendInfo NOTIFY extendChanged) // продовження: варіанти, ціни, заявка
 	Q_PROPERTY(QVariantMap adminInfo READ adminInfo NOTIFY adminChanged) // адмін: хто грає, найближчі броні, доступ
+	Q_PROPERTY(QVariantMap bookInfo READ bookInfo NOTIFY bookChanged)     // бронювання в програмі: дні, тарифи, мої броні
+	Q_PROPERTY(QVariantList bookStarts READ bookStarts NOTIFY bookStartsChanged) // вільні старти для обраного дня й тарифу
+	Q_PROPERTY(bool bookStartsLoading READ bookStartsLoading NOTIFY bookStartsChanged)
 
 public:
 	AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent = nullptr);
@@ -80,12 +83,23 @@ public:
 	Q_INVOKABLE void refreshAdmin();
 	Q_INVOKABLE void adminKick(qint64 bookingId);    // адмін: завершити поточну гру клієнта
 	Q_INVOKABLE void adminSetClosed(bool closed);    // адмін: закрити / відкрити доступ усім клієнтам
+	Q_INVOKABLE void loadBook();                                               // екран бронювання
+	Q_INVOKABLE void loadBookStarts(const QString &day, const QString &code);   // вільний час на день
+	Q_INVOKABLE void book(qint64 start, const QString &code, const QString &method);
+	Q_INVOKABLE void cancelBooking(qint64 bookingId);
+	Q_INVOKABLE void payBooking(qint64 bookingId, const QString &sender);       // «Я оплатив» для броні
+	QVariantMap bookInfo() const { return book_info_; }
+	QVariantList bookStarts() const { return book_starts_; }
+	bool bookStartsLoading() const { return book_starts_loading_; }
 
 signals:
 	void changed();
 	void adminChanged();
 	void extendChanged();
 	void extendResult(bool ok, const QString &text);
+	void bookChanged();
+	void bookStartsChanged();
+	void bookResult(bool ok, const QString &text);
 	void busyChanged();
 	void linkResult(bool ok, const QString &text);
 	void message(const QString &text);       // коротке сповіщення для інтерфейсу
@@ -108,6 +122,12 @@ private:
 	qint64 end_ = 0, next_start_ = 0, next_end_ = 0, skew_ = 0;
 	int pair_tries_ = 0;
 	QVariantMap admin_info_, extend_info_;
+	QVariantMap book_info_;
+	QVariantList book_starts_;
+	QString book_starts_key_;
+	bool book_starts_loading_ = false;
+	int book_polls_ = 0;
+	QTimer book_timer;
 	QString my_psn_status_;
 	bool my_psn_qr_ = false, my_psn_linked_ = false, busy_ = false, psn_login_active_ = false;
 	int qr_rev_ = 0, psn_wait_tries_ = 0, pay_polls_ = 0;

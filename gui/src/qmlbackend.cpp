@@ -2578,7 +2578,8 @@ void QmlBackend::initPsnAuth(const QUrl &url, const QJSValue &callback)
     }
     PSNAccountID *psnId = new PSNAccountID(settings, this);
     connect(psnId, &PSNAccountID::AccountIDResponse, this, &QmlBackend::updatePsnHosts);
-    connect(psnId, &PSNAccountID::AccountIDError, this, [cb](const QString &error) {
+    connect(psnId, &PSNAccountID::AccountIDError, this, [cb](const QString &url, const QString &error) {
+        Q_UNUSED(url);
         if (cb.isCallable())
             cb.call({error, false, true});
     });

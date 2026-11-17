@@ -235,7 +235,7 @@ Rectangle {
                     case "no_console": return qsTr("Приставка тимчасово недоступна — кнопка «🆘 Допомога» в боті.");
                     default: return c.nextStart
                         ? qsTr("до початку · %1–%2 · доступ відкриється автоматично, програму можна не закривати").arg(c.formatTime(c.nextStart)).arg(c.formatTime(c.nextEnd))
-                        : qsTr("Забронюй час у боті — після оплати повертайся сюди.");
+                        : qsTr("Обери час і оплати прямо тут — кнопка нижче.");
                     }
                 }
             }
@@ -263,7 +263,8 @@ Rectangle {
                     case "login": home.cloud.login(); break;
                     case "pairing": home.cloud.cancelLogin(); break;
                     case "offline": home.cloud.refresh(); break;
-                    default: home.cloud.openBot();
+                    case "no_console": home.cloud.openBot(); break;
+                    default: bookPopup.open();
                     }
                 }
             }
@@ -409,9 +410,9 @@ Rectangle {
             onClicked: extendPopup.open()
         }
         HomeTile {
-            visible: home.cloud.loggedIn && !home.isAdmin && home.cloud.state === "play"
-            icon: "📅"; title: qsTr("Бронювання"); subtitle: qsTr("у боті")
-            onClicked: home.cloud.openBot()
+            visible: home.cloud.loggedIn && !home.isAdmin
+            icon: "📅"; title: qsTr("Бронювання"); subtitle: qsTr("час і оплата")
+            onClicked: bookPopup.open()
         }
     }
 
@@ -443,16 +444,10 @@ Rectangle {
     }
 
     // ── якість: три зрозумілі варіанти ──
-    Popup {
+    HomePopup {
         id: qualityPopup
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(home.width - 60, 640)
-        modal: true
-        padding: 28
-        background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
-        ColumnLayout {
-            anchors.fill: parent
+        maxW: 640
+        contentItem: ColumnLayout {
             spacing: 12
             Label { text: qsTr("Якість картинки"); font.pixelSize: 24; font.bold: true; color: "white" }
             Label {
@@ -499,7 +494,20 @@ Rectangle {
     // ── свій акаунт PSN: навіщо + 4 кроки ──
     property bool qrAutoShown: false
     property bool reopenPsn: false
-    function resume() { if (reopenPsn) { reopenPsn = false; psnPopup.open(); } }
+    property bool reopenShared: false
+    function resume() {
+        if (reopenPsn) { reopenPsn = false; psnPopup.open(); }
+        if (reopenShared) { reopenShared = false; sharedPopup.open(); }
+    }
+    function startPsnLogin(create) {
+        if (!home.cloud.beginMyPsnLogin())
+            return;
+        home.reopenPsn = true;
+        psnPopup.close();
+        root.showAnyPlayPsnLogin(create);
+    }
+    function closePopups() { qualityPopup.close(); psnPopup.close(); extendPopup.close(); clientsPopup.close(); sharedPopup.close(); bookPopup.close(); }
+    onVisibleChanged: if (!visible) closePopups()
     Connections {
         target: Chiaki.cloud
         function onChanged() {
@@ -511,15 +519,16 @@ Rectangle {
                 home.qrAutoShown = false;
         }
     }
-    Popup {
+    HomePopup {
         id: psnPopup
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(home.width - 60, 720)
-        height: Math.min(home.height - 40, psnCol.implicitHeight + 56)
-        modal: true
-        padding: 28
-        background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
+        maxW: 720
+        // поки чекаємо QR-код або адміна — питаємо сервер кожні 4 секунди, а не раз на хвилину
+        Timer {
+            interval: 4000; repeat: true
+            running: psnPopup.opened && (psnPopup.step === 3 || psnPopup.step === 4)
+            onTriggered: home.cloud.refresh()
+        }
+        height: Math.min(root.height - 40, psnCol.implicitHeight + 56)
         readonly property string st: home.cloud.myPsnStatus
         // 2 — вхід через Sony, 3 — QR на приставці, 4 — адмін завершує, 5 — готово (нік вписувати не треба)
         readonly property int step: !home.cloud.myPsnLinked ? 2 : (st === "ready" ? 5 : (st === "signed_in" ? 4 : 3))
@@ -581,24 +590,18 @@ Rectangle {
                         Layout.fillWidth: true
                         primary: true
                         text: qsTr("У мене є акаунт — увійти")
-                        onClicked: {
-                            if (home.cloud.beginMyPsnLogin()) {
-                                home.reopenPsn = true;
-                                psnPopup.close();
-                                root.showPSNTokenDialog(false, false);
-                            }
-                        }
+                        onClicked: home.startPsnLogin(false)
                     }
                     HomeButton {
                         Layout.fillWidth: true
-                        text: qsTr("Створити акаунт PSN ↗")
-                        onClicked: Qt.openUrlExternally("https://my.account.sony.com/")
+                        text: qsTr("Створити акаунт PSN")
+                        onClicked: home.startPsnLogin(true)
                     }
                 }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: psnPopup.step === 2
                     color: home.cDim; font.pixelSize: 13
-                    text: qsTr("Немає акаунта? Реєстрація безкоштовна: у браузері відкриється сайт Sony — натисни там «Create New Account» (2–3 хв). Потім повернись сюди й натисни «У мене є акаунт — увійти».")
+                    text: qsTr("Вхід і реєстрація відкриваються на сайті Sony у твоєму браузері — програма покаже, що робити далі. Акаунт PSN безкоштовний.")
                 }
 
                 // крок 3: вхід на приставці за QR
@@ -662,16 +665,10 @@ Rectangle {
     }
 
     // ── продовження гри ──
-    Popup {
+    HomePopup {
         id: extendPopup
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(home.width - 60, 660)
-        modal: true
-        padding: 28
-        background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
-        ColumnLayout {
-            anchors.fill: parent
+        maxW: 660
+        contentItem: ColumnLayout {
             spacing: 14
             ExtendPanel { Layout.fillWidth: true; visible: extendPopup.opened }
             RowLayout {
@@ -683,19 +680,34 @@ Rectangle {
         }
     }
 
+    // ── бронювання й оплата прямо в програмі ──
+    HomePopup {
+        id: bookPopup
+        maxW: 760
+        height: Math.min(root.height - 40, bookFlick.contentHeight + 56)
+        contentItem: Flickable {
+            id: bookFlick
+            clip: true
+            contentHeight: bookPanel.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: bookFlick.contentHeight > bookFlick.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
+            BookPanel { id: bookPanel; width: bookFlick.width - 12; visible: bookPopup.opened }
+        }
+    }
+    // після оплати броні оновлюємо головний екран (з'являється таймер до гри)
+    Connections {
+        target: Chiaki.cloud
+        function onBookChanged() { if (bookPopup.opened) home.cloud.refresh(); }
+    }
+
     // ── адмін: клієнти зі своїм PSN — прив'язати приставку до їхнього акаунта ──
-    Popup {
+    HomePopup {
         id: clientsPopup
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(home.width - 60, 760)
-        height: Math.min(home.height - 40, clientsCol.implicitHeight + 56)
-        modal: true
-        padding: 28
+        maxW: 760
+        height: Math.min(root.height - 40, clientsCol.implicitHeight + 56)
         property string result: ""
         property bool resultOk: true
         onOpened: { result = ""; home.cloud.refreshAdmin(); }
-        background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
         Connections {
             target: Chiaki.cloud
             function onLinkResult(ok, text) { clientsPopup.result = text; clientsPopup.resultOk = ok; }
@@ -776,16 +788,10 @@ Rectangle {
     }
 
     // ── адмін: спільний акаунт PSN для всіх клієнтів ──
-    Popup {
+    HomePopup {
         id: sharedPopup
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(home.width - 60, 680)
-        modal: true
-        padding: 28
-        background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
-        ColumnLayout {
-            anchors.fill: parent
+        maxW: 680
+        contentItem: ColumnLayout {
             spacing: 12
             Label { text: qsTr("Спільний акаунт PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
             Label {
@@ -803,7 +809,7 @@ Rectangle {
             HomeButton {
                 Layout.fillWidth: true
                 text: qsTr("1 · Увійти в PSN новим акаунтом")
-                onClicked: { sharedPopup.close(); root.showPSNTokenDialog(false, false); }
+                onClicked: { home.reopenShared = true; sharedPopup.close(); root.showAnyPlayPsnLogin(false); }
             }
             HomeButton {
                 Layout.fillWidth: true
@@ -830,6 +836,31 @@ Rectangle {
     }
 
     // ── компоненти в стилі бренду ──
+    // Спливне вікно AnyPlay: завжди по центру, висота за вмістом, закривається хрестиком, Esc або кліком повз
+    component HomePopup: Popup {
+        id: hp
+        property real maxW: 640
+        parent: Overlay.overlay
+        popupType: Popup.Item
+        width: Math.min((parent ? parent.width : 800) - 60, maxW)
+        x: Math.round(((parent ? parent.width : 800) - width) / 2)
+        y: Math.round(((parent ? parent.height : 600) - height) / 2)
+        modal: true
+        dim: true
+        padding: 28
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            radius: 24; color: "#160d2b"; border.color: "#44ffffff"
+            Rectangle {
+                anchors { top: parent.top; right: parent.right; margins: 10 }
+                width: 34; height: 34; radius: 17
+                color: hpClose.containsMouse ? "#33ffffff" : "#18ffffff"
+                Label { anchors.centerIn: parent; text: "✕"; color: "white"; font.pixelSize: 15; font.bold: true }
+                MouseArea { id: hpClose; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: hp.close() }
+            }
+        }
+    }
+
     component HomeButton: Button {
         id: hb
         property bool primary: false

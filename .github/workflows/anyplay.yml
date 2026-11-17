@@ -3,6 +3,9 @@ name: AnyPlay — збірка chiaki-ng з мишею-стіком
 on:
   push:
     branches: [anyplay]
+    paths-ignore:
+      - 'android/**'
+      - '.github/workflows/anyplay-android.yml'
   workflow_dispatch:
     inputs:
       platforms:

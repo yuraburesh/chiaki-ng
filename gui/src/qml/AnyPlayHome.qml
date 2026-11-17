@@ -636,7 +636,7 @@ Rectangle {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
                     visible: psnPopup.step === 3 && !psnPopup.hasEntry
                     color: home.cDim; font.pixelSize: 14
-                    text: qsTr("⏳ Адміністратор готує приставку. Код для входу з'явиться тут за кілька хвилин (і прийде в Telegram). Вікно можна закрити: щойно код буде, воно відкриється саме.")
+                    text: qsTr("⏳ Адміністратор готує приставку. Посилання і QR-код для входу з'являться тут за кілька хвилин (і прийдуть у Telegram). Вікно можна закрити: щойно вони будуть, воно відкриється саме.")
                 }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
@@ -678,7 +678,7 @@ Rectangle {
                                 color: home.cDim; font.pixelSize: 13
                                 text: home.cloud.myPsnLink !== ""
                                     ? qsTr("Якщо сайт Sony попросить код, введи цей.")
-                                    : qsTr("Введи його на сторінці Sony для входу на приставці. Адресу сторінки адміністратор надішле в Telegram разом із кодом.")
+                                    : qsTr("Це код з екрана приставки. Сайт Sony може попросити його під час входу.")
                             }
                         }
                         HomeButton { text: qsTr("Скопіювати"); onClicked: home.cloud.copyText(home.cloud.myPsnCode) }

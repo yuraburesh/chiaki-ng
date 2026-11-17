@@ -52,7 +52,7 @@ jobs:
           done
           echo "FFmpeg port: $FF"
           sudo port -N install pkgconfig nasm ninja openssl3 libopus libplacebo protobuf3-cpp vulkan-headers "$FF"
-          for opt in speexdsp json-c miniupnpc libevent; do sudo port -N install "$opt" || echo "optional port $opt skipped"; done
+          for opt in speexdsp json-c miniupnpc libevent vulkan-loader; do sudo port -N install "$opt" || echo "optional port $opt skipped"; done
           PCDIR=$(dirname "$(find /opt/local -name libavcodec.pc | head -1)")
           echo "FFmpeg pkgconfig: $PCDIR"
           echo "PKG_CONFIG_PATH=$PCDIR:/opt/local/lib/pkgconfig:/usr/local/lib/pkgconfig" >> $GITHUB_ENV
@@ -101,6 +101,12 @@ jobs:
           install_name_tool -change /usr/local/lib/libSDL2-2.0.0.dylib @executable_path/libSDL2-2.0.0.dylib AnyPlay.app/Contents/MacOS/chiaki || true
           install_name_tool -change @rpath/libSDL2-2.0.0.dylib @executable_path/libSDL2-2.0.0.dylib AnyPlay.app/Contents/MacOS/chiaki || true
           install_name_tool -change /opt/homebrew/lib/libSDL2-2.0.0.dylib @executable_path/libSDL2-2.0.0.dylib AnyPlay.app/Contents/MacOS/chiaki || true
+          # AnyPlay: без завантажувача Vulkan програма падає на повільний OpenGL (ривки в грі)
+          if [[ ! -e AnyPlay.app/Contents/Frameworks/libvulkan.1.dylib ]]; then
+            cp -L /opt/local/lib/libvulkan.1.dylib AnyPlay.app/Contents/Frameworks/libvulkan.1.dylib
+            chmod u+w AnyPlay.app/Contents/Frameworks/libvulkan.1.dylib
+            install_name_tool -id @loader_path/libvulkan.1.dylib AnyPlay.app/Contents/Frameworks/libvulkan.1.dylib
+          fi
           ln -s libvulkan.1.dylib AnyPlay.app/Contents/Frameworks/vulkan
           # AnyPlay: усі бібліотеки — лише всередині програми (у клієнтів немає MacPorts/Homebrew)
           rm -f AnyPlay.app/Contents/PlugIns/sqldrivers/libqsqlmimer.dylib AnyPlay.app/Contents/PlugIns/sqldrivers/libqsqlodbc.dylib AnyPlay.app/Contents/PlugIns/sqldrivers/libqsqlpsql.dylib

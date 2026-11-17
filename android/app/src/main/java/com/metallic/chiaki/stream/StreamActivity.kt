@@ -9,6 +9,8 @@ import android.graphics.Matrix
 import android.os.*
 import android.view.*
 import android.widget.EditText
+import android.widget.FrameLayout
+import com.metallic.chiaki.anyplay.GamepadView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.lifecycleScope
@@ -125,6 +127,18 @@ class StreamActivity : AppCompatActivity()
 		binding.displayModeToggle.addOnButtonCheckedListener { _, _, _ ->
 			adjustStreamViewAspect()
 			showOverlay()
+		}
+
+		if(anyplay)
+		{
+			// AnyPlay: своє меню (кнопка «⋯» на джойстику або «Назад»), стара нижня панель не потрібна
+			binding.overlay.isGone = true
+			binding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> arrangeForOrientation() }
+			viewModel.onScreenControlsEnabled.observe(this, Observer { binding.root.post { arrangeForOrientation() } })
+			binding.root.post {
+				findViewById<GamepadView>(R.id.gamepadView)?.menuCallback = { showAnyPlayMenu() }
+				arrangeForOrientation()
+			}
 		}
 
 		//viewModel.session.attachToTextureView(textureView)
@@ -267,8 +281,84 @@ class StreamActivity : AppCompatActivity()
 
 	private val hideSystemUIRunnable = Runnable { hideSystemUI() }
 
+	/** AnyPlay: вертикально — картинка зверху, джойстик під нею; горизонтально — картинка на весь екран */
+	private fun arrangeForOrientation()
+	{
+		val w = binding.root.width
+		val h = binding.root.height
+		if(w == 0 || h == 0)
+			return
+		val cut = ViewCompat.getRootWindowInsets(binding.root)?.getInsets(WindowInsetsCompat.Type.displayCutout())
+		val controls = viewModel.onScreenControlsEnabled.value != false
+		val portrait = h > w
+		val lp = binding.aspectRatioLayout.layoutParams as FrameLayout.LayoutParams
+		var videoBottom = 0
+		val wantHeight: Int
+		val wantGravity: Int
+		val wantTop: Int
+		if(portrait && controls)
+		{
+			wantTop = cut?.top ?: 0
+			wantHeight = w * 9 / 16
+			wantGravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+			videoBottom = wantTop + wantHeight
+		}
+		else
+		{
+			wantTop = 0
+			wantHeight = ViewGroup.LayoutParams.MATCH_PARENT
+			wantGravity = Gravity.CENTER
+		}
+		if(lp.height != wantHeight || lp.gravity != wantGravity || lp.topMargin != wantTop)
+		{
+			lp.height = wantHeight
+			lp.gravity = wantGravity
+			lp.topMargin = wantTop
+			binding.aspectRatioLayout.layoutParams = lp
+		}
+		findViewById<GamepadView>(R.id.gamepadView)?.let {
+			it.safeLeft = cut?.left ?: 0
+			it.safeRight = cut?.right ?: 0
+			it.safeBottom = cut?.bottom ?: 0
+			it.videoBottom = videoBottom
+			it.refreshLayout()
+		}
+	}
+
+	private fun showAnyPlayMenu()
+	{
+		if(dialogContents != null)
+			return
+		val controls = viewModel.onScreenControlsEnabled.value != false
+		MaterialAlertDialogBuilder(this)
+			.setTitle("Меню гри")
+			.setItems(arrayOf(
+				if(controls) "Сховати кнопки на екрані (граю з геймпадом)" else "Показати кнопки на екрані",
+				"Вийти з гри")) { _, which ->
+				when(which)
+				{
+					0 -> viewModel.setOnScreenControlsEnabled(!controls)
+					1 -> finish()
+				}
+			}
+			.setNegativeButton("Закрити", null)
+			.setOnDismissListener { hideSystemUI() }
+			.show()
+	}
+
+	@Deprecated("Deprecated in Java")
+	override fun onBackPressed()
+	{
+		if(anyplay)
+			showAnyPlayMenu()
+		else
+			super.onBackPressed()
+	}
+
 	private fun showOverlay()
 	{
+		if(anyplay)
+			return
 		binding.overlay.isVisible = true
 		binding.overlay.animate()
 			.alpha(1.0f)

@@ -814,7 +814,7 @@ Rectangle {
             HomeButton {
                 Layout.fillWidth: true
                 text: qsTr("2 · Прив'язати PS5 (8-значний код з приставки)")
-                onClicked: { sharedPopup.close(); root.showRegistDialog("255.255.255.255", true); }
+                onClicked: { home.reopenShared = true; sharedPopup.close(); root.showRegistDialog("255.255.255.255", true); }
             }
             Label {
                 Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 13

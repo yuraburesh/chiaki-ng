@@ -14,7 +14,8 @@ constexpr int TurboIntervalMs = 55;  // sprint: the button is tapped ~9 times a 
 constexpr int TapMs = 90;            // a short press: long enough for the game to register it
 
 const QString OverrideGroup = QStringLiteral("anyplay_keys");
-const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle");
+// v2: миттєве перемикання знову типове (очікування підтвердження від приставки працювало ненадійно)
+const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle_v2");
 constexpr int PendingMs = 7000;      // how long after F we wait for the console's confirmation
 constexpr int PendingGraceMs = 250;  // ignore signals right at the key press
 constexpr int HapticHitsNeeded = 3;  // haptic frames (10 ms each) above the noise floor
@@ -447,7 +448,7 @@ void AnyPlayInput::NoteTriggers(uint8_t type_left, uint8_t type_right)
 bool AnyPlayInput::AutoVehicle()
 {
 	QSettings settings;
-	return settings.value(AutoVehicleKey, true).toBool();
+	return settings.value(AutoVehicleKey, false).toBool();
 }
 
 void AnyPlayInput::SetAutoVehicle(bool enabled)

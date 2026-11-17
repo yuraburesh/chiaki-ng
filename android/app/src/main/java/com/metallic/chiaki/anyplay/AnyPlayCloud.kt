@@ -26,7 +26,7 @@ data class PlayError(val text: String): PlayTarget()
 object AnyPlayCloud
 {
 	const val SERVER = "https://34-123-25-16.sslip.io"
-	const val BUILD = 101
+	const val BUILD = 102
 	const val BOT_URL = "https://t.me/play_any_bot"
 	private const val PREFS = "anyplay"
 	private const val KEY_TOKEN = "device_token"
@@ -86,6 +86,11 @@ object AnyPlayCloud
 
 	fun heartbeat(context: Context, streaming: Boolean): CloudResult =
 		request(context, "POST", "/api/app/heartbeat", JSONObject().put("streaming", streaming))
+
+	/** Панель адміна: хто грає зараз, найближчі броні, заявки на свій PSN */
+	fun admin(context: Context): CloudResult = request(context, "GET", "/api/app/admin")
+
+	fun adminAction(context: Context, body: JSONObject): CloudResult = request(context, "POST", "/api/app/admin", body)
 
 	private var caReady = false
 

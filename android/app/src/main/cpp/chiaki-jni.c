@@ -576,6 +576,15 @@ JNIEXPORT jint JNICALL JNI_FCN(sessionStart)(JNIEnv *env, jobject obj, jlong ptr
 	return err;
 }
 
+// AnyPlay: частка втрачених пакетів (0..1) за останній проміжок — для автоякості
+JNIEXPORT jdouble JNICALL JNI_FCN(sessionPacketLoss)(JNIEnv *env, jobject obj, jlong ptr)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	if(!session || !session->started)
+		return 0.0;
+	return session->session.stream_connection.congestion_control.packet_loss;
+}
+
 JNIEXPORT jint JNICALL JNI_FCN(sessionStop)(JNIEnv *env, jobject obj, jlong ptr)
 {
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;

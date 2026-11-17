@@ -94,6 +94,7 @@ private class ChiakiNative
 		@JvmStatic external fun sessionStart(ptr: Long): Int
 		@JvmStatic external fun sessionPsnConnect(ptr: Long, duid: String): Int
 		@JvmStatic external fun sessionPsnCancel(ptr: Long)
+		@JvmStatic external fun sessionPacketLoss(ptr: Long): Double
 		@JvmStatic external fun psnListDevices(token: String): String?
 		@JvmStatic external fun setEnv(name: String, value: String)
 		@JvmStatic external fun sessionStop(ptr: Long): Int
@@ -367,6 +368,8 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	/** AnyPlay: пробити з'єднання через PSN. Довго (до хвилини) — лише з фонового потоку, перед start(). */
 	fun psnConnect(duid: String) = ErrorCode(ChiakiNative.sessionPsnConnect(nativePtr, duid))
 	fun psnCancel() { if(nativePtr != 0L) ChiakiNative.sessionPsnCancel(nativePtr) }
+	/** AnyPlay: частка втрачених пакетів 0..1 */
+	fun packetLoss(): Double = if(nativePtr != 0L) ChiakiNative.sessionPacketLoss(nativePtr) else 0.0
 	fun stop() = ErrorCode(ChiakiNative.sessionStop(nativePtr))
 
 	fun dispose()

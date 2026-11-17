@@ -10,6 +10,7 @@ import android.os.*
 import android.view.*
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.Toast
 import com.metallic.chiaki.anyplay.AnyPlayWebDialog
 import com.metallic.chiaki.anyplay.GamepadView
 import androidx.appcompat.app.AppCompatActivity
@@ -35,6 +36,7 @@ import com.metallic.chiaki.touchcontrols.DefaultTouchControlsFragment
 import com.metallic.chiaki.touchcontrols.TouchControlsFragment
 import com.metallic.chiaki.touchcontrols.TouchpadOnlyFragment
 import com.metallic.chiaki.anyplay.AnyPlayCloud
+import com.metallic.chiaki.anyplay.AnyPlayQuality
 import com.metallic.chiaki.anyplay.PlayError
 import com.metallic.chiaki.anyplay.PlayReady
 import kotlinx.coroutines.Dispatchers
@@ -184,6 +186,7 @@ class StreamActivity : AppCompatActivity()
 	private var anyplayFirstResume = true
 	private var anyplayBeatJob: Job? = null
 	private var anyplayResumeJob: Job? = null
+	private var anyplayQualityJob: Job? = null
 
 	override fun onResume()
 	{
@@ -200,31 +203,9 @@ class StreamActivity : AppCompatActivity()
 			viewModel.session.resume()
 		}
 		else
-		{
-			// після згортання — нове підключення зі свіжим ключем від сервера (старий діє недовго)
-			binding.progressBar.visibility = View.VISIBLE
-			anyplayResumeJob?.cancel()
-			anyplayResumeJob = lifecycleScope.launch {
-				val target = withContext(Dispatchers.IO) {
-					val r = AnyPlayCloud.session(this@StreamActivity)
-					if(r.ok && r.json.optString("state") == "play")
-						AnyPlayCloud.playTarget(this@StreamActivity, r.json)
-					else if(r.ok)
-						PlayError("Час твоєї броні вийшов. Дякуємо за гру!")
-					else
-						PlayError("Немає зв'язку з сервером AnyPlay. Перевір інтернет.")
-				}
-				when(target)
-				{
-					is PlayReady ->
-					{
-						viewModel.session.connectInfo = target.connectInfo
-						viewModel.session.resume()
-					}
-					is PlayError -> anyplayEnd(target.text)
-				}
-			}
-		}
+			anyplayFreshConnect(0)   // після згортання — нове підключення зі свіжим ключем від сервера (старий діє недовго)
+		anyplayQualityJob?.cancel()
+		anyplayQualityJob = lifecycleScope.launch { anyplayWatchQuality() }
 		anyplayBeatJob?.cancel()
 		anyplayBeatJob = lifecycleScope.launch {
 			while(isActive)
@@ -240,12 +221,93 @@ class StreamActivity : AppCompatActivity()
 		}
 	}
 
+	/** Нове підключення: свіжий ключ від сервера й поточна якість з налаштувань */
+	private fun anyplayFreshConnect(waitMs: Long)
+	{
+		binding.progressBar.visibility = View.VISIBLE
+		anyplayResumeJob?.cancel()
+		anyplayResumeJob = lifecycleScope.launch {
+			if(waitMs > 0)
+				delay(waitMs)   // приставці треба мить, щоб закрити попередню трансляцію
+			val target = withContext(Dispatchers.IO) {
+				val r = AnyPlayCloud.session(this@StreamActivity)
+				if(r.ok && r.json.optString("state") == "play")
+					AnyPlayCloud.playTarget(this@StreamActivity, r.json)
+				else if(r.ok)
+					PlayError("Час твоєї броні вийшов. Дякуємо за гру!")
+				else
+					PlayError("Немає зв'язку з сервером AnyPlay. Перевір інтернет.")
+			}
+			when(target)
+			{
+				is PlayReady ->
+				{
+					viewModel.session.connectInfo = target.connectInfo
+					viewModel.session.resume()
+				}
+				is PlayError -> anyplayEnd(target.text)
+			}
+		}
+	}
+
+	/**
+	 * Автоякість: стежимо за втратами пакетів. Якщо інтернет довго не встигає за картинкою —
+	 * рівень нижче і перепідключення. Якщо гра довго йде рівно — наступного разу пробуємо рівень вище.
+	 */
+	private suspend fun anyplayWatchQuality()
+	{
+		var ticks = 0
+		var bad = 0
+		var good = 0
+		while(true)
+		{
+			var loss = 0.0
+			for(i in 0 until 4)
+			{
+				delay(500)
+				loss += (viewModel.session.session?.packetLoss() ?: 0.0) / 4
+			}
+			if(viewModel.session.state.value != StreamStateConnected || !AnyPlayQuality.auto(this))
+			{
+				ticks = 0
+				bad = 0
+				continue
+			}
+			ticks++
+			if(loss > 0.03)
+			{
+				bad += 2
+				good = 0
+			}
+			else
+			{
+				if(bad > 0)
+					bad--
+				good++
+			}
+			if(good == 300)   // 10 хвилин без втрат
+				AnyPlayQuality.good(this)
+			if(ticks >= 8 && bad >= 12)
+			{
+				ticks = 0
+				bad = 0
+				good = 0
+				val title = AnyPlayQuality.down(this) ?: continue
+				Toast.makeText(this, "Інтернет не встигає за картинкою. Знижую якість до «$title» і підключаюсь заново…", Toast.LENGTH_LONG).show()
+				viewModel.session.shutdown()
+				anyplayFreshConnect(2500)
+			}
+		}
+	}
+
 	/** Сервер AnyPlay завершив гру: зупиняємо стрім і пояснюємо чому */
 	private fun anyplayEnd(text: String)
 	{
 		if(dialogContents == AnyPlayEndDialog || isFinishing)
 			return
 		anyplayBeatJob?.cancel()
+		anyplayQualityJob?.cancel()
+		anyplayResumeJob?.cancel()
 		viewModel.session.shutdown()
 		dialog?.dismiss()
 		val d = MaterialAlertDialogBuilder(this)
@@ -265,6 +327,7 @@ class StreamActivity : AppCompatActivity()
 		super.onPause()
 		anyplayBeatJob?.cancel()
 		anyplayResumeJob?.cancel()
+		anyplayQualityJob?.cancel()
 		viewModel.session.pause()
 	}
 
@@ -336,14 +399,21 @@ class StreamActivity : AppCompatActivity()
 			.setItems(arrayOf(
 				"Продовжити гру",
 				"Як керувати приставкою: меню PS, закрити гру, запустити іншу",
+				"Якість картинки: ${AnyPlayQuality.name(this)}",
 				if(controls) "Сховати кнопки на екрані (граю з геймпадом)" else "Показати кнопки на екрані",
 				"Вийти з гри")) { _, which ->
 				when(which)
 				{
 					0 -> AnyPlayWebDialog(this, "extend") { hideSystemUI() }.show()
 					1 -> AnyPlayWebDialog(this, "help") { hideSystemUI() }.show()
-					2 -> viewModel.setOnScreenControlsEnabled(!controls)
-					3 -> finish()
+					2 -> AnyPlayQuality.choose(this) {
+						// нова якість діє з нового підключення
+						Toast.makeText(this, "Якість: ${AnyPlayQuality.name(this)}. Підключаюсь заново…", Toast.LENGTH_LONG).show()
+						viewModel.session.shutdown()
+						anyplayFreshConnect(2500)
+					}.setOnDismissListener { hideSystemUI() }
+					3 -> viewModel.setOnScreenControlsEnabled(!controls)
+					4 -> finish()
 				}
 			}
 			.setNegativeButton("Закрити", null)

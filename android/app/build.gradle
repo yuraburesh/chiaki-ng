@@ -32,8 +32,8 @@ android {
             // AnyPlay: сучасні телефони (64 біти); старі 32-бітні додамо окремо, якщо знадобляться
             abiFilters "arm64-v8a"
         }
-        versionCode 101
-        versionName "1.0." + 101
+        versionCode 102
+        versionName "1.0." + 102
         externalNativeBuild {
             cmake {
                 arguments "-DCHIAKI_ENABLE_TESTS=OFF",

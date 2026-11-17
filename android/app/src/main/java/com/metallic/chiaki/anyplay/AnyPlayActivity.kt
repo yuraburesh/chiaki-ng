@@ -3,6 +3,7 @@ package com.metallic.chiaki.anyplay
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -10,7 +11,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.metallic.chiaki.common.Preferences
 import com.metallic.chiaki.databinding.ActivityAnyplayBinding
 import com.metallic.chiaki.stream.StreamActivity
 import kotlinx.coroutines.Dispatchers
@@ -41,10 +41,26 @@ class AnyPlayActivity: AppCompatActivity()
 	private var pairJob: Job? = null
 	private var pollJob: Job? = null
 	private var busy = false             // шукаємо приставку перед грою
+	private var adminInfo: JSONObject? = null   // лише для адміна: хто грає, наступні броні, заявки
+
+	private val isAdmin get() = loggedIn && session.optBoolean("admin")
 
 	override fun onCreate(savedInstanceState: Bundle?)
 	{
 		super.onCreate(savedInstanceState)
+		state = if(loggedIn) "wait" else "login"
+		bindViews()
+	}
+
+	/** Екран повернули: вертикальна й горизонтальна розкладки різні, стан програми лишається */
+	override fun onConfigurationChanged(newConfig: Configuration)
+	{
+		super.onConfigurationChanged(newConfig)
+		bindViews()
+	}
+
+	private fun bindViews()
+	{
 		binding = ActivityAnyplayBinding.inflate(layoutInflater)
 		setContentView(binding.root)
 
@@ -58,13 +74,20 @@ class AnyPlayActivity: AppCompatActivity()
 		}
 		binding.primaryButton.setOnClickListener { primaryClicked() }
 		binding.secondaryButton.setOnClickListener { secondaryClicked() }
-		binding.tileBooking.setOnClickListener { openWeb("book") }
-		binding.tilePsn.setOnClickListener { openWeb("psn") }
-		binding.tileSupport.setOnClickListener { openBot() }
+		binding.tertiaryButton.setOnClickListener { adminToggleClosed() }
+		binding.tileBooking.setOnClickListener {
+			if(isAdmin)
+			{
+				openBot()
+				toast("У боті натисни кнопку «CRM» внизу зліва")
+			}
+			else
+				openWeb("book")
+		}
+		binding.tilePsn.setOnClickListener { if(isAdmin) showPsnClients() else openWeb("psn") }
+		binding.tileSupport.setOnClickListener { if(isAdmin) showSharedPsn() else openBot() }
 		binding.helpLink.setOnClickListener { AnyPlayWebDialog(this, "help").show() }
-		binding.tileQuality.setOnClickListener { chooseQuality() }
-
-		state = if(loggedIn) "wait" else "login"
+		binding.tileQuality.setOnClickListener { AnyPlayQuality.choose(this) { render() } }
 		render()
 	}
 
@@ -112,6 +135,14 @@ class AnyPlayActivity: AppCompatActivity()
 		}
 		session = r.json
 		skew = r.json.optLong("now") - System.currentTimeMillis() / 1000
+		if(r.json.optBoolean("admin"))
+		{
+			val a = withContext(Dispatchers.IO) { AnyPlayCloud.admin(this@AnyPlayActivity) }
+			if(a.ok)
+				adminInfo = a.json
+		}
+		else
+			adminInfo = null
 		state = when(r.json.optString("state"))
 		{
 			"play" -> "play"
@@ -127,6 +158,7 @@ class AnyPlayActivity: AppCompatActivity()
 		pairJob?.cancel()
 		AnyPlayCloud.setToken(this, "")
 		session = JSONObject()
+		adminInfo = null
 		state = "login"
 		render()
 	}
@@ -196,6 +228,7 @@ class AnyPlayActivity: AppCompatActivity()
 		busy = true
 		render()
 		lifecycleScope.launch {
+			AnyPlayQuality.prepare(this@AnyPlayActivity)
 			val target = withContext(Dispatchers.IO) {
 				val r = AnyPlayCloud.session(this@AnyPlayActivity)
 				if(!r.ok)
@@ -226,11 +259,16 @@ class AnyPlayActivity: AppCompatActivity()
 
 	private fun primaryClicked()
 	{
+		if(isAdmin && adminInfo != null && (state == "play" || state == "wait" || state == "no_console"))
+		{
+			adminPlay()
+			return
+		}
 		when(state)
 		{
 			"login" -> login()
 			"pairing" -> cancelLogin()
-			"play" -> play()
+			"play" -> if(isAdmin) adminPlay() else play()
 			"offline" -> lifecycleScope.launch { refresh() }
 			"wait" -> openWeb(if((session.optJSONObject("next")?.optLong("start") ?: 0L) > 0) "mine" else "book")
 			else -> openBot()
@@ -239,8 +277,166 @@ class AnyPlayActivity: AppCompatActivity()
 
 	private fun secondaryClicked()
 	{
-		if(state == "play")
+		if(isAdmin && adminInfo != null)
+			adminKick()
+		else if(state == "play")
 			openWeb(if(session.optJSONObject("booking") != null) "extend" else "book")
+	}
+
+	// ── адмін ──
+	private val adminCurrent get() = adminInfo?.optJSONObject("current")
+
+	private fun confirm(text: String, yes: String, action: () -> Unit)
+	{
+		MaterialAlertDialogBuilder(this)
+			.setMessage(text)
+			.setPositiveButton(yes) { _, _ -> action() }
+			.setNegativeButton("Скасувати", null)
+			.show()
+	}
+
+	/** Адмін може зайти на приставку будь-коли, але про клієнта попереджаємо */
+	private fun adminPlay()
+	{
+		val c = adminCurrent
+		if(c == null)
+			play()
+		else if(c.optBoolean("live"))
+			confirm("Зараз на приставці грає ${c.optString("user")}. Якщо підключишся, його трансляція перерветься. Підключитись?", "Підключитись") { play() }
+		else
+			confirm("Зараз час броні ${c.optString("user")} (він ще не підключився). Поки ти на приставці, клієнт не зможе зайти. Підключитись?", "Підключитись") { play() }
+	}
+
+	private fun adminSend(body: JSONObject, done: String, fail: String)
+	{
+		lifecycleScope.launch {
+			val r = withContext(Dispatchers.IO) { AnyPlayCloud.adminAction(this@AnyPlayActivity, body) }
+			toast(if(r.ok) done else "$fail (помилка ${r.status}).")
+			refresh()
+		}
+	}
+
+	private fun adminKick()
+	{
+		val c = adminCurrent ?: return
+		confirm("Завершити гру ${c.optString("user")} просто зараз? Приставка відключиться, клієнт отримає повідомлення в боті.", "Завершити") {
+			adminSend(JSONObject().put("action", "kick").put("bookingId", c.optLong("id")),
+				"Гру клієнта завершено. Йому прийшло повідомлення в боті.", "Не вдалося завершити гру")
+		}
+	}
+
+	private fun adminToggleClosed()
+	{
+		val a = adminInfo ?: return
+		if(a.optBoolean("closed"))
+			adminSend(JSONObject().put("action", "open"), "Доступ відкрито: клієнти знову грають у свій час.", "Не вдалося змінити доступ")
+		else
+			confirm("Тимчасово закрити доступ усім клієнтам? Хто грає, відключиться, бот показуватиме «технічні роботи», поки не відкриєш знову.", "Закрити доступ") {
+				adminSend(JSONObject().put("action", "close"), "Доступ закрито: клієнти не можуть грати, бот показує «технічні роботи».", "Не вдалося змінити доступ")
+			}
+	}
+
+	/** Заявки клієнтів на свій акаунт PSN */
+	private fun showPsnClients()
+	{
+		val list = adminInfo?.optJSONArray("psnClients")
+		val lines = ArrayList<String>()
+		for(i in 0 until (list?.length() ?: 0))
+		{
+			val u = list!!.optJSONObject(i) ?: continue
+			val status = when(u.optString("status"))
+			{
+				"signed_in" -> "уже увійшов на PS5, чекає прив'язки"
+				"created" -> "профіль на PS5 створено, чекаємо, поки клієнт увійде"
+				else -> "нова заявка"
+			}
+			lines.add("${u.optString("user")}\nPSN: ${u.optString("psn")}\n$status")
+		}
+		MaterialAlertDialogBuilder(this)
+			.setTitle("Свої PSN клієнтів")
+			.setMessage(if(lines.isEmpty()) "Заявок немає: усі клієнти зі своїм акаунтом уже підключені."
+				else lines.joinToString("\n\n") + "\n\nПідключити клієнта можна в боті: там є кнопка «Клієнт уже на PS5: пустити без коду».")
+			.setPositiveButton("Відкрити бота") { _, _ -> openBot() }
+			.setNegativeButton("Закрити", null)
+			.show()
+	}
+
+	/** Спільний акаунт PSN, з якого грають клієнти без свого акаунта */
+	private fun showSharedPsn()
+	{
+		val c = adminInfo?.optJSONObject("console")
+		val text = if(c == null)
+			"Спільний акаунт PSN ще не передано. Це робиться в програмі AnyPlay на комп'ютері: плитка «Спільний PSN»."
+		else
+		{
+			val name = c.optString("psn_name").ifEmpty { "акаунт на ${c.optString("label").ifEmpty { "PS5" }}" }
+			"Спільний акаунт: $name\nПриставка: ${c.optString("label").ifEmpty { "PS5" }}\n" +
+				(if(c.optBoolean("tokenOk")) "Вхід у PSN діє, клієнти можуть грати." else "Вхід у PSN не діє: зайди в програму AnyPlay на комп'ютері й увійди в PSN знову.") +
+				"\n\nЗмінити спільний акаунт можна в програмі на комп'ютері."
+		}
+		MaterialAlertDialogBuilder(this)
+			.setTitle("Спільний PSN")
+			.setMessage(text)
+			.setPositiveButton("Зрозуміло", null)
+			.show()
+	}
+
+	private fun duration(seconds: Long): String
+	{
+		val m = (if(seconds > 0) seconds else 0L) / 60
+		return if(m >= 60) "${m / 60} год ${m % 60} хв" else "$m хв"
+	}
+
+	private fun psnLine(b: JSONObject): String
+	{
+		val psn = b.optString("psn")
+		if(psn.isEmpty())
+			return ""
+		var t = if(b.optBoolean("psnOwn")) "PSN: $psn (свій акаунт клієнта)" else "PSN: $psn (спільний акаунт AnyPlay)"
+		val own = b.optString("clientPsn")
+		if(!b.optBoolean("psnOwn") && own.isNotEmpty())
+			t += "; свій $own ще підключається"
+		return t
+	}
+
+	private fun renderAdmin(a: JSONObject)
+	{
+		val closed = a.optBoolean("closed")
+		val c = a.optJSONObject("current")
+		val next = a.optJSONArray("next")
+		binding.cardKicker.text = if(closed) "ДОСТУП КЛІЄНТАМ ЗАКРИТО" else "ПАНЕЛЬ АДМІНА"
+		binding.cardKicker.setTextColor(if(closed) 0xFFFF4D6D.toInt() else 0xFF5FD4FF.toInt())
+		binding.cardTitle.text = if(busy) "Шукаємо приставку…" else c?.optString("user") ?: "Зараз ніхто не грає"
+		val lines = ArrayList<String>()
+		var from = 0
+		if(c != null)
+		{
+			val left = c.optLong("end") - (System.currentTimeMillis() / 1000 + skew)
+			lines.add((if(c.optBoolean("live")) "у грі" else "ще не підключився") +
+				", ${formatTime(c.optLong("start"))}–${formatTime(c.optLong("end"))}, лишилось ${duration(left)}")
+			psnLine(c).let { if(it.isNotEmpty()) lines.add(it) }
+		}
+		else if(next != null && next.length() > 0)
+		{
+			val n = next.optJSONObject(0)
+			lines.add("Наступна бронь: ${n.optString("user")}, ${formatTime(n.optLong("start"))}–${formatTime(n.optLong("end"))}")
+			psnLine(n).let { if(it.isNotEmpty()) lines.add(it) }
+			from = 1
+		}
+		else
+			lines.add("Найближчих оплачених броней немає.")
+		for(i in from until minOf(from + 2, next?.length() ?: 0))
+		{
+			val n = next!!.optJSONObject(i) ?: continue
+			lines.add("далі: ${n.optString("user")}, ${formatTime(n.optLong("start"))}–${formatTime(n.optLong("end"))}")
+		}
+		binding.cardText.text = lines.joinToString("\n")
+		binding.cardProgress.visibility = if(busy) View.VISIBLE else View.GONE
+		binding.primaryButton.text = "Підключитись до приставки"
+		binding.secondaryButton.text = "Завершити гру"
+		binding.secondaryButton.visibility = if(c != null) View.VISIBLE else View.GONE
+		binding.tertiaryButton.text = if(closed) "Відкрити доступ" else "Закрити доступ"
+		binding.tertiaryButton.visibility = View.VISIBLE
 	}
 
 	/** Бронювання, продовження, «Мій PSN» — вбудовані екрани */
@@ -252,42 +448,6 @@ class AnyPlayActivity: AppCompatActivity()
 			return
 		}
 		AnyPlayWebDialog(this, page) { lifecycleScope.launch { refresh() } }.show()
-	}
-
-	// ── якість ──
-	private data class Quality(val title: String, val hint: String, val resolution: Preferences.Resolution, val fps: Preferences.FPS, val bitrate: Int?)
-	private val qualities = listOf(
-		Quality("Економна", "540p, 30 кадрів: для слабкого або мобільного інтернету", Preferences.Resolution.RES_540P, Preferences.FPS.FPS_30, null),
-		Quality("Оптимальна", "720p, 60 кадрів: підходить більшості", Preferences.Resolution.RES_720P, Preferences.FPS.FPS_60, null),
-		Quality("Максимальна", "1080p, 60 кадрів: потрібен швидкий Wi-Fi", Preferences.Resolution.RES_1080P, Preferences.FPS.FPS_60, 15000))
-
-	private fun currentQuality(): Quality
-	{
-		val p = Preferences(this)
-		return qualities.firstOrNull { it.resolution == p.resolution && it.fps == p.fps } ?: when
-		{
-			p.resolution == Preferences.Resolution.RES_1080P -> qualities[2]
-			p.resolution == Preferences.Resolution.RES_720P -> qualities[1]
-			else -> qualities[0]
-		}
-	}
-
-	private fun chooseQuality()
-	{
-		val current = qualities.indexOf(currentQuality())
-		MaterialAlertDialogBuilder(this)
-			.setTitle("Якість картинки")
-			.setSingleChoiceItems(qualities.map { "${it.title}\n${it.hint}" }.toTypedArray(), current) { dialog, which ->
-				val q = qualities[which]
-				val p = Preferences(this)
-				p.resolution = q.resolution
-				p.fps = q.fps
-				p.bitrate = q.bitrate
-				dialog.dismiss()
-				render()
-			}
-			.setNegativeButton("Закрити", null)
-			.show()
 	}
 
 	// ── вигляд ──
@@ -314,17 +474,42 @@ class AnyPlayActivity: AppCompatActivity()
 		val user = session.optString("user")
 		binding.userLabel.text = if(loggedIn && user.isNotEmpty()) user else ""
 		binding.logoutButton.visibility = if(loggedIn) View.VISIBLE else View.GONE
-		binding.tileQuality.text = "Якість\n${currentQuality().title}"
+		binding.tileQuality.text = "Якість\n${AnyPlayQuality.name(this)}"
+		val admin = isAdmin
+		val a = adminInfo
 		val myPsn = session.optString("myPsn")
-		binding.tilePsn.text = when
+		if(admin)
 		{
-			myPsn.isEmpty() -> "Мій PSN\nпідключити свій"
-			session.optBoolean("myPsnReady") -> "Мій PSN\n$myPsn"
-			else -> "Мій PSN\nпідключається"
+			val waiting = a?.optJSONArray("psnClients")?.length() ?: 0
+			val shared = a?.optJSONObject("console")
+			binding.tileBooking.text = "CRM\nброні й клієнти"
+			binding.tilePsn.text = if(waiting > 0) "Свої PSN\nчекають: $waiting" else "Свої PSN\nнемає заявок"
+			binding.tileSupport.text = "Спільний PSN\n" + (shared?.optString("psn_name")?.ifEmpty { null } ?: if(shared != null) "передано" else "не передано")
 		}
+		else
+		{
+			binding.tileBooking.text = getString(com.metallic.chiaki.R.string.anyplay_tile_booking)
+			binding.tilePsn.text = when
+			{
+				myPsn.isEmpty() -> "Мій PSN\nпідключити свій"
+				session.optBoolean("myPsnReady") -> "Мій PSN\n$myPsn"
+				else -> "Мій PSN\nпідключається"
+			}
+			binding.tileSupport.text = getString(com.metallic.chiaki.R.string.anyplay_tile_support)
+		}
+		binding.tileBooking.setCompoundDrawablesWithIntrinsicBounds(0, if(admin) com.metallic.chiaki.R.drawable.ap_chart else com.metallic.chiaki.R.drawable.ap_calendar, 0, 0)
+		binding.tileSupport.setCompoundDrawablesWithIntrinsicBounds(0, if(admin) com.metallic.chiaki.R.drawable.ap_user else com.metallic.chiaki.R.drawable.ap_chat, 0, 0)
 		binding.secondaryButton.visibility = View.GONE
+		binding.tertiaryButton.visibility = View.GONE
 		binding.cardProgress.visibility = View.GONE
-		binding.cardKicker.text = if(session.optBoolean("admin")) "ПАНЕЛЬ АДМІНА" else "ТВОЯ ГРА"
+		binding.cardKicker.text = "ТВОЯ ГРА"
+		binding.cardKicker.setTextColor(0xFF5FD4FF.toInt())
+
+		if(admin && a != null && (state == "play" || state == "wait" || state == "no_console"))
+		{
+			renderAdmin(a)
+			return
+		}
 
 		val next = session.optJSONObject("next")
 		val booking = session.optJSONObject("booking")

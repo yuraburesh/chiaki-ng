@@ -402,7 +402,8 @@ Rectangle {
             onClicked: qualityPopup.open()
         }
         HomeTile {
-            icon: "keyboard"; title: qsTr("Клавіші"); subtitle: qsTr("керування")
+            icon: Chiaki.controllers.length ? "gamepad" : "keyboard"; title: qsTr("Клавіші")
+            subtitle: Chiaki.controllers.length ? qsTr("геймпад підключено") : qsTr("керування")
             onClicked: home.openKeys()
         }
         HomeTile {
@@ -501,6 +502,15 @@ Rectangle {
             target: Chiaki.cloud
             function onMessage(text) { toast.show(text); }
         }
+        // геймпад підключили або від'єднали — кажемо, чим тепер керувати
+        property int padCount: Chiaki.controllers.length
+        property bool padSeen: false
+        onPadCountChanged: {
+            if (padSeen || padCount > 0)
+                toast.show(padCount > 0 ? qsTr("Геймпад підключено: грай ним, як на приставці. Клавіатура й мишка теж працюють, програма перемикається сама.")
+                                        : qsTr("Геймпад від'єднано: керування клавіатурою і мишкою."));
+            padSeen = true;
+        }
     }
 
     // ── довідка про керування приставкою ──
@@ -513,7 +523,8 @@ Rectangle {
             Label { text: qsTr("Як керувати приставкою"); font.pixelSize: 24; font.bold: true; color: "white" }
             Label {
                 Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 14
-                text: qsTr("Це працює в будь-якій грі й у меню PS5. Клавіші для самої GTA дивись у розділі «Клавіші». Під час гри ця довідка є в меню гри: «Клавіші», потім «Керування приставкою».")
+                text: (Chiaki.controllers.length ? qsTr("Підключено геймпад, тому нижче кнопки геймпада. Клавіатура й мишка теж працюють: програма сама перемикається на те, чим ти щойно натиснув. ") : "")
+                    + qsTr("Це працює в будь-якій грі й у меню PS5. Клавіші для самої GTA дивись у розділі «Клавіші». Під час гри ця довідка є в меню гри: «Клавіші», потім «Керування приставкою».")
             }
             AnyPlayGuide { Layout.fillWidth: true }
             Button {

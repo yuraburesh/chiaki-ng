@@ -166,6 +166,7 @@ class StreamSession : public QObject
 	Q_PROPERTY(bool cantDisplay READ GetCantDisplay NOTIFY CantDisplayChanged)
 	Q_PROPERTY(int framesLost READ GetFramesLost NOTIFY FramesLostChanged)
 	Q_PROPERTY(QString controlProfile READ GetControlProfile NOTIFY ControlProfileChanged)
+	Q_PROPERTY(bool gamepadMode READ GetGamepadMode NOTIFY GamepadModeChanged)
 
 	private:
 		SessionLog log;
@@ -228,6 +229,9 @@ class StreamSession : public QObject
 		float PS_TOUCHPAD_MAX_X, PS_TOUCHPAD_MAX_Y;
 		ChiakiControllerState keyboard_state;
 		AnyPlayInput *anyplay = nullptr; // AnyPlay: game-style keyboard/mouse profiles (replaces key_map)
+		// AnyPlay: чим клієнт керує просто зараз — геймпадом чи клавіатурою з мишкою (перемикається само, за останнім натисканням)
+		bool gamepad_mode = false;
+		void SetGamepadMode(bool gamepad);
 		bool cmd_pending = false;   // Cmd is down and not sent yet: it may be the start of Cmd+O
 		bool cmd_forwarded = false; // Cmd press was sent to the game, so its release must be sent too
 		ChiakiControllerState touch_state;
@@ -387,6 +391,7 @@ class StreamSession : public QObject
 		void ResetMouseRightStick();
 		bool GetMouseRightStickEnabled() const { return mouse_right_stick_enabled; }
 		QString GetControlProfile() const { return anyplay ? anyplay->StatusText() : QString(); }
+		bool GetGamepadMode() const { return gamepad_mode; }
 		bool AnyPlayControlsActive() const { return anyplay != nullptr; }
 		ChiakiControllerState mouse_state;
 		qreal mouse_accum_x = 0;
@@ -430,9 +435,11 @@ class StreamSession : public QObject
 		void CantDisplayChanged(bool cant_display);
 		void FecFailure();
 		void ControlProfileChanged();
+		void GamepadModeChanged();
 
 	private slots:
 		void UpdateGamepads();
+		void ControllerStateChanged();
 		void DpadSendFeedbackState();
 		void SendFeedbackState();
 		bool IsMouseInputMapped(MouseKey mouse_key) const;

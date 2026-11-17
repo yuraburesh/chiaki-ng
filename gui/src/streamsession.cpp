@@ -973,6 +973,7 @@ bool StreamSession::HandleMouseWheelEvent(QWheelEvent *event)
 
 void StreamSession::HandleMousePressEvent(QMouseEvent *event)
 {
+	SetGamepadMode(false);
 	if(anyplay && anyplay->HandleInput(AnyPlayInput::MouseButtonName(event->button()), true))
 		return;
 	// a mouse button mapped to a controller button takes priority over the touchpad behavior
@@ -1045,7 +1046,7 @@ constexpr float MouseStickMaxTickSeconds = 0.1f;     // or a timer glitch cannot
 
 void StreamSession::HandleMouseDeltaEvent(qreal dx, qreal dy)
 {
-	if(!mouse_right_stick_enabled)
+	if(!mouse_right_stick_enabled || gamepad_mode)   // поки грають геймпадом, випадковий рух мишки камеру не крутить
 		return;
 	mouse_accum_x += dx;
 	mouse_accum_y += dy;
@@ -1131,6 +1132,8 @@ void StreamSession::HandleKeyboardEvent(QKeyEvent *event)
 			return;
 		const QString name = AnyPlayInput::KeyName(event);
 		const bool press = event->type() == QEvent::Type::KeyPress;
+		if(press)
+			SetGamepadMode(false);
 #ifdef Q_OS_MACOS
 		// macOS reports Caps Lock as a toggle: "press" when it turns on, "release" when it turns off
 		if(name == QLatin1String("CapsLock"))
@@ -1402,6 +1405,46 @@ void StreamSession::HandleDpadTouchEvent(ChiakiControllerState *state, bool plac
 	CHIAKI_LOGW(GetChiakiLog(), "Dpad Touch event called without dpad press, ignoring...");
 }
 
+// AnyPlay: геймпад і клавіатура з мишкою працюють обидва; активним вважаємо те, чим натиснули востаннє.
+// Перемикання потрібне, щоб рух мишки не заважав грі з геймпада, а підказки показували потрібні кнопки.
+void StreamSession::SetGamepadMode(bool gamepad)
+{
+	if(gamepad_mode == gamepad)
+		return;
+	gamepad_mode = gamepad;
+	if(gamepad)
+	{
+		if(anyplay)
+			anyplay->ReleaseAll();
+		chiaki_controller_state_set_idle(&keyboard_state);
+		ResetMouseRightStick();
+	}
+	emit GamepadModeChanged();
+}
+
+void StreamSession::ControllerStateChanged()
+{
+#if CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER
+	if(!gamepad_mode)
+	{
+		// справжнє натискання, а не дрейф стіка чи шум тригера
+		const int stick_min = 0x3800;
+		for(auto controller : controllers)
+		{
+			const ChiakiControllerState s = controller->GetState();
+			if(s.buttons || s.l2_state > 0x40 || s.r2_state > 0x40
+				|| qAbs((int)s.left_x) > stick_min || qAbs((int)s.left_y) > stick_min
+				|| qAbs((int)s.right_x) > stick_min || qAbs((int)s.right_y) > stick_min)
+			{
+				SetGamepadMode(true);
+				break;
+			}
+		}
+	}
+#endif
+	SendFeedbackState();
+}
+
 void StreamSession::UpdateGamepads()
 {
 #if CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER
@@ -1436,7 +1479,7 @@ void StreamSession::UpdateGamepads()
 				continue;
 			}
 			CHIAKI_LOGI(log.GetChiakiLog(), "Controller %d opened: \"%s\"", controller_id, controller->GetName().toLocal8Bit().constData());
-			connect(controller, &Controller::StateChanged, this, &StreamSession::SendFeedbackState);
+			connect(controller, &Controller::StateChanged, this, &StreamSession::ControllerStateChanged);
 			connect(controller, &Controller::MicButtonPush, this, &StreamSession::ToggleMute);
 			controllers[controller_id] = controller;
 			if(controller->IsHandheld())

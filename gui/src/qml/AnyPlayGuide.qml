@@ -30,11 +30,27 @@ GridLayout {
         }
         return fallback;
     }
+    // геймпад: під час гри — якщо зараз керують ним; поза грою — якщо він підключений
+    property bool pad: Chiaki.session ? !!Chiaki.session.gamepadMode : Chiaki.controllers.length > 0
     readonly property string ps: keyOf("ps", "Home")
     readonly property string opt: keyOf("pause", "Esc")
     readonly property string cross: keyOf("select", "Enter")
     readonly property string moon: keyOf("back", "Backspace")
-    readonly property var rows: [
+    readonly property var padRows: [
+        { icon: "home", title: qsTr("Головний екран приставки"),
+          text: qsTr("Натисни й утримуй кнопку PS на геймпаді близько секунди. Відкриється головний екран PS5 зі списком ігор.") },
+        { icon: "bolt", title: qsTr("Швидке меню"),
+          text: qsTr("Коротко натисни кнопку PS. Знизу з'явиться панель: звук, друзі, перемикання між грою і меню.") },
+        { icon: "close", title: qsTr("Закрити гру"),
+          text: qsTr("Відкрий головний екран, хрестовиною наведи на гру, натисни OPTIONS (на геймпадах Xbox це Menu) і обери «Закрити гру».") },
+        { icon: "gamepad", title: qsTr("Запустити іншу гру"),
+          text: qsTr("На головному екрані обери гру хрестовиною і натисни ✕ (на Xbox це A). Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься.") },
+        { icon: "compass", title: qsTr("Рух по меню"),
+          text: qsTr("Хрестовина або лівий стік рухають вибір, ✕ підтверджує, ○ повертає назад (на Xbox це A і B). У самій грі OPTIONS відкриває паузу.") },
+        { icon: "warning", title: qsTr("Чого не робити"),
+          text: qsTr("Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, натисни «Вийти з гри» в меню AnyPlay (%1).").arg(menuKey) }
+    ]
+    readonly property var keyRows: [
         { icon: "home", title: qsTr("Головний екран приставки"),
           text: qsTr("Натисни й утримуй %1 (кнопка PS) близько секунди. Відкриється головний екран PS5 зі списком ігор.").arg(ps) },
         { icon: "bolt", title: qsTr("Швидке меню"),
@@ -48,6 +64,8 @@ GridLayout {
         { icon: "warning", title: qsTr("Чого не робити"),
           text: qsTr("Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, натисни «Вийти з гри» в меню AnyPlay (%1).").arg(menuKey) }
     ]
+
+    readonly property var rows: pad ? padRows : keyRows
 
     Repeater {
         model: guide.rows

@@ -1412,8 +1412,17 @@ Item {
 
         // AnyPlay: show the control mode (on foot / vehicle / aircraft) for a moment when it changes
         function onControlProfileChanged() {
+            anyplayProfileLabel.modeText = "";
             anyplayProfileLabel.opacity = 1;
             anyplayProfileTimer.interval = anyplayProfileLabel.text.length > 14 ? 3200 : 1600;
+            anyplayProfileTimer.restart();
+        }
+
+        // AnyPlay: керування перемкнулось між геймпадом і клавіатурою з мишкою
+        function onGamepadModeChanged() {
+            anyplayProfileLabel.modeText = Chiaki.session.gamepadMode ? qsTr("Керування: геймпад") : qsTr("Керування: клавіатура і мишка");
+            anyplayProfileLabel.opacity = 1;
+            anyplayProfileTimer.interval = 2200;
             anyplayProfileTimer.restart();
         }
     }
@@ -1448,7 +1457,8 @@ Item {
             horizontalCenter: parent.horizontalCenter
             topMargin: 28
         }
-        text: Chiaki.session ? Chiaki.session.controlProfile : ""
+        property string modeText: ""
+        text: modeText !== "" ? modeText : (Chiaki.session ? Chiaki.session.controlProfile : "")
         font.pixelSize: 26
         font.bold: true
         color: "white"

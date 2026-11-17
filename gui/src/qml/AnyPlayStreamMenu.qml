@@ -227,6 +227,12 @@ Rectangle {
         }
 
         // ── клавіші ──
+        Label {
+            visible: panel.page === "keys" && Chiaki.controllers.length > 0
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+            color: "#ffd23f"; font.pixelSize: 14; font.bold: true
+            text: qsTr("Підключено геймпад: грай ним, як на приставці. Клавіатура й мишка теж працюють: програма сама перемикається на те, чим ти щойно натиснув.")
+        }
         Flow {
             visible: panel.page === "keys"
             Layout.fillWidth: true

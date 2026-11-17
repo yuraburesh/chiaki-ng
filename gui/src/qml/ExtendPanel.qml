@@ -28,6 +28,8 @@ ColumnLayout {
         if (pending) {
             lastPending = pending;
             verdict = "";
+        } else if (skipVerdict) {
+            skipVerdict = false; lastPending = null;
         } else if (lastPending && info.active !== undefined) {
             if (info.active && info.end >= lastPending.end) { verdict = "paid"; paidEnd = info.end; status = ""; }
             else if (lastPending.status === "pending_review") { verdict = "rejected"; status = ""; }
@@ -38,6 +40,18 @@ ColumnLayout {
     spacing: compact ? 6 : 12
 
     function reload() { status = ""; cloud.loadExtend(); }
+    // клієнт лише подивився й передумав — звільняємо час одразу, без «час на оплату минув»
+    function cancelHold() {
+        if (!pending || pending.status !== "hold")
+            return;
+        const id = pending.id;
+        lastPending = null;
+        verdict = "";
+        status = "";
+        skipVerdict = true;
+        cloud.cancelBooking(id);
+    }
+    property bool skipVerdict: false
     // поки оплата не підтверджена — перепитуємо сервер, щоб статус змінився сам
     Timer {
         interval: 5000; repeat: true
@@ -104,7 +118,7 @@ ColumnLayout {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
                     font.pixelSize: 13; color: "#d8cdea"
                     text: payState.kind === "review" ? qsTr("Гра триває. Щойно платіж знайдеться — тут з'явиться «✅ Оплачено», час додасться сам, а в бот прийде повідомлення.")
-                        : payState.kind === "hold" ? qsTr("Час закріплено за тобою на кілька хвилин. Оплати точну суму й натисни «✅ Я оплатив».")
+                        : payState.kind === "hold" ? qsTr("Продовження ще не оформлено. Оплати точну суму й натисни «✅ Я оплатив» — або скасуй, якщо передумав.")
                         : payState.kind === "paid" ? qsTr("Підтвердження також прийшло тобі в бот. Можна грати далі.")
                         : payState.kind === "rejected" ? qsTr("Ми не знайшли цей платіж. Якщо ти платив — напиши нам у боті: «🆘 Допомога».")
                         : qsTr("Можеш обрати час ще раз нижче.")
@@ -254,6 +268,12 @@ ColumnLayout {
                     enabled: !panel.cloud.busy
                     onClicked: panel.cloud.payExtend(panel.pending.id, "")
                 }
+                Button {
+                    visible: panel.compact
+                    flat: true
+                    text: qsTr("Скасувати")
+                    onClicked: panel.cancelHold()
+                }
             }
             Button {   // головне: відкрити оплату одразу з потрібною сумою
                 visible: !panel.compact && !!panel.pending && !!panel.pending.payUrl
@@ -317,6 +337,14 @@ ColumnLayout {
                 font.pixelSize: 18; font.bold: true
                 text: panel.cloud.busy ? qsTr("Надсилаємо…") : qsTr("✅ Я оплатив")
                 onClicked: panel.cloud.payExtend(panel.pending.id, senderField.text)
+            }
+            Button {
+                visible: !panel.compact
+                Layout.alignment: Qt.AlignHCenter
+                flat: true
+                font.pixelSize: 14
+                text: qsTr("Я передумав — скасувати продовження")
+                onClicked: panel.cancelHold()
             }
         }
     }

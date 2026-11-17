@@ -603,6 +603,7 @@ void AnyPlayCloud::cancelBooking(qint64 bookingId)
 			status == 200 && o.value("ok").toBool() ? tr("Бронь скасовано, час звільнено.")
 			: tr("Цю бронь уже не можна скасувати тут — напиши в підтримку в боті."));
 		loadBook();
+		loadExtend();
 		refresh();
 	});
 }

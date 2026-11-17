@@ -123,27 +123,31 @@ Rectangle {
             MenuBtn {
                 id: resumeBtn
                 primary: true
-                text: qsTr("▶  Повернутись у гру")
+                iconName: "play"
+                text: qsTr("Повернутись у гру")
                 onClicked: panel.resume()
                 KeyNavigation.right: extendBtn
             }
             MenuBtn {
                 id: extendBtn
-                text: qsTr("⏱  Продовжити гру")
+                iconName: "clock"
+                text: qsTr("Продовжити гру")
                 onClicked: { panel.page = "extend"; backBtn.forceActiveFocus(); }
                 KeyNavigation.left: resumeBtn
                 KeyNavigation.right: keysBtn
             }
             MenuBtn {
                 id: keysBtn
-                text: qsTr("⌨  Клавіші")
+                iconName: "keyboard"
+                text: qsTr("Клавіші")
                 onClicked: { panel.page = "keys"; backBtn.forceActiveFocus(); }
                 KeyNavigation.left: extendBtn
                 KeyNavigation.right: qualityBtn
             }
             MenuBtn {
                 id: qualityBtn
-                text: qsTr("🎚  Якість")
+                iconName: "quality"
+                text: qsTr("Якість")
                 onClicked: { panel.page = "quality"; backBtn.forceActiveFocus(); }
                 KeyNavigation.left: keysBtn
                 KeyNavigation.right: volume
@@ -151,7 +155,7 @@ Rectangle {
             ColumnLayout {
                 Layout.leftMargin: 10
                 spacing: 0
-                Label { text: qsTr("🔊 Гучність: %1%").arg(((volume.value / 128.0) * 100).toFixed(0)); color: "white"; font.pixelSize: 14 }
+                Label { text: qsTr("Гучність: %1%").arg(((volume.value / 128.0) * 100).toFixed(0)); color: "white"; font.pixelSize: 14 }
                 Slider {
                     id: volume
                     Layout.preferredWidth: 190
@@ -167,7 +171,8 @@ Rectangle {
             MenuBtn {
                 id: exitBtn
                 danger: true
-                text: qsTr("⏹  Вийти з гри")
+                iconName: "exit"
+                text: qsTr("Вийти з гри")
                 onClicked: panel.exit()
                 KeyNavigation.left: volume
             }
@@ -241,7 +246,8 @@ Rectangle {
             visible: panel.page === "keys"
             Layout.preferredHeight: 46
             font.pixelSize: 15
-            text: qsTr("🎮  Керування приставкою: меню PS, закрити гру, запустити іншу  →")
+            iconName: "gamepad"
+            text: qsTr("Керування приставкою: меню PS, закрити гру, запустити іншу  →")
             onClicked: { panel.page = "console"; backBtn.forceActiveFocus(); }
         }
 
@@ -286,6 +292,7 @@ Rectangle {
         id: mb
         property bool primary: false
         property bool danger: false
+        property string iconName: ""
         Layout.preferredHeight: 58
         font.pixelSize: 17
         font.bold: true
@@ -293,9 +300,26 @@ Rectangle {
         Keys.onReturnPressed: clicked()
         Keys.onEnterPressed: clicked()
         Keys.onEscapePressed: panel.resume()
-        contentItem: Label {
-            text: mb.text; font: mb.font; color: "white"
-            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+        contentItem: Item {
+            implicitWidth: mbRow.implicitWidth
+            implicitHeight: mbRow.implicitHeight
+            Row {
+                id: mbRow
+                anchors.centerIn: parent
+                spacing: 10
+                Image {
+                    visible: mb.iconName !== ""
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: mb.primary ? 0 : 24; height: 24
+                    source: mb.iconName !== "" && !mb.primary ? "qrc:/icons/ap-" + mb.iconName + ".svg" : ""
+                    sourceSize: Qt.size(48, 48)
+                }
+                Label {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: (mb.primary && mb.iconName === "play" ? "▶  " : "") + mb.text; font: mb.font; color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
         }
         background: Rectangle {
             radius: 16

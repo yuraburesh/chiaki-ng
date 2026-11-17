@@ -142,7 +142,7 @@ class AnyPlayWebDialog(private val activity: Activity, private val page: String,
 				if(error != null)
 					Toast.makeText(activity, error, Toast.LENGTH_LONG).show()
 				else
-					Toast.makeText(activity, "✅ Вхід у PSN виконано. Адміністратор додасть твій профіль на приставку: це кілька хвилин.", Toast.LENGTH_LONG).show()
+					Toast.makeText(activity, "Вхід у PSN виконано. Адміністратор додасть твій профіль на приставку: це кілька хвилин.", Toast.LENGTH_LONG).show()
 				if(isShowing)
 					web.evaluateJavascript("window.__anyplayEvent && window.__anyplayEvent('psn')", null)
 			}.show()

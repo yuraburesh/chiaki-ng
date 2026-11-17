@@ -159,10 +159,12 @@
             <TextView
                 android:id="@+id/tileBooking"
                 style="@style/AnyPlayTile"
+                android:drawableTop="@drawable/ap_calendar"
                 android:text="@string/anyplay_tile_booking"/>
             <TextView
                 android:id="@+id/tilePsn"
                 style="@style/AnyPlayTile"
+                android:drawableTop="@drawable/ap_gamepad"
                 android:layout_marginStart="8dp"/>
         </LinearLayout>
 
@@ -174,10 +176,12 @@
 
             <TextView
                 android:id="@+id/tileQuality"
-                style="@style/AnyPlayTile"/>
+                style="@style/AnyPlayTile"
+                android:drawableTop="@drawable/ap_quality"/>
             <TextView
                 android:id="@+id/tileSupport"
                 style="@style/AnyPlayTile"
+                android:drawableTop="@drawable/ap_chat"
                 android:layout_marginStart="8dp"
                 android:text="@string/anyplay_tile_support"/>
         </LinearLayout>
@@ -192,6 +196,8 @@
             android:background="@drawable/anyplay_btn_secondary"
             android:gravity="center"
             android:text="@string/anyplay_help_link"
+            android:drawableLeft="@drawable/ap_help"
+            android:drawablePadding="8dp"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
             android:textStyle="bold"

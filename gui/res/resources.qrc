@@ -4,6 +4,27 @@
   </qresource>
   <qresource prefix="/icons">
     <file>settings-20px.svg</file>
+    <file alias="ap-bolt.svg">anyplay-icons/bolt.svg</file>
+    <file alias="ap-calendar.svg">anyplay-icons/calendar.svg</file>
+    <file alias="ap-chart.svg">anyplay-icons/chart.svg</file>
+    <file alias="ap-chat.svg">anyplay-icons/chat.svg</file>
+    <file alias="ap-check.svg">anyplay-icons/check.svg</file>
+    <file alias="ap-clock.svg">anyplay-icons/clock.svg</file>
+    <file alias="ap-close.svg">anyplay-icons/close.svg</file>
+    <file alias="ap-compass.svg">anyplay-icons/compass.svg</file>
+    <file alias="ap-console.svg">anyplay-icons/console.svg</file>
+    <file alias="ap-exit.svg">anyplay-icons/exit.svg</file>
+    <file alias="ap-gamepad.svg">anyplay-icons/gamepad.svg</file>
+    <file alias="ap-help.svg">anyplay-icons/help.svg</file>
+    <file alias="ap-home.svg">anyplay-icons/home.svg</file>
+    <file alias="ap-keyboard.svg">anyplay-icons/keyboard.svg</file>
+    <file alias="ap-play.svg">anyplay-icons/play.svg</file>
+    <file alias="ap-quality.svg">anyplay-icons/quality.svg</file>
+    <file alias="ap-touch.svg">anyplay-icons/touch.svg</file>
+    <file alias="ap-user.svg">anyplay-icons/user.svg</file>
+    <file alias="ap-volume.svg">anyplay-icons/volume.svg</file>
+    <file alias="ap-warning.svg">anyplay-icons/warning.svg</file>
+    <file alias="ap-wrench.svg">anyplay-icons/wrench.svg</file>
     <file>add-24px.svg</file>
     <file>discover-24px.svg</file>
     <file>discover-off-24px.svg</file>

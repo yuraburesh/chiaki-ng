@@ -334,8 +334,8 @@ class StreamActivity : AppCompatActivity()
 		MaterialAlertDialogBuilder(this)
 			.setTitle("Меню гри")
 			.setItems(arrayOf(
-				"⏱ Продовжити гру",
-				"❓ Як керувати приставкою: меню PS, закрити гру, запустити іншу",
+				"Продовжити гру",
+				"Як керувати приставкою: меню PS, закрити гру, запустити іншу",
 				if(controls) "Сховати кнопки на екрані (граю з геймпадом)" else "Показати кнопки на екрані",
 				"Вийти з гри")) { _, which ->
 				when(which)

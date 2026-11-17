@@ -127,10 +127,13 @@
 
     <style name="AnyPlayTile">
         <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">64dp</item>
+        <item name="android:layout_height">96dp</item>
+        <item name="android:drawablePadding">4dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">8dp</item>
         <item name="android:layout_weight">1</item>
         <item name="android:background">@drawable/anyplay_btn_secondary</item>
-        <item name="android:gravity">center</item>
+        <item name="android:gravity">center_horizontal</item>
         <item name="android:textColor">#FFFFFF</item>
         <item name="android:textSize">13sp</item>
         <item name="android:textStyle">bold</item>

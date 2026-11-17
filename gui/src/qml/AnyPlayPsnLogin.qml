@@ -111,7 +111,7 @@ DialogView {
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
                     color: "#bfaed8"; font.pixelSize: 15
-                    text: qsTr("🔒 Пароль ти вводиш лише на офіційному сайті Sony у своєму браузері — ні програма, ні ми його не бачимо.")
+                    text: qsTr("Пароль ти вводиш лише на офіційному сайті Sony у своєму браузері — ні програма, ні ми його не бачимо.")
                 }
 
                 StepCard {
@@ -212,11 +212,11 @@ DialogView {
                         wrapMode: Text.WordWrap
                         font.pixelSize: 16; font.bold: true
                         color: "white"
-                        text: dialog.phase === "ok" ? qsTr("✅ Вхід у PSN виконано! Повертаємось…")
-                            : dialog.phase === "check" ? qsTr("⏳ Перевіряємо вхід у Sony…")
+                        text: dialog.phase === "ok" ? qsTr("✓ Вхід у PSN виконано! Повертаємось…")
+                            : dialog.phase === "check" ? qsTr("Перевіряємо вхід у Sony…")
                             : dialog.phase === "error" ? dialog.errorText
-                            : dialog.auto ? qsTr("⏳ Чекаємо, поки ти увійдеш у браузері. Далі програма продовжить сама.")
-                            : qsTr("⏳ Чекаємо, поки ти увійдеш у браузері й скопіюєш адресу…")
+                            : dialog.auto ? qsTr("Чекаємо, поки ти увійдеш у браузері. Далі програма продовжить сама.")
+                            : qsTr("Чекаємо, поки ти увійдеш у браузері й скопіюєш адресу…")
                     }
                 }
             }

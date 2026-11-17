@@ -154,7 +154,7 @@ Rectangle {
         Item { Layout.fillWidth: true }
         Label {
             visible: home.cloud.loggedIn && home.cloud.userName !== ""
-            text: "👤 " + home.cloud.userName
+            text: "" + home.cloud.userName
             color: home.cDim; font.pixelSize: 15; font.bold: true
         }
         HomeButton {
@@ -243,7 +243,7 @@ Rectangle {
                     case "pairing": return qsTr("Відкрився бот @play_any_bot. Натисни там «Start» і повертайся сюди.");
                     case "offline": return qsTr("Спробуємо знову за хвилину.");
                     case "no_console": return qsTr("Приставка тимчасово недоступна — кнопка «🆘 Допомога» в боті.");
-                    case "update": return qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Завантаж нову в боті: кнопка «💻 Програма». Встановлюється поверх старої, вхід і броні зберігаються.");
+                    case "update": return qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Завантаж нову в боті: кнопка «Програма». Встановлюється поверх старої, вхід і броні зберігаються.");
                     default: return c.nextStart
                         ? qsTr("До початку гри (%1–%2). Доступ відкриється автоматично, програму можна не закривати.").arg(c.formatTime(c.nextStart)).arg(c.formatTime(c.nextEnd))
                         : qsTr("Обери час і оплати прямо тут — кнопка нижче.");
@@ -307,7 +307,7 @@ Rectangle {
                 horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: 15; font.bold: true; font.letterSpacing: 2
                 color: home.adm.closed ? "#ff4d6d" : home.cCyan
-                text: home.adm.closed ? qsTr("🔒 ДОСТУП КЛІЄНТАМ ЗАКРИТО") : qsTr("ПАНЕЛЬ АДМІНА")
+                text: home.adm.closed ? qsTr("ДОСТУП КЛІЄНТАМ ЗАКРИТО") : qsTr("ПАНЕЛЬ АДМІНА")
             }
             Label {
                 Layout.fillWidth: true
@@ -325,7 +325,7 @@ Rectangle {
                 text: {
                     const c = home.cur;
                     if (c)
-                        return (c.live ? qsTr("🟢 у грі") : qsTr("⚪ ще не підключився")) + ", "
+                        return (c.live ? qsTr("у грі") : qsTr("ще не підключився")) + ", "
                             + qsTr("%1–%2, лишилось %3").arg(home.cloud.formatTime(c.start)).arg(home.cloud.formatTime(c.end)).arg(home.dur(c.end - home.nowTs()));
                     const n = home.adm.next || [];
                     return n.length ? qsTr("Наступна бронь: %1, %2–%3").arg(n[0].user).arg(home.cloud.formatTime(n[0].start)).arg(home.cloud.formatTime(n[0].end))
@@ -349,7 +349,7 @@ Rectangle {
                 Layout.preferredWidth: Math.min(adminCol.width, 460)
                 primary: true
                 font.pixelSize: 19
-                text: home.consoleIndex() >= 0 ? qsTr("🎮 Підключитись до приставки") : qsTr("Шукаю PS5…")
+                text: home.consoleIndex() >= 0 ? qsTr("Підключитись до приставки") : qsTr("Шукаю PS5…")
                 onClicked: {
                     const c = home.cur;
                     if (c)
@@ -368,7 +368,7 @@ Rectangle {
                     visible: !!home.cur
                     Layout.preferredHeight: 52
                     font.pixelSize: 16
-                    text: qsTr("⛔ Завершити гру клієнта")
+                    text: qsTr("Завершити гру клієнта")
                     onClicked: {
                         const c = home.cur;
                         if (c)
@@ -379,7 +379,7 @@ Rectangle {
                 HomeButton {
                     Layout.preferredHeight: 52
                     font.pixelSize: 16
-                    text: home.adm.closed ? qsTr("🔓 Відкрити доступ") : qsTr("🔒 Закрити доступ усім")
+                    text: home.adm.closed ? qsTr("Відкрити доступ") : qsTr("Закрити доступ усім")
                     onClicked: {
                         if (home.adm.closed)
                             home.cloud.adminSetClosed(false);
@@ -398,49 +398,49 @@ Rectangle {
         anchors { horizontalCenter: parent.horizontalCenter; top: home.isAdmin ? adminCard.bottom : card.bottom; topMargin: 22 }
         spacing: 14
         HomeTile {
-            icon: "⚙"; title: qsTr("Якість"); subtitle: home.qualityName()
+            icon: "quality"; title: qsTr("Якість"); subtitle: home.qualityName()
             onClicked: qualityPopup.open()
         }
         HomeTile {
-            icon: "⌨"; title: qsTr("Клавіші"); subtitle: qsTr("керування")
+            icon: "keyboard"; title: qsTr("Клавіші"); subtitle: qsTr("керування")
             onClicked: home.openKeys()
         }
         HomeTile {
             visible: home.isAdmin
-            icon: "👤"; title: qsTr("Спільний PSN")
-            subtitle: home.adm.console ? (home.adm.console.psn_name || qsTr("акаунт на %1").arg(home.adm.console.label || "PS5")) : qsTr("⚠ не передано")
+            icon: "user"; title: qsTr("Спільний PSN")
+            subtitle: home.adm.console ? (home.adm.console.psn_name || qsTr("акаунт на %1").arg(home.adm.console.label || "PS5")) : qsTr("не передано")
             onClicked: sharedPopup.open()
         }
         HomeTile {
             visible: home.isAdmin
-            icon: "🎮"; title: qsTr("Свої PSN")
+            icon: "gamepad"; title: qsTr("Свої PSN")
             subtitle: (home.adm.psnClients || []).length ? qsTr("чекають: %1").arg(home.adm.psnClients.length) : qsTr("немає заявок")
             onClicked: clientsPopup.open()
         }
         HomeTile {
             visible: home.isAdmin
-            icon: "📊"; title: qsTr("CRM"); subtitle: qsTr("броні й клієнти")
-            onClicked: { home.cloud.openBot(); toast.show(qsTr("У боті натисни кнопку «📊 CRM» внизу зліва")); }
+            icon: "chart"; title: qsTr("CRM"); subtitle: qsTr("броні й клієнти")
+            onClicked: { home.cloud.openBot(); toast.show(qsTr("У боті натисни кнопку «CRM» внизу зліва")); }
         }
         HomeTile {
             visible: home.isAdmin
-            icon: "🔧"; title: qsTr("Сервіс"); subtitle: qsTr("усі налаштування")
+            icon: "wrench"; title: qsTr("Сервіс"); subtitle: qsTr("усі налаштування")
             onClicked: home.serviceMode = true
         }
         HomeTile {
             visible: home.cloud.loggedIn && !home.isAdmin
-            icon: "🎮"; title: qsTr("Мій PSN")
-            subtitle: !home.cloud.myPsn ? qsTr("спільний акаунт") : (home.cloud.myPsnStatus === "ready" ? (home.cloud.myPsn.indexOf("PSN-") === 0 ? qsTr("свій акаунт") : home.cloud.myPsn) + " ✅" : qsTr("ще підключається"))
+            icon: "gamepad"; title: qsTr("Мій PSN")
+            subtitle: !home.cloud.myPsn ? qsTr("спільний акаунт") : (home.cloud.myPsnStatus === "ready" ? (home.cloud.myPsn.indexOf("PSN-") === 0 ? qsTr("свій акаунт") : home.cloud.myPsn) + " ✓" : qsTr("ще підключається"))
             onClicked: psnPopup.open()
         }
         HomeTile {
             visible: home.cloud.loggedIn && !home.isAdmin && home.cloud.state === "play"
-            icon: "⏱"; title: qsTr("Продовжити"); subtitle: qsTr("+1, +2, +3 год")
+            icon: "clock"; title: qsTr("Продовжити"); subtitle: qsTr("+1, +2, +3 год")
             onClicked: extendPopup.open()
         }
         HomeTile {
             visible: home.cloud.loggedIn && !home.isAdmin
-            icon: "📅"; title: qsTr("Бронювання"); subtitle: qsTr("час і оплата")
+            icon: "calendar"; title: qsTr("Бронювання"); subtitle: qsTr("час і оплата")
             onClicked: bookPopup.open()
         }
     }
@@ -450,16 +450,21 @@ Rectangle {
         id: guideLink
         visible: home.cloud.loggedIn
         anchors { horizontalCenter: parent.horizontalCenter; top: tiles.bottom; topMargin: 14 }
-        width: guideLinkText.implicitWidth + 36
+        width: guideLinkRow.implicitWidth + 36
         height: 40
         radius: 20
         color: guideLinkArea.containsMouse ? "#33ffffff" : "#1affffff"
         border.color: "#33ffffff"
-        Label {
-            id: guideLinkText
+        Row {
+            id: guideLinkRow
             anchors.centerIn: parent
-            text: qsTr("❓ Як керувати приставкою: меню PS, закрити гру, запустити іншу")
-            color: "white"; font.pixelSize: 14; font.bold: true
+            spacing: 8
+            Image { anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; source: "qrc:/icons/ap-help.svg"; sourceSize: Qt.size(40, 40) }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Як керувати приставкою: меню PS, закрити гру, запустити іншу")
+                color: "white"; font.pixelSize: 14; font.bold: true
+            }
         }
         MouseArea {
             id: guideLinkArea
@@ -634,7 +639,7 @@ Rectangle {
                 id: psnCol
                 width: parent.width
                 spacing: 12
-                Label { text: qsTr("🎮 Мій акаунт PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
+                Label { text: qsTr("Мій акаунт PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
 
                 // навіщо свій акаунт
                 Rectangle {
@@ -649,10 +654,10 @@ Rectangle {
                         Label { text: qsTr("Навіщо грати на своєму акаунті?"); font.bold: true; font.pixelSize: 16; color: home.cSun }
                         Repeater {
                             model: [
-                                qsTr("💾 Твій прогрес — лише твій: сюжет, персонаж GTA Online, гроші, авто й нерухомість."),
-                                qsTr("🔒 Ніхто з інших орендарів не зайде у твого персонажа і не зіпсує збереження."),
-                                qsTr("🔁 Наступна оренда — продовжуєш з того самого місця, нічого не налаштовуючи."),
-                                qsTr("👥 Твої друзі, трофеї й гра з друзями онлайн."),
+                                qsTr("Твій прогрес — лише твій: сюжет, персонаж GTA Online, гроші, авто й нерухомість."),
+                                qsTr("Ніхто з інших орендарів не зайде у твого персонажа і не зіпсує збереження."),
+                                qsTr("Наступна оренда — продовжуєш з того самого місця, нічого не налаштовуючи."),
+                                qsTr("Твої друзі, трофеї й гра з друзями онлайн."),
                                 qsTr("🆓 Акаунт PSN безкоштовний, а гра вже є на нашій приставці — купувати нічого не треба.")
                             ]
                             Label { required property string modelData; Layout.fillWidth: true; wrapMode: Text.WordWrap; text: modelData; color: "white"; font.pixelSize: 14 }
@@ -674,7 +679,7 @@ Rectangle {
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: psnPopup.step === 2
                     color: home.cDim; font.pixelSize: 14
-                    text: qsTr("🔒 Пароль вводиш лише на сайті Sony — ні ми, ні програма його не бачимо. Це потрібно, щоб приставка відкривалась саме під твоїм акаунтом.")
+                    text: qsTr("Пароль вводиш лише на сайті Sony — ні ми, ні програма його не бачимо. Це потрібно, щоб приставка відкривалась саме під твоїм акаунтом.")
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -707,7 +712,7 @@ Rectangle {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
                     visible: psnPopup.step === 3 && !psnPopup.hasEntry
                     color: home.cDim; font.pixelSize: 14
-                    text: qsTr("⏳ Адміністратор готує приставку. Посилання і QR-код для входу з'являться тут за кілька хвилин (і прийдуть у Telegram). Вікно можна закрити: щойно вони будуть, воно відкриється саме.")
+                    text: qsTr("Адміністратор готує приставку. Посилання і QR-код для входу з'являться тут за кілька хвилин (і прийдуть у Telegram). Вікно можна закрити: щойно вони будуть, воно відкриється саме.")
                 }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
@@ -720,7 +725,7 @@ Rectangle {
                     Layout.fillWidth: true
                     visible: psnPopup.step === 3 && home.cloud.myPsnLink !== ""
                     primary: true
-                    text: qsTr("🌐 Відкрити сторінку входу на цьому комп'ютері")
+                    text: qsTr("Відкрити сторінку входу на цьому комп'ютері")
                     onClicked: home.cloud.openMyPsnLink()
                 }
                 Label {
@@ -790,15 +795,15 @@ Rectangle {
                     visible: psnPopup.step === 3 && psnPopup.hasEntry
                     primary: true
                     text: home.cloud.myPsnQr && home.cloud.myPsnLink === "" && home.cloud.myPsnCode === ""
-                        ? qsTr("✅ QR-код відскановано, підключення приставки підтвердив")
-                        : qsTr("✅ Підключення приставки до акаунта підтвердив")
+                        ? qsTr("✓ QR-код відскановано, підключення приставки підтвердив")
+                        : qsTr("✓ Підключення приставки до акаунта підтвердив")
                     onClicked: home.cloud.myPsnDone()
                 }
 
                 // крок 4: адмін завершує
                 PsnStep {
                     num: 3; done: psnPopup.step > 4; active: psnPopup.step === 4
-                    title: psnPopup.step === 5 ? qsTr("Готово! Ти граєш на своєму акаунті ✅") : qsTr("Адміністратор завершує підключення (1–2 хв)")
+                    title: psnPopup.step === 5 ? qsTr("Готово! Ти граєш на своєму акаунті ✓") : qsTr("Адміністратор завершує підключення (1–2 хв)")
                 }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: psnPopup.step === 5
@@ -832,7 +837,7 @@ Rectangle {
             ExtendPanel { Layout.fillWidth: true; visible: extendPopup.opened }
             RowLayout {
                 Layout.fillWidth: true
-                HomeButton { text: qsTr("📅 Забронювати ще"); onClicked: { extendPopup.close(); bookPopup.open(); } }
+                HomeButton { text: qsTr("Забронювати ще"); onClicked: { extendPopup.close(); bookPopup.open(); } }
                 Item { Layout.fillWidth: true }
                 HomeButton { text: qsTr("Закрити"); flat: true; onClicked: extendPopup.close() }
             }
@@ -879,7 +884,7 @@ Rectangle {
                 Label { text: qsTr("Клієнти зі своїм PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 14
-                    text: qsTr("1) Бот надішле тобі заявку. Натисни «📷 Надіслати QR клієнту» і сфотографуй екран PS5 з QR-кодом (Перемкнути користувача → Додати користувача → Увійти).\n2) Клієнт підтверджує вхід у свій акаунт.\n3) На PS5 перемкнись на його профіль → Налаштування → Система → Дистанційне відтворення → Прив'язати пристрій. Введи 8 цифр тут або напиши їх боту.\n\nУ тій самій мережі, що й PS5, має бути лише цей комп'ютер. Клієнтові це не потрібно. Код потрібен один раз для кожного акаунта.")
+                    text: qsTr("1) Бот надішле тобі заявку. Натисни «Надіслати QR клієнту» і сфотографуй екран PS5 з QR-кодом (Перемкнути користувача → Додати користувача → Увійти).\n2) Клієнт підтверджує вхід у свій акаунт.\n3) На PS5 перемкнись на його профіль → Налаштування → Система → Дистанційне відтворення → Прив'язати пристрій. Введи 8 цифр тут або напиши їх боту.\n\nУ тій самій мережі, що й PS5, має бути лише цей комп'ютер. Клієнтові це не потрібно. Код потрібен один раз для кожного акаунта.")
                 }
                 Label {
                     visible: !(home.adm.psnClients || []).length
@@ -906,9 +911,9 @@ Rectangle {
                                 color: home.cDim; font.pixelSize: 14
                                 text: {
                                     const m = cRow.modelData;
-                                    const acc = m.accountId ? qsTr("увійшов у PSN у програмі ✅") : qsTr("ще не увійшов у PSN у програмі");
+                                    const acc = m.accountId ? qsTr("увійшов у PSN у програмі ✓") : qsTr("ще не увійшов у PSN у програмі");
                                     const st = { requested: qsTr("Чекає QR-код"), qr_sent: qsTr("Код надіслано, чекаємо входу"),
-                                                 signed_in: qsTr("Увійшов на PS5, лишилось прив'язати ⬇") }[m.status] || m.status;
+                                                 signed_in: qsTr("Увійшов на PS5, лишилось прив'язати") }[m.status] || m.status;
                                     return st + ". " + acc[0].toUpperCase() + acc.slice(1) + ".";
                                 }
                             }
@@ -924,7 +929,7 @@ Rectangle {
                                 }
                                 HomeButton {
                                     primary: true
-                                    text: home.cloud.busy ? qsTr("Прив'язую…") : qsTr("🔗 Прив'язати")
+                                    text: home.cloud.busy ? qsTr("Прив'язую…") : qsTr("Прив'язати")
                                     enabled: !home.cloud.busy && !!cRow.modelData.accountId && pinField.text.replace(/\D/g, "").length === 8
                                     onClicked: { clientsPopup.result = ""; home.cloud.linkClientConsole(cRow.modelData.userId, cRow.modelData.accountId, pinField.text); }
                                 }
@@ -983,7 +988,7 @@ Rectangle {
                         }
                         HomeButton {
                             visible: !!sharedPopup.con
-                            text: qsTr("🗑 Видалити")
+                            text: qsTr("Видалити")
                             onClicked: root.showConfirmDialog(qsTr("Видалити спільний акаунт"),
                                 qsTr("Прибрати акаунт «%1» із сервера? Клієнти не зможуть підключатись, доки не передаси новий акаунт. Хто вже грає — дограє до розриву з'єднання.")
                                     .arg(sharedPopup.con ? (sharedPopup.con.psn_name || "PSN") : ""),
@@ -1022,7 +1027,7 @@ Rectangle {
                 Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 13
                 color: sharedPopup.registState === 1 ? "#3dff9a" : (sharedPopup.registState === 2 ? "#ffb347" : home.cDim)
                 text: (sharedPopup.registState === 1 ? qsTr("✓ Приставку %1 прив'язано під цим акаунтом. ").arg(sharedPopup.localPs5)
-                       : sharedPopup.registState === 2 ? qsTr("⚠ Приставку %1 прив'язано під іншим профілем PS5 (або давно, і програма не знає, під яким). Прив'яжи її заново, інакше клієнтів пускатиме в той старий профіль. ").arg(sharedPopup.localPs5)
+                       : sharedPopup.registState === 2 ? qsTr("Приставку %1 прив'язано під іншим профілем PS5 (або давно, і програма не знає, під яким). Прив'яжи її заново, інакше клієнтів пускатиме в той старий профіль. ").arg(sharedPopup.localPs5)
                        : "")
                     + qsTr("Код: на PS5 перемкнись на профіль цього акаунта → Налаштування → Система → Дистанційне відтворення → Прив'язати пристрій.")
             }
@@ -1163,7 +1168,13 @@ Rectangle {
         ColumnLayout {
             anchors.centerIn: parent
             spacing: 2
-            Label { Layout.alignment: Qt.AlignHCenter; text: tile.icon; font.pixelSize: 28; color: "white" }
+            Image {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 34; Layout.preferredHeight: 34
+                Layout.bottomMargin: 4
+                source: "qrc:/icons/ap-" + tile.icon + ".svg"
+                sourceSize: Qt.size(68, 68)
+            }
             Label { Layout.alignment: Qt.AlignHCenter; text: tile.title; font.pixelSize: 16; font.bold: true; color: "white" }
             Label {
                 Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: tile.width - 16

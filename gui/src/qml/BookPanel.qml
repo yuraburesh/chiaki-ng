@@ -63,7 +63,7 @@ ColumnLayout {
     }
     function statusText(s) {
         return s === "hold" ? qsTr("чекає оплату") : s === "pending_review" ? qsTr("перевіряємо оплату")
-             : s === "active" ? qsTr("йде гра") : qsTr("оплачено ✅");
+             : s === "active" ? qsTr("йде гра") : qsTr("оплачено ✓");
     }
 
     onVisibleChanged: if (visible) { choosing = false; confirmId = 0; reload(); }
@@ -82,7 +82,7 @@ ColumnLayout {
         }
     }
 
-    Label { text: qsTr("📅 Бронювання"); font.pixelSize: 24; font.bold: true; color: "white" }
+    Label { text: qsTr("Бронювання"); font.pixelSize: 24; font.bold: true; color: "white" }
     Label {
         Layout.fillWidth: true; wrapMode: Text.WordWrap
         visible: panel.mine.length > 0 && !panel.showPay
@@ -121,14 +121,14 @@ ColumnLayout {
                 spacing: 10
                 Label { text: qsTr("Сума:"); color: "#bfaed8"; font.pixelSize: 16 }
                 Label { text: panel.payItem ? panel.payItem.pending.price : ""; color: "#ffd23f"; font.bold: true; font.pixelSize: 26 }
-                Button { text: qsTr("📋"); flat: true; onClicked: panel.cloud.copyText(panel.payItem.pending.amount) }
+                Button { text: qsTr("Копіювати"); flat: true; onClicked: panel.cloud.copyText(panel.payItem.pending.amount) }
             }
             Button {
                 visible: !!panel.payItem && !!panel.payItem.pending.payUrl
                 Layout.fillWidth: true
                 Layout.preferredHeight: 56
                 font.pixelSize: 18; font.bold: true
-                text: qsTr("💳 Оплатити %1").arg(panel.payItem ? panel.payItem.pending.price : "")
+                text: qsTr("Оплатити %1").arg(panel.payItem ? panel.payItem.pending.price : "")
                 onClicked: Qt.openUrlExternally(panel.payItem.pending.payUrl)
                 contentItem: Label {
                     text: parent.text; font: parent.font; color: "white"
@@ -153,7 +153,7 @@ ColumnLayout {
                     Label { text: modelData.label + ":"; color: "#bfaed8"; font.pixelSize: 15; Layout.preferredWidth: 150 }
                     Label { Layout.fillWidth: true; text: modelData.value; color: "white"; font.pixelSize: 17; font.bold: true; elide: Text.ElideMiddle }
                     Button {
-                        text: modelData.url ? qsTr("Відкрити") : qsTr("📋 Копіювати")
+                        text: modelData.url ? qsTr("Відкрити") : qsTr("Копіювати")
                         onClicked: modelData.url ? Qt.openUrlExternally(modelData.value) : panel.cloud.copyText(modelData.value)
                     }
                 }
@@ -175,7 +175,7 @@ ColumnLayout {
                     Material.accent: "#ff2e9a"
                     enabled: !panel.cloud.busy
                     font.pixelSize: 17; font.bold: true
-                    text: panel.cloud.busy ? qsTr("Надсилаємо…") : qsTr("✅ Я оплатив")
+                    text: panel.cloud.busy ? qsTr("Надсилаємо…") : qsTr("✓ Я оплатив")
                     onClicked: panel.cloud.payBooking(panel.payItem.id, senderField.text)
                 }
                 Button {

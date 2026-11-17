@@ -123,7 +123,7 @@
     <string name="preferences_codec_key">stream_codec</string>
     <string name="anyplay_tagline">ОРЕНДА PS5: GTA ТА ІНШІ ІГРИ</string>
     <string name="anyplay_logout">Вийти</string>
-    <string name="anyplay_tile_booking">📅\nБронювання</string>
-    <string name="anyplay_help_link">❓ Як керувати приставкою: меню PS, закрити гру</string>
-    <string name="anyplay_tile_support">💬\nПідтримка</string>
+    <string name="anyplay_tile_booking">Бронювання\nчас і оплата</string>
+    <string name="anyplay_help_link">Як керувати приставкою: меню PS, закрити гру</string>
+    <string name="anyplay_tile_support">Підтримка\nнаписати в бот</string>
 </resources>

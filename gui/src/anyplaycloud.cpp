@@ -231,7 +231,7 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 		if(qr && (!my_psn_qr_ || st != my_psn_status_))
 			qr_rev_++;
 		if(st == "ready" && my_psn_status_ != "ready" && !my_psn_status_.isEmpty())
-			emit message(tr("✅ Твій акаунт PSN підключено — можна грати на своєму акаунті!"));
+			emit message(tr("✓ Твій акаунт PSN підключено — можна грати на своєму акаунті!"));
 		QString code = o.value("myPsnCode").toString(), link = o.value("myPsnLink").toString();
 		if(st == "qr_sent" && !qr && (code != my_psn_code_ || link != my_psn_link_) && !(code.isEmpty() && link.isEmpty()))
 			qr_rev_++;   // код цифрами теж відкриває вікно «Мій PSN»
@@ -321,8 +321,8 @@ void AnyPlayCloud::heartbeat()
 		qint64 end = o.value("end").toVariant().toLongLong();
 		if(end_ > 0 && end > end_)
 		{
-			emit message(tr("✅ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
-			emit extendResult(true, tr("✅ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
+			emit message(tr("✓ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
+			emit extendResult(true, tr("✓ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
 			pay_timer.stop();
 			loadExtend();
 		}
@@ -420,8 +420,8 @@ void AnyPlayCloud::uploadConsole()
 	request("POST", "/api/app/console", body, [this](int status, const QJsonObject &o) {
 		QString name = o.value("psnName").toString();
 		emit message(status == 200 && o.value("ok").toBool()
-			? (name.isEmpty() ? tr("✅ PS5 і вхід PSN передано на сервер. Клієнти гратимуть через нього.")
-			                  : tr("✅ Спільний акаунт «%1» передано на сервер. Клієнти гратимуть через нього.").arg(name))
+			? (name.isEmpty() ? tr("✓ PS5 і вхід PSN передано на сервер. Клієнти гратимуть через нього.")
+			                  : tr("✓ Спільний акаунт «%1» передано на сервер. Клієнти гратимуть через нього.").arg(name))
 			: o.value("error").toString() == "regist_mismatch"
 			? tr("Приставку прив'язано під іншим профілем PS5, ніж вхід у PSN. Прив'яжи її заново (крок 2).")
 			: tr("Не вдалося передати PS5 на сервер (помилка %1).").arg(status));
@@ -437,7 +437,7 @@ void AnyPlayCloud::adminDropShared()
 	body["action"] = "drop_shared";
 	request("POST", "/api/app/admin", body, [this](int status, const QJsonObject &o) {
 		emit message(status == 200 && o.value("ok").toBool()
-			? tr("🗑 Спільний акаунт прибрано з сервера. Клієнти не зможуть грати, доки не передаси новий (кроки 1–3).")
+			? tr("Спільний акаунт прибрано з сервера. Клієнти не зможуть грати, доки не передаси новий (кроки 1–3).")
 			: tr("Не вдалося прибрати акаунт (помилка %1).").arg(status));
 		refreshAdmin();
 	});
@@ -534,7 +534,7 @@ void AnyPlayCloud::adminKick(qint64 bookingId)
 	body["bookingId"] = bookingId;
 	request("POST", "/api/app/admin", body, [this](int status, const QJsonObject &o) {
 		emit message(status == 200 && o.value("ok").toBool()
-			? tr("⛔ Гру клієнта завершено. Йому прийшло повідомлення в боті.")
+			? tr("Гру клієнта завершено. Йому прийшло повідомлення в боті.")
 			: tr("Не вдалося завершити гру (помилка %1).").arg(status));
 		refreshAdmin();
 	});
@@ -549,8 +549,8 @@ void AnyPlayCloud::adminSetClosed(bool closed)
 	request("POST", "/api/app/admin", body, [this, closed](int status, const QJsonObject &o) {
 		if(status == 200 && o.value("ok").toBool())
 			emit message(closed
-				? tr("🔒 Доступ закрито: клієнти не можуть грати, бот показує «технічні роботи».")
-				: tr("🔓 Доступ відкрито: клієнти знову грають у свій час."));
+				? tr("Доступ закрито: клієнти не можуть грати, бот показує «технічні роботи».")
+				: tr("Доступ відкрито: клієнти знову грають у свій час."));
 		else
 			emit message(tr("Не вдалося змінити доступ (помилка %1).").arg(status));
 		refreshAdmin();
@@ -580,7 +580,7 @@ void AnyPlayCloud::extend(int hours, const QString &method)
 		{
 			QJsonObject p = o.value("pending").toObject();
 			qint64 hold = p.value("holdUntil").toVariant().toLongLong() - (QDateTime::currentSecsSinceEpoch() + skew_);
-			emit extendResult(true, tr("Час %1–%2 закріплено за тобою на %3 хв. Оплати за реквізитами нижче й натисни «✅ Я оплатив» — гра продовжиться сама, без перезапуску.")
+			emit extendResult(true, tr("Час %1–%2 закріплено за тобою на %3 хв. Оплати за реквізитами нижче й натисни «✓ Я оплатив» — гра продовжиться сама, без перезапуску.")
 				.arg(formatTime(p.value("start").toVariant().toLongLong())).arg(formatTime(p.value("end").toVariant().toLongLong()))
 				.arg(qMax<qint64>(1, hold / 60)));
 		}
@@ -607,11 +607,11 @@ void AnyPlayCloud::payExtend(qint64 bookingId, const QString &sender)
 		if(status == 200 && o.value("ok").toBool())
 		{
 			if(o.value("paid").toBool())
-				emit extendResult(true, tr("✅ Оплату вже отримано!"));
+				emit extendResult(true, tr("✓ Оплату вже отримано!"));
 			else if(o.value("auto").toBool())
-				emit extendResult(true, tr("⏳ Шукаємо твій платіж у виписці — зазвичай до хвилини. Можна повертатися до гри."));
+				emit extendResult(true, tr("Шукаємо твій платіж у виписці — зазвичай до хвилини. Можна повертатися до гри."));
 			else
-				emit extendResult(true, tr("⏳ Адміністратор перевіряє оплату — зазвичай кілька хвилин. Гра не перерветься, якщо оплата прийде до кінця часу."));
+				emit extendResult(true, tr("Адміністратор перевіряє оплату — зазвичай кілька хвилин. Гра не перерветься, якщо оплата прийде до кінця часу."));
 			pay_polls_ = 0;
 			pay_timer.start();
 		}
@@ -673,7 +673,7 @@ void AnyPlayCloud::book(qint64 start, const QString &code, const QString &method
 		{
 			QJsonObject p = o.value("pending").toObject();
 			qint64 hold = p.value("holdUntil").toVariant().toLongLong() - (QDateTime::currentSecsSinceEpoch() + skew_);
-			emit bookResult(true, tr("Час закріплено за тобою на %1 хв. Оплати й натисни «✅ Я оплатив».").arg(qMax<qint64>(1, hold / 60)));
+			emit bookResult(true, tr("Час закріплено за тобою на %1 хв. Оплати й натисни «✓ Я оплатив».").arg(qMax<qint64>(1, hold / 60)));
 		}
 		else
 		{
@@ -718,11 +718,11 @@ void AnyPlayCloud::payBooking(qint64 bookingId, const QString &sender)
 		if(status == 200 && o.value("ok").toBool())
 		{
 			if(o.value("paid").toBool())
-				emit bookResult(true, tr("✅ Оплату вже отримано — бронь підтверджено!"));
+				emit bookResult(true, tr("✓ Оплату вже отримано — бронь підтверджено!"));
 			else if(o.value("auto").toBool())
-				emit bookResult(true, tr("⏳ Шукаємо твій платіж — зазвичай до хвилини. Бронь підтвердиться сама."));
+				emit bookResult(true, tr("Шукаємо твій платіж — зазвичай до хвилини. Бронь підтвердиться сама."));
 			else
-				emit bookResult(true, tr("⏳ Адміністратор перевіряє оплату — зазвичай кілька хвилин. Час уже закріплено за тобою."));
+				emit bookResult(true, tr("Адміністратор перевіряє оплату — зазвичай кілька хвилин. Час уже закріплено за тобою."));
 			book_polls_ = 0;
 			book_timer.start();
 		}
@@ -795,7 +795,7 @@ void AnyPlayCloud::sendMyPsnLogin()
 	request("POST", "/api/app/psn/link", body, [this](int status, const QJsonObject &o) {
 		psn_login_active_ = false;
 		if(status == 200 && o.value("ok").toBool())
-			emit message(tr("✅ Вхід у PSN виконано. Тепер адміністратор додасть твій профіль на приставку — це кілька хвилин."));
+			emit message(tr("✓ Вхід у PSN виконано. Тепер адміністратор додасть твій профіль на приставку — це кілька хвилин."));
 		else
 			emit message(tr("Не вдалося передати вхід PSN (помилка %1). Спробуй ще раз.").arg(status));
 		refresh();
@@ -882,7 +882,7 @@ void AnyPlayCloud::saveClientLink(const QJsonObject &body, int attempt)
 		if(status == 200 && o.value("ok").toBool())
 		{
 			setBusy(false);
-			emit linkResult(true, tr("✅ Готово! Клієнт тепер грає на своєму акаунті — і наступного разу теж. Йому прийшло повідомлення."));
+			emit linkResult(true, tr("✓ Готово! Клієнт тепер грає на своєму акаунті — і наступного разу теж. Йому прийшло повідомлення."));
 			refreshAdmin();
 			return;
 		}

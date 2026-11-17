@@ -312,15 +312,15 @@ class AnyPlayActivity: AppCompatActivity()
 	private fun render()
 	{
 		val user = session.optString("user")
-		binding.userLabel.text = if(loggedIn && user.isNotEmpty()) "👤 $user" else ""
+		binding.userLabel.text = if(loggedIn && user.isNotEmpty()) user else ""
 		binding.logoutButton.visibility = if(loggedIn) View.VISIBLE else View.GONE
-		binding.tileQuality.text = "🎚\nЯкість: ${currentQuality().title}"
+		binding.tileQuality.text = "Якість\n${currentQuality().title}"
 		val myPsn = session.optString("myPsn")
 		binding.tilePsn.text = when
 		{
-			myPsn.isEmpty() -> "🎮\nМій PSN: підключити"
-			session.optBoolean("myPsnReady") -> "🎮\nМій PSN: $myPsn"
-			else -> "🎮\nМій PSN: підключається"
+			myPsn.isEmpty() -> "Мій PSN\nпідключити свій"
+			session.optBoolean("myPsnReady") -> "Мій PSN\n$myPsn"
+			else -> "Мій PSN\nпідключається"
 		}
 		binding.secondaryButton.visibility = View.GONE
 		binding.cardProgress.visibility = View.GONE
@@ -361,8 +361,8 @@ class AnyPlayActivity: AppCompatActivity()
 					lines.add("Це займає до хвилини.")
 				binding.cardText.text = lines.joinToString("\n")
 				binding.cardProgress.visibility = if(busy) View.VISIBLE else View.GONE
-				binding.primaryButton.text = "▶  Грати"
-				binding.secondaryButton.text = if(booking != null) "⏱ Продовжити гру" else "📅 Забронювати час"
+				binding.primaryButton.text = "Грати"
+				binding.secondaryButton.text = if(booking != null) "Продовжити гру" else "Забронювати час"
 				binding.secondaryButton.visibility = View.VISIBLE
 			}
 			"no_console" ->
@@ -391,13 +391,13 @@ class AnyPlayActivity: AppCompatActivity()
 				{
 					binding.cardTitle.text = "Твоя бронь: ${formatTime(start)}"
 					binding.cardText.text = "Грати можна з ${formatTime(start)} до ${formatTime(end)}. Кнопка «Грати» з'явиться тут сама."
-					binding.primaryButton.text = "📅 Мої броні"
+					binding.primaryButton.text = "Мої броні"
 				}
 				else
 				{
 					binding.cardTitle.text = "Броні поки немає"
 					binding.cardText.text = "Забронюй час прямо тут. Коли він настане, з'явиться кнопка «Грати»."
-					binding.primaryButton.text = "📅 Забронювати"
+					binding.primaryButton.text = "Забронювати"
 				}
 			}
 		}

@@ -35,17 +35,17 @@ GridLayout {
     readonly property string cross: keyOf("select", "Enter")
     readonly property string moon: keyOf("back", "Backspace")
     readonly property var rows: [
-        { icon: "🏠", title: qsTr("Головний екран приставки"),
+        { icon: "home", title: qsTr("Головний екран приставки"),
           text: qsTr("Натисни й утримуй %1 (кнопка PS) близько секунди. Відкриється головний екран PS5 зі списком ігор.").arg(ps) },
-        { icon: "⚡", title: qsTr("Швидке меню"),
+        { icon: "bolt", title: qsTr("Швидке меню"),
           text: qsTr("Коротко натисни %1 (кнопка PS). Знизу з'явиться панель: звук, друзі, перемикання між грою і меню.").arg(ps) },
-        { icon: "⏹", title: qsTr("Закрити гру"),
+        { icon: "close", title: qsTr("Закрити гру"),
           text: qsTr("Відкрий головний екран, стрілками наведи на гру, натисни %1 (кнопка OPTIONS) і обери «Закрити гру».").arg(opt) },
-        { icon: "🎮", title: qsTr("Запустити іншу гру"),
+        { icon: "gamepad", title: qsTr("Запустити іншу гру"),
           text: qsTr("На головному екрані обери гру стрілками ← → і натисни %1 (✕). Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься.").arg(cross) },
-        { icon: "🧭", title: qsTr("Рух по меню"),
+        { icon: "compass", title: qsTr("Рух по меню"),
           text: qsTr("Стрілки ↑ ↓ ← → рухають вибір, %1 (✕) підтверджує, %2 (○) повертає назад. У самій грі %3 відкриває паузу.").arg(cross).arg(moon).arg(opt) },
-        { icon: "⚠️", title: qsTr("Чого не робити"),
+        { icon: "warning", title: qsTr("Чого не робити"),
           text: qsTr("Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, натисни «Вийти з гри» в меню AnyPlay (%1).").arg(menuKey) }
     ]
 
@@ -64,7 +64,14 @@ GridLayout {
                 id: rowBox
                 anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: guide.compact ? 10 : 14 }
                 spacing: 10
-                Label { text: modelData.icon; font.pixelSize: guide.compact ? 18 : 22; Layout.alignment: Qt.AlignTop }
+                Image {
+                    Layout.alignment: Qt.AlignTop
+                    Layout.preferredWidth: guide.compact ? 24 : 30
+                    Layout.preferredHeight: guide.compact ? 24 : 30
+                    Layout.topMargin: 1
+                    source: "qrc:/icons/ap-" + modelData.icon + ".svg"
+                    sourceSize: Qt.size(60, 60)
+                }
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2

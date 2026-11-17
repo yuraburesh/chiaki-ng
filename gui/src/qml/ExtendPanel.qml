@@ -70,7 +70,7 @@ ColumnLayout {
 
     Label {
         visible: !panel.compact
-        text: qsTr("⏱ Продовжити гру")
+        text: qsTr("Продовжити гру")
         font.pixelSize: 24; font.bold: true; color: "white"
     }
     // ── стан оплати одним рядком: не оплачено / перевіряємо / оплачено / відхилено ──
@@ -103,22 +103,22 @@ ColumnLayout {
                     text: {
                         const p = panel.pending;
                         if (payState.kind === "review")
-                            return qsTr("⏳ Оплату ще НЕ підтверджено — перевіряємо платіж %1").arg(p.price);
+                            return qsTr("Оплату ще НЕ підтверджено — перевіряємо платіж %1").arg(p.price);
                         if (payState.kind === "hold")
-                            return qsTr("💳 Ще не оплачено: +%1 год (%2–%3), %4").arg(panel.hoursOf(p))
+                            return qsTr("Ще не оплачено: +%1 год (%2–%3), %4").arg(panel.hoursOf(p))
                                 .arg(panel.cloud.formatTime(p.start)).arg(panel.cloud.formatTime(p.end)).arg(p.price);
                         if (payState.kind === "paid")
-                            return qsTr("✅ Оплачено — гру продовжено до %1").arg(panel.cloud.formatTime(panel.paidEnd));
+                            return qsTr("✓ Оплачено — гру продовжено до %1").arg(panel.cloud.formatTime(panel.paidEnd));
                         if (payState.kind === "rejected")
-                            return qsTr("❌ Оплату не підтверджено — час не додано");
+                            return qsTr("✕ Оплату не підтверджено — час не додано");
                         return qsTr("⌛ Час на оплату минув — продовження скасовано");
                     }
                 }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
                     font.pixelSize: 13; color: "#d8cdea"
-                    text: payState.kind === "review" ? qsTr("Гра триває. Щойно платіж знайдеться — тут з'явиться «✅ Оплачено», час додасться сам, а в бот прийде повідомлення.")
-                        : payState.kind === "hold" ? qsTr("Продовження ще не оформлено. Оплати точну суму й натисни «✅ Я оплатив» — або скасуй, якщо передумав.")
+                    text: payState.kind === "review" ? qsTr("Гра триває. Щойно платіж знайдеться — тут з'явиться «✓ Оплачено», час додасться сам, а в бот прийде повідомлення.")
+                        : payState.kind === "hold" ? qsTr("Продовження ще не оформлено. Оплати точну суму й натисни «✓ Я оплатив» — або скасуй, якщо передумав.")
                         : payState.kind === "paid" ? qsTr("Підтвердження також прийшло тобі в бот. Можна грати далі.")
                         : payState.kind === "rejected" ? qsTr("Ми не знайшли цей платіж. Якщо ти платив, напиши нам у Telegram: кнопка «🆘 Допомога» в боті.")
                         : qsTr("Можеш обрати час ще раз нижче.")
@@ -138,7 +138,7 @@ ColumnLayout {
             if (!i.active) return qsTr("Продовжити можна лише під час своєї гри. Нову бронь можна зробити тут же: кнопка «Бронювання» на головному екрані.");
             if (i.closed) return qsTr("Зараз триває обслуговування — продовження тимчасово недоступне.");
             if (panel.pending && panel.pending.status === "pending_review")
-                return qsTr("⏳ Перевіряємо оплату %1 (%2–%3). Гра триває — коли оплата знайдеться, час додасться сам.")
+                return qsTr("Перевіряємо оплату %1 (%2–%3). Гра триває — коли оплата знайдеться, час додасться сам.")
                     .arg(panel.pending.price).arg(panel.cloud.formatTime(panel.pending.start)).arg(panel.cloud.formatTime(panel.pending.end));
             if (panel.pending)
                 return qsTr("Час %1–%2 закріплено за тобою. Переказуй точну суму — так оплата знайдеться автоматично.")
@@ -238,14 +238,14 @@ ColumnLayout {
                     color: "#ffd23f"; font.bold: true; font.pixelSize: panel.compact ? 18 : 24
                 }
                 Button {
-                    text: qsTr("📋")
+                    text: qsTr("Копіювати")
                     flat: true
                     onClicked: panel.cloud.copyText(panel.pending.amount)
                 }
                 Item { Layout.fillWidth: true }
                 Button {   // у меню гри: оплата одним натиском, якщо є посилання
                     visible: panel.compact && !!panel.pending && !!panel.pending.payUrl
-                    text: qsTr("💳 Оплатити")
+                    text: qsTr("Оплатити")
                     font.bold: true
                     onClicked: Qt.openUrlExternally(panel.pending.payUrl)
                 }
@@ -253,7 +253,7 @@ ColumnLayout {
                     model: panel.compact && panel.pending && !panel.pending.payUrl ? panel.pending.requisites.slice(0, 1) : []
                     Button {
                         required property var modelData
-                        text: modelData.label + ": " + modelData.value + "  📋"
+                        text: modelData.label + ": " + modelData.value 
                         flat: true
                         font.pixelSize: 13
                         onClicked: modelData.url ? Qt.openUrlExternally(modelData.value) : panel.cloud.copyText(modelData.value)
@@ -263,7 +263,7 @@ ColumnLayout {
                     visible: panel.compact
                     highlighted: true
                     Material.accent: "#ff2e9a"
-                    text: qsTr("✅ Я оплатив")
+                    text: qsTr("✓ Я оплатив")
                     font.bold: true
                     enabled: !panel.cloud.busy
                     onClicked: panel.cloud.payExtend(panel.pending.id, "")
@@ -280,7 +280,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 58
                 font.pixelSize: 19; font.bold: true
-                text: qsTr("💳 Оплатити %1").arg(panel.pending ? panel.pending.price : "")
+                text: qsTr("Оплатити %1").arg(panel.pending ? panel.pending.price : "")
                 onClicked: Qt.openUrlExternally(panel.pending.payUrl)
                 contentItem: Label {
                     text: parent.text; font: parent.font; color: "white"
@@ -315,7 +315,7 @@ ColumnLayout {
                         elide: Text.ElideMiddle
                     }
                     Button {
-                        text: modelData.url ? qsTr("Відкрити") : qsTr("📋 Копіювати")
+                        text: modelData.url ? qsTr("Відкрити") : qsTr("Копіювати")
                         onClicked: modelData.url ? Qt.openUrlExternally(modelData.value) : panel.cloud.copyText(modelData.value)
                     }
                 }
@@ -335,7 +335,7 @@ ColumnLayout {
                 Material.accent: "#ff2e9a"
                 enabled: !panel.cloud.busy
                 font.pixelSize: 18; font.bold: true
-                text: panel.cloud.busy ? qsTr("Надсилаємо…") : qsTr("✅ Я оплатив")
+                text: panel.cloud.busy ? qsTr("Надсилаємо…") : qsTr("✓ Я оплатив")
                 onClicked: panel.cloud.payExtend(panel.pending.id, senderField.text)
             }
             Button {

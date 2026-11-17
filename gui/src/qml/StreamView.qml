@@ -470,7 +470,7 @@ Item {
             id: endBannerText
             anchors.centerIn: parent
             font.pixelSize: 16; font.bold: true; color: "white"
-            text: qsTr("⏳ Лишилось %1 хв. Натисни %2 і обери «⏱ Продовжити»")
+            text: qsTr("Лишилось %1 хв. Натисни %2 і обери «Продовжити»")
                 .arg(Math.ceil(anyplayEndBanner.secsLeft / 60))
                 .arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"))
         }
@@ -560,7 +560,7 @@ Item {
                     id: extendButton
                     visible: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin && Chiaki.cloud.state === "play"
                     Layout.rightMargin: 16
-                    text: qsTr("⏱ Продовжити")
+                    text: qsTr("Продовжити")
                     padding: 14
                     font.pixelSize: 20
                     font.bold: true

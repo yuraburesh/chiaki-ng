@@ -259,7 +259,7 @@ class AnyPlayActivity: AppCompatActivity()
 	private val qualities = listOf(
 		Quality("Економна", "540p, 30 кадрів: для слабкого або мобільного інтернету", Preferences.Resolution.RES_540P, Preferences.FPS.FPS_30, null),
 		Quality("Оптимальна", "720p, 60 кадрів: підходить більшості", Preferences.Resolution.RES_720P, Preferences.FPS.FPS_60, null),
-		Quality("Максимальна", "1080p, 60 кадрів: потрібен швидкий Wi-Fi", Preferences.Resolution.RES_1080P, Preferences.FPS.FPS_60, 25000))
+		Quality("Максимальна", "1080p, 60 кадрів: потрібен швидкий Wi-Fi", Preferences.Resolution.RES_1080P, Preferences.FPS.FPS_60, 15000))
 
 	private fun currentQuality(): Quality
 	{

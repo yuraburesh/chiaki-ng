@@ -61,19 +61,20 @@ Rectangle {
     }
 
     // Ті самі три рівні якості, що й на головному екрані
+    readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна")]
     readonly property var qualities: [
-        { id: "eco", name: qsTr("Економна"), info: qsTr("540p, 30 кадр/с"), res: 2, fps: 30, bitrate: 0 },
-        { id: "opt", name: qsTr("Оптимальна"), info: qsTr("720p, 60 кадр/с"), res: 3, fps: 60, bitrate: 0 },
-        { id: "max", name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с, найчіткіша"), res: 4, fps: 60, bitrate: 25000 }
+        { level: -1, name: qsTr("Авто"), info: qsTr("сама підбирає, зараз: %1").arg(levelNames[Chiaki.cloud.qualityLevel] || "") },
+        { level: 0, name: levelNames[0], info: qsTr("540p, 30 кадр/с") },
+        { level: 1, name: levelNames[1], info: qsTr("720p, 60 кадр/с") },
+        { level: 2, name: levelNames[2], info: qsTr("1080p, 60 кадр/с, найчіткіша") }
     ]
-    function qualityNow() {
-        const r = Chiaki.settings.resolutionRemotePS5, f = Chiaki.settings.fpsRemotePS5;
-        return r <= 2 ? "eco" : r >= 4 ? "max" : (f >= 60 ? "opt" : "eco");
-    }
+    function qualityOn(q) { return q.level < 0 ? Chiaki.cloud.autoQuality : (!Chiaki.cloud.autoQuality && Chiaki.cloud.qualityLevel === q.level); }
     function setQuality(q) {
-        if (qualityNow() === q.id) { goMain(); return; }
-        Chiaki.settings.resolutionRemotePS5 = q.res; Chiaki.settings.fpsRemotePS5 = q.fps; Chiaki.settings.bitrateRemotePS5 = q.bitrate;
-        Chiaki.settings.resolutionLocalPS5 = q.res;  Chiaki.settings.fpsLocalPS5 = q.fps;  Chiaki.settings.bitrateLocalPS5 = q.bitrate;
+        if (q.level < 0) { Chiaki.cloud.autoQuality = true; goMain(); return; }   // «Авто» лишає поточний рівень і далі стежить сама
+        const same = Chiaki.cloud.qualityLevel === q.level;
+        Chiaki.cloud.autoQuality = false;
+        if (same) { goMain(); return; }
+        Chiaki.cloud.setQualityLevel(q.level);
         Chiaki.cloud.reconnectOnce = true;   // головний екран сам натисне «Грати» з новою якістю
         panel.page = "main";
         panel.exit();
@@ -205,7 +206,7 @@ Rectangle {
             visible: panel.page === "quality"
             Layout.fillWidth: true; wrapMode: Text.WordWrap
             color: "#d8cdea"; font.pixelSize: 14
-            text: qsTr("Якщо картинка смикається чи сиплеться, обери нижчу якість. Гра перепідключиться сама за кілька секунд, прогрес у грі не зникає.")
+            text: qsTr("«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш рівень сам, гра перепідключиться за кілька секунд, прогрес у грі не зникає.")
         }
         RowLayout {
             visible: panel.page === "quality"
@@ -215,7 +216,7 @@ Rectangle {
                 model: panel.qualities
                 MenuBtn {
                     required property var modelData
-                    readonly property bool on: panel.qualityNow() === modelData.id
+                    readonly property bool on: panel.qualityOn(modelData)
                     Layout.fillWidth: true
                     Layout.preferredHeight: 62
                     primary: on

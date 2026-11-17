@@ -36,6 +36,9 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(QString myPsnLink READ myPsnLink NOTIFY changed)       // сторінка Sony для цього входу (якщо відома)
 	Q_PROPERTY(QString playPsn READ playPsn NOTIFY changed)           // під яким акаунтом PSN зараз пускає приставка
 	Q_PROPERTY(bool playOwn READ playOwn NOTIFY changed)              // true — це власний акаунт клієнта
+	// якість: 0 — економна, 1 — оптимальна, 2 — максимальна; «авто» сама знижує її при слабкому зв'язку
+	Q_PROPERTY(bool autoQuality READ autoQuality WRITE setAutoQuality NOTIFY changed)
+	Q_PROPERTY(int qualityLevel READ qualityLevel NOTIFY changed)
 	Q_PROPERTY(bool reconnectOnce MEMBER reconnect_once_ NOTIFY changed)   // після зміни якості в грі: підключитись знову самому
 	Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)                // іде прив'язка / перевірка
 	Q_PROPERTY(QVariantMap extendInfo READ extendInfo NOTIFY extendChanged) // продовження: варіанти, ціни, заявка
@@ -89,6 +92,13 @@ public:
 	Q_INVOKABLE void myPsnDone();                    // клієнт: «Я увійшов на приставці»
 	Q_INVOKABLE void linkClientConsole(qint64 userId, const QString &accountId, const QString &pin); // адмін
 	Q_INVOKABLE void copyText(const QString &text);
+	bool autoQuality() const;
+	void setAutoQuality(bool on);
+	int qualityLevel() const;
+	Q_INVOKABLE void setQualityLevel(int level);   // застосувати рівень: роздільність, кадри, бітрейт
+	Q_INVOKABLE void prepareAutoQuality();         // перед «Грати»: після довгої чистої гри пробуємо рівень вище
+	Q_INVOKABLE bool autoQualityDown();            // зв'язок слабкий: рівень нижче (false — нижче нікуди)
+	Q_INVOKABLE void autoQualityGood();            // довго грали без втрат
 	Q_INVOKABLE void refreshAdmin();
 	Q_INVOKABLE void adminKick(qint64 bookingId);    // адмін: завершити поточну гру клієнта
 	Q_INVOKABLE void adminSetClosed(bool closed);    // адмін: закрити / відкрити доступ усім клієнтам

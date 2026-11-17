@@ -121,6 +121,7 @@ public:
     QmlSettings *qmlSettings() const;
     StreamSession *qmlSession() const;
     AnyPlayCloud *anyplayCloud() const { return anyplay_cloud; }
+    bool anyplayClient() const;   // орендар (не адмін): приставку в режим спокою не переводимо ніколи
     QList<QmlController*> qmlControllers() const;
 
     bool discoveryEnabled() const;

@@ -65,19 +65,21 @@ Rectangle {
         const i = consoleIndex();
         if (i < 0) { toast.show(qsTr("Шукаємо приставку… зачекай кілька секунд")); Chiaki.refreshPsnToken(); return; }
         const h = Chiaki.hosts[i];
+        home.cloud.prepareAutoQuality();   // «Авто»: після довгої чистої гри пробуємо якість вище
         if (h.discovered) Chiaki.connectToHost(i, h.name); else Chiaki.connectToHost(i);
     }
-    function qualityName() {
-        const r = Chiaki.settings.resolutionRemotePS5, f = Chiaki.settings.fpsRemotePS5;
-        if (r <= 2) return qsTr("Економна");
-        if (r >= 4) return qsTr("Максимальна");
-        return f >= 60 ? qsTr("Оптимальна") : qsTr("Економна");
+    // адміну: з якого акаунта PSN грає (гратиме) клієнт — свого чи спільного
+    function psnLine(b, sep) {
+        if (!b || !b.psn)
+            return "";
+        let t = sep + (b.psnOwn ? qsTr("PSN: %1 (свій акаунт клієнта)").arg(b.psn) : qsTr("PSN: %1 (спільний акаунт AnyPlay)").arg(b.psn));
+        if (!b.psnOwn && b.clientPsn)
+            t += qsTr("; свій %1 ще підключається").arg(b.clientPsn);
+        return t;
     }
-    function setQuality(res, fps) {
-        const br = res >= 4 ? 25000 : 0;   // «Максимальна» — підвищений бітрейт, щоб картинка була чіткішою
-        Chiaki.settings.resolutionRemotePS5 = res; Chiaki.settings.fpsRemotePS5 = fps; Chiaki.settings.bitrateRemotePS5 = br;
-        Chiaki.settings.resolutionLocalPS5 = res;  Chiaki.settings.fpsLocalPS5 = fps;  Chiaki.settings.bitrateLocalPS5 = br;
-    }
+    readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна")]
+    function levelName() { return levelNames[home.cloud.qualityLevel] || levelNames[1]; }
+    function qualityName() { return home.cloud.autoQuality ? qsTr("Авто: %1").arg(levelName()) : levelName(); }
 
     readonly property bool popupOpen: guidePopup.opened || qualityPopup.opened || psnPopup.opened || extendPopup.opened || clientsPopup.opened || sharedPopup.opened || bookPopup.opened
     Keys.onReturnPressed: if (!popupOpen) primary.clicked()
@@ -326,9 +328,10 @@ Rectangle {
                     const c = home.cur;
                     if (c)
                         return (c.live ? qsTr("у грі") : qsTr("ще не підключився")) + ", "
-                            + qsTr("%1–%2, лишилось %3").arg(home.cloud.formatTime(c.start)).arg(home.cloud.formatTime(c.end)).arg(home.dur(c.end - home.nowTs()));
+                            + qsTr("%1–%2, лишилось %3").arg(home.cloud.formatTime(c.start)).arg(home.cloud.formatTime(c.end)).arg(home.dur(c.end - home.nowTs()))
+                            + home.psnLine(c, "\n");
                     const n = home.adm.next || [];
-                    return n.length ? qsTr("Наступна бронь: %1, %2–%3").arg(n[0].user).arg(home.cloud.formatTime(n[0].start)).arg(home.cloud.formatTime(n[0].end))
+                    return n.length ? qsTr("Наступна бронь: %1, %2–%3").arg(n[0].user).arg(home.cloud.formatTime(n[0].start)).arg(home.cloud.formatTime(n[0].end)) + home.psnLine(n[0], "\n")
                                     : qsTr("Найближчих оплачених броней немає.");
                 }
             }
@@ -339,7 +342,7 @@ Rectangle {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: 14; color: home.cDim; opacity: 0.8
-                    text: qsTr("далі: %1, %2–%3").arg(modelData.user).arg(home.cloud.formatTime(modelData.start)).arg(home.cloud.formatTime(modelData.end))
+                    text: qsTr("далі: %1, %2–%3").arg(modelData.user).arg(home.cloud.formatTime(modelData.start)).arg(home.cloud.formatTime(modelData.end)) + home.psnLine(modelData, ", ")
                 }
             }
             Item { Layout.preferredHeight: 6 }
@@ -545,18 +548,19 @@ Rectangle {
             Label { text: qsTr("Якість картинки"); font.pixelSize: 24; font.bold: true; color: "white" }
             Label {
                 Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 14
-                text: qsTr("Якщо картинка гальмує чи сиплеться, обери нижчу якість. Під час гри її можна змінити в меню гри (кнопка «Якість»).")
+                text: qsTr("«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо хочеш, обери рівень сам: під час гри його можна змінити в меню гри (кнопка «Якість»).")
             }
             Repeater {
                 model: [
-                    { name: qsTr("Економна"), info: qsTr("540p, 30 кадр/с — для слабкого чи мобільного інтернету"), res: 2, fps: 30 },
-                    { name: qsTr("Оптимальна"), info: qsTr("720p, 60 кадр/с — рекомендовано (від 15 Мбіт/с)"), res: 3, fps: 60 },
-                    { name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с, найчіткіша картинка — швидкий інтернет (від 40 Мбіт/с, краще кабель)"), res: 4, fps: 60 }
+                    { level: -1, name: qsTr("Авто (радимо)"), info: qsTr("Програма сама підбирає якість під твій інтернет, щоб не було затримок. Зараз: %1").arg(home.levelName()) },
+                    { level: 0, name: qsTr("Економна"), info: qsTr("540p, 30 кадр/с — для слабкого чи мобільного інтернету") },
+                    { level: 1, name: qsTr("Оптимальна"), info: qsTr("720p, 60 кадр/с — підходить більшості (від 15 Мбіт/с)") },
+                    { level: 2, name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с, найчіткіша картинка — швидкий інтернет (від 30 Мбіт/с, краще кабель)") }
                 ]
                 delegate: Rectangle {
                     id: qItem
                     required property var modelData
-                    readonly property bool on: home.qualityName() === modelData.name
+                    readonly property bool on: modelData.level < 0 ? home.cloud.autoQuality : (!home.cloud.autoQuality && home.cloud.qualityLevel === modelData.level)
                     Layout.fillWidth: true
                     implicitHeight: qRow.implicitHeight + 28
                     radius: 16
@@ -577,7 +581,16 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: { home.setQuality(qItem.modelData.res, qItem.modelData.fps); qualityPopup.close(); toast.show(qsTr("Якість: %1").arg(qItem.modelData.name)); }
+                        onClicked: {
+                            if (qItem.modelData.level < 0)
+                                home.cloud.autoQuality = true;
+                            else {
+                                home.cloud.autoQuality = false;
+                                home.cloud.setQualityLevel(qItem.modelData.level);
+                            }
+                            qualityPopup.close();
+                            toast.show(qsTr("Якість: %1").arg(home.qualityName()));
+                        }
                     }
                 }
             }

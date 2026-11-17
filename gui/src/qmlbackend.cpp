@@ -577,7 +577,7 @@ void QmlBackend::goToSleep()
 {
     qCInfo(chiakiGui) << "About to sleep";
     if (session) {
-        if (this->settings->GetSuspendAction() == SuspendAction::Sleep)
+        if (this->settings->GetSuspendAction() == SuspendAction::Sleep && !anyplayClient())
             session->GoToBed();
         session->Stop();
         if(!session_info.duid.isEmpty())
@@ -1273,13 +1273,18 @@ void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
     }
 }
 
+bool QmlBackend::anyplayClient() const
+{
+    return anyplay_cloud && anyplay_cloud->loggedIn() && !anyplay_cloud->admin();
+}
+
 bool QmlBackend::closeRequested()
 {
     if (!session)
         return true;
 
     bool stop = true;
-    if (session->IsConnected()) {
+    if (session->IsConnected() && !anyplayClient()) {
         switch (settings->GetDisconnectAction()) {
         case DisconnectAction::Ask:
             stop = false;
@@ -1693,7 +1698,7 @@ void QmlBackend::stopSession(bool sleep)
         });
     }
 
-    if (sleep)
+    if (sleep && !anyplayClient())
         session->GoToBed();
 
     session->Stop();

@@ -1449,6 +1449,48 @@ Item {
         Timer { id: anyplayStartHintTimer; interval: 12000; onTriggered: anyplayStartHint.opacity = 0 }
     }
 
+    // AnyPlay «Авто»: якщо зв'язок кілька разів поспіль поганий — знижуємо якість і підключаємось знову
+    Timer {
+        id: anyplayAutoQuality
+        property int bad: 0
+        property int good: 0
+        property int ticks: 0
+        property int lastLost: 0
+        property bool reported: false
+        property bool floorTold: false
+        interval: 2000; repeat: true
+        running: !!Chiaki.session && Chiaki.session.connected && Chiaki.cloud.autoQuality
+        onRunningChanged: { bad = 0; good = 0; ticks = 0; reported = false; lastLost = Chiaki.session ? Chiaki.session.framesLost : 0; }
+        onTriggered: {
+            if (!Chiaki.session)
+                return;
+            ticks++;
+            const loss = Chiaki.session.averagePacketLoss;
+            const lost = Chiaki.session.framesLost - lastLost;
+            lastLost = Chiaki.session.framesLost;
+            if (loss > 0.03 || lost >= 6) { bad += 2; good = 0; }
+            else if (loss > 0.012 || lost >= 2) { bad += 1; good = Math.max(0, good - 5); }
+            else { bad = Math.max(0, bad - 1); good++; }
+            if (ticks > 8 && bad >= 12) {   // приблизно 15–25 секунд поганого зв'язку
+                bad = 0;
+                if (Chiaki.cloud.autoQualityDown()) {
+                    Chiaki.cloud.reconnectOnce = true;
+                    Chiaki.stopSession(false);
+                } else if (!floorTold) {
+                    floorTold = true;
+                    anyplayProfileLabel.modeText = qsTr("Зв'язок дуже слабкий навіть на найнижчій якості");
+                    anyplayProfileLabel.opacity = 1;
+                    anyplayProfileTimer.interval = 5000;
+                    anyplayProfileTimer.restart();
+                }
+            }
+            if (!reported && good >= 300) {   // 10 хвилин без втрат: наступного разу можна спробувати якість вище
+                reported = true;
+                Chiaki.cloud.autoQualityGood();
+            }
+        }
+    }
+
     Label {
         id: anyplayProfileLabel
         z: 100

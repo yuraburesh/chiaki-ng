@@ -1,6 +1,7 @@
 #include "anyplaycloud.h"
 #include "settings.h"
 #include "qmlbackend.h"
+#include "qmlsettings.h"
 
 #include <QClipboard>
 #include <QDateTime>
@@ -732,6 +733,95 @@ void AnyPlayCloud::payBooking(qint64 bookingId, const QString &sender)
 				: tr("Не вдалося надіслати (помилка %1). Спробуй ще раз.").arg(status));
 		loadBook();
 	});
+}
+
+// ── якість картинки ──
+static const char *QUALITY_NAMES[] = { "Економна", "Оптимальна", "Максимальна" };
+
+bool AnyPlayCloud::autoQuality() const
+{
+	return QSettings().value(QStringLiteral("anyplay/auto_quality"), true).toBool();
+}
+
+void AnyPlayCloud::setAutoQuality(bool on)
+{
+	if(on == autoQuality())
+		return;
+	QSettings().setValue(QStringLiteral("anyplay/auto_quality"), on);
+	emit changed();
+}
+
+int AnyPlayCloud::qualityLevel() const
+{
+	QmlSettings *qs = backend->qmlSettings();
+	if(!qs)
+		return 1;
+	const int res = qs->resolutionRemotePS5(), fps = qs->fpsRemotePS5();
+	if(res <= 2)
+		return 0;
+	if(res >= 4)
+		return 2;
+	return fps >= 60 ? 1 : 0;
+}
+
+void AnyPlayCloud::setQualityLevel(int level)
+{
+	QmlSettings *qs = backend->qmlSettings();
+	if(!qs)
+		return;
+	level = qBound(0, level, 2);
+	const int res = level == 0 ? 2 : level == 1 ? 3 : 4;
+	const int fps = level == 0 ? 30 : 60;
+	// через інтернет завеликий бітрейт забиває канал і дає затримку, тому тут стеля нижча, ніж у домашній мережі
+	qs->setResolutionRemotePS5(res); qs->setFpsRemotePS5(fps); qs->setBitrateRemotePS5(level == 2 ? 15000 : 0);
+	qs->setResolutionLocalPS5(res);  qs->setFpsLocalPS5(fps);  qs->setBitrateLocalPS5(level == 2 ? 25000 : 0);
+	emit changed();
+}
+
+void AnyPlayCloud::prepareAutoQuality()
+{
+	QmlSettings *qs = backend->qmlSettings();
+	if(!qs)
+		return;
+	if(qs->bitrateRemotePS5() > 15000)   // старе значення «Максимальної»: через інтернет воно давало затримку
+		qs->setBitrateRemotePS5(15000);
+	if(!autoQuality())
+		return;
+	QSettings s;
+	const qint64 now = QDateTime::currentSecsSinceEpoch();
+	if(s.value(QStringLiteral("anyplay/auto_up"), false).toBool())
+	{
+		s.remove(QStringLiteral("anyplay/auto_up"));
+		const int level = qualityLevel();
+		if(level < 2 && now > s.value(QStringLiteral("anyplay/auto_no_up_until"), 0).toLongLong())
+		{
+			setQualityLevel(level + 1);
+			s.setValue(QStringLiteral("anyplay/auto_raised_at"), now);
+		}
+	}
+}
+
+bool AnyPlayCloud::autoQualityDown()
+{
+	const int level = qualityLevel();
+	if(level <= 0)
+		return false;
+	QSettings s;
+	const qint64 now = QDateTime::currentSecsSinceEpoch();
+	s.remove(QStringLiteral("anyplay/auto_up"));
+	// щойно підняли якість, а зв'язок не витримав — кілька днів вище не пробуємо
+	if(now - s.value(QStringLiteral("anyplay/auto_raised_at"), 0).toLongLong() < 20 * 60)
+		s.setValue(QStringLiteral("anyplay/auto_no_up_until"), now + 3 * 24 * 3600);
+	setQualityLevel(level - 1);
+	emit message(tr("Зв'язок слабкий: знижую якість до «%1», щоб не було затримок. Гра перепідключиться сама.")
+		.arg(QString::fromUtf8(QUALITY_NAMES[level - 1])));
+	return true;
+}
+
+void AnyPlayCloud::autoQualityGood()
+{
+	if(autoQuality() && qualityLevel() < 2)
+		QSettings().setValue(QStringLiteral("anyplay/auto_up"), true);
 }
 
 void AnyPlayCloud::copyText(const QString &text)

@@ -72,6 +72,17 @@ jobs:
             changed=0
             while IFS= read -r f; do
               for dep in $(otool -L "$f" 2>/dev/null | tail -n +2 | awk '{print $1}' | grep -E '^/(opt/local|usr/local|opt/homebrew)/' || true); do
+                if [[ "$dep" == *.framework/* ]]; then
+                  # фреймворк Qt уже лежить у програмі — лише виправляємо посилання (без копії)
+                  fw=$(echo "$dep" | sed -E 's|^.*/([^/]+\.framework/.*)$|\1|')
+                  if [[ -e "AnyPlay.app/Contents/Frameworks/$fw" ]]; then
+                    if [[ "$f" == *QtWebEngineProcess* ]]; then new="@rpath/$fw"; else new="@executable_path/../Frameworks/$fw"; fi
+                    echo "fix-fw: $f -> $new"
+                    install_name_tool -change "$dep" "$new" "$f"
+                    changed=1
+                    continue
+                  fi
+                fi
                 base=$(basename "$dep")
                 if [[ ! -e "AnyPlay.app/Contents/Frameworks/$base" ]]; then
                   cp -L "$dep" "AnyPlay.app/Contents/Frameworks/$base"

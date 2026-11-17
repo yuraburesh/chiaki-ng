@@ -52,6 +52,7 @@ h2 .n{display:inline-grid;place-items:center;width:24px;height:24px;margin-right
 .st.hold{background:#ff9a3c2e;color:var(--orange)}
 .st.rev{background:#22e4ff26;color:var(--cyan)}
 .meta{color:var(--dim);font-size:13px;line-height:1.45;margin-top:8px}
+.meta b{color:#fff}
 .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .b{flex:1;min-width:120px;padding:12px 14px;border-radius:13px;border:1px solid var(--line);background:#ffffff14;color:#fff;font-weight:800;font-size:14px;text-align:center}
 .b.ok{background:linear-gradient(90deg,var(--orange),var(--pink),var(--violet));border-color:transparent}
@@ -117,6 +118,9 @@ ol b{color:#fff}
 
   <!-- свій PSN -->
   <div id="vPsn" class="hidden"><section id="psn"></section></div>
+
+  <!-- як керувати приставкою -->
+  <div id="vHelp" class="hidden"><section id="help"></section></div>
 </div>
 
 <div class="bar hidden" id="bar"><div class="in"><div class="barhint" id="barHint"></div><button class="big" id="barBtn"></button></div></div>
@@ -177,10 +181,10 @@ const ERR = {busy: 'Цей час щойно зайняли. Обери інши
   no_session: 'Продовжити можна лише під час гри.', status: 'Цю бронь уже не можна оплатити.', auth: 'Вхід застарів. Увійди через Telegram знову.'};
 function errText(r){ return r.json.text || ERR[r.json.error] || (r.status === 0 ? 'Немає зв\'язку з сервером. Перевір інтернет.' : 'Не вдалося (помилка ' + r.status + '). Спробуй ще раз.'); }
 
-const HASH = (location.hash || '#book').slice(1), MODE = HASH === 'extend' || HASH === 'psn' ? HASH : 'book';
+const HASH = (location.hash || '#book').slice(1), MODE = HASH === 'extend' || HASH === 'psn' || HASH === 'help' ? HASH : 'book';
 let B = null, tab = 'new', code = null, dayIdx = 0, starts = null, start = 0, method = null, busy = false;
 
-function show(view){ ['vBook','vExtend','vPsn'].forEach(v => $(v).classList.toggle('hidden', v !== view)); $('loading').classList.add('hidden'); }
+function show(view){ ['vBook','vExtend','vPsn','vHelp'].forEach(v => $(v).classList.toggle('hidden', v !== view)); $('loading').classList.add('hidden'); }
 function bar(text, hint, enabled, fn){ $('bar').classList.remove('hidden'); $('barBtn').textContent = text; $('barHint').textContent = hint || '';
   $('barHint').classList.toggle('hidden', !hint); $('barBtn').disabled = !enabled; $('barBtn').onclick = fn; }
 function hideBar(){ $('bar').classList.add('hidden'); }
@@ -435,6 +439,24 @@ function renderPsn(s){
     toast(r.json.ok ? 'Дякуємо! Адміністратор завершує підключення, ще 1–2 хвилини.' : errText(r)); psnKey = ''; loadPsn(); };
 }
 
+// ── як керувати самою приставкою ──
+const HELP = [
+  ['🏠', 'Головний екран приставки', 'Натисни й утримуй кнопку <b>PS</b> (кругла, внизу по центру) близько секунди. Відкриється головний екран PS5 зі списком ігор.'],
+  ['⚡', 'Швидке меню', 'Коротко натисни <b>PS</b>. Знизу з\'явиться панель: звук, друзі, перемикання між грою і меню.'],
+  ['⏹', 'Закрити гру', 'Відкрий головний екран, хрестовиною наведи на гру, натисни <b>OPTIONS</b> (овальна кнопка з трьома рисками, праворуч від PS) і обери «Закрити гру».'],
+  ['🎮', 'Запустити іншу гру', 'На головному екрані обери гру хрестовиною ← → і натисни <b>✕</b>. Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься.'],
+  ['🧭', 'Рух по меню', 'Хрестовина або лівий стік рухають вибір, <b>✕</b> підтверджує, <b>○</b> повертає назад. У самій грі <b>OPTIONS</b> відкриває паузу.'],
+  ['👆', 'Кнопки на екрані', 'Тачпад: прямокутник між L і R, короткий дотик дорівнює натисканню. <b>L3</b> і <b>R3</b>: двічі швидко торкнись стіка й тримай. Овальна кнопка ліворуч від PS: Create (знімки екрана). Меню AnyPlay: кнопка з трьома крапками або «Назад» на телефоні.'],
+  ['🕹', 'Свій геймпад', 'Можна підключити до телефона геймпад через Bluetooth чи кабель і сховати кнопки на екрані: меню AnyPlay, «Сховати кнопки на екрані».'],
+  ['⚠️', 'Чого не робити', 'Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, обери «Вийти з гри» в меню AnyPlay.']
+];
+function loadHelp(){
+  $('title').textContent = 'Як керувати приставкою';
+  $('help').innerHTML = '<div class="note">Це працює в будь-якій грі й у меню PS5.</div>' + HELP.map(h =>
+    '<div class="card" style="margin-top:10px"><b class="t">' + h[0] + ' ' + h[1] + '</b><div class="meta">' + h[2] + '</div></div>').join('');
+  show('vHelp');
+}
+
 // ── запуск ──
 $('back').onclick = closeApp;
 $('sheetBack').onclick = closePay; $('payClose').onclick = closePay;
@@ -442,7 +464,7 @@ $('payDone').onclick = payDone; $('payCancel').onclick = payCancel;
 $('tabNew').onclick = () => { tab = 'new'; renderBook(); };
 $('tabMine').onclick = () => { tab = 'mine'; confirmId = 0; loadBook(true); };
 window.__anyplayBack = () => { if(!$('sheet').classList.contains('hidden')){ closePay(); return true; } return false; };
-if(MODE === 'extend') loadExtend(); else if(MODE === 'psn') loadPsn(); else { if(location.hash === '#mine') tab = 'mine'; loadBook(false); }
+if(MODE === 'extend') loadExtend(); else if(MODE === 'psn') loadPsn(); else if(MODE === 'help') loadHelp(); else { if(location.hash === '#mine') tab = 'mine'; loadBook(false); }
 </script>
 </body>
 </html>

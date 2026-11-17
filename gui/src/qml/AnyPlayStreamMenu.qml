@@ -98,6 +98,7 @@ Rectangle {
             }
             Label {
                 text: panel.page === "extend" ? qsTr("ПРОДОВЖИТИ ГРУ") : panel.page === "keys" ? qsTr("КЛАВІШІ")
+                    : panel.page === "console" ? qsTr("КЕРУВАННЯ ПРИСТАВКОЮ")
                     : panel.page === "quality" ? qsTr("ЯКІСТЬ КАРТИНКИ") : qsTr("МЕНЮ ГРИ")
                 color: "#22e4ff"; font.pixelSize: 15; font.bold: true; font.letterSpacing: 3
             }
@@ -175,7 +176,7 @@ Rectangle {
             visible: panel.page === "main"
             Layout.fillWidth: true; wrapMode: Text.WordWrap
             color: "#d8cdea"; font.pixelSize: 14
-            text: qsTr("Закрити це меню — Esc або %1.  «Вийти з гри» закриває трансляцію: повернутись можна будь-коли до кінця броні (час броні при цьому йде).").arg(panel.menuKey)
+            text: qsTr("Закрити це меню — Esc або %1.  «Вийти з гри» закриває трансляцію: повернутись можна будь-коли до кінця броні (час броні при цьому йде).  Як відкрити меню приставки, закрити гру чи запустити іншу: кнопка «Клавіші».").arg(panel.menuKey)
         }
         Flow {   // найпотрібніші клавіші одразу на головній сторінці
             visible: panel.page === "main"
@@ -236,7 +237,31 @@ Rectangle {
             color: "#d8cdea"; font.pixelSize: 14
             text: qsTr("Рух — W A S D, камера — мишка, стрільба — ліва кнопка миші. Усі клавіші та їх зміна: головний екран програми → «Клавіші».")
         }
-        Item { Layout.fillHeight: true }
+        MenuBtn {
+            visible: panel.page === "keys"
+            Layout.preferredHeight: 46
+            font.pixelSize: 15
+            text: qsTr("🎮  Керування приставкою: меню PS, закрити гру, запустити іншу  →")
+            onClicked: { panel.page = "console"; backBtn.forceActiveFocus(); }
+        }
+
+        // ── керування самою приставкою ──
+        Flickable {   // якщо вікно вузьке й текст не влазить — прокручується колесом миші
+            visible: panel.page === "console"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            contentHeight: consoleGuide.implicitHeight
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { }
+            AnyPlayGuide {
+                id: consoleGuide
+                width: parent.width
+                compact: true
+                menuKey: panel.menuKey
+            }
+        }
+        Item { visible: panel.page !== "console"; Layout.fillHeight: true }
     }
 
     component KeyChip: Rectangle {

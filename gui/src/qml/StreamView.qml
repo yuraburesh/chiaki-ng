@@ -18,7 +18,7 @@ Item {
     readonly property bool useSeparateMenuWindow: Chiaki.window.runtimeRendererBackend === 1
     // AnyPlay: клієнтам показуємо своє просте меню гри — воно трохи вище
     readonly property bool anyplayClientMenu: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin
-    readonly property int streamMenuHeight: anyplayClientMenu ? 300 : 200
+    readonly property int streamMenuHeight: anyplayClientMenu ? 330 : 200
     readonly property bool streamStatsVisible: Chiaki.settings.showStreamStats && Chiaki.session && !(menuController.open || menuController.closing) && !sessionLoading && !sessionError && !(Chiaki.settings.audioVideoDisabled & 0x02)
     property int separateMenuX: 0
     property int separateMenuY: 0

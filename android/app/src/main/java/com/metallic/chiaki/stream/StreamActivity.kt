@@ -335,13 +335,15 @@ class StreamActivity : AppCompatActivity()
 			.setTitle("Меню гри")
 			.setItems(arrayOf(
 				"⏱ Продовжити гру",
+				"❓ Як керувати приставкою: меню PS, закрити гру, запустити іншу",
 				if(controls) "Сховати кнопки на екрані (граю з геймпадом)" else "Показати кнопки на екрані",
 				"Вийти з гри")) { _, which ->
 				when(which)
 				{
 					0 -> AnyPlayWebDialog(this, "extend") { hideSystemUI() }.show()
-					1 -> viewModel.setOnScreenControlsEnabled(!controls)
-					2 -> finish()
+					1 -> AnyPlayWebDialog(this, "help") { hideSystemUI() }.show()
+					2 -> viewModel.setOnScreenControlsEnabled(!controls)
+					3 -> finish()
 				}
 			}
 			.setNegativeButton("Закрити", null)

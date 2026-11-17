@@ -61,6 +61,7 @@ class AnyPlayActivity: AppCompatActivity()
 		binding.tileBooking.setOnClickListener { openWeb("book") }
 		binding.tilePsn.setOnClickListener { openWeb("psn") }
 		binding.tileSupport.setOnClickListener { openBot() }
+		binding.helpLink.setOnClickListener { AnyPlayWebDialog(this, "help").show() }
 		binding.tileQuality.setOnClickListener { chooseQuality() }
 
 		state = if(loggedIn) "wait" else "login"

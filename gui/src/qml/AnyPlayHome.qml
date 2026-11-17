@@ -79,7 +79,7 @@ Rectangle {
         Chiaki.settings.resolutionLocalPS5 = res;  Chiaki.settings.fpsLocalPS5 = fps;  Chiaki.settings.bitrateLocalPS5 = br;
     }
 
-    readonly property bool popupOpen: qualityPopup.opened || psnPopup.opened || extendPopup.opened || clientsPopup.opened || sharedPopup.opened || bookPopup.opened
+    readonly property bool popupOpen: guidePopup.opened || qualityPopup.opened || psnPopup.opened || extendPopup.opened || clientsPopup.opened || sharedPopup.opened || bookPopup.opened
     Keys.onReturnPressed: if (!popupOpen) primary.clicked()
     Keys.onEnterPressed: if (!popupOpen) primary.clicked()
     Keys.onEscapePressed: {
@@ -445,6 +445,31 @@ Rectangle {
         }
     }
 
+    // ── довідка: як керувати самою приставкою ──
+    Rectangle {
+        id: guideLink
+        visible: home.cloud.loggedIn
+        anchors { horizontalCenter: parent.horizontalCenter; top: tiles.bottom; topMargin: 14 }
+        width: guideLinkText.implicitWidth + 36
+        height: 40
+        radius: 20
+        color: guideLinkArea.containsMouse ? "#33ffffff" : "#1affffff"
+        border.color: "#33ffffff"
+        Label {
+            id: guideLinkText
+            anchors.centerIn: parent
+            text: qsTr("❓ Як керувати приставкою: меню PS, закрити гру, запустити іншу")
+            color: "white"; font.pixelSize: 14; font.bold: true
+        }
+        MouseArea {
+            id: guideLinkArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: guidePopup.open()
+        }
+    }
+
     // ── сповіщення ──
     Rectangle {
         id: toast
@@ -470,6 +495,27 @@ Rectangle {
         Connections {
             target: Chiaki.cloud
             function onMessage(text) { toast.show(text); }
+        }
+    }
+
+    // ── довідка про керування приставкою ──
+    HomePopup {
+        id: guidePopup
+        closeOnOutside: true
+        maxW: 760
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label { text: qsTr("Як керувати приставкою"); font.pixelSize: 24; font.bold: true; color: "white" }
+            Label {
+                Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 14
+                text: qsTr("Це працює в будь-якій грі й у меню PS5. Клавіші для самої GTA дивись у розділі «Клавіші». Під час гри ця довідка є в меню гри: «Клавіші», потім «Керування приставкою».")
+            }
+            AnyPlayGuide { Layout.fillWidth: true }
+            Button {
+                Layout.alignment: Qt.AlignRight
+                text: qsTr("Зрозуміло")
+                onClicked: guidePopup.close()
+            }
         }
     }
 
@@ -555,7 +601,7 @@ Rectangle {
         psnPopup.close();
         root.showAnyPlayPsnLogin(create);
     }
-    function closePopups() { qualityPopup.close(); psnPopup.close(); extendPopup.close(); clientsPopup.close(); sharedPopup.close(); bookPopup.close(); }
+    function closePopups() { guidePopup.close(); qualityPopup.close(); psnPopup.close(); extendPopup.close(); clientsPopup.close(); sharedPopup.close(); bookPopup.close(); }
     onVisibleChanged: if (!visible) closePopups()
     Connections {
         target: Chiaki.cloud

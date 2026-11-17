@@ -124,5 +124,6 @@
     <string name="anyplay_tagline">ОРЕНДА PS5: GTA ТА ІНШІ ІГРИ</string>
     <string name="anyplay_logout">Вийти</string>
     <string name="anyplay_tile_booking">📅\nБронювання</string>
+    <string name="anyplay_help_link">❓ Як керувати приставкою: меню PS, закрити гру</string>
     <string name="anyplay_tile_support">💬\nПідтримка</string>
 </resources>

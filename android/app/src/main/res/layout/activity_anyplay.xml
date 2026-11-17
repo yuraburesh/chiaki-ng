@@ -182,6 +182,22 @@
                 android:text="@string/anyplay_tile_support"/>
         </LinearLayout>
 
+        <TextView
+            android:id="@+id/helpLink"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginTop="12dp"
+            android:paddingLeft="18dp"
+            android:paddingRight="18dp"
+            android:background="@drawable/anyplay_btn_secondary"
+            android:gravity="center"
+            android:text="@string/anyplay_help_link"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"/>
+
         <View android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1.4" android:minHeight="28dp"/>
 
         <TextView

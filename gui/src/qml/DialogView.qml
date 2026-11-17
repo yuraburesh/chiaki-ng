@@ -56,7 +56,11 @@ Item {
             left: parent.left
             right: parent.right
         }
-        height: 80
+        height: 64
+        // AnyPlay: темна шапка у кольорах бренду замість світлої панелі
+        Material.primary: "#1f1240"
+        Material.background: "#1f1240"
+        Material.foreground: "white"
 
         RowLayout {
             anchors {
@@ -101,7 +105,7 @@ Item {
             horizontalAlignment: Qt.AlignHCenter
             verticalAlignment: Qt.AlignVCenter
             font.bold: true
-            font.pixelSize: 26
+            font.pixelSize: 22
         }
 
         Label {

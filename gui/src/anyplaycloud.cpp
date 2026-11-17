@@ -517,6 +517,7 @@ bool AnyPlayCloud::beginMyPsnLogin()
 	settings->SetPsnRefreshToken(QString());
 	settings->SetPsnAuthToken(QString());
 	settings->SetPsnAccountId(QString());
+	QSettings().remove(QStringLiteral("anyplay/psn_online_id"));
 	psn_wait_tries_ = 0;
 	psn_wait_timer.start();
 	return true;
@@ -538,6 +539,7 @@ void AnyPlayCloud::sendMyPsnLogin()
 	psn_wait_timer.stop();
 	QJsonObject body;
 	body["accountId"] = acc;
+	body["onlineId"] = QSettings().value(QStringLiteral("anyplay/psn_online_id")).toString();
 	body["refresh_token"] = rt;
 	body["auth_token"] = settings->GetPsnAuthToken();
 	QDateTime exp = QDateTime::fromString(settings->GetPsnAuthTokenExpiry(), settings->GetTimeFormat());

@@ -97,7 +97,10 @@ DialogView {
                     left: parent.left
                     right: parent.right
                 }
-                height: 80
+                height: 46
+                Material.primary: "#160d2b"
+                Material.background: "#160d2b"
+                Material.foreground: "#bfaed8"
 
                 RowLayout {
                     anchors {
@@ -108,9 +111,10 @@ DialogView {
                     Button {
                         id: reloadButton
                         Layout.fillHeight: true
-                        Layout.preferredWidth: 350
+                        Layout.preferredWidth: 220
                         flat: true
-                        text: "перезавантажити + очистити cookie"
+                        font.pixelSize: 14
+                        text: "↻ Оновити сторінку"
                         Image {
                             anchors {
                                 left: parent.left
@@ -120,6 +124,7 @@ DialogView {
                             width: 28
                             height: 28
                             sourceSize: Qt.size(width, height)
+                            visible: false
                             source: "qrc:/icons/l1.svg"
                         }
                         onClicked: reloadTimer.start()
@@ -128,8 +133,7 @@ DialogView {
                     }
                     ProgressBar {
                         id: browserProgresss
-                        Layout.fillHeight: true
-                        Layout.preferredWidth: 300
+                        Layout.fillWidth: true
                         from: 0
                         to: 100
                         value: webView.web.loadProgress
@@ -150,10 +154,12 @@ DialogView {
                             width: 28
                             height: 28
                             sourceSize: Qt.size(width, height)
+                            visible: false
                             source: "qrc:/icons/r1.svg"
                         }
                         focusPolicy: Qt.NoFocus
-                        text: "Відкрити у звичайному браузері"
+                        font.pixelSize: 14
+                        text: "Не вантажиться? Відкрити в браузері ↗"
                         onClicked: {
                             nativeLoginForm.visible = false;
                             psnLoginToolbar.visible = false;

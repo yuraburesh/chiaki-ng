@@ -290,6 +290,7 @@ private:
     Settings *settings = {};
     QmlSettings *settings_qml = {};
     AnyPlayCloud *anyplay_cloud = {};
+    bool anyplayMayPlay();
     QmlMainWindow *window = {};
     StreamSession *session = {};
     QThread *frame_thread = {};

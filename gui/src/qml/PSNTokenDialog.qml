@@ -14,14 +14,18 @@ DialogView {
     property bool closing: false
     title: {
         if(expired)
-            qsTr("Дані входу застаріли: оновіть віддалене підключення PSN")
+            qsTr("Вхід у PSN застарів — увійди ще раз (сторінка Sony)")
         else
-            qsTr("Налаштувати автоматичне віддалене підключення PSN")
+            qsTr("Вхід у PSN · офіційна сторінка Sony")
     }
     buttonText: qsTr("Налаштувати")
     buttonEnabled: url.text.trim()
     buttonVisible: false
+    property bool submitted: false
     onAccepted: {
+        if (submitted)
+            return;
+        submitted = true;
         logDialog.open()
         Chiaki.initPsnAuth(url.text.trim(), function(msg, ok, done) {
             if(ok)
@@ -32,6 +36,8 @@ DialogView {
             {
                 logArea.text += msg + "\n";
                 logDialog.standardButtons = Dialog.Close;
+                if (!ok)
+                    dialog.submitted = false;   // можна спробувати ще раз
             }
         });
     }
@@ -55,12 +61,15 @@ DialogView {
             if (!t || t === last)
                 return;
             last = t;
-            if (Chiaki.checkPsnRedirectURL(t) && url.text.trim() !== t) {
-                url.text = t;
-                if (dialog.buttonEnabled)
-                    dialog.accepted();
-            }
+            if (Chiaki.checkPsnRedirectURL(t) && url.text.trim() !== t)
+                url.text = t;   // далі спрацює onTextChanged поля
         }
+    }
+    function sonyBlocked() {
+        if (!webView.visible)
+            return;
+        extReason.text = qsTr("Sony не дала увійти у вбудованому вікні (таке буває) — тому відкриваємо вхід у твоєму звичайному браузері.");
+        extBrowserButton.clicked();
     }
     function close() {
         if(webView.web)
@@ -101,7 +110,10 @@ DialogView {
                     left: parent.left
                     right: parent.right
                 }
-                height: 80
+                height: 46
+                Material.primary: "#160d2b"
+                Material.background: "#160d2b"
+                Material.foreground: "#bfaed8"
 
                 RowLayout {
                     anchors {
@@ -112,9 +124,10 @@ DialogView {
                     Button {
                         id: reloadButton
                         Layout.fillHeight: true
-                        Layout.preferredWidth: 350
+                        Layout.preferredWidth: 220
                         flat: true
-                        text: "перезавантажити + очистити cookie"
+                        font.pixelSize: 14
+                        text: "↻ Оновити сторінку"
                         Image {
                             anchors {
                                 left: parent.left
@@ -124,6 +137,7 @@ DialogView {
                             width: 28
                             height: 28
                             sourceSize: Qt.size(width, height)
+                            visible: false
                             source: "qrc:/icons/l1.svg"
                         }
                         onClicked: reloadTimer.start()
@@ -132,8 +146,7 @@ DialogView {
                     }
                     ProgressBar {
                         id: browserProgresss
-                        Layout.fillHeight: true
-                        Layout.preferredWidth: 300
+                        Layout.fillWidth: true
                         from: 0
                         to: 100
                         value: webView.web.loadProgress
@@ -154,10 +167,12 @@ DialogView {
                             width: 28
                             height: 28
                             sourceSize: Qt.size(width, height)
+                            visible: false
                             source: "qrc:/icons/r1.svg"
                         }
                         focusPolicy: Qt.NoFocus
-                        text: "Відкрити у звичайному браузері"
+                        font.pixelSize: 14
+                        text: "Не вантажиться? Відкрити в браузері ↗"
                         onClicked: {
                             nativeTokenForm.visible = false;
                             psnTokenToolbar.visible = false;
@@ -166,11 +181,6 @@ DialogView {
                             linkgrid.visible = true;
                             dialog.buttonVisible = true;
                             psnurl = Chiaki.openPsnLink();
-                            if(psnurl)
-                            {
-                                openurl.selectAll();
-                                openurl.copy();
-                            }
                             pasteUrl.forceActiveFocus(Qt.TabFocusReason);
                         }
                     }
@@ -260,10 +270,12 @@ DialogView {
                 Component.onCompleted: {
                     try {
                         web = Qt.createQmlObject("
+                        import QtQuick
                         import QtWebEngine
                         import QtQuick.Controls
                         import org.streetpea.chiaking
                         WebEngineView {
+                            id: wev
                             profile {
                                 offTheRecord: false
                                 storageName: 'psn-token'
@@ -299,6 +311,17 @@ DialogView {
                                     request.accept();
                             }
                             onCertificateError: console.error(error.description);
+                            // AnyPlay: Sony інколи відмовляє вбудованому вікну («connection to the server timed out»)
+                            Timer {
+                                interval: 1500; repeat: true; running: webView.visible && !dialog.closing
+                                onTriggered: wev.runJavaScript('document.body ? document.body.innerText : String()', function(t) {
+                                    if (!t || !webView.visible)
+                                        return;
+                                    const low = String(t).toLowerCase();
+                                    if (low.indexOf('connection to the server timed out') >= 0 || low.indexOf('connect to the server') >= 0)
+                                        dialog.sonyBlocked();
+                                })
+                            }
                         }", webView, "webView");
                         Chiaki.setWebEngineHints(web.profile);
                         web.url = Chiaki.psnLoginUrl();
@@ -310,21 +333,45 @@ DialogView {
                 }
             }
         }
-        GridLayout {
+        // AnyPlay: вхід через звичайний браузер — простий покроковий екран
+        ColumnLayout {
             id: linkgrid
             visible: false
             anchors {
                 top: parent.top
                 horizontalCenter: parent.horizontalCenter
-                topMargin: 50
+                topMargin: 36
             }
-            columns: 2
-            rowSpacing: 10
-            columnSpacing: 20
+            width: Math.min(parent.width - 60, 680)
+            spacing: 14
 
             Label {
-                text: qsTr("Відкрити браузер (адресу скопійовано)")
-                visible: psnurl
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 22; font.bold: true
+                text: qsTr("Вхід у PSN через твій браузер")
+            }
+            Label {
+                id: extReason
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                visible: text !== ""
+                color: "#ffd23f"; font.pixelSize: 14
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 16
+                text: qsTr("1. У браузері відкрилась сторінка Sony — увійди у свій акаунт PSN.\n"
+                         + "2. Після входу з'явиться порожня сторінка зі словом «redirect» — так і має бути.\n"
+                         + "3. Скопіюй адресу цієї сторінки (клацни адресний рядок, потім %1) і повернись сюди — програма підхопить її сама.")
+                      .arg(Qt.platform.os === "osx" ? "Cmd+C" : "Ctrl+C")
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                opacity: 0.7; font.pixelSize: 13
+                text: qsTr("🔒 Пароль ти вводиш лише на сайті Sony — програма його не бачить.")
             }
 
             TextField {
@@ -335,58 +382,45 @@ DialogView {
                 Layout.preferredWidth: 400
             }
 
-            C.Button {
-                id: copyUrl
-                text: qsTr("Натисніть, щоб скопіювати адресу ще раз")
-                onClicked: {
-                    openurl.selectAll()
-                    openurl.copy()
+            RowLayout {
+                spacing: 10
+                C.Button {
+                    id: copyUrl
+                    text: qsTr("Відкрити сторінку Sony ще раз")
+                    onClicked: {
+                        psnurl = Chiaki.openPsnLink();
+                    }
+                    KeyNavigation.priority: KeyNavigation.BeforeItem
+                    KeyNavigation.up: copyUrl
+                    KeyNavigation.down: url
                 }
-                KeyNavigation.priority: KeyNavigation.BeforeItem
-                KeyNavigation.up: copyUrl
-                KeyNavigation.down: url
-                visible: psnurl
             }
 
             Label {
-                text: qsTr("Адреса переадресації з браузера")
+                Layout.topMargin: 6
+                opacity: 0.8; font.pixelSize: 14
+                text: qsTr("Не підхопилось само? Встав скопійовану адресу сюди:")
             }
-
-            TextField {
-                id: url
-                echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                Layout.preferredWidth: 400
-                KeyNavigation.priority: {
-                    if(readOnly)
-                        KeyNavigation.BeforeItem
-                    else
-                        KeyNavigation.AfterItem
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                TextField {
+                    id: url
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("https://remoteplay.dl.playstation.net/remoteplay/redirect?code=…")
+                    echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
+                    KeyNavigation.up: copyUrl
+                    KeyNavigation.down: url
+                    KeyNavigation.right: pasteUrl
+                    onTextChanged: if (Chiaki.checkPsnRedirectURL(text.trim())) dialog.accepted()
                 }
-                KeyNavigation.up: {
-                    if(psnurl)
-                        copyUrl
-                    else
-                        url
-                }
-                KeyNavigation.down: url
-                KeyNavigation.right: pasteUrl
                 C.Button {
                     id: pasteUrl
-                    text: qsTr("Натисніть, щоб вставити адресу")
-                    anchors {
-                        left: parent.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 10
-                    }
+                    text: qsTr("Вставити")
                     onClicked: url.paste()
                     KeyNavigation.priority: KeyNavigation.BeforeItem
                     KeyNavigation.left: url
-                    KeyNavigation.up: {
-                        if(psnurl)
-                            copyUrl
-                        else
-                            pasteUrl
-                    }
+                    KeyNavigation.up: copyUrl
                     KeyNavigation.down: pasteUrl
                 }
             }
@@ -398,7 +432,7 @@ DialogView {
                 parent: Overlay.overlay
                 x: Math.round((root.width - width) / 2)
                 y: Math.round((root.height - height) / 2)
-                title: qsTr("Створити токен автоматичного віддаленого підключення PSN")
+                title: qsTr("Завершуємо вхід у PSN")
                 modal: true
                 closePolicy: Popup.NoAutoClose
                 standardButtons: Dialog.Cancel

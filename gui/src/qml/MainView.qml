@@ -46,9 +46,9 @@ Pane {
         }
     }
     Keys.onMenuPressed: settingsButton.clicked()
-    Keys.onReturnPressed: if (hostsView.currentItem) hostsView.currentItem.connectToHost()
-    Keys.onYesPressed: if (hostsView.currentItem) hostsView.currentItem.wakeUpHost()
-    Keys.onNoPressed: if (hostsView.currentItem) hostsView.currentItem.deleteHost()
+    Keys.onReturnPressed: if (hostsView.currentItem && !anyplayHome.visible) hostsView.currentItem.connectToHost()
+    Keys.onYesPressed: if (hostsView.currentItem && !anyplayHome.visible) hostsView.currentItem.wakeUpHost()
+    Keys.onNoPressed: if (hostsView.currentItem && !anyplayHome.visible) hostsView.currentItem.deleteHost()
     Keys.onEscapePressed: root.showConfirmDialog(qsTr("Вийти"), qsTr("Точно вийти?"), () => Qt.quit())
     Keys.onPressed: (event) => {
         if (event.modifiers)
@@ -184,6 +184,8 @@ Pane {
 
     ListView {
         id: hostsView
+        // AnyPlay: поки відкритий головний екран, список консолей під ним не реагує ні на що
+        enabled: !anyplayHome.visible
         keyNavigationWraps: true
         anchors {
             top: toolBar.bottom

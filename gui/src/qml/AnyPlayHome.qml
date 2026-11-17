@@ -22,6 +22,16 @@ Rectangle {
     color: "#0b0618"
     focus: visible
 
+    // Фон нічого не пропускає крізь себе: кліки, колесо й наведення не доходять до списку консолей під ним
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
+        hoverEnabled: true
+        preventStealing: true
+        onWheel: (wheel) => wheel.accepted = true
+        onPressed: (mouse) => { mouse.accepted = true; home.forceActiveFocus(); }
+    }
+
     // ── кольори бренду (як у міні-апках) ──
     readonly property color cPink: "#ff2e9a"
     readonly property color cOrange: "#ff9a3c"
@@ -390,7 +400,7 @@ Rectangle {
         HomeTile {
             visible: home.cloud.loggedIn && !home.isAdmin
             icon: "🎮"; title: qsTr("Мій PSN")
-            subtitle: !home.cloud.myPsn ? qsTr("спільний акаунт") : (home.cloud.myPsnStatus === "ready" ? home.cloud.myPsn + " ✅" : qsTr("підключаємо…"))
+            subtitle: !home.cloud.myPsn ? qsTr("спільний акаунт") : (home.cloud.myPsnStatus === "ready" ? (home.cloud.myPsn.indexOf("PSN-") === 0 ? qsTr("свій акаунт") : home.cloud.myPsn) + " ✅" : qsTr("підключаємо…"))
             onClicked: psnPopup.open()
         }
         HomeTile {
@@ -510,9 +520,9 @@ Rectangle {
         modal: true
         padding: 28
         background: Rectangle { radius: 24; color: home.cPanel; border.color: "#44ffffff" }
-        onOpened: psnField.text = home.cloud.myPsn
         readonly property string st: home.cloud.myPsnStatus
-        readonly property int step: !home.cloud.myPsn ? 1 : (!home.cloud.myPsnLinked ? 2 : (st === "ready" ? 5 : (st === "signed_in" ? 4 : 3)))
+        // 2 — вхід через Sony, 3 — QR на приставці, 4 — адмін завершує, 5 — готово (нік вписувати не треба)
+        readonly property int step: !home.cloud.myPsnLinked ? 2 : (st === "ready" ? 5 : (st === "signed_in" ? 4 : 3))
         ScrollView {
             anchors.fill: parent
             contentWidth: availableWidth
@@ -548,65 +558,52 @@ Rectangle {
                             Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 13; color: home.cDim
                             text: qsTr("На спільному акаунті AnyPlay грають усі клієнти — прогрес там спільний і може змінитися.")
                         }
-                        HomeButton {
-                            text: qsTr("Ще немає акаунта? Створити безкоштовно ↗")
-                            flat: true
-                            onClicked: Qt.openUrlExternally("https://my.account.sony.com/")
-                        }
-                    }
-                }
-
-                // крок 1: нік
-                PsnStep {
-                    num: 1; done: psnPopup.step > 1; active: psnPopup.step === 1
-                    title: home.cloud.myPsn ? qsTr("Нік PSN: %1").arg(home.cloud.myPsn) : qsTr("Впиши свій нік PSN (Online ID)")
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: psnPopup.step === 1
-                    spacing: 10
-                    TextField {
-                        id: psnField
-                        Layout.fillWidth: true
-                        placeholderText: qsTr("Наприклад, MyNickname_7")
-                        font.pixelSize: 18
-                        onAccepted: psnSave.clicked()
-                    }
-                    HomeButton {
-                        id: psnSave
-                        primary: true
-                        text: qsTr("Далі")
-                        enabled: psnField.text.trim().length >= 3
-                        onClicked: home.cloud.setMyPsn(psnField.text)
                     }
                 }
 
                 // крок 2: вхід у PSN через сторінку Sony
                 PsnStep {
-                    num: 2; done: psnPopup.step > 2; active: psnPopup.step === 2
-                    title: qsTr("Увійди в PSN — на офіційній сторінці Sony")
+                    num: 1; done: psnPopup.step > 2; active: psnPopup.step === 2
+                    title: psnPopup.step > 2 && home.cloud.myPsn && home.cloud.myPsn.indexOf("PSN-") !== 0
+                           ? qsTr("Вхід у PSN виконано: %1").arg(home.cloud.myPsn)
+                           : qsTr("Увійди в PSN — на офіційній сторінці Sony")
                 }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: psnPopup.step === 2
                     color: home.cDim; font.pixelSize: 14
                     text: qsTr("🔒 Пароль вводиш лише на сайті Sony — ні ми, ні програма його не бачимо. Це потрібно, щоб приставка відкривалась саме під твоїм акаунтом.")
                 }
-                HomeButton {
+                RowLayout {
+                    Layout.fillWidth: true
                     visible: psnPopup.step === 2
-                    primary: true
-                    text: qsTr("Увійти через сайт Sony")
-                    onClicked: {
-                        if (home.cloud.beginMyPsnLogin()) {
-                            home.reopenPsn = true;
-                            psnPopup.close();
-                            root.showPSNTokenDialog(false, false);
+                    spacing: 12
+                    HomeButton {
+                        Layout.fillWidth: true
+                        primary: true
+                        text: qsTr("У мене є акаунт — увійти")
+                        onClicked: {
+                            if (home.cloud.beginMyPsnLogin()) {
+                                home.reopenPsn = true;
+                                psnPopup.close();
+                                root.showPSNTokenDialog(false, false);
+                            }
                         }
                     }
+                    HomeButton {
+                        Layout.fillWidth: true
+                        text: qsTr("Створити акаунт PSN ↗")
+                        onClicked: Qt.openUrlExternally("https://my.account.sony.com/")
+                    }
+                }
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: psnPopup.step === 2
+                    color: home.cDim; font.pixelSize: 13
+                    text: qsTr("Немає акаунта? Реєстрація безкоштовна: у браузері відкриється сайт Sony — натисни там «Create New Account» (2–3 хв). Потім повернись сюди й натисни «У мене є акаунт — увійти».")
                 }
 
                 // крок 3: вхід на приставці за QR
                 PsnStep {
-                    num: 3; done: psnPopup.step > 3; active: psnPopup.step === 3
+                    num: 2; done: psnPopup.step > 3; active: psnPopup.step === 3
                     title: qsTr("Увійди на приставці — відскануй QR-код телефоном")
                 }
                 Label {
@@ -638,7 +635,7 @@ Rectangle {
 
                 // крок 4: адмін завершує
                 PsnStep {
-                    num: 4; done: psnPopup.step > 4; active: psnPopup.step === 4
+                    num: 3; done: psnPopup.step > 4; active: psnPopup.step === 4
                     title: psnPopup.step === 5 ? qsTr("Готово! Ти граєш на своєму акаунті ✅") : qsTr("Адміністратор завершує підключення (1–2 хв)")
                 }
                 Label {

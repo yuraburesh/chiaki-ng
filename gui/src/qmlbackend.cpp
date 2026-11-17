@@ -959,8 +959,22 @@ void QmlBackend::startSession(bool emit_session_changed)
     sleep_inhibit->inhibit();
 }
 
+// AnyPlay: грати можна лише під час оплаченої броні (або адміну). Перевірка тут, у коді,
+// а не лише в інтерфейсі — жодна кнопка, клавіша чи клік не запустить стрім в обхід.
+bool QmlBackend::anyplayMayPlay()
+{
+    if (anyplay_cloud && (anyplay_cloud->admin() || anyplay_cloud->state() == QLatin1String("play")))
+        return true;
+    qCWarning(chiakiGui) << "AnyPlay: connection refused, no paid booking is active";
+    window->setWindowAdjustable(true);
+    emit error(tr("Зараз грати не можна"), tr("Підключення відкривається лише на час оплаченої броні. Забронюй час у боті."));
+    return false;
+}
+
 void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
 {
+    if (!anyplayMayPlay())
+        return;
     pending_recovered_frame.storeRelaxed(0);
 
     if (autoConnect()) {
@@ -1294,6 +1308,8 @@ void QmlBackend::deleteHost(int index)
 
 void QmlBackend::wakeUpHost(int index, QString nickname)
 {
+    if (!anyplayMayPlay())
+        return;
     auto server = displayServerAt(index);
     if (!server.valid)
         return;
@@ -1536,6 +1552,8 @@ void QmlBackend::setWebEngineHints(QQuickWebEngineProfile *profile)
 
 void QmlBackend::connectToHost(int index, QString nickname)
 {
+    if (!anyplayMayPlay())
+        return;
     window->setWindowAdjustable(false);
     auto server = displayServerAt(index);
     if (!server.valid)

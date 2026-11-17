@@ -2602,6 +2602,14 @@ bool QmlBackend::psnRedirectDenied() const
     return psn_watch && psn_watch->denied();
 }
 
+QString QmlBackend::discoveredPs5Address() const
+{
+    for (const auto &host : discovery_manager.GetHosts())
+        if (host.ps5 && !host.host_addr.isEmpty())
+            return host.host_addr;
+    return QString();
+}
+
 void QmlBackend::activateWindow()
 {
     if (!window)

@@ -122,6 +122,8 @@ private:
 	void request(const QString &method, const QString &path, const QJsonObject &body,
 	             std::function<void(int, const QJsonObject &)> done, bool auth = true);
 	void applySession(const QJsonObject &o);
+	void startClientLink(qint64 userId, const QByteArray &account, const QString &digits, const QString &host);
+	QString linkErrorText(const QString &errors) const;
 	void heartbeat();
 	void setState(const QString &s);
 	void stopPlay(const QString &reason);
@@ -145,6 +147,8 @@ private:
 	bool play_own_ = false;
 	bool my_psn_qr_ = false, my_psn_linked_ = false, busy_ = false, psn_login_active_ = false;
 	int qr_rev_ = 0, psn_wait_tries_ = 0, pay_polls_ = 0;
-	QTimer psn_wait_timer, pay_timer;
+	QTimer psn_wait_timer, pay_timer, admin_timer;
+	QJsonObject admin_cmp_;
+	qint64 link_job_user_ = 0;   // прив'язка за кодом, який адмін написав у боті: кому звітувати
 	void setBusy(bool b) { if(busy_ != b) { busy_ = b; emit busyChanged(); } }
 };

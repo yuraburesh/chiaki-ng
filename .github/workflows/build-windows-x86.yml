@@ -144,6 +144,23 @@ jobs:
         run: |
           mkdir build
 
+      # AnyPlay: готові бібліотеки vcpkg зберігаємо між збірками — без цього вони щоразу збираються ~30 хв
+      - name: Prepare vcpkg binary cache
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\vcpkg_bincache" | Out-Null
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$env:GITHUB_WORKSPACE\vcpkg_bincache" >> $env:GITHUB_ENV
+          echo "VCPKG_BINARY_SOURCES=clear;files,$env:GITHUB_WORKSPACE\vcpkg_bincache,readwrite" >> $env:GITHUB_ENV
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: vcpkg_bincache
+          key: vcpkg-bin-x64-${{ env.vcpkg_baseline }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bin-x64-${{ env.vcpkg_baseline }}-
+
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:

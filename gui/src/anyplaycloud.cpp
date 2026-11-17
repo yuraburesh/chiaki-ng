@@ -14,6 +14,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QRegularExpression>
+#include <memory>
 
 static const char *DEFAULT_SERVER = "https://34-123-25-16.sslip.io";
 static const int POLL_MS = 60 * 1000;
@@ -34,6 +35,21 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 	connect(&beat_timer, &QTimer::timeout, this, &AnyPlayCloud::heartbeat);
 	psn_wait_timer.setInterval(1000);
 	connect(&psn_wait_timer, &QTimer::timeout, this, &AnyPlayCloud::sendMyPsnLogin);
+	// адмін: часто питаємо сервер — так програма швидко забирає код прив'язки, написаний у боті
+	admin_timer.setInterval(8000);
+	connect(&admin_timer, &QTimer::timeout, this, &AnyPlayCloud::refreshAdmin);
+	admin_timer.start();
+	connect(this, &AnyPlayCloud::linkResult, this, [this](bool ok, const QString &text) {
+		if(!link_job_user_)
+			return;
+		QJsonObject body;
+		body["action"] = "link_result";
+		body["userId"] = link_job_user_;
+		body["ok"] = ok;
+		body["text"] = text;
+		link_job_user_ = 0;
+		request("POST", "/api/app/admin", body, [](int, const QJsonObject &) {});
+	});
 	pay_timer.setInterval(5000);
 	connect(&pay_timer, &QTimer::timeout, this, [this]() {
 		if(++pay_polls_ > 40)   // ~3 хв, далі адмін підтвердить вручну
@@ -471,8 +487,37 @@ void AnyPlayCloud::refreshAdmin()
 	request("GET", "/api/app/admin", QJsonObject(), [this](int status, const QJsonObject &o) {
 		if(status != 200 || !o.value("ok").toBool())
 			return;
-		admin_info_ = o.toVariantMap();
-		emit adminChanged();
+		// оновлюємо екран лише коли щось справді змінилось: інакше поле з кодом очищалося б під час введення
+		QJsonObject cmp = o;
+		cmp.remove("now");
+		cmp.remove("linkJobs");
+		if(cmp != admin_cmp_)
+		{
+			admin_cmp_ = cmp;
+			admin_info_ = o.toVariantMap();
+			emit adminChanged();
+		}
+		// код прив'язки з бота: прив'язуємо приставку самі й звітуємо боту
+		const QJsonArray jobs = o.value("linkJobs").toArray();
+		if(!jobs.isEmpty())
+		{
+			QJsonObject job = jobs.first().toObject();
+			qint64 uid = job.value("userId").toVariant().toLongLong();
+			if(busy_)
+			{
+				QJsonObject body;
+				body["action"] = "link_result";
+				body["userId"] = uid;
+				body["ok"] = false;
+				body["text"] = tr("Програма зараз зайнята іншою прив'язкою. Спробуй ще раз за хвилину.");
+				request("POST", "/api/app/admin", body, [](int, const QJsonObject &) {});
+			}
+			else
+			{
+				link_job_user_ = uid;
+				linkClientConsole(uid, job.value("accountId").toString(), job.value("pin").toString());
+			}
+		}
 	});
 }
 
@@ -780,11 +825,17 @@ void AnyPlayCloud::linkClientConsole(qint64 userId, const QString &accountId, co
 		emit linkResult(false, tr("Код має бути з 8 цифр — він на екрані PS5."));
 		return;
 	}
+	// спершу пробуємо PS5, яку програма вже бачить у мережі (точна адреса), і лише потім — пошук по всій мережі
+	startClientLink(userId, account, digits, backend->discoveredPs5Address());
+}
+
+void AnyPlayCloud::startClientLink(qint64 userId, const QByteArray &account, const QString &digits, const QString &host)
+{
 	ChiakiRegistInfo info = {};
-	QByteArray hostb = QByteArrayLiteral("255.255.255.255");
+	QByteArray hostb = host.isEmpty() ? QByteArrayLiteral("255.255.255.255") : host.toUtf8();
 	info.host = hostb.constData();
 	info.target = CHIAKI_TARGET_PS5_1;
-	info.broadcast = true;
+	info.broadcast = host.isEmpty();
 	info.pin = (uint32_t)digits.toULong();
 	info.console_pin = 0;
 	info.holepunch_info = nullptr;
@@ -793,13 +844,24 @@ void AnyPlayCloud::linkClientConsole(qint64 userId, const QString &accountId, co
 	memcpy(info.psn_account_id, account.constData(), CHIAKI_PSN_ACCOUNT_ID_SIZE);
 	setBusy(true);
 	auto regist = new QmlRegist(info, settings->GetLogLevelMask(), this);
-	connect(regist, &QmlRegist::failed, this, [this, regist]() {
-		setBusy(false);
-		emit linkResult(false, tr("PS5 не прийняла код. Перевір, що комп'ютер і PS5 в одній мережі, код свіжий (діє 5 хв) і згенерований під профілем клієнта."));
-		regist->deleteLater();
+	auto errors = std::make_shared<QStringList>();
+	connect(regist, &QmlRegist::log, this, [errors](ChiakiLogLevel level, const QString &msg) {
+		if(level == CHIAKI_LOG_ERROR)
+			errors->append(msg);
 	});
-	connect(regist, &QmlRegist::success, this, [this, regist, userId](const RegisteredHost &rhost) {
-		regist->deleteLater();
+	connect(regist, &QmlRegist::failed, this, [this, errors, userId, account, digits, host]() {
+		const QString all = errors->join(QLatin1Char('\n'));
+		const bool rejected = all.contains(QLatin1String("HTTP code")) || all.contains(QLatin1String("Application Reason"));
+		if(!host.isEmpty() && !rejected)
+		{
+			// за точною адресою не вийшло, а приставка код ще не відхиляла — пробуємо пошук по всій мережі
+			startClientLink(userId, account, digits, QString());
+			return;
+		}
+		setBusy(false);
+		emit linkResult(false, linkErrorText(all));
+	});
+	connect(regist, &QmlRegist::success, this, [this, userId](const RegisteredHost &rhost) {
 		// прив'язку клієнта НЕ зберігаємо в цій програмі — лише передаємо на сервер (своя прив'язка адміна лишається)
 		QJsonObject body;
 		body["host"] = QJsonObject::fromVariantMap(rhost.ToVariantMap());
@@ -816,4 +878,22 @@ void AnyPlayCloud::linkClientConsole(qint64 userId, const QString &accountId, co
 			refreshAdmin();
 		});
 	});
+}
+
+// Зрозуміла причина, чому PS5 не прив'язалась (за тим, що повідомила бібліотека), плюс технічний рядок для підтримки
+QString AnyPlayCloud::linkErrorText(const QString &errors) const
+{
+	QString last = errors.section(QLatin1Char('\n'), -1).trimmed();
+	QString text;
+	if(errors.contains(QLatin1String("HTTP code")) || errors.contains(QLatin1String("Application Reason")))
+		text = tr("PS5 відхилила код. Зазвичай це означає одне з трьох: код згенеровано не під профілем цього клієнта, код уже використано або минуло 5 хвилин. На PS5 перемкнись на профіль клієнта, відкрий «Прив'язати пристрій» заново і введи новий код.");
+	else if(errors.contains(QLatin1String("refused the registration search")))
+		text = tr("PS5 знайдено, але вона зараз не чекає на прив'язку. Тримай на PS5 відкритим екран «Прив'язати пристрій» з кодом, поки програма прив'язує.");
+	else if(errors.contains(QLatin1String("search")) || errors.contains(QLatin1String("connect")))
+		text = tr("Програма не знайшла PS5 у локальній мережі. Перевір: цей комп'ютер і PS5 підключені до одного роутера, VPN вимкнено, на PS5 відкритий екран з кодом. На Mac: Системні налаштування → Приватність і безпека → Локальна мережа → AnyPlay увімкнено. Клієнту бути в цій мережі не потрібно.");
+	else
+		text = tr("PS5 не вдалося прив'язати. Перевір, що цей комп'ютер і PS5 в одній мережі, а код свіжий (діє 5 хв) і згенерований під профілем клієнта.");
+	if(!last.isEmpty())
+		text += QStringLiteral("\n") + tr("Технічно: %1").arg(last);
+	return text;
 }

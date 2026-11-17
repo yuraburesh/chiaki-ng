@@ -470,6 +470,7 @@ Rectangle {
     // ── якість: три зрозумілі варіанти ──
     HomePopup {
         id: qualityPopup
+        closeOnOutside: true
         maxW: 640
         contentItem: ColumnLayout {
             spacing: 12
@@ -686,12 +687,26 @@ Rectangle {
                 }
                 // спосіб 3: QR-код звичайною камерою телефона
                 Image {
+                    id: psnQr
+                    property bool big: false
+                    readonly property real side: big ? Math.min(psnCol.width, 620) : 320
                     Layout.alignment: Qt.AlignHCenter
                     visible: psnPopup.step === 3 && home.cloud.myPsnQr
                     source: visible ? home.cloud.qrUrl : ""
-                    Layout.preferredWidth: 280; Layout.preferredHeight: 280
+                    Layout.preferredWidth: side; Layout.preferredHeight: side
                     fillMode: Image.PreserveAspectFit
                     cache: false
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: psnQr.big = !psnQr.big
+                    }
+                }
+                Label {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: psnQr.visible
+                    color: home.cDim; font.pixelSize: 12
+                    text: psnQr.big ? qsTr("Натисни на код, щоб зменшити") : qsTr("Натисни на код, щоб збільшити")
                 }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
@@ -794,7 +809,7 @@ Rectangle {
                 Label { text: qsTr("Клієнти зі своїм PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
                 Label {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 14
-                    text: qsTr("1) Бот надішле тобі заявку — натисни «📷 Надіслати QR клієнту» і сфотографуй QR з PS5 (Перемкнути користувача → Додати → Увійти).\n2) Клієнт сканує QR і входить.\n3) На PS5 перемкнись на його профіль → Налаштування → Система → Дистанційне відтворення → Прив'язати пристрій. Введи 8 цифр тут і натисни «Прив'язати» (комп'ютер і PS5 — в одній мережі).")
+                    text: qsTr("1) Бот надішле тобі заявку. Натисни «📷 Надіслати QR клієнту» і сфотографуй екран PS5 з QR-кодом (Перемкнути користувача → Додати користувача → Увійти).\n2) Клієнт підтверджує вхід у свій акаунт.\n3) На PS5 перемкнись на його профіль → Налаштування → Система → Дистанційне відтворення → Прив'язати пристрій. Введи 8 цифр тут або напиши їх боту.\n\nУ тій самій мережі, що й PS5, має бути лише цей комп'ютер. Клієнтові це не потрібно. Код потрібен один раз для кожного акаунта.")
                 }
                 Label {
                     visible: !(home.adm.psnClients || []).length
@@ -961,6 +976,7 @@ Rectangle {
         property real padding: 28
         property real cardHeight: -1        // -1 — за вмістом (із прокруткою, якщо не влазить)
         property bool opened: false
+        property bool closeOnOutside: false   // клік повз вікно закриває його (лише для простих вікон)
         property Item contentItem
         function open() { opened = true; }
         function close() { opened = false; }
@@ -969,13 +985,13 @@ Rectangle {
         visible: opened
         enabled: opened
         onContentItemChanged: if (contentItem) contentItem.parent = hpHolder.contentItem
-        // затемнення; клік повз вікно закриває його
+        // затемнення; клік повз вікно закриває лише прості вікна (closeOnOutside)
         Rectangle { anchors.fill: parent; color: "#c8080312" }
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.AllButtons
-            onClicked: hp.close()
+            onClicked: if (hp.closeOnOutside) hp.close()
             onWheel: (wheel) => { wheel.accepted = true; }
         }
         Rectangle {

@@ -1390,6 +1390,7 @@ Item {
         // AnyPlay: show the control mode (on foot / vehicle / aircraft) for a moment when it changes
         function onControlProfileChanged() {
             anyplayProfileLabel.opacity = 1;
+            anyplayProfileTimer.interval = anyplayProfileLabel.text.length > 14 ? 3200 : 1600;
             anyplayProfileTimer.restart();
         }
     }

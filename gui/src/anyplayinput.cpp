@@ -14,6 +14,10 @@ constexpr int TurboIntervalMs = 55;  // sprint: the button is tapped ~9 times a 
 constexpr int TapMs = 90;            // a short press: long enough for the game to register it
 
 const QString OverrideGroup = QStringLiteral("anyplay_keys");
+const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle");
+constexpr int PendingMs = 7000;      // how long after F we wait for the console's confirmation
+constexpr int PendingGraceMs = 250;  // ignore signals right at the key press
+constexpr int HapticHitsNeeded = 3;  // haptic frames (10 ms each) above the noise floor
 
 uint32_t ButtonFromName(const QString &name)
 {
@@ -131,6 +135,16 @@ AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 		turbo_phase = !turbo_phase;
 		emit Changed();
 	});
+	pending_timer.setSingleShot(true);
+	pending_timer.setInterval(PendingMs);
+	connect(&pending_timer, &QTimer::timeout, this, [this]() {
+		if(!VehiclePending())
+			return;
+		StopPending();
+		// no confirmation: stay on foot, but tell how to switch by hand if the player did get in
+		hint = QStringLiteral("%1 · якщо ти вже в транспорті — натисни F2").arg(ProfileName(current_profile));
+		emit ProfileChanged(StatusText());
+	});
 }
 
 QJsonObject AnyPlayInput::DefaultConfig()
@@ -186,15 +200,23 @@ void AnyPlayInput::Load()
 	const QJsonObject config = DefaultConfig();
 	profiles = ParseProfiles(config, true);
 	current_profile = config.value("start").toString("foot");
+	auto_vehicle = AutoVehicle();
+	StopPending();
+	hint.clear();
 	ReleaseAll();
+}
+
+QString AnyPlayInput::ProfileName(const QString &id) const
+{
+	for(const auto &p : profiles)
+		if(p.id == id)
+			return p.name;
+	return id;
 }
 
 QString AnyPlayInput::CurrentProfileName() const
 {
-	for(const auto &p : profiles)
-		if(p.id == current_profile)
-			return p.name;
-	return current_profile;
+	return ProfileName(current_profile);
 }
 
 const APBinding *AnyPlayInput::Find(const QString &name) const
@@ -337,13 +359,101 @@ void AnyPlayInput::NextMacroStep()
 
 void AnyPlayInput::SwitchProfile(const QString &target)
 {
-	QString next = target;
 	if(target == QLatin1String("toggle"))
-		next = current_profile == QLatin1String("foot") ? QStringLiteral("vehicle") : QStringLiteral("foot");
-	if(next == current_profile)
+	{
+		if(current_profile == QLatin1String("foot"))
+		{
+			if(auto_vehicle)
+			{
+				// The player may be nowhere near a vehicle: keep "on foot" until the console
+				// confirms that he got in (vibration / trigger resistance when the engine starts).
+				StartPending();
+				return;
+			}
+			SetProfile(QStringLiteral("vehicle"),
+				QStringLiteral("%1 · F — назад «%2»").arg(ProfileName(QStringLiteral("vehicle")), ProfileName(QStringLiteral("foot"))));
+			return;
+		}
+		SetProfile(QStringLiteral("foot"), QString());
 		return;
-	current_profile = next;
-	emit ProfileChanged(CurrentProfileName());
+	}
+	SetProfile(target, QString());
+}
+
+void AnyPlayInput::SetProfile(const QString &id, const QString &hint_text)
+{
+	const bool was_pending = VehiclePending();
+	StopPending();
+	if(id == current_profile && !was_pending && hint_text.isEmpty())
+		return;
+	current_profile = id;
+	hint = hint_text;
+	emit ProfileChanged(StatusText());
+}
+
+void AnyPlayInput::StartPending()
+{
+	base_left = trig_left;
+	base_right = trig_right;
+	haptic_hits = 0;
+	pending_since.start();
+	pending_timer.start();
+	pending.store(true, std::memory_order_relaxed);
+	hint = QStringLiteral("Чекаю посадки в транспорт…");
+	emit ProfileChanged(StatusText());
+}
+
+void AnyPlayInput::StopPending()
+{
+	pending.store(false, std::memory_order_relaxed);
+	pending_timer.stop();
+	haptic_hits = 0;
+}
+
+void AnyPlayInput::ConfirmVehicle()
+{
+	if(!VehiclePending() || pending_since.elapsed() < PendingGraceMs)
+		return;
+	SetProfile(QStringLiteral("vehicle"), QString());
+}
+
+void AnyPlayInput::NoteHaptics()
+{
+	if(!VehiclePending() || pending_since.elapsed() < PendingGraceMs)
+		return;
+	if(++haptic_hits >= HapticHitsNeeded)
+		ConfirmVehicle();
+}
+
+void AnyPlayInput::NoteRumble(uint8_t left, uint8_t right)
+{
+	if(left || right)
+		ConfirmVehicle();
+}
+
+void AnyPlayInput::NoteTriggers(uint8_t type_left, uint8_t type_right)
+{
+	trig_left = type_left;
+	trig_right = type_right;
+	if(!VehiclePending())
+		return;
+	// 0x00 and 0x05 mean "no effect"; a new effect that was not there when F was pressed
+	// is the vehicle's pedals getting their resistance
+	auto on = [](uint8_t t) { return t != 0x00 && t != 0x05; };
+	if((on(type_left) && type_left != base_left) || (on(type_right) && type_right != base_right))
+		ConfirmVehicle();
+}
+
+bool AnyPlayInput::AutoVehicle()
+{
+	QSettings settings;
+	return settings.value(AutoVehicleKey, true).toBool();
+}
+
+void AnyPlayInput::SetAutoVehicle(bool enabled)
+{
+	QSettings settings;
+	settings.setValue(AutoVehicleKey, enabled);
 }
 
 void AnyPlayInput::ApplyTo(ChiakiControllerState *state) const

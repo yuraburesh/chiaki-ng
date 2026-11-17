@@ -10,6 +10,8 @@
 #include <QList>
 #include <QString>
 #include <QTimer>
+#include <QElapsedTimer>
+#include <atomic>
 #include <QJsonObject>
 #include <QVariantList>
 
@@ -62,6 +64,20 @@ class AnyPlayInput : public QObject
 
 		QString CurrentProfileId() const { return current_profile; }
 		QString CurrentProfileName() const;
+		// Mode name, or a short hint about the mode switch — shown on screen for a moment
+		QString StatusText() const { return hint.isEmpty() ? CurrentProfileName() : hint; }
+
+		// "Enter vehicle" was pressed on foot and we wait for the console to confirm it
+		// (engine vibration / trigger resistance). Safe to read from any thread.
+		bool VehiclePending() const { return pending.load(std::memory_order_relaxed); }
+		// Signals from the console while pending (call on the object's thread)
+		void NoteHaptics();
+		void NoteRumble(uint8_t left, uint8_t right);
+		void NoteTriggers(uint8_t type_left, uint8_t type_right);
+
+		// true: F switches to "vehicle" only after the console confirms; false: F switches at once
+		static bool AutoVehicle();
+		static void SetAutoVehicle(bool enabled);
 
 		// Canonical input names
 		static QString KeyName(const QKeyEvent *event);
@@ -85,6 +101,11 @@ class AnyPlayInput : public QObject
 		static QList<APProfile> ParseProfiles(const QJsonObject &config, bool apply_overrides);
 		const APBinding *Find(const QString &name) const;
 		void SwitchProfile(const QString &target);
+		void SetProfile(const QString &id, const QString &hint_text);
+		QString ProfileName(const QString &id) const;
+		void StartPending();
+		void StopPending();
+		void ConfirmVehicle();
 		void StartMacro(const QList<APStep> &steps);
 		void NextMacroStep();
 		void AddTap(const APStep &step, int ms);
@@ -99,6 +120,15 @@ class AnyPlayInput : public QObject
 		QTimer macro_timer;
 		QTimer turbo_timer;
 		bool turbo_phase = false;
+
+		bool auto_vehicle = true;
+		std::atomic<bool> pending{false};
+		QElapsedTimer pending_since;
+		QTimer pending_timer;
+		int haptic_hits = 0;
+		QString hint;
+		uint8_t trig_left = 0, trig_right = 0;       // last trigger effect types from the console
+		uint8_t base_left = 0, base_right = 0;       // ... at the moment F was pressed
 };
 
 #endif // ANYPLAY_INPUT_H

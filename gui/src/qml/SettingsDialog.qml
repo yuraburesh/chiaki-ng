@@ -2642,8 +2642,25 @@ DialogView {
                             wrapMode: Text.WordWrap
                             opacity: 0.8
                             text: "Натисни на клавішу навпроти дії, а потім — нову клавішу або кнопку миші. "
-                                + "F сам перемикає «Пішки» ↔ «Транспорт», F1 / F2 / F3 вмикають режим вручну. "
+                                + "F сідає в транспорт і виходить з нього, F1 / F2 / F3 вмикають режим вручну. "
                                 + "Якщо клавіша вже зайнята, дії обміняються клавішами."
+                        }
+
+                        Switch {
+                            id: anyplayAutoVehicle
+                            Layout.fillWidth: true
+                            text: "Вмикати режим «Транспорт» лише коли герой справді сів у машину"
+                            checked: Chiaki.settings.anyplayAutoVehicle()
+                            onToggled: Chiaki.settings.setAnyplayAutoVehicle(checked)
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            opacity: 0.7
+                            font.pixelSize: 13
+                            text: anyplayAutoVehicle.checked
+                                ? "Після F програма чекає сигнал від приставки (вібрація, опір педалей). Якщо поруч не було машини — режим лишиться «Пішки». Якщо сів, а режим не перемкнувся — натисни F2 або вимкни цей перемикач."
+                                : "F одразу перемикає «Пішки» ↔ «Транспорт». Якщо натиснув випадково — натисни F ще раз."
                         }
 
                         RowLayout {

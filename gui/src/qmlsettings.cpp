@@ -2233,3 +2233,13 @@ void QmlSettings::resetAnyplayKeys()
 {
     AnyPlayInput::ResetKeyOverrides();
 }
+
+bool QmlSettings::anyplayAutoVehicle() const
+{
+    return AnyPlayInput::AutoVehicle();
+}
+
+void QmlSettings::setAnyplayAutoVehicle(bool enabled)
+{
+    AnyPlayInput::SetAutoVehicle(enabled);
+}

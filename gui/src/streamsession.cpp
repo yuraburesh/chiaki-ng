@@ -2431,6 +2431,20 @@ void StreamSession::PushHapticsFrame(uint8_t *buf, size_t buf_size)
 		return;
 	}
 
+	// AnyPlay: vibration right after "enter vehicle" confirms that the player really got in
+	if(anyplay && anyplay->VehiclePending())
+	{
+		int peak = 0;
+		for(size_t i = 0; i + sizeof(int16_t) <= buf_size; i += sizeof(int16_t))
+		{
+			int16_t v;
+			memcpy(&v, buf + i, sizeof(int16_t));
+			peak = qMax(peak, qAbs(static_cast<int>(v)));
+		}
+		if(peak > 1200)
+			QMetaObject::invokeMethod(anyplay, [this]() { anyplay->NoteHaptics(); }, Qt::QueuedConnection);
+	}
+
 #if CHIAKI_GUI_ENABLE_STEAMDECK_NATIVE
 	if(sdeck && haptics_handheld > 0 && enable_steamdeck_haptics)
 	{
@@ -2632,6 +2646,11 @@ void StreamSession::Event(ChiakiEvent *event)
 			emit NicknameReceived(event->server_nickname);
 			break;
 		case CHIAKI_EVENT_RUMBLE: {
+			if(anyplay && anyplay->VehiclePending())
+			{
+				const uint8_t l = event->rumble.left, r = event->rumble.right;
+				QMetaObject::invokeMethod(anyplay, [this, l, r]() { anyplay->NoteRumble(l, r); }, Qt::QueuedConnection);
+			}
 			if(ps5_rumble_intensity < 0)
 				return;
 			uint8_t left = event->rumble.left;
@@ -2767,6 +2786,11 @@ void StreamSession::Event(ChiakiEvent *event)
 			break;
 		}
 		case CHIAKI_EVENT_TRIGGER_EFFECTS: {
+			if(anyplay)
+			{
+				const uint8_t tl = event->trigger_effects.type_left, tr = event->trigger_effects.type_right;
+				QMetaObject::invokeMethod(anyplay, [this, tl, tr]() { anyplay->NoteTriggers(tl, tr); }, Qt::QueuedConnection);
+			}
 			if(ps5_trigger_intensity < 0)
 				return;
 			uint8_t type_left = event->trigger_effects.type_left;

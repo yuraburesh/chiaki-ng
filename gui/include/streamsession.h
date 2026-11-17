@@ -384,7 +384,7 @@ class StreamSession : public QObject
 		void HandleMouseDeltaEvent(qreal dx, qreal dy);
 		void ResetMouseRightStick();
 		bool GetMouseRightStickEnabled() const { return mouse_right_stick_enabled; }
-		QString GetControlProfile() const { return anyplay ? anyplay->CurrentProfileName() : QString(); }
+		QString GetControlProfile() const { return anyplay ? anyplay->StatusText() : QString(); }
 		bool AnyPlayControlsActive() const { return anyplay != nullptr; }
 		ChiakiControllerState mouse_state;
 		qreal mouse_accum_x = 0;

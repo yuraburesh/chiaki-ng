@@ -36,6 +36,7 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(QString myPsnLink READ myPsnLink NOTIFY changed)       // сторінка Sony для цього входу (якщо відома)
 	Q_PROPERTY(QString playPsn READ playPsn NOTIFY changed)           // під яким акаунтом PSN зараз пускає приставка
 	Q_PROPERTY(bool playOwn READ playOwn NOTIFY changed)              // true — це власний акаунт клієнта
+	Q_PROPERTY(bool reconnectOnce MEMBER reconnect_once_ NOTIFY changed)   // після зміни якості в грі: підключитись знову самому
 	Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)                // іде прив'язка / перевірка
 	Q_PROPERTY(QVariantMap extendInfo READ extendInfo NOTIFY extendChanged) // продовження: варіанти, ціни, заявка
 	Q_PROPERTY(QVariantMap adminInfo READ adminInfo NOTIFY adminChanged) // адмін: хто грає, найближчі броні, доступ
@@ -150,6 +151,7 @@ private:
 	int qr_rev_ = 0, psn_wait_tries_ = 0, pay_polls_ = 0;
 	QTimer psn_wait_timer, pay_timer, admin_timer;
 	QJsonObject admin_cmp_;
+	bool reconnect_once_ = false;
 	qint64 link_job_user_ = 0;   // прив'язка за кодом, який адмін написав у боті: кому звітувати
 	void setBusy(bool b) { if(busy_ != b) { busy_ = b; emit busyChanged(); } }
 };

@@ -74,8 +74,9 @@ Rectangle {
         return f >= 60 ? qsTr("Оптимальна") : qsTr("Економна");
     }
     function setQuality(res, fps) {
-        Chiaki.settings.resolutionRemotePS5 = res; Chiaki.settings.fpsRemotePS5 = fps; Chiaki.settings.bitrateRemotePS5 = 0;
-        Chiaki.settings.resolutionLocalPS5 = res;  Chiaki.settings.fpsLocalPS5 = fps;  Chiaki.settings.bitrateLocalPS5 = 0;
+        const br = res >= 4 ? 25000 : 0;   // «Максимальна» — підвищений бітрейт, щоб картинка була чіткішою
+        Chiaki.settings.resolutionRemotePS5 = res; Chiaki.settings.fpsRemotePS5 = fps; Chiaki.settings.bitrateRemotePS5 = br;
+        Chiaki.settings.resolutionLocalPS5 = res;  Chiaki.settings.fpsLocalPS5 = fps;  Chiaki.settings.bitrateLocalPS5 = br;
     }
 
     readonly property bool popupOpen: qualityPopup.opened || psnPopup.opened || extendPopup.opened || clientsPopup.opened || sharedPopup.opened || bookPopup.opened
@@ -482,13 +483,13 @@ Rectangle {
             Label { text: qsTr("Якість картинки"); font.pixelSize: 24; font.bold: true; color: "white" }
             Label {
                 Layout.fillWidth: true; wrapMode: Text.WordWrap; color: home.cDim; font.pixelSize: 14
-                text: qsTr("Якщо картинка гальмує чи сиплеться — обери нижчу якість. Зміни діють з наступного підключення.")
+                text: qsTr("Якщо картинка гальмує чи сиплеться, обери нижчу якість. Під час гри її можна змінити в меню гри (кнопка «Якість»).")
             }
             Repeater {
                 model: [
                     { name: qsTr("Економна"), info: qsTr("540p, 30 кадр/с — для слабкого чи мобільного інтернету"), res: 2, fps: 30 },
                     { name: qsTr("Оптимальна"), info: qsTr("720p, 60 кадр/с — рекомендовано (від 15 Мбіт/с)"), res: 3, fps: 60 },
-                    { name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с — швидкий інтернет (від 30 Мбіт/с, краще кабель)"), res: 4, fps: 60 }
+                    { name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с, найчіткіша картинка — швидкий інтернет (від 40 Мбіт/с, краще кабель)"), res: 4, fps: 60 }
                 ]
                 delegate: Rectangle {
                     id: qItem
@@ -525,6 +526,24 @@ Rectangle {
     property bool qrAutoShown: false
     property bool reopenPsn: false
     property bool reopenShared: false
+    // після зміни якості в меню гри підключаємось знову самі, щойно приставка готова
+    Timer {
+        id: reconnectTimer
+        property int tries: 0
+        interval: 1200; repeat: true
+        running: home.cloud.reconnectOnce && home.visible
+        onRunningChanged: if (running) tries = 0
+        onTriggered: {
+            if (Chiaki.session) { home.cloud.reconnectOnce = false; return; }
+            if (home.cloud.state === "play" && home.consoleIndex() >= 0) {
+                home.cloud.reconnectOnce = false;
+                home.play();
+            } else if (++tries > 25) {
+                home.cloud.reconnectOnce = false;
+                toast.show(qsTr("Не вдалося підключитись самому. Натисни «Грати»."));
+            }
+        }
+    }
     function resume() {
         if (reopenPsn) { reopenPsn = false; psnPopup.open(); }
         if (reopenShared) { reopenShared = false; sharedPopup.open(); }

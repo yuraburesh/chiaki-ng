@@ -60,6 +60,25 @@ Rectangle {
         return rows.concat(modes);
     }
 
+    // Ті самі три рівні якості, що й на головному екрані
+    readonly property var qualities: [
+        { id: "eco", name: qsTr("Економна"), info: qsTr("540p, 30 кадр/с"), res: 2, fps: 30, bitrate: 0 },
+        { id: "opt", name: qsTr("Оптимальна"), info: qsTr("720p, 60 кадр/с"), res: 3, fps: 60, bitrate: 0 },
+        { id: "max", name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с, найчіткіша"), res: 4, fps: 60, bitrate: 25000 }
+    ]
+    function qualityNow() {
+        const r = Chiaki.settings.resolutionRemotePS5, f = Chiaki.settings.fpsRemotePS5;
+        return r <= 2 ? "eco" : r >= 4 ? "max" : (f >= 60 ? "opt" : "eco");
+    }
+    function setQuality(q) {
+        if (qualityNow() === q.id) { goMain(); return; }
+        Chiaki.settings.resolutionRemotePS5 = q.res; Chiaki.settings.fpsRemotePS5 = q.fps; Chiaki.settings.bitrateRemotePS5 = q.bitrate;
+        Chiaki.settings.resolutionLocalPS5 = q.res;  Chiaki.settings.fpsLocalPS5 = q.fps;  Chiaki.settings.bitrateLocalPS5 = q.bitrate;
+        Chiaki.cloud.reconnectOnce = true;   // головний екран сам натисне «Грати» з новою якістю
+        panel.page = "main";
+        panel.exit();
+    }
+
     ColumnLayout {
         anchors { fill: parent; leftMargin: 22; rightMargin: 22; topMargin: 14; bottomMargin: 14 }
         spacing: 10
@@ -78,7 +97,8 @@ Rectangle {
                 Keys.onEscapePressed: panel.goMain()
             }
             Label {
-                text: panel.page === "extend" ? qsTr("ПРОДОВЖИТИ ГРУ") : (panel.page === "keys" ? qsTr("КЛАВІШІ") : qsTr("МЕНЮ ГРИ"))
+                text: panel.page === "extend" ? qsTr("ПРОДОВЖИТИ ГРУ") : panel.page === "keys" ? qsTr("КЛАВІШІ")
+                    : panel.page === "quality" ? qsTr("ЯКІСТЬ КАРТИНКИ") : qsTr("МЕНЮ ГРИ")
                 color: "#22e4ff"; font.pixelSize: 15; font.bold: true; font.letterSpacing: 3
             }
             Label {
@@ -118,6 +138,13 @@ Rectangle {
                 text: qsTr("⌨  Клавіші")
                 onClicked: { panel.page = "keys"; backBtn.forceActiveFocus(); }
                 KeyNavigation.left: extendBtn
+                KeyNavigation.right: qualityBtn
+            }
+            MenuBtn {
+                id: qualityBtn
+                text: qsTr("🎚  Якість")
+                onClicked: { panel.page = "quality"; backBtn.forceActiveFocus(); }
+                KeyNavigation.left: keysBtn
                 KeyNavigation.right: volume
             }
             ColumnLayout {
@@ -130,7 +157,7 @@ Rectangle {
                     from: 0; to: 128; stepSize: 1
                     value: Chiaki.settings.audioVolume
                     onMoved: Chiaki.settings.audioVolume = value
-                    KeyNavigation.left: keysBtn
+                    KeyNavigation.left: qualityBtn
                     KeyNavigation.right: exitBtn
                     Keys.onEscapePressed: panel.resume()
                 }
@@ -165,6 +192,32 @@ Rectangle {
             visible: panel.visible && panel.page === "extend"
             Layout.fillWidth: true
             compact: true
+        }
+
+        // ── якість картинки: змінюється з перепідключенням на кілька секунд ──
+        Label {
+            visible: panel.page === "quality"
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+            color: "#d8cdea"; font.pixelSize: 14
+            text: qsTr("Якщо картинка смикається чи сиплеться, обери нижчу якість. Гра перепідключиться сама за кілька секунд, прогрес у грі не зникає.")
+        }
+        RowLayout {
+            visible: panel.page === "quality"
+            Layout.fillWidth: true
+            spacing: 10
+            Repeater {
+                model: panel.qualities
+                MenuBtn {
+                    required property var modelData
+                    readonly property bool on: panel.qualityNow() === modelData.id
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 62
+                    primary: on
+                    text: (on ? "✓ " : "") + modelData.name + "\n" + modelData.info
+                    font.pixelSize: 14
+                    onClicked: panel.setQuality(modelData)
+                }
+            }
         }
 
         // ── клавіші ──

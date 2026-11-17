@@ -228,6 +228,8 @@ class StreamSession : public QObject
 		float PS_TOUCHPAD_MAX_X, PS_TOUCHPAD_MAX_Y;
 		ChiakiControllerState keyboard_state;
 		AnyPlayInput *anyplay = nullptr; // AnyPlay: game-style keyboard/mouse profiles (replaces key_map)
+		bool cmd_pending = false;   // Cmd is down and not sent yet: it may be the start of Cmd+O
+		bool cmd_forwarded = false; // Cmd press was sent to the game, so its release must be sent too
 		ChiakiControllerState touch_state;
 		QMap<int, uint8_t> touch_tracker;
 		int8_t mouse_touch_id;
@@ -405,6 +407,8 @@ class StreamSession : public QObject
 
 		void BlockInput(bool block) { if(block && anyplay) anyplay->ReleaseAll(); input_block = block ? 1 : 2; SendFeedbackState(); }
 		void ReleaseAnyPlayInputs() { if(anyplay) anyplay->ReleaseAll(); }
+		// AnyPlay (Mac): Cmd was the start of a shortcut (Cmd+O), not a tap of the key bound to Cmd
+		void CancelAnyPlayModifierTap() { cmd_pending = false; }
 
 	signals:
 		void FfmpegFrameAvailable();

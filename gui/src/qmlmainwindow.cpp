@@ -7808,6 +7808,8 @@ bool QmlMainWindow::handleShortcut(QKeyEvent *event)
     int shortcut_key = event->key();
     if (const Qt::Key physical = Settings::PhysicalKey(event))
         shortcut_key = physical;  // AnyPlay: Cmd/Ctrl+O works with a Ukrainian layout too
+    if (session && shortcut_key == Qt::Key_O)
+        session->CancelAnyPlayModifierTap();  // AnyPlay: Cmd+O is the menu, not a tap of the key bound to Cmd
     // AnyPlay: Ctrl is the stealth key in game, so only Ctrl/Cmd+O (stream menu) stays a shortcut
     if (session && session->AnyPlayControlsActive() && shortcut_key != Qt::Key_O)
         return false;

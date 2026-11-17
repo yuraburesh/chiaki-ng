@@ -22,6 +22,9 @@ static const int BEAT_MS = 20 * 1000;
 static const int PAIR_MS = 2000;
 static const int PAIR_MAX_TRIES = 300; // ~10 хв
 
+// Номер версії програми: сервер порівнює його з мінімальним і просить оновитись, якщо програма застаріла
+static const int ANYPLAY_BUILD = 101;
+
 AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent)
 	: QObject(parent), settings(settings), backend(backend)
 {
@@ -136,6 +139,7 @@ void AnyPlayCloud::request(const QString &method, const QString &path, const QJs
 	QNetworkRequest req(QUrl(server_ + path));
 	req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 	req.setTransferTimeout(15000);
+	req.setRawHeader("X-AnyPlay-Build", QByteArray::number(ANYPLAY_BUILD));   // сервер знає, чи програма не застаріла
 	if(auth && !token_.isEmpty())
 		req.setRawHeader("Authorization", "Bearer " + token_.toUtf8());
 	QNetworkReply *reply = method == "GET" ? nam.get(req)
@@ -285,7 +289,7 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	{
 		if(playing_ || settings->HasAnyPlayEphemeral())
 			stopPlay(QString());
-		setState(st == "no_console" ? "no_console" : "wait");
+		setState(st == "no_console" ? "no_console" : st == "update" ? "update" : "wait");
 	}
 	emit changed();
 }
@@ -867,16 +871,32 @@ void AnyPlayCloud::startClientLink(qint64 userId, const QByteArray &account, con
 		body["host"] = QJsonObject::fromVariantMap(rhost.ToVariantMap());
 		body["ownerUserId"] = userId;
 		body["label"] = rhost.GetServerNickname();
-		request("POST", "/api/app/console", body, [this](int status, const QJsonObject &o) {
+		saveClientLink(body, 0);
+	});
+}
+
+// Приставка вже видала ключ — його не можна втратити: якщо сервер недоступний (перезапуск, зв'язок), пробуємо ще
+void AnyPlayCloud::saveClientLink(const QJsonObject &body, int attempt)
+{
+	request("POST", "/api/app/console", body, [this, body, attempt](int status, const QJsonObject &o) {
+		if(status == 200 && o.value("ok").toBool())
+		{
 			setBusy(false);
-			if(status == 200 && o.value("ok").toBool())
-				emit linkResult(true, tr("✅ Готово! Клієнт тепер грає на своєму акаунті — і наступного разу теж. Йому прийшло повідомлення."));
-			else
-				emit linkResult(false, o.value("error").toString() == "client_psn"
-					? tr("Клієнт ще не увійшов у PSN у своїй програмі.")
-					: tr("Не вдалося зберегти на сервері (помилка %1).").arg(status));
+			emit linkResult(true, tr("✅ Готово! Клієнт тепер грає на своєму акаунті — і наступного разу теж. Йому прийшло повідомлення."));
 			refreshAdmin();
-		});
+			return;
+		}
+		const bool temporary = status == 0 || status >= 500;
+		if(temporary && attempt < 8)
+		{
+			QTimer::singleShot(4000, this, [this, body, attempt]() { saveClientLink(body, attempt + 1); });
+			return;
+		}
+		setBusy(false);
+		emit linkResult(false, o.value("error").toString() == "client_psn"
+			? tr("Клієнт ще не увійшов у PSN у своїй програмі.")
+			: tr("Приставка прийняла код, але зберегти на сервері не вдалося (помилка %1). Згенеруй новий код і спробуй ще раз.").arg(status));
+		refreshAdmin();
 	});
 }
 

@@ -14,7 +14,7 @@ class QmlBackend;
 class AnyPlayCloud : public QObject
 {
 	Q_OBJECT
-	Q_PROPERTY(QString state READ state NOTIFY changed)          // login | pairing | wait | play | no_console | offline
+	Q_PROPERTY(QString state READ state NOTIFY changed)          // login | pairing | wait | play | no_console | offline | update
 	Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY changed)
 	Q_PROPERTY(bool admin READ admin NOTIFY changed)
 	Q_PROPERTY(QString userName READ userName NOTIFY changed)
@@ -124,6 +124,7 @@ private:
 	void applySession(const QJsonObject &o);
 	void startClientLink(qint64 userId, const QByteArray &account, const QString &digits, const QString &host);
 	QString linkErrorText(const QString &errors) const;
+	void saveClientLink(const QJsonObject &body, int attempt);
 	void heartbeat();
 	void setState(const QString &s);
 	void stopPlay(const QString &reason);

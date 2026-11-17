@@ -199,6 +199,7 @@ Rectangle {
                     case "pairing": return qsTr("ПІДТВЕРДЖЕННЯ ВХОДУ");
                     case "offline": return qsTr("НЕМАЄ ЗВ'ЯЗКУ");
                     case "no_console": return qsTr("ПРИСТАВКА НЕДОСТУПНА");
+                    case "update": return qsTr("ВИЙШЛА НОВА ВЕРСІЯ");
                     default: return home.cloud.nextStart ? qsTr("ТВОЯ НАСТУПНА ГРА") : qsTr("БРОНЮВАННЯ");
                     }
                 }
@@ -218,6 +219,7 @@ Rectangle {
                     case "pairing": return qsTr("Натисни «Start» у боті");
                     case "offline": return qsTr("Перевір інтернет");
                     case "no_console": return qsTr("Напиши нам у бот");
+                    case "update": return qsTr("Онови програму");
                     default:
                         if (!c.nextStart) return qsTr("Немає оплачених броней");
                         const left = c.nextStart - home.nowTs();
@@ -240,6 +242,7 @@ Rectangle {
                     case "pairing": return qsTr("Відкрився бот @play_any_bot. Натисни там «Start» і повертайся сюди.");
                     case "offline": return qsTr("Спробуємо знову за хвилину.");
                     case "no_console": return qsTr("Приставка тимчасово недоступна — кнопка «🆘 Допомога» в боті.");
+                    case "update": return qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Завантаж нову в боті: кнопка «💻 Програма». Встановлюється поверх старої, вхід і броні зберігаються.");
                     default: return c.nextStart
                         ? qsTr("До початку гри (%1–%2). Доступ відкриється автоматично, програму можна не закривати.").arg(c.formatTime(c.nextStart)).arg(c.formatTime(c.nextEnd))
                         : qsTr("Обери час і оплати прямо тут — кнопка нижче.");
@@ -261,6 +264,7 @@ Rectangle {
                     case "pairing": return qsTr("Скасувати");
                     case "offline": return qsTr("Спробувати ще");
                     case "no_console": return qsTr("Відкрити бота");
+                    case "update": return qsTr("Завантажити нову версію");
                     default: return qsTr("Забронювати час");
                     }
                 }
@@ -271,6 +275,7 @@ Rectangle {
                     case "pairing": home.cloud.cancelLogin(); break;
                     case "offline": home.cloud.refresh(); break;
                     case "no_console": home.cloud.openBot(); break;
+                    case "update": home.cloud.openBot(); break;
                     default: bookPopup.open();
                     }
                 }

@@ -1139,6 +1139,37 @@ void StreamSession::HandleKeyboardEvent(QKeyEvent *event)
 			anyplay->HandleInput(name, false);
 			return;
 		}
+		// Cmd alone is a game key (PS button by default), but Cmd+O opens the stream menu.
+		// So Cmd is sent to the game only when it turns out not to be the start of that shortcut:
+		// on release (a short tap) or when another key is pressed while it is held.
+		if(event->key() == Qt::Key_Control)
+		{
+			if(press)
+			{
+				cmd_pending = true;
+				cmd_forwarded = false;
+				return;
+			}
+			if(cmd_pending)
+			{
+				cmd_pending = false;
+				anyplay->HandleInput(name, true);
+				QTimer::singleShot(90, this, [this, name]() {
+					if(anyplay)
+						anyplay->HandleInput(name, false);
+				});
+				return;
+			}
+			if(!cmd_forwarded)
+				return; // it was Cmd+O: nothing was sent, nothing to release
+			cmd_forwarded = false;
+		}
+		else if(press && cmd_pending)
+		{
+			cmd_pending = false;
+			cmd_forwarded = true;
+			anyplay->HandleInput(QStringLiteral("Cmd"), true);
+		}
 #endif
 		anyplay->HandleInput(name, press);
 		return;

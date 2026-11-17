@@ -6,10 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Що збирати: all — усе, mac — лише Mac (швидше)"
+        description: "Що збирати: all — усе, mac — лише Mac (швидше), arm — лише Mac на процесорах M"
         type: choice
-        options: [all, mac]
+        options: [all, mac, arm]
         default: all
+      arm_runner:
+        description: "Машина GitHub для збірки Mac M (якщо на macos-15 черга)"
+        type: string
+        default: macos-15
 
 permissions:
   contents: write
@@ -20,7 +24,10 @@ jobs:
     uses: ./.github/workflows/build-windows-x86.yml
   macos:
     uses: ./.github/workflows/build-macos-arm.yml
+    with:
+      runner: ${{ inputs.arm_runner || 'macos-15' }}
   macos_intel:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms != 'arm' }}
     uses: ./.github/workflows/build-macos-x86.yml
   linux:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' }}

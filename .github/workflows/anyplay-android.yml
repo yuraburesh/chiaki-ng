@@ -27,7 +27,9 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
       - name: Збірка APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace -Pandroid.injected.build.abi=arm64-v8a
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          find app/build -name "*.apk" -exec ls -la {} \;
       - uses: actions/upload-artifact@v4
         with:
           name: anyplay-android-debug

@@ -69,7 +69,11 @@ data class ConnectInfo(
 	val host: String,
 	val registKey: ByteArray,
 	val morning: ByteArray,
-	val videoProfile: ConnectVideoProfile
+	val videoProfile: ConnectVideoProfile,
+	// AnyPlay: гра через інтернет (PSN). Якщо psnToken заданий, host/registKey/morning не використовуються.
+	val psnToken: String? = null,
+	val psnAccountId: ByteArray? = null,
+	val psnDuid: String? = null
 ): Parcelable
 
 private class ChiakiNative
@@ -88,6 +92,10 @@ private class ChiakiNative
 		@JvmStatic external fun sessionCreate(result: CreateResult, connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean, javaSession: Session)
 		@JvmStatic external fun sessionFree(ptr: Long)
 		@JvmStatic external fun sessionStart(ptr: Long): Int
+		@JvmStatic external fun sessionPsnConnect(ptr: Long, duid: String): Int
+		@JvmStatic external fun sessionPsnCancel(ptr: Long)
+		@JvmStatic external fun psnListDevices(token: String): String?
+		@JvmStatic external fun setEnv(name: String, value: String)
 		@JvmStatic external fun sessionStop(ptr: Long): Int
 		@JvmStatic external fun sessionJoin(ptr: Long): Int
 		@JvmStatic external fun sessionSetSurface(ptr: Long, surface: Surface?)
@@ -100,6 +108,21 @@ private class ChiakiNative
 		@JvmStatic external fun registStop(ptr: Long)
 		@JvmStatic external fun registFree(ptr: Long)
 	}
+}
+
+/** AnyPlay: приставка акаунта PSN, до якої можна підключитись через інтернет */
+data class PsnDevice(val duid: String, val name: String, val remotePlayEnabled: Boolean)
+
+object ChiakiPsn
+{
+	/** Список PS5 акаунта (null — Sony не відповіла або вхід недійсний). Блокує потік. */
+	fun listDevices(token: String): List<PsnDevice>? =
+		ChiakiNative.psnListDevices(token)?.lines()?.mapNotNull { line ->
+			val parts = line.split('\t')
+			if(parts.size >= 3 && parts[0].length == 64) PsnDevice(parts[0], parts[1], parts[2] == "1") else null
+		}
+
+	fun setEnv(name: String, value: String) = ChiakiNative.setEnv(name, value)
 }
 
 class ErrorCode(val value: Int)
@@ -341,6 +364,9 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	}
 
 	fun start() = ErrorCode(ChiakiNative.sessionStart(nativePtr))
+	/** AnyPlay: пробити з'єднання через PSN. Довго (до хвилини) — лише з фонового потоку, перед start(). */
+	fun psnConnect(duid: String) = ErrorCode(ChiakiNative.sessionPsnConnect(nativePtr, duid))
+	fun psnCancel() { if(nativePtr != 0L) ChiakiNative.sessionPsnCancel(nativePtr) }
 	fun stop() = ErrorCode(ChiakiNative.sessionStop(nativePtr))
 
 	fun dispose()

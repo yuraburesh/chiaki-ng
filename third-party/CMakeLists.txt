@@ -69,6 +69,13 @@ if (NOT CHIAKI_IS_SWITCH)
 		set(HTTP_ONLY ON)
 		set(ENABLE_WEBSOCKETS ON)
 		set(CHIAKI_CURL_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/curl")
+		if(ANDROID)
+			# AnyPlay: на Android немає звичного сховища кореневих сертифікатів для OpenSSL —
+			# беремо файл, шлях до якого застосунок кладе в SSL_CERT_FILE
+			set(CURL_CA_FALLBACK ON CACHE BOOL "" FORCE)
+			set(CURL_CA_BUNDLE "none" CACHE STRING "" FORCE)
+			set(CURL_CA_PATH "none" CACHE STRING "" FORCE)
+		endif()
 	if(WIN32)
 		include("${PROJECT_SOURCE_DIR}/cmake/CurlSchannelAia.cmake")
 		set(USE_SSLEAY ON)

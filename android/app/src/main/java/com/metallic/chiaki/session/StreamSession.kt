@@ -17,8 +17,10 @@ object StreamStateConnected: StreamState()
 data class StreamStateCreateError(val error: CreateError): StreamState()
 data class StreamStateQuit(val reason: QuitReason, val reasonString: String?): StreamState()
 data class StreamStateLoginPinRequest(val pinIncorrect: Boolean): StreamState()
+/** AnyPlay: не вдалося з'єднатися з PS5 через інтернет (PSN) */
+data class StreamStatePsnFailed(val error: ErrorCode): StreamState()
 
-class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, val logVerbose: Boolean, val input: StreamInput)
+class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, val logVerbose: Boolean, val input: StreamInput)
 {
 	var session: Session? = null
 		private set
@@ -38,12 +40,30 @@ class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, va
 		}
 	}
 
+	// AnyPlay: поки PSN пробиває з'єднання, сесію не можна звільняти — це зробить фоновий потік
+	private val psnLock = Any()
+	private var psnPending: Session? = null
+	private val psnAbandoned = HashSet<Session>()
+
 	fun shutdown()
 	{
-		session?.stop()
-		session?.dispose()
+		val s = session
 		session = null
 		_state.value = StreamStateIdle
+		if(s == null)
+			return
+		synchronized(psnLock)
+		{
+			if(psnPending === s)
+			{
+				psnAbandoned.add(s)
+				s.eventCallback = null
+				s.psnCancel()
+				return
+			}
+		}
+		s.stop()
+		s.dispose()
 		//surfaceTexture?.release()
 	}
 
@@ -61,7 +81,29 @@ class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, va
 			val session = Session(connectInfo, logManager.createNewFile().file.absolutePath, logVerbose)
 			_state.value = StreamStateConnecting
 			session.eventCallback = this::eventCallback
-			session.start()
+			val duid = connectInfo.psnDuid
+			if(connectInfo.psnToken != null && duid != null)
+			{
+				synchronized(psnLock) { psnPending = session }
+				Thread {
+					val err = session.psnConnect(duid)
+					synchronized(psnLock)
+					{
+						psnPending = null
+						if(psnAbandoned.remove(session))
+						{
+							session.dispose()
+							return@Thread
+						}
+						if(err.isSuccess)
+							session.start()
+						else
+							_state.postValue(StreamStatePsnFailed(err))
+					}
+				}.apply { name = "anyplay-psn"; isDaemon = true }.start()
+			}
+			else
+				session.start()
 			val surface = surface
 			if(surface != null)
 				session.setSurface(surface)

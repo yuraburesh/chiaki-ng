@@ -31,7 +31,15 @@ import com.metallic.chiaki.session.*
 import com.metallic.chiaki.touchcontrols.DefaultTouchControlsFragment
 import com.metallic.chiaki.touchcontrols.TouchControlsFragment
 import com.metallic.chiaki.touchcontrols.TouchpadOnlyFragment
+import com.metallic.chiaki.anyplay.AnyPlayCloud
+import com.metallic.chiaki.anyplay.PlayError
+import com.metallic.chiaki.anyplay.PlayReady
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlin.math.min
@@ -40,12 +48,16 @@ private sealed class DialogContents
 private object StreamQuitDialog: DialogContents()
 private object CreateErrorDialog: DialogContents()
 private object PinRequestDialog: DialogContents()
+private object PsnFailedDialog: DialogContents()
+private object AnyPlayEndDialog: DialogContents()
 
 class StreamActivity : AppCompatActivity()
 {
 	companion object
 	{
 		const val EXTRA_CONNECT_INFO = "connect_info"
+		const val EXTRA_ANYPLAY = "anyplay"   // гра через сервер AnyPlay: час броні контролює сервер
+		private const val ANYPLAY_BEAT_MS = 20000L
 		private const val HIDE_UI_TIMEOUT_MS = 2000L
 	}
 
@@ -153,16 +165,91 @@ class StreamActivity : AppCompatActivity()
 		}
 	}
 
+	private val anyplay get() = intent.getBooleanExtra(EXTRA_ANYPLAY, false)
+	private var anyplayFirstResume = true
+	private var anyplayBeatJob: Job? = null
+	private var anyplayResumeJob: Job? = null
+
 	override fun onResume()
 	{
 		super.onResume()
 		hideSystemUI()
-		viewModel.session.resume()
+		if(!anyplay)
+		{
+			viewModel.session.resume()
+			return
+		}
+		if(anyplayFirstResume)
+		{
+			anyplayFirstResume = false
+			viewModel.session.resume()
+		}
+		else
+		{
+			// після згортання — нове підключення зі свіжим ключем від сервера (старий діє недовго)
+			binding.progressBar.visibility = View.VISIBLE
+			anyplayResumeJob?.cancel()
+			anyplayResumeJob = lifecycleScope.launch {
+				val target = withContext(Dispatchers.IO) {
+					val r = AnyPlayCloud.session(this@StreamActivity)
+					if(r.ok && r.json.optString("state") == "play")
+						AnyPlayCloud.playTarget(this@StreamActivity, r.json)
+					else if(r.ok)
+						PlayError("Час твоєї броні вийшов. Дякуємо за гру!")
+					else
+						PlayError("Немає зв'язку з сервером AnyPlay. Перевір інтернет.")
+				}
+				when(target)
+				{
+					is PlayReady ->
+					{
+						viewModel.session.connectInfo = target.connectInfo
+						viewModel.session.resume()
+					}
+					is PlayError -> anyplayEnd(target.text)
+				}
+			}
+		}
+		anyplayBeatJob?.cancel()
+		anyplayBeatJob = lifecycleScope.launch {
+			while(isActive)
+			{
+				val r = withContext(Dispatchers.IO) { AnyPlayCloud.heartbeat(this@StreamActivity, true) }
+				if(r.status == 401)
+					anyplayEnd("Доступ скасовано адміністратором.")
+				else if(r.status == 200 && !r.json.optBoolean("continue", true))
+					anyplayEnd(if(r.json.optString("reason") == "kicked") "Сеанс завершив адміністратор AnyPlay."
+						else "Час твоєї броні вийшов. Дякуємо за гру! Забронювати ще можна в боті.")
+				delay(ANYPLAY_BEAT_MS)
+			}
+		}
+	}
+
+	/** Сервер AnyPlay завершив гру: зупиняємо стрім і пояснюємо чому */
+	private fun anyplayEnd(text: String)
+	{
+		if(dialogContents == AnyPlayEndDialog || isFinishing)
+			return
+		anyplayBeatJob?.cancel()
+		viewModel.session.shutdown()
+		dialog?.dismiss()
+		val d = MaterialAlertDialogBuilder(this)
+			.setMessage(text)
+			.setCancelable(false)
+			.setPositiveButton("Зрозуміло") { _, _ ->
+				dialog = null
+				finish()
+			}
+			.create()
+		dialogContents = AnyPlayEndDialog
+		d.show()
 	}
 
 	override fun onPause()
 	{
 		super.onPause()
+		anyplayBeatJob?.cancel()
+		anyplayResumeJob?.cancel()
 		viewModel.session.pause()
 	}
 
@@ -238,7 +325,7 @@ class StreamActivity : AppCompatActivity()
 		{
 			is StreamStateQuit ->
 			{
-				if(dialogContents != StreamQuitDialog)
+				if(dialogContents != StreamQuitDialog && dialogContents != AnyPlayEndDialog)
 				{
 					if(state.reason.isError)
 					{
@@ -265,6 +352,32 @@ class StreamActivity : AppCompatActivity()
 					}
 					else
 						finish()
+				}
+			}
+
+			is StreamStatePsnFailed ->
+			{
+				if(dialogContents != PsnFailedDialog && dialogContents != AnyPlayEndDialog)
+				{
+					dialog?.dismiss()
+					val dialog = MaterialAlertDialogBuilder(this)
+						.setMessage("Не вдалося з'єднатися з приставкою через інтернет (${state.error}).\n\n"
+							+ "Перевір інтернет і спробуй ще раз. Якщо не допомагає, спробуй інший Wi-Fi або мобільний інтернет.")
+						.setPositiveButton("Спробувати ще раз") { _, _ ->
+							dialog = null
+							reconnect()
+						}
+						.setOnCancelListener {
+							dialog = null
+							finish()
+						}
+						.setNegativeButton("Вийти") { _, _ ->
+							dialog = null
+							finish()
+						}
+						.create()
+					dialogContents = PsnFailedDialog
+					dialog.show()
 				}
 			}
 

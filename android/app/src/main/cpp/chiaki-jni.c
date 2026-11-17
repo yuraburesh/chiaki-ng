@@ -9,6 +9,9 @@
 #include <chiaki/session.h>
 #include <chiaki/discoveryservice.h>
 #include <chiaki/regist.h>
+#include <chiaki/remote/holepunch.h>
+
+#include <stdlib.h>
 
 #include <string.h>
 #include <linux/in.h>
@@ -20,6 +23,39 @@
 #include "audio-output.h"
 #include "log.h"
 #include "chiaki-jni.h"
+
+static int anyplay_hex_nibble(char c)
+{
+	if(c >= '0' && c <= '9') return c - '0';
+	if(c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if(c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+static bool anyplay_parse_hex(uint8_t *buf, size_t buf_size, const char *hex)
+{
+	if(strlen(hex) != buf_size * 2)
+		return false;
+	for(size_t i = 0; i < buf_size; i++)
+	{
+		int hi = anyplay_hex_nibble(hex[i * 2]), lo = anyplay_hex_nibble(hex[i * 2 + 1]);
+		if(hi < 0 || lo < 0)
+			return false;
+		buf[i] = (uint8_t)((hi << 4) | lo);
+	}
+	return true;
+}
+
+static void anyplay_format_hex(char *hex, const uint8_t *buf, size_t buf_size)
+{
+	static const char digits[] = "0123456789abcdef";
+	for(size_t i = 0; i < buf_size; i++)
+	{
+		hex[i * 2] = digits[buf[i] >> 4];
+		hex[i * 2 + 1] = digits[buf[i] & 0xf];
+	}
+	hex[buf_size * 2] = 0;
+}
 
 static char *strdup_jni(const char *str)
 {
@@ -159,6 +195,8 @@ typedef struct android_chiaki_session_t
 	AndroidChiakiVideoDecoder video_decoder;
 	AndroidChiakiAudioDecoder audio_decoder;
 	void *audio_output;
+	bool started; // потік сесії запущено (інакше join нема чого чекати)
+	ChiakiHolepunchSession holepunch; // AnyPlay: з'єднання через PSN (належить ChiakiSession)
 } AndroidChiakiSession;
 
 static void android_chiaki_event_cb(ChiakiEvent *event, void *user)
@@ -228,6 +266,10 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
 	jobject connect_video_profile_obj = E->GetObjectField(env, connect_info_obj, E->GetFieldID(env, connect_info_class, "videoProfile", "L"BASE_PACKAGE"/ConnectVideoProfile;"));
 	jclass connect_video_profile_class = E->GetObjectClass(env, connect_video_profile_obj);
 
+	jstring psn_token_string = E->GetObjectField(env, connect_info_obj, E->GetFieldID(env, connect_info_class, "psnToken", "Ljava/lang/String;"));
+	jbyteArray psn_account_id_array = E->GetObjectField(env, connect_info_obj, E->GetFieldID(env, connect_info_class, "psnAccountId", "[B"));
+	ChiakiHolepunchSession holepunch = NULL;
+
 	ChiakiConnectInfo connect_info = { 0 };
 	connect_info.ps5 = ps5;
 
@@ -272,18 +314,45 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
 
 	connect_info.video_profile_auto_downgrade = true;
 
+	// AnyPlay: гра через інтернет — з'єднання з PS5 пробиває PSN, прив'язка відбувається в тій самій сесії
+	if(psn_token_string)
+	{
+		if(!psn_account_id_array || E->GetArrayLength(env, psn_account_id_array) != sizeof(connect_info.psn_account_id))
+		{
+			CHIAKI_LOGE(log, "PSN account id passed from Java has invalid length");
+			err = CHIAKI_ERR_INVALID_DATA;
+			goto beach;
+		}
+		E->GetByteArrayRegion(env, psn_account_id_array, 0, sizeof(connect_info.psn_account_id), (jbyte *)connect_info.psn_account_id);
+		const char *token = E->GetStringUTFChars(env, psn_token_string, NULL);
+		holepunch = chiaki_holepunch_session_init(token, log);
+		E->ReleaseStringUTFChars(env, psn_token_string, token);
+		if(!holepunch)
+		{
+			CHIAKI_LOGE(log, "Failed to init PSN holepunch session");
+			err = CHIAKI_ERR_MEMORY;
+			goto beach;
+		}
+		connect_info.holepunch_session = holepunch;
+	}
+
 	session = CHIAKI_NEW(AndroidChiakiSession);
 	if(!session)
 	{
 		err = CHIAKI_ERR_MEMORY;
+		if(holepunch)
+			chiaki_holepunch_session_fini(holepunch);
 		goto beach;
 	}
 	memset(session, 0, sizeof(AndroidChiakiSession));
 	session->log = log;
+	session->holepunch = holepunch;
 	err = android_chiaki_video_decoder_init(&session->video_decoder, log, connect_info.video_profile.width, connect_info.video_profile.height,
 			connect_info.ps5 ? connect_info.video_profile.codec : CHIAKI_CODEC_H264);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
+		if(holepunch)
+			chiaki_holepunch_session_fini(holepunch);
 		free(session);
 		session = NULL;
 		goto beach;
@@ -292,6 +361,8 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
 	err = android_chiaki_audio_decoder_init(&session->audio_decoder, log);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
+		if(holepunch)
+			chiaki_holepunch_session_fini(holepunch);
 		android_chiaki_video_decoder_fini(&session->video_decoder);
 		free(session);
 		session = NULL;
@@ -383,17 +454,134 @@ JNIEXPORT void JNICALL JNI_FCN(sessionFree)(JNIEnv *env, jobject obj, jlong ptr)
 	free(session);
 }
 
+// AnyPlay: пробити з'єднання з PS5 через PSN (довга операція — викликати не з головного потоку, до sessionStart)
+JNIEXPORT jint JNICALL JNI_FCN(sessionPsnConnect)(JNIEnv *env, jobject obj, jlong ptr, jstring duid_string)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	if(!session || !session->holepunch || !duid_string)
+		return CHIAKI_ERR_INVALID_DATA;
+	ChiakiLog *log = session->log;
+	uint8_t duid[32];
+	const char *duid_str = E->GetStringUTFChars(env, duid_string, NULL);
+	bool duid_ok = anyplay_parse_hex(duid, sizeof(duid), duid_str);
+	E->ReleaseStringUTFChars(env, duid_string, duid_str);
+	ChiakiErrorCode err;
+	if(!duid_ok)
+	{
+		CHIAKI_LOGE(log, "PSN: invalid console id");
+		return CHIAKI_ERR_INVALID_DATA;
+	}
+	err = chiaki_holepunch_upnp_discover(session->holepunch);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGE(log, "PSN: upnp discover failed");
+		return err;
+	}
+	err = chiaki_holepunch_session_create(session->holepunch);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGE(log, "PSN: failed to create session");
+		return err;
+	}
+	err = holepunch_session_create_offer(session->holepunch);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGE(log, "PSN: failed to create offer for ctrl connection");
+		return err;
+	}
+	err = chiaki_holepunch_session_start(session->holepunch, duid, CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGE(log, "PSN: failed to start session");
+		return err;
+	}
+	err = chiaki_holepunch_session_punch_hole(session->holepunch, CHIAKI_HOLEPUNCH_PORT_TYPE_CTRL);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGE(log, "PSN: failed to punch hole for control connection");
+		return err;
+	}
+	CHIAKI_LOGI(log, "PSN: punched hole for control connection");
+	return CHIAKI_ERR_SUCCESS;
+}
+
+JNIEXPORT void JNICALL JNI_FCN(sessionPsnCancel)(JNIEnv *env, jobject obj, jlong ptr)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	if(session && session->holepunch)
+		chiaki_holepunch_main_thread_cancel(session->holepunch, false);
+}
+
+// AnyPlay: приставки акаунта PSN, до яких можна підключитись через інтернет. Рядки «duid<TAB>назва<TAB>0|1».
+JNIEXPORT jstring JNICALL JNI_FCN(psnListDevices)(JNIEnv *env, jobject obj, jstring token_string)
+{
+	if(!token_string)
+		return NULL;
+	const char *token = E->GetStringUTFChars(env, token_string, NULL);
+	ChiakiHolepunchDeviceInfo *devices = NULL;
+	size_t count = 0;
+	ChiakiErrorCode err = chiaki_holepunch_list_devices(token, CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5, &devices, &count, &global_log);
+	E->ReleaseStringUTFChars(env, token_string, token);
+	if(err != CHIAKI_ERR_SUCCESS)
+		return NULL;
+	size_t buf_size = count * 128 + 1;
+	char *buf = calloc(1, buf_size);
+	if(!buf)
+	{
+		if(devices)
+			chiaki_holepunch_free_device_list(&devices);
+		return NULL;
+	}
+	size_t off = 0;
+	for(size_t i = 0; i < count; i++)
+	{
+		char hex[sizeof(devices[i].device_uid) * 2 + 1];
+		anyplay_format_hex(hex, devices[i].device_uid, sizeof(devices[i].device_uid));
+		char name[sizeof(devices[i].device_name) + 1];
+		memcpy(name, devices[i].device_name, sizeof(devices[i].device_name));
+		name[sizeof(devices[i].device_name)] = 0;
+		for(char *c = name; *c; c++)
+			if(*c == '\t' || *c == '\n')
+				*c = ' ';
+		off += snprintf(buf + off, buf_size - off, "%s\t%s\t%d\n", hex, name, devices[i].remoteplay_enabled ? 1 : 0);
+		if(off >= buf_size)
+			break;
+	}
+	if(devices)
+		chiaki_holepunch_free_device_list(&devices);
+	char *safe = strdup_jni(buf);
+	free(buf);
+	jstring r = safe ? E->NewStringUTF(env, safe) : NULL;
+	free(safe);
+	return r;
+}
+
+// AnyPlay: змінна середовища (шлях до кореневих сертифікатів для HTTPS-запитів до PSN)
+JNIEXPORT void JNICALL JNI_FCN(setEnv)(JNIEnv *env, jobject obj, jstring name_string, jstring value_string)
+{
+	const char *name = E->GetStringUTFChars(env, name_string, NULL);
+	const char *value = E->GetStringUTFChars(env, value_string, NULL);
+	setenv(name, value, 1);
+	E->ReleaseStringUTFChars(env, name_string, name);
+	E->ReleaseStringUTFChars(env, value_string, value);
+}
+
 JNIEXPORT jint JNICALL JNI_FCN(sessionStart)(JNIEnv *env, jobject obj, jlong ptr)
 {
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
 	CHIAKI_LOGI(session->log, "Start JNI Session");
-	return chiaki_session_start(&session->session);
+	ChiakiErrorCode err = chiaki_session_start(&session->session);
+	if(err == CHIAKI_ERR_SUCCESS)
+		session->started = true;
+	return err;
 }
 
 JNIEXPORT jint JNICALL JNI_FCN(sessionStop)(JNIEnv *env, jobject obj, jlong ptr)
 {
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
 	CHIAKI_LOGI(session->log, "Stop JNI Session");
+	if(!session->started)
+		return CHIAKI_ERR_SUCCESS;
 	return chiaki_session_stop(&session->session);
 }
 
@@ -401,6 +589,8 @@ JNIEXPORT jint JNICALL JNI_FCN(sessionJoin)(JNIEnv *env, jobject obj, jlong ptr)
 {
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
 	CHIAKI_LOGI(session->log, "Join JNI Session");
+	if(!session->started)
+		return CHIAKI_ERR_SUCCESS;
 	return chiaki_session_join(&session->session);
 }
 

@@ -110,4 +110,32 @@
         <item name="materialAlertDialogTheme">@style/AppTheme.AlertDialog</item>
         <item name="android:windowBackground">@color/stream_background</item>
     </style>
+
+    <style name="AnyPlayTheme" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">#1A0B33</item>
+        <item name="colorPrimaryDark">#0B0618</item>
+        <item name="colorAccent">#FF2E9A</item>
+        <item name="colorOnPrimary">#ffffff</item>
+        <item name="colorSecondary">#FF2E9A</item>
+        <item name="colorOnSecondary">#ffffff</item>
+        <item name="android:windowBackground">@drawable/anyplay_bg</item>
+        <item name="android:statusBarColor">#2B0A4F</item>
+        <item name="android:navigationBarColor">#0B0618</item>
+        <item name="materialAlertDialogTheme">@style/AppTheme.AlertDialog</item>
+        <item name="alertDialogTheme">@style/AppTheme.AlertDialog.NonMaterial</item>
+    </style>
+
+    <style name="AnyPlayTile">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">64dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:background">@drawable/anyplay_btn_secondary</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
 </resources>

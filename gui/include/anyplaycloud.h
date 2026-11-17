@@ -83,6 +83,9 @@ public:
 	Q_INVOKABLE void refreshAdmin();
 	Q_INVOKABLE void adminKick(qint64 bookingId);    // адмін: завершити поточну гру клієнта
 	Q_INVOKABLE void adminSetClosed(bool closed);    // адмін: закрити / відкрити доступ усім клієнтам
+	Q_INVOKABLE void adminDropShared();              // адмін: прибрати спільний акаунт PSN із сервера
+	Q_INVOKABLE QString localPsnName() const;        // під яким акаунтом PSN увійдено в цій програмі ("" — не увійдено)
+	Q_INVOKABLE QString localConsoleName() const;    // PS5, прив'язана в цій програмі ("" — немає)
 	Q_INVOKABLE void loadBook();                                               // екран бронювання
 	Q_INVOKABLE void loadBookStarts(const QString &day, const QString &code);   // вільний час на день
 	Q_INVOKABLE void book(qint64 start, const QString &code, const QString &method);

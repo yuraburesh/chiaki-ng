@@ -11,6 +11,7 @@ Window {
 
     property bool open: false
     property bool closing: false
+    property bool clientMenu: false   // AnyPlay: клієнтам — просте меню гри
 
     signal closeRequested()
     signal displaySettingsRequested()
@@ -25,7 +26,10 @@ Window {
 
     function focusInitialItem() {
         requestActivate();
-        closeButton.forceActiveFocus(Qt.TabFocusReason);
+        if (clientMenu)
+            anyplayMenu.focusFirst();
+        else
+            closeButton.forceActiveFocus(Qt.TabFocusReason);
     }
 
     onVisibleChanged: {
@@ -80,10 +84,24 @@ Window {
 
         Rectangle {
             anchors.fill: parent
-            color: "#2b2b2b"
+            color: streamMenuWindow.clientMenu ? "#0b0618" : "#2b2b2b"
+        }
+
+        AnyPlayStreamMenu {
+            id: anyplayMenu
+            visible: streamMenuWindow.clientMenu && streamMenuWindow.visible
+            anchors { fill: parent; leftMargin: 24; rightMargin: 24; topMargin: 8; bottomMargin: 18 }
+            onResume: streamMenuWindow.closeRequested()
+            onExit: {
+                if (Chiaki.session)
+                    Chiaki.window.close();
+                else
+                    streamMenuWindow.mainViewRequested();
+            }
         }
 
         RowLayout {
+            visible: !streamMenuWindow.clientMenu
             anchors {
                 left: parent.left
                 bottom: parent.bottom
@@ -349,7 +367,7 @@ Window {
             }
             text: "Мбіт/с"
             font.pixelSize: 18
-            visible: Chiaki.session
+            visible: Chiaki.session && !streamMenuWindow.clientMenu
 
             Label {
                 anchors {
@@ -371,6 +389,7 @@ Window {
                 verticalCenter: parent.verticalCenter
                 rightMargin: 30
             }
+            visible: !streamMenuWindow.clientMenu
             text: {
                 if (!Chiaki.session)
                     return "";

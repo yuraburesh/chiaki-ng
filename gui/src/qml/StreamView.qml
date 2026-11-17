@@ -16,7 +16,9 @@ Item {
     property bool sessionLoading: true
     property list<Item> restoreFocusItems
     readonly property bool useSeparateMenuWindow: Chiaki.window.runtimeRendererBackend === 1
-    readonly property int streamMenuHeight: 200
+    // AnyPlay: клієнтам показуємо своє просте меню гри — воно трохи вище
+    readonly property bool anyplayClientMenu: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin
+    readonly property int streamMenuHeight: anyplayClientMenu ? 300 : 200
     readonly property bool streamStatsVisible: Chiaki.settings.showStreamStats && Chiaki.session && !(menuController.open || menuController.closing) && !sessionLoading && !sessionError && !(Chiaki.settings.audioVideoDisabled & 0x02)
     property int separateMenuX: 0
     property int separateMenuY: 0
@@ -479,11 +481,13 @@ Item {
 
         Item {
             id: menuContent
-            property Item initialFocusItem: closeButton
+            readonly property bool clientMenu: view.anyplayClientMenu
+            property Item initialFocusItem: clientMenu ? clientPanel.firstItem : closeButton
             property bool extOpen: false   // AnyPlay: панель продовження гри
             anchors.fill: parent
 
             Canvas {
+                visible: !menuContent.clientMenu
                 anchors.fill: parent
                 onWidthChanged: requestPaint()
                 onHeightChanged: requestPaint()
@@ -498,9 +502,23 @@ Item {
                 }
             }
 
+            // ── AnyPlay: просте меню гри для клієнта ──
+            AnyPlayStreamMenu {
+                id: clientPanel
+                visible: menuContent.clientMenu
+                anchors { fill: parent; leftMargin: 24; rightMargin: 24; topMargin: 8; bottomMargin: 18 }
+                onResume: menuController.close()
+                onExit: {
+                    if (Chiaki.session)
+                        Chiaki.window.close();
+                    else
+                        root.showMainView();
+                }
+            }
+
             // ── AnyPlay: продовжити гру, не виходячи з неї ──
             RowLayout {
-                visible: menuContent.extOpen
+                visible: menuContent.extOpen && !menuContent.clientMenu
                 anchors {
                     left: parent.left
                     right: parent.right
@@ -524,12 +542,12 @@ Item {
                     id: streamExtend
                     Layout.fillWidth: true
                     compact: true
-                    visible: menuContent.extOpen
+                    visible: menuContent.extOpen && !menuContent.clientMenu
                 }
             }
 
             RowLayout {
-                visible: !menuContent.extOpen
+                visible: !menuContent.extOpen && !menuContent.clientMenu
                 anchors {
                     left: parent.left
                     bottom: parent.bottom
@@ -845,7 +863,7 @@ Item {
                 }
                 text: "Мбіт/с"
                 font.pixelSize: 18
-                visible: Chiaki.session
+                visible: Chiaki.session && !menuContent.clientMenu
 
                 Label {
                     anchors {
@@ -867,6 +885,7 @@ Item {
                     verticalCenter: parent.verticalCenter
                     rightMargin: 30
                 }
+                visible: !menuContent.clientMenu
                 text: {
                     if (!Chiaki.session)
                         return "";
@@ -976,6 +995,7 @@ Item {
         height: streamMenuHeight
         open: useSeparateMenuWindow && menuController.open
         closing: useSeparateMenuWindow && menuController.closing
+        clientMenu: view.anyplayClientMenu
         onCloseRequested: menuController.close()
         onDisplaySettingsRequested: {
             menuController.close();
@@ -1385,6 +1405,9 @@ Item {
         function onConnectedChanged() {
             if (Chiaki.settings.audioVideoDisabled & 0x02)
                 sessionLoading = false;
+            // AnyPlay: підказка новачку — де меню, клавіші й вихід
+            if (Chiaki.session && Chiaki.session.connected && view.anyplayClientMenu)
+                anyplayStartHint.show();
         }
 
         // AnyPlay: show the control mode (on foot / vehicle / aircraft) for a moment when it changes
@@ -1393,6 +1416,28 @@ Item {
             anyplayProfileTimer.interval = anyplayProfileLabel.text.length > 14 ? 3200 : 1600;
             anyplayProfileTimer.restart();
         }
+    }
+
+    Rectangle {
+        id: anyplayStartHint
+        z: 100
+        function show() { opacity = 1; anyplayStartHintTimer.restart(); }
+        anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 30 }
+        width: anyplayStartHintText.implicitWidth + 40
+        height: anyplayStartHintText.implicitHeight + 20
+        radius: 14
+        color: "#d90b0618"
+        border.color: "#22e4ff"
+        opacity: 0
+        visible: opacity > 0 && !(menuController.open || menuController.closing)
+        Behavior on opacity { NumberAnimation { duration: 400 } }
+        Label {
+            id: anyplayStartHintText
+            anchors.centerIn: parent
+            font.pixelSize: 16; font.bold: true; color: "white"
+            text: qsTr("Меню гри — %1: там клавіші, продовження і вихід").arg(Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O")
+        }
+        Timer { id: anyplayStartHintTimer; interval: 12000; onTriggered: anyplayStartHint.opacity = 0 }
     }
 
     Label {
@@ -1419,4 +1464,5 @@ Item {
             onTriggered: anyplayProfileLabel.opacity = 0
         }
     }
+
 }

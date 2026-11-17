@@ -378,11 +378,45 @@ void AnyPlayCloud::uploadConsole()
 	body["host"] = host;
 	body["remote"] = remote;
 	body["label"] = host.value("server_nickname").toString();
+	body["psnName"] = QSettings().value(QStringLiteral("anyplay/psn_online_id")).toString();
 	request("POST", "/api/app/console", body, [this](int status, const QJsonObject &o) {
+		QString name = o.value("psnName").toString();
 		emit message(status == 200 && o.value("ok").toBool()
-			? tr("✅ PS5 і вхід PSN передано на сервер. Клієнти гратимуть через нього.")
+			? (name.isEmpty() ? tr("✅ PS5 і вхід PSN передано на сервер. Клієнти гратимуть через нього.")
+			                  : tr("✅ Спільний акаунт «%1» передано на сервер. Клієнти гратимуть через нього.").arg(name))
 			: tr("Не вдалося передати PS5 на сервер (помилка %1).").arg(status));
+		refreshAdmin();
 	});
+}
+
+void AnyPlayCloud::adminDropShared()
+{
+	if(!admin_)
+		return;
+	QJsonObject body;
+	body["action"] = "drop_shared";
+	request("POST", "/api/app/admin", body, [this](int status, const QJsonObject &o) {
+		emit message(status == 200 && o.value("ok").toBool()
+			? tr("🗑 Спільний акаунт прибрано з сервера. Клієнти не зможуть грати, доки не передаси новий (кроки 1–3).")
+			: tr("Не вдалося прибрати акаунт (помилка %1).").arg(status));
+		refreshAdmin();
+	});
+}
+
+QString AnyPlayCloud::localPsnName() const
+{
+	if(settings->GetPsnRefreshToken().isEmpty() || settings->GetPsnAccountId().isEmpty())
+		return QString();
+	QString name = QSettings().value(QStringLiteral("anyplay/psn_online_id")).toString();
+	return name.isEmpty() ? tr("акаунт PSN") : name;
+}
+
+QString AnyPlayCloud::localConsoleName() const
+{
+	for(const RegisteredHost &h : settings->GetRegisteredHosts())
+		if(chiaki_target_is_ps5(h.GetTarget()))
+			return h.GetServerNickname().isEmpty() ? QStringLiteral("PS5") : h.GetServerNickname();
+	return QString();
 }
 
 void AnyPlayCloud::refreshAdmin()

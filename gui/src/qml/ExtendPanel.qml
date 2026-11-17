@@ -20,9 +20,30 @@ ColumnLayout {
     readonly property bool bank: curMethod === "uah" || curMethod === "pln"
     property string status: ""
     property bool statusOk: true
+    // чим закінчилась остання оплата: "" | paid | rejected | expired — щоб було видно однозначно
+    property var lastPending: null
+    property string verdict: ""
+    property double paidEnd: 0
+    onInfoChanged: {
+        if (pending) {
+            lastPending = pending;
+            verdict = "";
+        } else if (lastPending && info.active !== undefined) {
+            if (info.active && info.end >= lastPending.end) { verdict = "paid"; paidEnd = info.end; status = ""; }
+            else if (lastPending.status === "pending_review") { verdict = "rejected"; status = ""; }
+            else verdict = "expired";
+            lastPending = null;
+        }
+    }
     spacing: compact ? 6 : 12
 
     function reload() { status = ""; cloud.loadExtend(); }
+    // поки оплата не підтверджена — перепитуємо сервер, щоб статус змінився сам
+    Timer {
+        interval: 5000; repeat: true
+        running: panel.visible && !!panel.pending
+        onTriggered: panel.cloud.loadExtend()
+    }
     function priceFor(o) { return (o.prices && o.prices[panel.curMethod]) ? o.prices[panel.curMethod] : o.price; }
     function hoursOf(p) { return Math.round((p.end - p.start) / 3600); }
     onVisibleChanged: if (visible) reload()
@@ -38,8 +59,62 @@ ColumnLayout {
         text: qsTr("⏱ Продовжити гру")
         font.pixelSize: 24; font.bold: true; color: "white"
     }
+    // ── стан оплати одним рядком: не оплачено / перевіряємо / оплачено / відхилено ──
+    Rectangle {
+        id: payState
+        readonly property string kind: panel.pending ? (panel.pending.status === "pending_review" ? "review" : "hold") : panel.verdict
+        visible: kind !== ""
+        Layout.fillWidth: true
+        radius: 14
+        implicitHeight: payStateRow.implicitHeight + (panel.compact ? 14 : 22)
+        color: kind === "paid" ? "#143d2a" : (kind === "review" ? "#3d3214" : (kind === "hold" ? "#1f1240" : "#3d1420"))
+        border.width: 2
+        border.color: kind === "paid" ? "#3dff9a" : (kind === "review" ? "#ffd23f" : (kind === "hold" ? "#22e4ff" : "#ff4d6d"))
+        RowLayout {
+            id: payStateRow
+            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: panel.compact ? 12 : 16 }
+            spacing: 12
+            BusyIndicator {
+                visible: payState.kind === "review"
+                running: visible
+                Layout.preferredWidth: 28; Layout.preferredHeight: 28
+                Material.accent: "#ffd23f"
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    font.pixelSize: panel.compact ? 16 : 18; font.bold: true; color: "white"
+                    text: {
+                        const p = panel.pending;
+                        if (payState.kind === "review")
+                            return qsTr("⏳ Оплату ще НЕ підтверджено — перевіряємо платіж %1").arg(p.price);
+                        if (payState.kind === "hold")
+                            return qsTr("💳 Ще не оплачено: +%1 год (%2–%3) · %4").arg(panel.hoursOf(p))
+                                .arg(panel.cloud.formatTime(p.start)).arg(panel.cloud.formatTime(p.end)).arg(p.price);
+                        if (payState.kind === "paid")
+                            return qsTr("✅ Оплачено — гру продовжено до %1").arg(panel.cloud.formatTime(panel.paidEnd));
+                        if (payState.kind === "rejected")
+                            return qsTr("❌ Оплату не підтверджено — час не додано");
+                        return qsTr("⌛ Час на оплату минув — продовження скасовано");
+                    }
+                }
+                Label {
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    font.pixelSize: 13; color: "#d8cdea"
+                    text: payState.kind === "review" ? qsTr("Гра триває. Щойно платіж знайдеться — тут з'явиться «✅ Оплачено», час додасться сам, а в бот прийде повідомлення.")
+                        : payState.kind === "hold" ? qsTr("Час закріплено за тобою на кілька хвилин. Оплати точну суму й натисни «✅ Я оплатив».")
+                        : payState.kind === "paid" ? qsTr("Підтвердження також прийшло тобі в бот. Можна грати далі.")
+                        : payState.kind === "rejected" ? qsTr("Ми не знайшли цей платіж. Якщо ти платив — напиши нам у боті: «🆘 Допомога».")
+                        : qsTr("Можеш обрати час ще раз нижче.")
+                }
+            }
+        }
+    }
     Label {
         Layout.fillWidth: true
+        visible: !panel.pending
         wrapMode: Text.WordWrap
         font.pixelSize: panel.compact ? 14 : 15
         color: "#bfaed8"
@@ -94,7 +169,7 @@ ColumnLayout {
                 focusPolicy: Qt.StrongFocus
                 enabled: modelData.free
                 Layout.preferredWidth: panel.compact ? 150 : 170
-                Layout.preferredHeight: panel.compact ? 56 : 66
+                Layout.preferredHeight: panel.compact ? 62 : 66
                 onClicked: { panel.status = qsTr("Закріплюємо час…"); panel.statusOk = true; panel.cloud.extend(modelData.hours, panel.curMethod); }
                 Keys.onReturnPressed: clicked()
                 contentItem: ColumnLayout {

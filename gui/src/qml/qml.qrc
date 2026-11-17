@@ -7,6 +7,7 @@
         <file>ExtendPanel.qml</file>
         <file>BookPanel.qml</file>
         <file>AnyPlayPsnLogin.qml</file>
+        <file>AnyPlayStreamMenu.qml</file>
     <file>StreamView.qml</file>
     <file>StreamMenuWindow.qml</file>
     <file>ConfirmDialog.qml</file>

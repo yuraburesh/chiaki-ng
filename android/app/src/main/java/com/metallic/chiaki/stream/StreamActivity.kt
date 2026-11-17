@@ -10,6 +10,7 @@ import android.os.*
 import android.view.*
 import android.widget.EditText
 import android.widget.FrameLayout
+import com.metallic.chiaki.anyplay.AnyPlayWebDialog
 import com.metallic.chiaki.anyplay.GamepadView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.IntentCompat
@@ -333,12 +334,14 @@ class StreamActivity : AppCompatActivity()
 		MaterialAlertDialogBuilder(this)
 			.setTitle("Меню гри")
 			.setItems(arrayOf(
+				"⏱ Продовжити гру",
 				if(controls) "Сховати кнопки на екрані (граю з геймпадом)" else "Показати кнопки на екрані",
 				"Вийти з гри")) { _, which ->
 				when(which)
 				{
-					0 -> viewModel.setOnScreenControlsEnabled(!controls)
-					1 -> finish()
+					0 -> AnyPlayWebDialog(this, "extend") { hideSystemUI() }.show()
+					1 -> viewModel.setOnScreenControlsEnabled(!controls)
+					2 -> finish()
 				}
 			}
 			.setNegativeButton("Закрити", null)

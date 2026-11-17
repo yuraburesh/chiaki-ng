@@ -58,7 +58,8 @@ class AnyPlayActivity: AppCompatActivity()
 		}
 		binding.primaryButton.setOnClickListener { primaryClicked() }
 		binding.secondaryButton.setOnClickListener { secondaryClicked() }
-		binding.tileBooking.setOnClickListener { openBot() }
+		binding.tileBooking.setOnClickListener { openWeb("book") }
+		binding.tilePsn.setOnClickListener { openWeb("psn") }
 		binding.tileSupport.setOnClickListener { openBot() }
 		binding.tileQuality.setOnClickListener { chooseQuality() }
 
@@ -230,6 +231,7 @@ class AnyPlayActivity: AppCompatActivity()
 			"pairing" -> cancelLogin()
 			"play" -> play()
 			"offline" -> lifecycleScope.launch { refresh() }
+			"wait" -> openWeb(if((session.optJSONObject("next")?.optLong("start") ?: 0L) > 0) "mine" else "book")
 			else -> openBot()
 		}
 	}
@@ -237,7 +239,18 @@ class AnyPlayActivity: AppCompatActivity()
 	private fun secondaryClicked()
 	{
 		if(state == "play")
-			openBot()
+			openWeb(if(session.optJSONObject("booking") != null) "extend" else "book")
+	}
+
+	/** Бронювання, продовження, «Мій PSN» — вбудовані екрани */
+	private fun openWeb(page: String)
+	{
+		if(!loggedIn)
+		{
+			toast("Спершу увійди через Telegram.")
+			return
+		}
+		AnyPlayWebDialog(this, page) { lifecycleScope.launch { refresh() } }.show()
 	}
 
 	// ── якість ──
@@ -301,6 +314,13 @@ class AnyPlayActivity: AppCompatActivity()
 		binding.userLabel.text = if(loggedIn && user.isNotEmpty()) "👤 $user" else ""
 		binding.logoutButton.visibility = if(loggedIn) View.VISIBLE else View.GONE
 		binding.tileQuality.text = "🎚\nЯкість: ${currentQuality().title}"
+		val myPsn = session.optString("myPsn")
+		binding.tilePsn.text = when
+		{
+			myPsn.isEmpty() -> "🎮\nМій PSN: підключити"
+			session.optBoolean("myPsnReady") -> "🎮\nМій PSN: $myPsn"
+			else -> "🎮\nМій PSN: підключається"
+		}
 		binding.secondaryButton.visibility = View.GONE
 		binding.cardProgress.visibility = View.GONE
 		binding.cardKicker.text = if(session.optBoolean("admin")) "ПАНЕЛЬ АДМІНА" else "ТВОЯ ГРА"
@@ -341,7 +361,7 @@ class AnyPlayActivity: AppCompatActivity()
 				binding.cardText.text = lines.joinToString("\n")
 				binding.cardProgress.visibility = if(busy) View.VISIBLE else View.GONE
 				binding.primaryButton.text = "▶  Грати"
-				binding.secondaryButton.text = "📅 Забронювати ще"
+				binding.secondaryButton.text = if(booking != null) "⏱ Продовжити гру" else "📅 Забронювати час"
 				binding.secondaryButton.visibility = View.VISIBLE
 			}
 			"no_console" ->
@@ -370,12 +390,12 @@ class AnyPlayActivity: AppCompatActivity()
 				{
 					binding.cardTitle.text = "Твоя бронь: ${formatTime(start)}"
 					binding.cardText.text = "Грати можна з ${formatTime(start)} до ${formatTime(end)}. Кнопка «Грати» з'явиться тут сама."
-					binding.primaryButton.text = "📅 Мої броні в боті"
+					binding.primaryButton.text = "📅 Мої броні"
 				}
 				else
 				{
 					binding.cardTitle.text = "Броні поки немає"
-					binding.cardText.text = "Забронюй час у боті AnyPlay. Коли він настане, тут з'явиться кнопка «Грати»."
+					binding.cardText.text = "Забронюй час прямо тут. Коли він настане, з'явиться кнопка «Грати»."
 					binding.primaryButton.text = "📅 Забронювати"
 				}
 			}

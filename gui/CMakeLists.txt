@@ -30,6 +30,8 @@ set(SOURCE_FILES
 	src/anyplayinput.cpp
 	include/anyplaycloud.h
 	src/anyplaycloud.cpp
+	include/anyplaybrowser.h
+	src/anyplaybrowser.cpp
 	include/sessionlog.h
 	src/sessionlog.cpp
 	include/settings.h

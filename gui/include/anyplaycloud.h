@@ -32,6 +32,10 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(bool myPsnQr READ myPsnQr NOTIFY changed)              // адмін надіслав QR для входу на PS5
 	Q_PROPERTY(bool myPsnLinked READ myPsnLinked NOTIFY changed)      // клієнт уже увійшов у PSN у програмі
 	Q_PROPERTY(QString qrUrl READ qrUrl NOTIFY changed)
+	Q_PROPERTY(QString myPsnCode READ myPsnCode NOTIFY changed)       // код для входу на PS5 цифрами (від адміна)
+	Q_PROPERTY(QString myPsnLink READ myPsnLink NOTIFY changed)       // сторінка Sony для цього входу (якщо відома)
+	Q_PROPERTY(QString playPsn READ playPsn NOTIFY changed)           // під яким акаунтом PSN зараз пускає приставка
+	Q_PROPERTY(bool playOwn READ playOwn NOTIFY changed)              // true — це власний акаунт клієнта
 	Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)                // іде прив'язка / перевірка
 	Q_PROPERTY(QVariantMap extendInfo READ extendInfo NOTIFY extendChanged) // продовження: варіанти, ціни, заявка
 	Q_PROPERTY(QVariantMap adminInfo READ adminInfo NOTIFY adminChanged) // адмін: хто грає, найближчі броні, доступ
@@ -62,6 +66,10 @@ public:
 	bool myPsnQr() const { return my_psn_qr_; }
 	bool myPsnLinked() const { return my_psn_linked_; }
 	QString qrUrl() const;
+	QString myPsnCode() const { return my_psn_code_; }
+	QString myPsnLink() const { return my_psn_link_; }
+	QString playPsn() const { return play_psn_; }
+	bool playOwn() const { return play_own_; }
 	bool busy() const { return busy_; }
 
 	Q_INVOKABLE void login();
@@ -86,6 +94,8 @@ public:
 	Q_INVOKABLE void adminDropShared();              // адмін: прибрати спільний акаунт PSN із сервера
 	Q_INVOKABLE QString localPsnName() const;        // під яким акаунтом PSN увійдено в цій програмі ("" — не увійдено)
 	Q_INVOKABLE QString localConsoleName() const;    // PS5, прив'язана в цій програмі ("" — немає)
+	Q_INVOKABLE int localRegistState() const;        // 0 — PS5 не прив'язана, 1 — прив'язана під поточним входом PSN, 2 — під іншим або невідомо
+	Q_INVOKABLE void openMyPsnLink();                // клієнт: відкрити сторінку Sony для входу на приставці
 	Q_INVOKABLE void loadBook();                                               // екран бронювання
 	Q_INVOKABLE void loadBookStarts(const QString &day, const QString &code);   // вільний час на день
 	Q_INVOKABLE void book(qint64 start, const QString &code, const QString &method);
@@ -131,7 +141,8 @@ private:
 	bool book_starts_loading_ = false;
 	int book_polls_ = 0;
 	QTimer book_timer;
-	QString my_psn_status_;
+	QString my_psn_status_, my_psn_code_, my_psn_link_, play_psn_;
+	bool play_own_ = false;
 	bool my_psn_qr_ = false, my_psn_linked_ = false, busy_ = false, psn_login_active_ = false;
 	int qr_rev_ = 0, psn_wait_tries_ = 0, pay_polls_ = 0;
 	QTimer psn_wait_timer, pay_timer;

@@ -493,7 +493,7 @@ Pane {
                             case "pairing": return qsTr("Підтверди вхід у Telegram — натисни «Start» у боті");
                             case "offline": return qsTr("Немає зв'язку із сервером AnyPlay");
                             case "no_console": return qsTr("Приставка ще не підключена до сервера");
-                            case "play": return c.admin ? qsTr("Режим адміна · %1").arg(c.userName)
+                            case "play": return c.admin ? qsTr("Режим адміна: %1").arg(c.userName)
                                                         : qsTr("Можна грати! Лишилось %1").arg(anyplayPanel.left());
                             default: return c.nextStart ? qsTr("Твоя гра: %1–%2").arg(c.formatTime(c.nextStart)).arg(c.formatTime(c.nextEnd))
                                                         : qsTr("Немає оплачених броней");

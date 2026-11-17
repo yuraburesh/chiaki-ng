@@ -212,9 +212,19 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 			qr_rev_++;
 		if(st == "ready" && my_psn_status_ != "ready" && !my_psn_status_.isEmpty())
 			emit message(tr("✅ Твій акаунт PSN підключено — можна грати на своєму акаунті!"));
+		QString code = o.value("myPsnCode").toString(), link = o.value("myPsnLink").toString();
+		if(st == "qr_sent" && !qr && (code != my_psn_code_ || link != my_psn_link_) && !(code.isEmpty() && link.isEmpty()))
+			qr_rev_++;   // код цифрами теж відкриває вікно «Мій PSN»
+		my_psn_code_ = code;
+		my_psn_link_ = link;
 		my_psn_status_ = st;
 		my_psn_qr_ = qr;
 		my_psn_linked_ = o.value("myPsnLinked").toBool();
+	}
+	{
+		QJsonObject con = o.value("console").toObject();
+		play_psn_ = con.value("psn").toString();
+		play_own_ = con.value("own").toBool();
 	}
 	if(admin_)
 		refreshAdmin();
@@ -283,7 +293,7 @@ void AnyPlayCloud::heartbeat()
 		{
 			QString reason = o.value("reason").toString() == "kicked"
 				? tr("Сеанс завершив адміністратор AnyPlay.")
-				: tr("Час твоєї броні вийшов — дякуємо за гру! Продовжити можна в боті.");
+				: tr("Час твоєї броні вийшов — дякуємо за гру! Забронювати ще можна тут, кнопкою «Бронювання».");
 			stopPlay(reason);
 			refresh();
 			return;
@@ -368,6 +378,13 @@ void AnyPlayCloud::uploadConsole()
 		emit message(tr("Спершу увійди в PSN акаунтом, під яким гратимуть клієнти (Налаштування → Віддалено)."));
 		return;
 	}
+	// приставка пускає в той профіль, під яким на ній згенеровано код прив'язки — він має збігатися з входом у PSN
+	QString regist_account = QSettings().value(QStringLiteral("anyplay/regist_account")).toString();
+	if(regist_account != settings->GetPsnAccountId())
+	{
+		emit message(tr("Приставку прив'язано під іншим профілем PS5, ніж вхід у PSN. Зроби крок 2: на PS5 перемкнись на потрібний профіль і прив'яжи приставку заново."));
+		return;
+	}
 	QJsonObject remote;
 	remote["refresh_token"] = settings->GetPsnRefreshToken();
 	remote["auth_token"] = settings->GetPsnAuthToken();
@@ -379,11 +396,14 @@ void AnyPlayCloud::uploadConsole()
 	body["remote"] = remote;
 	body["label"] = host.value("server_nickname").toString();
 	body["psnName"] = QSettings().value(QStringLiteral("anyplay/psn_online_id")).toString();
+	body["registAccount"] = regist_account;
 	request("POST", "/api/app/console", body, [this](int status, const QJsonObject &o) {
 		QString name = o.value("psnName").toString();
 		emit message(status == 200 && o.value("ok").toBool()
 			? (name.isEmpty() ? tr("✅ PS5 і вхід PSN передано на сервер. Клієнти гратимуть через нього.")
 			                  : tr("✅ Спільний акаунт «%1» передано на сервер. Клієнти гратимуть через нього.").arg(name))
+			: o.value("error").toString() == "regist_mismatch"
+			? tr("Приставку прив'язано під іншим профілем PS5, ніж вхід у PSN. Прив'яжи її заново (крок 2).")
 			: tr("Не вдалося передати PS5 на сервер (помилка %1).").arg(status));
 		refreshAdmin();
 	});
@@ -409,6 +429,31 @@ QString AnyPlayCloud::localPsnName() const
 		return QString();
 	QString name = QSettings().value(QStringLiteral("anyplay/psn_online_id")).toString();
 	return name.isEmpty() ? tr("акаунт PSN") : name;
+}
+
+int AnyPlayCloud::localRegistState() const
+{
+	if(localConsoleName().isEmpty())
+		return 0;
+	QString acc = QSettings().value(QStringLiteral("anyplay/regist_account")).toString();
+	return !acc.isEmpty() && acc == settings->GetPsnAccountId() ? 1 : 2;
+}
+
+void AnyPlayCloud::openMyPsnLink()
+{
+	// посилання приходить із сервера (його розпізнано з QR-коду приставки) — відкриваємо лише сайти Sony
+	QUrl url(my_psn_link_);
+	QString host = url.host().toLower();
+	bool sony = false;
+	for(const char *h : {"playstation.com", "sony.com", "playstation.net", "sonyentertainmentnetwork.com"})
+		if(host == QLatin1String(h) || host.endsWith(QLatin1Char('.') + QLatin1String(h)))
+			sony = true;
+	if(url.scheme() != QLatin1String("https") || !sony)
+	{
+		emit message(tr("Посилання для входу недоступне — відскануй QR-код телефоном."));
+		return;
+	}
+	QDesktopServices::openUrl(url);
 }
 
 QString AnyPlayCloud::localConsoleName() const
@@ -496,7 +541,7 @@ void AnyPlayCloud::extend(int hours, const QString &method)
 			emit extendResult(false, e == "busy" ? tr("На жаль, наступні %1 год уже хтось забронював. Спробуй менше годин.").arg(hours)
 				: e == "no_session" ? tr("Продовжити можна лише під час своєї гри.")
 				: e == "pending" ? tr("Твою оплату продовження вже перевіряють — зачекай трохи.")
-				: tr("Не вдалося продовжити (помилка %1). Спробуй у боті.").arg(status));
+				: tr("Не вдалося продовжити (помилка %1). Спробуй ще раз за хвилину.").arg(status));
 		}
 		loadExtend();
 	});
@@ -599,9 +644,14 @@ void AnyPlayCloud::cancelBooking(qint64 bookingId)
 	QJsonObject body;
 	body["bookingId"] = bookingId;
 	request("POST", "/api/app/book/cancel", body, [this](int status, const QJsonObject &o) {
-		emit bookResult(status == 200 && o.value("ok").toBool(),
-			status == 200 && o.value("ok").toBool() ? tr("Бронь скасовано, час звільнено.")
-			: tr("Цю бронь уже не можна скасувати тут — напиши в підтримку в боті."));
+		bool ok = status == 200 && o.value("ok").toBool();
+		QString text = o.value("text").toString();   // сервер точно знає: була оплата чи ні, і куди повертати
+		if(text.isEmpty())
+			text = ok ? tr("Бронь скасовано, час звільнено.")
+			          : tr("Цю бронь уже не можна скасувати: до початку лишилось надто мало часу.");
+		emit bookResult(ok, text);
+		if(o.value("refund").toString() == QLatin1String("bot"))
+			openBot();   // оплачена бронь: бот питає, куди повернути кошти
 		loadBook();
 		loadExtend();
 		refresh();
@@ -707,7 +757,7 @@ void AnyPlayCloud::myPsnDone()
 {
 	request("POST", "/api/app/psn/done", QJsonObject(), [this](int status, const QJsonObject &o) {
 		emit message(status == 200 && o.value("ok").toBool()
-			? tr("Дякуємо! Адміністратор завершує підключення — ще 1–2 хвилини.")
+			? tr("Дякуємо! Адміністратор завершує підключення приставки до твого акаунта — ще 1–2 хвилини.")
 			: tr("Не вдалося надіслати (помилка %1).").arg(status));
 		refresh();
 	});

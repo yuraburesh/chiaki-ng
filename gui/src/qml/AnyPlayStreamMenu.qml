@@ -32,7 +32,7 @@ Rectangle {
         if (!(Chiaki.cloud.endTs > 0) || sec <= 0)
             return "";
         const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60;
-        return qsTr("Лишилось %1 · гра до %2").arg((h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(x).padStart(2, "0")).arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs));
+        return qsTr("Лишилось %1, гра до %2").arg((h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(x).padStart(2, "0")).arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs));
     }
     // головні клавіші: беремо справжні призначення (з урахуванням змін клієнта)
     function keyRows() {
@@ -89,7 +89,7 @@ Rectangle {
             Label {
                 visible: !!Chiaki.session
                 color: "#bfaed8"; font.pixelSize: 13
-                text: Chiaki.session ? qsTr("Зв'язок: %1 Мбіт/с · втрати %2%").arg(Chiaki.session.measuredBitrate.toFixed(1))
+                text: Chiaki.session ? qsTr("Зв'язок: %1 Мбіт/с, втрати %2%").arg(Chiaki.session.measuredBitrate.toFixed(1))
                     .arg((((isFinite(Chiaki.session.averagePacketLoss)) ? Chiaki.session.averagePacketLoss : 0) * 100).toFixed(1)) : ""
             }
         }

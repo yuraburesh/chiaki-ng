@@ -142,7 +142,7 @@ AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 			return;
 		StopPending();
 		// no confirmation: stay on foot, but tell how to switch by hand if the player did get in
-		hint = QStringLiteral("%1 · якщо ти вже в транспорті — натисни F2").arg(ProfileName(current_profile));
+		hint = QStringLiteral("%1. Якщо ти вже в транспорті, натисни F2").arg(ProfileName(current_profile));
 		emit ProfileChanged(StatusText());
 	});
 }
@@ -371,7 +371,7 @@ void AnyPlayInput::SwitchProfile(const QString &target)
 				return;
 			}
 			SetProfile(QStringLiteral("vehicle"),
-				QStringLiteral("%1 · F — назад «%2»").arg(ProfileName(QStringLiteral("vehicle")), ProfileName(QStringLiteral("foot"))));
+				QStringLiteral("%1. F — назад «%2»").arg(ProfileName(QStringLiteral("vehicle")), ProfileName(QStringLiteral("foot"))));
 			return;
 		}
 		SetProfile(QStringLiteral("foot"), QString());

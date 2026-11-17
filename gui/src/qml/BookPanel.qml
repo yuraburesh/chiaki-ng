@@ -28,6 +28,7 @@ ColumnLayout {
     property bool choosing: false          // true — показуємо вибір часу, навіть якщо є неоплачена бронь
     property string status: ""
     property bool statusOk: true
+    property double confirmId: 0           // бронь, для якої зараз питаємо «точно скасувати?»
     readonly property string curMethod: method !== "" ? method : (methods.length ? methods[0].code : "")
     readonly property var tariff: {
         for (let i = 0; i < tariffs.length; i++)
@@ -58,14 +59,14 @@ ColumnLayout {
         const d = new Date(a * 1000), now = new Date();
         const same = d.toDateString() === now.toDateString();
         const day = same ? qsTr("сьогодні") : (d.getDate() + "." + String(d.getMonth() + 1).padStart(2, "0"));
-        return day + " · " + hhmm(a) + "–" + hhmm(b);
+        return day + ", " + hhmm(a) + "–" + hhmm(b);
     }
     function statusText(s) {
         return s === "hold" ? qsTr("чекає оплату") : s === "pending_review" ? qsTr("перевіряємо оплату")
              : s === "active" ? qsTr("йде гра") : qsTr("оплачено ✅");
     }
 
-    onVisibleChanged: if (visible) { choosing = false; reload(); }
+    onVisibleChanged: if (visible) { choosing = false; confirmId = 0; reload(); }
     Component.onCompleted: if (visible) reload()
     onDayIndexChanged: loadStarts()
     onCodeChanged: loadStarts()
@@ -75,12 +76,19 @@ ColumnLayout {
         target: panel.cloud
         function onBookResult(ok, text) {
             panel.status = text; panel.statusOk = ok;
+            panel.confirmId = 0;
             if (ok) panel.choosing = false;
             panel.loadStarts();
         }
     }
 
     Label { text: qsTr("📅 Бронювання"); font.pixelSize: 24; font.bold: true; color: "white" }
+    Label {
+        Layout.fillWidth: true; wrapMode: Text.WordWrap
+        visible: panel.mine.length > 0 && !panel.showPay
+        color: "#bfaed8"; font.pixelSize: 14
+        text: qsTr("Твої броні (%1) і їх скасування — внизу цього вікна. Тут можна забронювати ще.").arg(panel.mine.length)
+    }
 
     Label {
         Layout.fillWidth: true; wrapMode: Text.WordWrap
@@ -102,7 +110,7 @@ ColumnLayout {
             Label {
                 Layout.fillWidth: true; wrapMode: Text.WordWrap
                 color: "white"; font.pixelSize: 16; font.bold: true
-                text: panel.payItem ? qsTr("%1 · %2").arg(panel.payItem.title).arg(panel.rangeText(panel.payItem.start, panel.payItem.end)) : ""
+                text: panel.payItem ? qsTr("%1, %2").arg(panel.payItem.title).arg(panel.rangeText(panel.payItem.start, panel.payItem.end)) : ""
             }
             Label {
                 Layout.fillWidth: true; wrapMode: Text.WordWrap
@@ -268,7 +276,7 @@ ColumnLayout {
             enabled: panel.start > 0 && !!panel.tariff && !panel.cloud.busy
             font.pixelSize: 19; font.bold: true
             text: panel.start > 0 && panel.tariff
-                ? qsTr("Забронювати %1–%2 · %3").arg(panel.hhmm(panel.start)).arg(panel.hhmm(panel.start + panel.tariff.hours * 3600)).arg(panel.tariff.prices[panel.curMethod] || "")
+                ? qsTr("Забронювати %1–%2 за %3").arg(panel.hhmm(panel.start)).arg(panel.hhmm(panel.start + panel.tariff.hours * 3600)).arg(panel.tariff.prices[panel.curMethod] || "")
                 : qsTr("Обери час початку")
             onClicked: panel.cloud.book(panel.start, panel.code, panel.curMethod)
             contentItem: Label {
@@ -312,20 +320,78 @@ ColumnLayout {
         Label { text: qsTr("Мої броні"); color: "white"; font.pixelSize: 17; font.bold: true; Layout.topMargin: 6 }
         Repeater {
             model: panel.mine
-            RowLayout {
+            Rectangle {
+                id: mineCard
                 required property var modelData
+                readonly property bool asking: panel.confirmId === modelData.id
                 Layout.fillWidth: true
-                spacing: 10
-                Label {
-                    Layout.fillWidth: true
-                    elide: Text.ElideRight
-                    color: "white"; font.pixelSize: 15
-                    text: qsTr("%1 · %2 · %3").arg(panel.rangeText(modelData.start, modelData.end)).arg(modelData.title).arg(modelData.price)
-                }
-                Label {
-                    font.pixelSize: 14
-                    color: modelData.status === "hold" ? "#ffd23f" : (modelData.status === "pending_review" ? "#22e4ff" : "#3dff9a")
-                    text: panel.statusText(modelData.status)
+                radius: 14; color: "#1f1240"; border.color: "#22ffffff"
+                implicitHeight: mineCol.implicitHeight + 22
+                ColumnLayout {
+                    id: mineCol
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 11 }
+                    spacing: 4
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Label {
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                            color: "white"; font.pixelSize: 16; font.bold: true
+                            text: { const t = panel.rangeText(mineCard.modelData.start, mineCard.modelData.end); return t.charAt(0).toUpperCase() + t.slice(1); }
+                        }
+                        Label {
+                            font.pixelSize: 14
+                            color: mineCard.modelData.status === "hold" ? "#ffd23f" : (mineCard.modelData.status === "pending_review" ? "#22e4ff" : "#3dff9a")
+                            text: panel.statusText(mineCard.modelData.status)
+                        }
+                    }
+                    Label {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                        color: "#d8cdea"; font.pixelSize: 14
+                        text: qsTr("%1, %2").arg(mineCard.modelData.title).arg(mineCard.modelData.price)
+                    }
+                    Label {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                        visible: !!mineCard.modelData.extPending
+                        color: "#ffd23f"; font.pixelSize: 13
+                        text: mineCard.modelData.extPending
+                            ? (mineCard.modelData.extPending.status === "hold"
+                                ? qsTr("Продовження до %1 (%2) ще не оплачено.") : qsTr("Продовження до %1 (%2): перевіряємо оплату."))
+                                .arg(panel.hhmm(mineCard.modelData.extPending.end)).arg(mineCard.modelData.extPending.price)
+                            : ""
+                    }
+                    Label {   // правило скасування: до якого часу можна і що буде з оплатою
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                        visible: !!mineCard.modelData.cancelNote && !mineCard.asking
+                        color: "#bfaed8"; font.pixelSize: 13
+                        text: mineCard.modelData.cancelNote || ""
+                    }
+                    Button {
+                        visible: !!mineCard.modelData.canCancel && !mineCard.asking
+                        flat: true
+                        text: qsTr("Скасувати бронь")
+                        onClicked: panel.confirmId = mineCard.modelData.id
+                    }
+                    Label {
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                        visible: mineCard.asking
+                        color: "white"; font.pixelSize: 14
+                        text: mineCard.modelData.cancelKind === "refund"
+                            ? qsTr("Скасувати цю бронь? Ти її оплатив, тому ми повернемо %1. Бот у Telegram запитає, куди повернути кошти.").arg(mineCard.modelData.price)
+                            : qsTr("Скасувати цю бронь? Оплати за неї не було, тож повертати нічого не треба.")
+                    }
+                    RowLayout {
+                        visible: mineCard.asking
+                        spacing: 10
+                        Button {
+                            highlighted: true
+                            Material.accent: "#ff4d6d"
+                            text: qsTr("Так, скасувати")
+                            onClicked: panel.cloud.cancelBooking(mineCard.modelData.id)
+                        }
+                        Button { flat: true; text: qsTr("Ні, лишити"); onClicked: panel.confirmId = 0 }
+                    }
                 }
             }
         }

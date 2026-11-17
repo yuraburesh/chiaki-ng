@@ -16,7 +16,7 @@ DialogView {
         if(expired)
             qsTr("Вхід у PSN застарів — увійди ще раз (сторінка Sony)")
         else
-            qsTr("Вхід у PSN · офіційна сторінка Sony")
+            qsTr("Вхід у PSN: офіційна сторінка Sony")
     }
     buttonText: qsTr("Налаштувати")
     buttonEnabled: url.text.trim()

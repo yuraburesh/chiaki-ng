@@ -105,7 +105,7 @@ ColumnLayout {
                         if (payState.kind === "review")
                             return qsTr("⏳ Оплату ще НЕ підтверджено — перевіряємо платіж %1").arg(p.price);
                         if (payState.kind === "hold")
-                            return qsTr("💳 Ще не оплачено: +%1 год (%2–%3) · %4").arg(panel.hoursOf(p))
+                            return qsTr("💳 Ще не оплачено: +%1 год (%2–%3), %4").arg(panel.hoursOf(p))
                                 .arg(panel.cloud.formatTime(p.start)).arg(panel.cloud.formatTime(p.end)).arg(p.price);
                         if (payState.kind === "paid")
                             return qsTr("✅ Оплачено — гру продовжено до %1").arg(panel.cloud.formatTime(panel.paidEnd));
@@ -120,7 +120,7 @@ ColumnLayout {
                     text: payState.kind === "review" ? qsTr("Гра триває. Щойно платіж знайдеться — тут з'явиться «✅ Оплачено», час додасться сам, а в бот прийде повідомлення.")
                         : payState.kind === "hold" ? qsTr("Продовження ще не оформлено. Оплати точну суму й натисни «✅ Я оплатив» — або скасуй, якщо передумав.")
                         : payState.kind === "paid" ? qsTr("Підтвердження також прийшло тобі в бот. Можна грати далі.")
-                        : payState.kind === "rejected" ? qsTr("Ми не знайшли цей платіж. Якщо ти платив — напиши нам у боті: «🆘 Допомога».")
+                        : payState.kind === "rejected" ? qsTr("Ми не знайшли цей платіж. Якщо ти платив, напиши нам у Telegram: кнопка «🆘 Допомога» в боті.")
                         : qsTr("Можеш обрати час ще раз нижче.")
                 }
             }
@@ -135,7 +135,7 @@ ColumnLayout {
         text: {
             const i = panel.info;
             if (i.active === undefined) return qsTr("Завантажуємо…");
-            if (!i.active) return qsTr("Продовжити можна лише під час своєї гри. Нову бронь — у боті.");
+            if (!i.active) return qsTr("Продовжити можна лише під час своєї гри. Нову бронь можна зробити тут же: кнопка «Бронювання» на головному екрані.");
             if (i.closed) return qsTr("Зараз триває обслуговування — продовження тимчасово недоступне.");
             if (panel.pending && panel.pending.status === "pending_review")
                 return qsTr("⏳ Перевіряємо оплату %1 (%2–%3). Гра триває — коли оплата знайдеться, час додасться сам.")

@@ -32,6 +32,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>For mic support, chiaki-ng requires access to your microphone.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>AnyPlay зчитує з браузера лише адресу сторінки «redirect» після входу в PlayStation Network, щоб її не довелося копіювати вручну.</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.games</string>
 </dict>

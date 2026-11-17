@@ -3,6 +3,7 @@
 #include "streamsession.h"
 #include "discoverymanager.h"
 #include "qmlmainwindow.h"
+#include "anyplaybrowser.h"
 #include "qmlcontroller.h"
 #include "qmlsettings.h"
 #include "anyplaycloud.h"
@@ -201,6 +202,14 @@ public:
     Q_INVOKABLE void stopAutoConnect();
     Q_INVOKABLE void setConsolePin(int index, QString console_pin);
     Q_INVOKABLE QString openPsnLink();
+    // AnyPlay: вхід або реєстрація на сайті Sony; сторінку «redirect» програма підхоплює сама
+    Q_INVOKABLE QString psnPageUrl(bool create) const;
+    Q_INVOKABLE void openPsnPage(bool create, const QString &browser = QString());
+    Q_INVOKABLE QStringList psnBrowsers() const;
+    Q_INVOKABLE void watchPsnRedirect(bool on);
+    Q_INVOKABLE bool psnRedirectAuto() const;       // на цій системі адресу підхоплюємо самі
+    Q_INVOKABLE bool psnRedirectDenied() const;     // користувач не дав на це дозволу
+    Q_INVOKABLE void activateWindow();
     Q_INVOKABLE QString openPlaceboOptionsLink();
     Q_INVOKABLE void initPsnAuth(const QUrl &url, const QJSValue &callback);
     Q_INVOKABLE void psnCancel(bool stop_thread);
@@ -244,6 +253,8 @@ signals:
     void autoConnectChanged();
     void wakeupStartInitiated();
     void wakeupStartFailed();
+    void psnRedirectFound(const QString &url);
+    void psnRedirectDeniedChanged();
     void windowTypeUpdated(WindowType type);
 
     void error(const QString &title, const QString &text);
@@ -292,6 +303,7 @@ private:
     AnyPlayCloud *anyplay_cloud = {};
     bool anyplayMayPlay();
     QmlMainWindow *window = {};
+    AnyPlayBrowserWatch *psn_watch = {};
     StreamSession *session = {};
     QThread *frame_thread = {};
     QTimer *psn_reconnect_timer = {};

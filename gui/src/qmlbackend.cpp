@@ -25,6 +25,8 @@
 #include <QWebEngineCookieStore>
 #endif
 #include <QUrlQuery>
+#include <QUuid>
+#include <QSettings>
 #include <QMetaObject>
 #include <QtGlobal>
 #include <QGuiApplication>
@@ -1432,12 +1434,14 @@ bool QmlBackend::registerHost(const QString &host, const QString &psn_id, const 
 
         regist_dialog_server = {};
     });
-    connect(regist, &QmlRegist::success, this, [this, host, callback](const RegisteredHost &rhost) {
+    connect(regist, &QmlRegist::success, this, [this, host, psn_id, callback](const RegisteredHost &rhost) {
         QJSValue cb = callback;
         if (cb.isCallable())
             cb.call({QString(), true, true});
 
         settings->AddRegisteredHost(rhost);
+        if (chiaki_target_is_ps5(rhost.GetTarget()))
+            QSettings().setValue(QStringLiteral("anyplay/regist_account"), psn_id);
         if(regist_dialog_server.discovered == false)
         {
             ManualHost manual_host = regist_dialog_server.manual_host;
@@ -2539,6 +2543,72 @@ QString QmlBackend::openPsnLink()
     QDesktopServices::openUrl(url);
     url = psnLoginUrl();
     return QString(url.toEncoded());
+}
+
+QString QmlBackend::psnPageUrl(bool create) const
+{
+    QUrl login = psnLoginUrl();
+    if (!create)
+        return QString::fromUtf8(login.toEncoded());
+    // пряма сторінка реєстрації Sony з тими самими параметрами входу: після реєстрації Sony продовжує вхід
+    QStringList parts;
+    const auto items = QUrlQuery(login).queryItems(QUrl::FullyDecoded);
+    auto add = [&parts](const QString &k, const QString &v) {
+        parts << k + "=" + QString::fromLatin1(QUrl::toPercentEncoding(v)).replace("%20", "+");
+    };
+    for (const auto &item : items)
+        if (item.first != "prompt" && !item.first.isEmpty())
+            add(item.first, item.second);
+    add("cid", QUuid::createUuid().toString(QUuid::WithoutBraces));
+    add("no_captcha", "true");
+    return "https://web.np.playstation.com/app/id/create_account/?" + parts.join("&") + "#/accountcreation/pc/personal_info";
+}
+
+void QmlBackend::openPsnPage(bool create, const QString &browser)
+{
+    QUrl url = QUrl::fromEncoded(psnPageUrl(create).toUtf8());
+    if (browser.isEmpty() || !AnyPlayBrowserWatch::openIn(browser, url))
+        QDesktopServices::openUrl(url);
+}
+
+QStringList QmlBackend::psnBrowsers() const
+{
+    return AnyPlayBrowserWatch::browsers();
+}
+
+void QmlBackend::watchPsnRedirect(bool on)
+{
+    if (!psn_watch) {
+        if (!on)
+            return;
+        psn_watch = new AnyPlayBrowserWatch(this);
+        connect(psn_watch, &AnyPlayBrowserWatch::found, this, &QmlBackend::psnRedirectFound);
+        connect(psn_watch, &AnyPlayBrowserWatch::deniedChanged, this, &QmlBackend::psnRedirectDeniedChanged);
+    }
+    psn_watch->setActive(on);
+}
+
+bool QmlBackend::psnRedirectAuto() const
+{
+#if defined(Q_OS_MACOS) || defined(Q_OS_WINDOWS)
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool QmlBackend::psnRedirectDenied() const
+{
+    return psn_watch && psn_watch->denied();
+}
+
+void QmlBackend::activateWindow()
+{
+    if (!window)
+        return;
+    window->show();
+    window->raise();
+    window->requestActivate();
 }
 
 QString QmlBackend::openPlaceboOptionsLink()

@@ -25,6 +25,18 @@ jobs:
           sudo apt-get install -y ninja-build protobuf-compiler python3-protobuf
           pip3 install --user --break-system-packages protobuf grpcio-tools || true
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
+      - name: Ключ підпису (якщо доданий у секрети сховища)
+        env:
+          ANYPLAY_KS: ${{ secrets.ANYPLAY_ANDROID_KEYSTORE }}
+          ANYPLAY_KS_PW: ${{ secrets.ANYPLAY_ANDROID_KEYSTORE_PW }}
+        run: |
+          if [ -n "$ANYPLAY_KS" ] && [ -n "$ANYPLAY_KS_PW" ]; then
+            echo "$ANYPLAY_KS" | base64 -d > "$RUNNER_TEMP/anyplay.jks"
+            printf 'chiakiKeystore=%s\nchiakiKeystorePW=%s\nchiakiKeyAlias=anyplay\nchiakiKeyPW=%s\n' "$RUNNER_TEMP/anyplay.jks" "$ANYPLAY_KS_PW" "$ANYPLAY_KS_PW" > android/local.properties
+            echo "Підпис: постійний ключ AnyPlay"
+          else
+            echo "Підпис: тимчасовий ключ (секрети не додані) - таку збірку не можна встановити поверх попередньої"
+          fi
       - name: Збірка APK
         working-directory: android
         run: |

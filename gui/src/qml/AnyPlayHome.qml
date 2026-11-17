@@ -78,9 +78,15 @@ Rectangle {
         Chiaki.settings.resolutionLocalPS5 = res;  Chiaki.settings.fpsLocalPS5 = fps;  Chiaki.settings.bitrateLocalPS5 = 0;
     }
 
-    Keys.onReturnPressed: primary.clicked()
-    Keys.onEnterPressed: primary.clicked()
-    Keys.onEscapePressed: root.showConfirmDialog(qsTr("Вийти"), qsTr("Закрити AnyPlay?"), () => Qt.quit())
+    readonly property bool popupOpen: qualityPopup.opened || psnPopup.opened || extendPopup.opened || clientsPopup.opened || sharedPopup.opened || bookPopup.opened
+    Keys.onReturnPressed: if (!popupOpen) primary.clicked()
+    Keys.onEnterPressed: if (!popupOpen) primary.clicked()
+    Keys.onEscapePressed: {
+        if (popupOpen)
+            closePopups();
+        else
+            root.showConfirmDialog(qsTr("Вийти"), qsTr("Закрити AnyPlay?"), () => Qt.quit());
+    }
 
     // ── фон: нічне небо → неонове сонце, як у міні-апці ──
     Rectangle {
@@ -436,6 +442,7 @@ Rectangle {
     Rectangle {
         id: toast
         property string message: ""
+        z: 600
         function show(t) { message = t; toastTimer.restart(); }
         visible: message !== ""
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 28 }
@@ -544,14 +551,11 @@ Rectangle {
             running: psnPopup.opened && (psnPopup.step === 3 || psnPopup.step === 4)
             onTriggered: home.cloud.refresh()
         }
-        height: Math.min(root.height - 40, psnCol.implicitHeight + 56)
         readonly property string st: home.cloud.myPsnStatus
         // 2 — вхід через Sony, 3 — QR на приставці, 4 — адмін завершує, 5 — готово (нік вписувати не треба)
         readonly property int step: !home.cloud.myPsnLinked ? 2 : (st === "ready" ? 5 : (st === "signed_in" ? 4 : 3))
-        ScrollView {
-            anchors.fill: parent
-            contentWidth: availableWidth
-            clip: true
+        contentItem: Item {
+            implicitHeight: psnCol.implicitHeight
             ColumnLayout {
                 id: psnCol
                 width: parent.width
@@ -700,7 +704,7 @@ Rectangle {
     HomePopup {
         id: bookPopup
         maxW: 760
-        height: Math.min(root.height - 40, bookFlick.contentHeight + 56)
+        cardHeight: bookFlick.contentHeight + 56
         contentItem: Flickable {
             id: bookFlick
             clip: true
@@ -720,18 +724,15 @@ Rectangle {
     HomePopup {
         id: clientsPopup
         maxW: 760
-        height: Math.min(root.height - 40, clientsCol.implicitHeight + 56)
         property string result: ""
         property bool resultOk: true
-        onOpened: { result = ""; home.cloud.refreshAdmin(); }
+        onOpenedChanged: if (opened) { result = ""; home.cloud.refreshAdmin(); }
         Connections {
             target: Chiaki.cloud
             function onLinkResult(ok, text) { clientsPopup.result = text; clientsPopup.resultOk = ok; }
         }
-        ScrollView {
-            anchors.fill: parent
-            contentWidth: availableWidth
-            clip: true
+        contentItem: Item {
+            implicitHeight: clientsCol.implicitHeight
             ColumnLayout {
                 id: clientsCol
                 width: parent.width
@@ -811,7 +812,7 @@ Rectangle {
         readonly property var con: home.adm.console || null
         readonly property string localPsn: { rev; return home.cloud.localPsnName(); }
         readonly property string localPs5: { rev; return home.cloud.localConsoleName(); }
-        onOpened: { rev++; home.cloud.refreshAdmin(); }
+        onOpenedChanged: if (opened) { rev++; home.cloud.refreshAdmin(); }
         contentItem: ColumnLayout {
             spacing: 10
             Label { text: qsTr("Спільний акаунт PSN"); font.pixelSize: 24; font.bold: true; color: "white" }
@@ -895,20 +896,56 @@ Rectangle {
 
     // ── компоненти в стилі бренду ──
     // Спливне вікно AnyPlay: завжди по центру, висота за вмістом, закривається хрестиком, Esc або кліком повз
-    component HomePopup: Popup {
+    component HomePopup: Item {
         id: hp
         property real maxW: 640
-        parent: Overlay.overlay
-        popupType: Popup.Item
-        width: Math.min((parent ? parent.width : 800) - 60, maxW)
-        x: Math.round(((parent ? parent.width : 800) - width) / 2)
-        y: Math.round(((parent ? parent.height : 600) - height) / 2)
-        modal: true
-        dim: true
-        padding: 28
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle {
-            radius: 24; color: "#160d2b"; border.color: "#44ffffff"
+        property real padding: 28
+        property real cardHeight: -1        // -1 — за вмістом (із прокруткою, якщо не влазить)
+        property bool opened: false
+        property Item contentItem
+        function open() { opened = true; }
+        function close() { opened = false; }
+        anchors.fill: parent
+        z: 500
+        visible: opened
+        enabled: opened
+        onContentItemChanged: if (contentItem) contentItem.parent = hpHolder.contentItem
+        // затемнення; клік повз вікно закриває його
+        Rectangle { anchors.fill: parent; color: "#c8080312" }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.AllButtons
+            onClicked: hp.close()
+            onWheel: (wheel) => { wheel.accepted = true; }
+        }
+        Rectangle {
+            id: hpCard
+            readonly property real want: hp.cardHeight >= 0 ? hp.cardHeight
+                                        : (hp.contentItem ? hp.contentItem.implicitHeight : 0) + 2 * hp.padding
+            anchors.centerIn: parent
+            width: Math.max(200, Math.min(hp.width - 60, hp.maxW))
+            height: Math.max(80, Math.min(hp.height - 40, want))
+            radius: 24
+            color: "#160d2b"
+            border.color: "#44ffffff"
+            MouseArea {   // кліки всередині вікна його не закривають
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                onWheel: (wheel) => { wheel.accepted = true; }
+            }
+            Flickable {
+                id: hpHolder
+                anchors { fill: parent; margins: hp.padding }
+                clip: true
+                contentWidth: width
+                contentHeight: hp.cardHeight >= 0 ? height : (hp.contentItem ? hp.contentItem.implicitHeight : 0)
+                interactive: contentHeight > height + 1
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: hpHolder.interactive ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
+            }
+            Binding { target: hp.contentItem; property: "width"; value: hpHolder.width - (hpHolder.interactive ? 12 : 0); when: !!hp.contentItem }
+            Binding { target: hp.contentItem; property: "height"; value: hpHolder.height; when: !!hp.contentItem && hp.cardHeight >= 0 }
             Rectangle {
                 anchors { top: parent.top; right: parent.right; margins: 10 }
                 width: 34; height: 34; radius: 17

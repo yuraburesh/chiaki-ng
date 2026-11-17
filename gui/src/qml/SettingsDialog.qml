@@ -2727,7 +2727,8 @@ DialogView {
                             close();
                         }
                         parent: Overlay.overlay
-                        anchors.centerIn: parent
+                        x: Math.round((root.width - width) / 2)
+                        y: Math.round((root.height - height) / 2)
                         modal: true
                         width: 460
                         padding: 20

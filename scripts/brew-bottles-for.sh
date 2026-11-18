@@ -5,6 +5,10 @@
 set -u
 TAG=$1; shift
 export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
+# Список формул Homebrew з мережі знає лише збірки для системи цієї машини; повний список збірок є у сховищі homebrew/core
+export HOMEBREW_NO_INSTALL_FROM_API=1
+brew tap --force homebrew/core >/dev/null 2>&1 || brew tap homebrew/core --force
+echo "Збірки $TAG для qtbase: $(brew info --json=v2 qtbase 2>/dev/null | grep -c "\"$TAG\"")"
 ALL=$( (brew deps --union --topological "$@"; printf '%s\n' "$@") | awk '!seen[$0]++')
 echo "Формул: $(echo "$ALL" | wc -l | tr -d ' ')"
 ok=0; fallback=""

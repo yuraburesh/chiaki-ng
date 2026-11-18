@@ -26,7 +26,7 @@ data class PlayError(val text: String): PlayTarget()
 object AnyPlayCloud
 {
 	const val SERVER = "https://34-123-25-16.sslip.io"
-	const val BUILD = 102
+	const val BUILD = 103
 	const val BOT_URL = "https://t.me/play_any_bot"
 	private const val PREFS = "anyplay"
 	private const val KEY_TOKEN = "device_token"

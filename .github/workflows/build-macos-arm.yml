@@ -36,7 +36,7 @@ jobs:
           brew update
           brew uninstall pkgconfig || true
           if [[ -n "$ANYPLAY_MACOS_TARGET" ]]; then
-            scripts/brew-bottles-for.sh arm64_sequoia qt@6 ffmpeg pkgconf opus openssl@3 protobuf@29 speexdsp libplacebo json-c miniupnpc libevent
+            scripts/brew-bottles-for.sh arm64_sequoia qt@6 ffmpeg pkgconf opus openssl@3 protobuf@29 speexdsp libplacebo json-c miniupnpc libevent libidn2 libssh2 libnghttp2 libpsl
           fi
           brew install --force qt@6 ffmpeg pkgconfig opus openssl@3 cmake ninja nasm protobuf@29 speexdsp libplacebo wget python-setuptools json-c miniupnpc libevent
           # OpenSSL 4 headers in the Homebrew prefix would shadow openssl@3; the bundled curl needs 3

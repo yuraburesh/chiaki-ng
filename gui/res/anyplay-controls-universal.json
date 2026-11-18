@@ -1,0 +1,222 @@
+{
+ "version": 1,
+ "start": "foot",
+ "profiles": [
+  {
+   "id": "global",
+   "name": "Меню і навігація",
+   "bindings": [
+    {
+     "id": "phone",
+     "name": "Хрестовина вгору",
+     "key": "Up",
+     "btn": [
+      "DPAD_UP"
+     ]
+    },
+    {
+     "id": "nav_down",
+     "name": "Хрестовина вниз",
+     "key": "Down",
+     "btn": [
+      "DPAD_DOWN"
+     ]
+    },
+    {
+     "id": "nav_left",
+     "name": "Хрестовина вліво",
+     "key": "Left",
+     "btn": [
+      "DPAD_LEFT"
+     ]
+    },
+    {
+     "id": "nav_right",
+     "name": "Хрестовина вправо",
+     "key": "Right",
+     "btn": [
+      "DPAD_RIGHT"
+     ]
+    },
+    {
+     "id": "select",
+     "name": "Вибрати (✕)",
+     "key": "Enter",
+     "btn": [
+      "CROSS"
+     ]
+    },
+    {
+     "id": "back",
+     "name": "Назад / закрити (○)",
+     "key": "Backspace",
+     "btn": [
+      "MOON"
+     ]
+    },
+    {
+     "id": "pause",
+     "name": "Пауза / меню",
+     "key": "Esc",
+     "btn": [
+      "OPTIONS"
+     ]
+    },
+    {
+     "id": "map",
+     "name": "Карта (тачпад)",
+     "key": "P",
+     "btn": [
+      "TOUCHPAD"
+     ]
+    },
+    {
+     "id": "ps",
+     "name": "Кнопка PS",
+     "key": "Home",
+     "btn": [
+      "PS"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "foot",
+   "name": "🎮 Гра",
+   "bindings": [
+    {
+     "id": "up",
+     "key": "W",
+     "name": "Рух вперед",
+     "l": [
+      0,
+      -1
+     ]
+    },
+    {
+     "id": "left",
+     "key": "A",
+     "name": "Рух вліво",
+     "l": [
+      -1,
+      0
+     ]
+    },
+    {
+     "id": "down",
+     "key": "S",
+     "name": "Рух назад",
+     "l": [
+      0,
+      1
+     ]
+    },
+    {
+     "id": "right",
+     "key": "D",
+     "name": "Рух вправо",
+     "l": [
+      1,
+      0
+     ]
+    },
+    {
+     "id": "cross",
+     "key": "Space",
+     "name": "✕ (хрестик)",
+     "btn": [
+      "CROSS"
+     ]
+    },
+    {
+     "id": "moon",
+     "key": "X",
+     "name": "○ (коло)",
+     "btn": [
+      "MOON"
+     ]
+    },
+    {
+     "id": "box",
+     "key": "E",
+     "name": "□ (квадрат)",
+     "btn": [
+      "BOX"
+     ]
+    },
+    {
+     "id": "pyramid",
+     "key": "F",
+     "name": "△ (трикутник)",
+     "btn": [
+      "PYRAMID"
+     ]
+    },
+    {
+     "id": "r2",
+     "key": "MouseLeft",
+     "name": "R2",
+     "btn": [
+      "R2"
+     ]
+    },
+    {
+     "id": "l2",
+     "key": "MouseRight",
+     "name": "L2",
+     "btn": [
+      "L2"
+     ]
+    },
+    {
+     "id": "l1",
+     "key": "Q",
+     "name": "L1",
+     "btn": [
+      "L1"
+     ]
+    },
+    {
+     "id": "r1",
+     "key": "R",
+     "name": "R1",
+     "btn": [
+      "R1"
+     ]
+    },
+    {
+     "id": "l3",
+     "key": "Shift",
+     "name": "L3 (натиснути лівий стік)",
+     "btn": [
+      "L3"
+     ]
+    },
+    {
+     "id": "r3",
+     "key": "C",
+     "name": "R3 (натиснути правий стік)",
+     "btn": [
+      "R3"
+     ]
+    },
+    {
+     "id": "share",
+     "key": "M",
+     "name": "Кнопка Create",
+     "btn": [
+      "SHARE"
+     ]
+    },
+    {
+     "id": "touch",
+     "key": "V",
+     "name": "Тачпад",
+     "btn": [
+      "TOUCHPAD"
+     ]
+    }
+   ]
+  }
+ ]
+}

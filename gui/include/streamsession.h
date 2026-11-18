@@ -391,6 +391,8 @@ class StreamSession : public QObject
 		void ResetMouseRightStick();
 		bool GetMouseRightStickEnabled() const { return mouse_right_stick_enabled; }
 		QString GetControlProfile() const { return anyplay ? anyplay->StatusText() : QString(); }
+		// AnyPlay: розкладку змінили під час гри — перечитати її без перепідключення
+		Q_INVOKABLE void reloadControls() { if(anyplay) { anyplay->Load(); SendFeedbackState(); emit ControlProfileChanged(); } }
 		bool GetGamepadMode() const { return gamepad_mode; }
 		bool AnyPlayControlsActive() const { return anyplay != nullptr; }
 		ChiakiControllerState mouse_state;

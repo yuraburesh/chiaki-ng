@@ -85,6 +85,10 @@ class AnyPlayInput : public QObject
 		static QString MouseButtonName(Qt::MouseButton button);
 		static QString DisplayName(const QString &key);
 
+		// Game layouts (GTA 6 / GTA 5 / universal): each has its own profiles and key overrides
+		static QVariantList Layouts();
+		static QString Layout();
+		static void SetLayout(const QString &id);
 		// Controls editor
 		static QVariantList ProfilesForEditor();
 		static void SetKeyOverride(const QString &profile, const QString &id, const QString &key);

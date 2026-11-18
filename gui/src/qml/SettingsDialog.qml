@@ -2641,6 +2641,31 @@ DialogView {
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
                             opacity: 0.8
+                            text: "Розкладка під гру. Змінити її можна і під час гри: меню гри → «Клавіші»."
+                        }
+                        RowLayout {
+                            id: anyplayLayoutRow
+                            property string current: Chiaki.settings.anyplayLayout()
+                            spacing: 6
+                            Repeater {
+                                model: Chiaki.settings.anyplayLayouts()
+                                Button {
+                                    text: modelData.name
+                                    highlighted: modelData.id === anyplayLayoutRow.current
+                                    Material.roundedScale: Material.SmallScale
+                                    onClicked: {
+                                        Chiaki.settings.setAnyplayLayout(modelData.id);
+                                        anyplayLayoutRow.current = modelData.id;
+                                        anyplayEditor.profileIndex = 1;
+                                        anyplayEditor.reload();
+                                    }
+                                }
+                            }
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            opacity: 0.8
                             text: "Натисни на клавішу навпроти дії, а потім — нову клавішу або кнопку миші. "
                                 + "F сідає в транспорт і виходить з нього, F1 / F2 / F3 вмикають режим вручну. "
                                 + "Якщо клавіша вже зайнята, дії обміняються клавішами."

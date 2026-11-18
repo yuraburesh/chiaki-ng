@@ -1,6 +1,8 @@
 <RCC>
   <qresource prefix="/anyplay">
     <file>anyplay-controls.json</file>
+    <file>anyplay-controls-gta6.json</file>
+    <file>anyplay-controls-universal.json</file>
   </qresource>
   <qresource prefix="/icons">
     <file>settings-20px.svg</file>

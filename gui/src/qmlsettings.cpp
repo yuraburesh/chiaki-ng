@@ -2234,6 +2234,21 @@ void QmlSettings::resetAnyplayKeys()
     AnyPlayInput::ResetKeyOverrides();
 }
 
+QVariantList QmlSettings::anyplayLayouts() const
+{
+    return AnyPlayInput::Layouts();
+}
+
+QString QmlSettings::anyplayLayout() const
+{
+    return AnyPlayInput::Layout();
+}
+
+void QmlSettings::setAnyplayLayout(const QString &id)
+{
+    AnyPlayInput::SetLayout(id);
+}
+
 bool QmlSettings::anyplayAutoVehicle() const
 {
     return AnyPlayInput::AutoVehicle();

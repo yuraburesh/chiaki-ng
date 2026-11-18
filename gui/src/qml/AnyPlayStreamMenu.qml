@@ -35,7 +35,20 @@ Rectangle {
         return qsTr("Лишилось %1, гра до %2").arg((h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(x).padStart(2, "0")).arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs));
     }
     // головні клавіші: беремо справжні призначення (з урахуванням змін клієнта)
+    // розкладка під гру: змінюється одразу, без виходу з гри
+    property string layoutId: Chiaki.settings.anyplayLayout()
+    property int layoutRev: 0
+    function setLayout(id) {
+        if (id === layoutId)
+            return;
+        Chiaki.settings.setAnyplayLayout(id);
+        layoutId = id;
+        layoutRev++;
+        if (Chiaki.session)
+            Chiaki.session.reloadControls();
+    }
     function keyRows() {
+        layoutRev;
         const labels = { pause: qsTr("кнопка OPTIONS — пауза й меню в самій грі"), ps: qsTr("кнопка PS — головне меню приставки"), map: qsTr("тачпад — карта"),
                          select: qsTr("✕ — вибрати / підтвердити"), back: qsTr("○ — назад / закрити") };
         let rows = [{ name: qsTr("це меню: клавіші, продовження, вихід"), key: menuKey }];
@@ -233,6 +246,30 @@ Rectangle {
             Layout.fillWidth: true; wrapMode: Text.WordWrap
             color: "#ffd23f"; font.pixelSize: 14; font.bold: true
             text: qsTr("Підключено геймпад: грай ним, як на приставці. Клавіатура й мишка теж працюють: програма сама перемикається на те, чим ти щойно натиснув.")
+        }
+        Label {
+            visible: panel.page === "keys"
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+            color: "#d8cdea"; font.pixelSize: 14
+            text: qsTr("Розкладка клавіатури й мишки під гру. Змінюється одразу, виходити з гри не треба.")
+        }
+        RowLayout {
+            visible: panel.page === "keys"
+            Layout.fillWidth: true
+            spacing: 10
+            Repeater {
+                model: panel.visible && panel.page === "keys" ? Chiaki.settings.anyplayLayouts() : []
+                MenuBtn {
+                    required property var modelData
+                    readonly property bool on: panel.layoutId === modelData.id
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 58
+                    primary: on
+                    text: (on ? "✓ " : "") + modelData.name + "\n" + modelData.info
+                    font.pixelSize: 14
+                    onClicked: panel.setLayout(modelData.id)
+                }
+            }
         }
         Flow {
             visible: panel.page === "keys"

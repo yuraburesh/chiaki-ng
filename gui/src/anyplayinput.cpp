@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QKeyEvent>
 #include <QSettings>
+#include <QStringList>
 #include <QVariantMap>
 
 namespace {
@@ -13,7 +14,14 @@ namespace {
 constexpr int TurboIntervalMs = 55;  // sprint: the button is tapped ~9 times a second while the key is held
 constexpr int TapMs = 90;            // a short press: long enough for the game to register it
 
-const QString OverrideGroup = QStringLiteral("anyplay_keys");
+const QString OverrideGroupBase = QStringLiteral("anyplay_keys");
+const QString LayoutKey = QStringLiteral("anyplay/layout");
+const QStringList LayoutIds = {QStringLiteral("gta6"), QStringLiteral("gta5"), QStringLiteral("universal")};
+// змінені клієнтом клавіші зберігаються окремо для кожної розкладки (GTA 5 — на старому місці)
+QString OverrideGroupFor(const QString &layout)
+{
+	return layout == QLatin1String("gta5") ? OverrideGroupBase : OverrideGroupBase + QLatin1Char('_') + layout;
+}
 // v2: миттєве перемикання знову типове (очікування підтвердження від приставки працювало ненадійно)
 const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle_v2");
 constexpr int PendingMs = 7000;      // how long after F we wait for the console's confirmation
@@ -150,7 +158,9 @@ AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 
 QJsonObject AnyPlayInput::DefaultConfig()
 {
-	QFile file(QStringLiteral(":/anyplay/anyplay-controls.json"));
+	const QString layout = Layout();
+	QFile file(layout == QLatin1String("gta5") ? QStringLiteral(":/anyplay/anyplay-controls.json")
+		: QStringLiteral(":/anyplay/anyplay-controls-%1.json").arg(layout));
 	if(!file.open(QIODevice::ReadOnly))
 		return {};
 	return QJsonDocument::fromJson(file.readAll()).object();
@@ -159,6 +169,7 @@ QJsonObject AnyPlayInput::DefaultConfig()
 QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, bool apply_overrides)
 {
 	QSettings settings;
+	const QString OverrideGroup = OverrideGroupFor(Layout());
 	QList<APProfile> result;
 	for(const auto &p : config.value("profiles").toArray())
 	{
@@ -572,11 +583,47 @@ QVariantList AnyPlayInput::ProfilesForEditor()
 void AnyPlayInput::SetKeyOverride(const QString &profile, const QString &id, const QString &key)
 {
 	QSettings settings;
-	settings.setValue(QStringLiteral("%1/%2/%3").arg(OverrideGroup, profile, id), key);
+	settings.setValue(QStringLiteral("%1/%2/%3").arg(OverrideGroupFor(Layout()), profile, id), key);
 }
 
 void AnyPlayInput::ResetKeyOverrides()
 {
 	QSettings settings;
-	settings.remove(OverrideGroup);
+	settings.remove(OverrideGroupFor(Layout()));
+}
+
+QVariantList AnyPlayInput::Layouts()
+{
+	static const QHash<QString, QString> names = {
+		{QStringLiteral("gta6"), QStringLiteral("GTA 6")},
+		{QStringLiteral("gta5"), QStringLiteral("GTA 5")},
+		{QStringLiteral("universal"), QStringLiteral("Універсальна")},
+	};
+	static const QHash<QString, QString> info = {
+		{QStringLiteral("gta6"), QStringLiteral("типове керування GTA 6")},
+		{QStringLiteral("gta5"), QStringLiteral("GTA 5 і GTA Online")},
+		{QStringLiteral("universal"), QStringLiteral("будь-яка інша гра")},
+	};
+	QVariantList result;
+	for(const QString &id : LayoutIds)
+	{
+		QVariantMap row;
+		row["id"] = id;
+		row["name"] = names.value(id);
+		row["info"] = info.value(id);
+		result.append(row);
+	}
+	return result;
+}
+
+QString AnyPlayInput::Layout()
+{
+	const QString id = QSettings().value(LayoutKey, QStringLiteral("gta6")).toString();
+	return LayoutIds.contains(id) ? id : QStringLiteral("gta6");
+}
+
+void AnyPlayInput::SetLayout(const QString &id)
+{
+	if(LayoutIds.contains(id))
+		QSettings().setValue(LayoutKey, id);
 }

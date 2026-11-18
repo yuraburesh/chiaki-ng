@@ -621,6 +621,9 @@ public:
     Q_INVOKABLE QString anyplayDisplayName(const QString &key) const;
     Q_INVOKABLE void setAnyplayKey(const QString &profile, const QString &id, const QString &key);
     Q_INVOKABLE void resetAnyplayKeys();
+    Q_INVOKABLE QVariantList anyplayLayouts() const;
+    Q_INVOKABLE QString anyplayLayout() const;
+    Q_INVOKABLE void setAnyplayLayout(const QString &id);
     Q_INVOKABLE bool anyplayAutoVehicle() const;
     Q_INVOKABLE void setAnyplayAutoVehicle(bool enabled);
     Q_INVOKABLE void clearKeyMapping();

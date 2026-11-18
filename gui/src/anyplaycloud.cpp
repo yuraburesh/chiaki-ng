@@ -24,7 +24,7 @@ static const int PAIR_MS = 2000;
 static const int PAIR_MAX_TRIES = 300; // ~10 хв
 
 // Номер версії програми: сервер порівнює його з мінімальним і просить оновитись, якщо програма застаріла
-static const int ANYPLAY_BUILD = 102;
+static const int ANYPLAY_BUILD = 103;
 
 AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent)
 	: QObject(parent), settings(settings), backend(backend)

@@ -2,6 +2,7 @@
 #include "settings.h"
 #include "qmlbackend.h"
 #include "qmlsettings.h"
+#include "qmlmainwindow.h"
 
 #include <QClipboard>
 #include <QDateTime>
@@ -736,7 +737,11 @@ void AnyPlayCloud::payBooking(qint64 bookingId, const QString &sender)
 }
 
 // ── якість картинки ──
-static const char *QUALITY_NAMES[] = { "Економна", "Оптимальна", "Максимальна" };
+static const char *QUALITY_NAMES[] = { "Економна", "Оптимальна", "Максимальна", "Ультра" };
+static const int QUALITY_TOP = 3;
+// обробка картинки на ноутбуці для кожного рівня: Fast, Default, HighQuality, HighQualitySpatial (ШІ-чіткість FSRCNNX, лише коли екран більший за 1080p)
+static const QmlMainWindow::VideoPreset QUALITY_RENDER[] = { QmlMainWindow::VideoPreset::Fast, QmlMainWindow::VideoPreset::Default,
+	QmlMainWindow::VideoPreset::HighQuality, QmlMainWindow::VideoPreset::HighQualitySpatial };
 
 bool AnyPlayCloud::autoQuality() const
 {
@@ -760,7 +765,7 @@ int AnyPlayCloud::qualityLevel() const
 	if(res <= 2)
 		return 0;
 	if(res >= 4)
-		return 2;
+		return qs->videoPreset() == static_cast<int>(PlaceboPreset::HighQualitySpatial) ? 3 : 2;
 	return fps >= 60 ? 1 : 0;
 }
 
@@ -769,12 +774,15 @@ void AnyPlayCloud::setQualityLevel(int level)
 	QmlSettings *qs = backend->qmlSettings();
 	if(!qs)
 		return;
-	level = qBound(0, level, 2);
+	level = qBound(0, level, QUALITY_TOP);
 	const int res = level == 0 ? 2 : level == 1 ? 3 : 4;
 	const int fps = level == 0 ? 30 : 60;
 	// через інтернет завеликий бітрейт забиває канал і дає затримку, тому тут стеля нижча, ніж у домашній мережі
-	qs->setResolutionRemotePS5(res); qs->setFpsRemotePS5(fps); qs->setBitrateRemotePS5(level == 2 ? 15000 : 0);
-	qs->setResolutionLocalPS5(res);  qs->setFpsLocalPS5(fps);  qs->setBitrateLocalPS5(level == 2 ? 25000 : 0);
+	qs->setResolutionRemotePS5(res); qs->setFpsRemotePS5(fps); qs->setBitrateRemotePS5(level >= 2 ? 15000 : 0);
+	qs->setResolutionLocalPS5(res);  qs->setFpsLocalPS5(fps);  qs->setBitrateLocalPS5(level >= 2 ? 25000 : 0);
+	// H.265: при тій самій швидкості інтернету картинка чистіша, ніж у H.264
+	qs->setCodecRemotePS5(CHIAKI_CODEC_H265); qs->setCodecLocalPS5(CHIAKI_CODEC_H265);
+	applyRender(level);
 	emit changed();
 }
 
@@ -785,6 +793,7 @@ void AnyPlayCloud::prepareAutoQuality()
 		return;
 	if(qs->bitrateRemotePS5() > 15000)   // старе значення «Максимальної»: через інтернет воно давало затримку
 		qs->setBitrateRemotePS5(15000);
+	applyRender(qualityLevel());   // перед кожною грою: обробка картинки під рівень (з урахуванням слабкого ноутбука)
 	if(!autoQuality())
 		return;
 	QSettings s;
@@ -793,12 +802,52 @@ void AnyPlayCloud::prepareAutoQuality()
 	{
 		s.remove(QStringLiteral("anyplay/auto_up"));
 		const int level = qualityLevel();
-		if(level < 2 && now > s.value(QStringLiteral("anyplay/auto_no_up_until"), 0).toLongLong())
+		if(level < QUALITY_TOP && now > s.value(QStringLiteral("anyplay/auto_no_up_until"), 0).toLongLong())
 		{
 			setQualityLevel(level + 1);
 			s.setValue(QStringLiteral("anyplay/auto_raised_at"), now);
 		}
 	}
+}
+
+void AnyPlayCloud::applyRender(int level)
+{
+	level = qBound(0, level, QUALITY_TOP);
+	QmlSettings *qs = backend->qmlSettings();
+	if(qs)
+		qs->setVideoPreset(static_cast<int>(level == 0 ? PlaceboPreset::Fast : level == 1 ? PlaceboPreset::Default
+			: level == 2 ? PlaceboPreset::HighQuality : PlaceboPreset::HighQualitySpatial));
+	// якщо цей ноутбук нещодавно не встигав, обробку тримаємо не вище тієї, що він тягнув (3 дні)
+	QSettings s;
+	int r = level;
+	if(QDateTime::currentSecsSinceEpoch() < s.value(QStringLiteral("anyplay/render_cap_until"), 0).toLongLong())
+		r = qMin(r, s.value(QStringLiteral("anyplay/render_cap"), QUALITY_TOP).toInt());
+	if(QmlMainWindow *w = backend->qmlWindow())
+		w->setVideoPreset(QUALITY_RENDER[qBound(0, r, QUALITY_TOP)]);   // діє одразу, без перепідключення
+}
+
+bool AnyPlayCloud::renderLighter()
+{
+	QmlMainWindow *w = backend->qmlWindow();
+	if(!w)
+		return false;
+	const auto p = w->videoPreset();
+	QmlMainWindow::VideoPreset next;
+	if(p == QmlMainWindow::VideoPreset::HighQualitySpatial || p == QmlMainWindow::VideoPreset::HighQualityAdvancedSpatial || p == QmlMainWindow::VideoPreset::Custom)
+		next = QmlMainWindow::VideoPreset::HighQuality;
+	else if(p == QmlMainWindow::VideoPreset::HighQuality)
+		next = QmlMainWindow::VideoPreset::Default;
+	else if(p == QmlMainWindow::VideoPreset::Default)
+		next = QmlMainWindow::VideoPreset::Fast;
+	else
+		return false;
+	// рівень у налаштуваннях не чіпаємо; лише обмежуємо обробку на цьому ноутбуці на 3 дні
+	w->setVideoPreset(next);
+	QSettings s;
+	s.setValue(QStringLiteral("anyplay/render_cap"), next == QmlMainWindow::VideoPreset::HighQuality ? 2 : next == QmlMainWindow::VideoPreset::Default ? 1 : 0);
+	s.setValue(QStringLiteral("anyplay/render_cap_until"), QDateTime::currentSecsSinceEpoch() + 3 * 24 * 3600);
+	emit message(tr("Ноутбук не встигає обробляти картинку: спрощую обробку, щоб гра йшла плавно."));
+	return true;
 }
 
 bool AnyPlayCloud::autoQualityDown()
@@ -812,15 +861,17 @@ bool AnyPlayCloud::autoQualityDown()
 	// щойно підняли якість, а зв'язок не витримав — кілька днів вище не пробуємо
 	if(now - s.value(QStringLiteral("anyplay/auto_raised_at"), 0).toLongLong() < 20 * 60)
 		s.setValue(QStringLiteral("anyplay/auto_no_up_until"), now + 3 * 24 * 3600);
-	setQualityLevel(level - 1);
+	// «Ультра» і «Максимальна» йдуть з однаковою швидкістю, тому зі слабким зв'язком з «Ультра» одразу на «Оптимальну»
+	const int to = level == 3 ? 1 : level - 1;
+	setQualityLevel(to);
 	emit message(tr("Зв'язок слабкий: знижую якість до «%1», щоб не було затримок. Гра перепідключиться сама.")
-		.arg(QString::fromUtf8(QUALITY_NAMES[level - 1])));
+		.arg(QString::fromUtf8(QUALITY_NAMES[to])));
 	return true;
 }
 
 void AnyPlayCloud::autoQualityGood()
 {
-	if(autoQuality() && qualityLevel() < 2)
+	if(autoQuality() && qualityLevel() < QUALITY_TOP)
 		QSettings().setValue(QStringLiteral("anyplay/auto_up"), true);
 }
 

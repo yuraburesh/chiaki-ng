@@ -99,6 +99,8 @@ public:
 	Q_INVOKABLE void prepareAutoQuality();         // перед «Грати»: після довгої чистої гри пробуємо рівень вище
 	Q_INVOKABLE bool autoQualityDown();            // зв'язок слабкий: рівень нижче (false — нижче нікуди)
 	Q_INVOKABLE void autoQualityGood();            // довго грали без втрат
+	Q_INVOKABLE bool renderLighter();              // ноутбук не встигає малювати: простіша обробка картинки на цю гру
+	void applyRender(int level);
 	Q_INVOKABLE void refreshAdmin();
 	Q_INVOKABLE void adminKick(qint64 bookingId);    // адмін: завершити поточну гру клієнта
 	Q_INVOKABLE void adminSetClosed(bool closed);    // адмін: закрити / відкрити доступ усім клієнтам

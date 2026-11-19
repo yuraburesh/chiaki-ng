@@ -1491,6 +1491,30 @@ Item {
         }
     }
 
+    // ноутбук не встигає декодувати чи малювати (кадри губляться, а мережа в порядку): спрощуємо обробку картинки без перепідключення
+    Timer {
+        property int slow: 0
+        interval: 2000; repeat: true
+        running: !!Chiaki.session && Chiaki.session.connected
+        onRunningChanged: slow = 0
+        onTriggered: {
+            if (!Chiaki.session)
+                return;
+            const dropped = Chiaki.window.droppedFrames;
+            if (dropped >= 8 && Chiaki.session.averagePacketLoss < 0.01) slow++;
+            else slow = Math.max(0, slow - 1);
+            if (slow >= 4) {
+                slow = 0;
+                if (Chiaki.cloud.renderLighter()) {
+                    anyplayProfileLabel.modeText = qsTr("Спрощую обробку картинки, щоб гра йшла плавно");
+                    anyplayProfileLabel.opacity = 1;
+                    anyplayProfileTimer.interval = 4000;
+                    anyplayProfileTimer.restart();
+                }
+            }
+        }
+    }
+
     Label {
         id: anyplayProfileLabel
         z: 100

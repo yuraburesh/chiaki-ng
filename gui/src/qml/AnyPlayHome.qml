@@ -77,7 +77,7 @@ Rectangle {
             t += qsTr("; свій %1 ще підключається").arg(b.clientPsn);
         return t;
     }
-    readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна")]
+    readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна"), qsTr("Ультра")]
     function levelName() { return levelNames[home.cloud.qualityLevel] || levelNames[1]; }
     function qualityName() { return home.cloud.autoQuality ? qsTr("Авто: %1").arg(levelName()) : levelName(); }
 
@@ -555,7 +555,8 @@ Rectangle {
                     { level: -1, name: qsTr("Авто (радимо)"), info: qsTr("Програма сама підбирає якість під твій інтернет, щоб не було затримок. Зараз: %1").arg(home.levelName()) },
                     { level: 0, name: qsTr("Економна"), info: qsTr("540p, 30 кадр/с — для слабкого чи мобільного інтернету") },
                     { level: 1, name: qsTr("Оптимальна"), info: qsTr("720p, 60 кадр/с — підходить більшості (від 15 Мбіт/с)") },
-                    { level: 2, name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с, найчіткіша картинка — швидкий інтернет (від 30 Мбіт/с, краще кабель)") }
+                    { level: 2, name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с — швидкий інтернет (від 30 Мбіт/с, краще кабель)") },
+                    { level: 3, name: qsTr("Ультра"), info: qsTr("1080p, 60 кадр/с і ШІ-чіткість на екранах, більших за 1080p. Якщо ноутбук не встигає, програма сама спростить обробку") }
                 ]
                 delegate: Rectangle {
                     id: qItem

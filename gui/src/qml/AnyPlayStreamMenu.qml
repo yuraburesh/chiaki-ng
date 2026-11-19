@@ -74,12 +74,13 @@ Rectangle {
     }
 
     // Ті самі три рівні якості, що й на головному екрані
-    readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна")]
+    readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна"), qsTr("Ультра")]
     readonly property var qualities: [
         { level: -1, name: qsTr("Авто"), info: qsTr("сама підбирає, зараз: %1").arg(levelNames[Chiaki.cloud.qualityLevel] || "") },
         { level: 0, name: levelNames[0], info: qsTr("540p, 30 кадр/с") },
         { level: 1, name: levelNames[1], info: qsTr("720p, 60 кадр/с") },
-        { level: 2, name: levelNames[2], info: qsTr("1080p, 60 кадр/с, найчіткіша") }
+        { level: 2, name: levelNames[2], info: qsTr("1080p, 60 кадр/с") },
+        { level: 3, name: levelNames[3], info: qsTr("1080p, 60 кадр/с, ШІ-чіткість на великому екрані") }
     ]
     function qualityOn(q) { return q.level < 0 ? Chiaki.cloud.autoQuality : (!Chiaki.cloud.autoQuality && Chiaki.cloud.qualityLevel === q.level); }
     function setQuality(q) {
@@ -87,6 +88,8 @@ Rectangle {
         const same = Chiaki.cloud.qualityLevel === q.level;
         Chiaki.cloud.autoQuality = false;
         if (same) { goMain(); return; }
+        // «Максимальна» і «Ультра» відрізняються лише обробкою на ноутбуці: міняємо одразу, без перепідключення
+        if (Chiaki.cloud.qualityLevel >= 2 && q.level >= 2) { Chiaki.cloud.setQualityLevel(q.level); goMain(); return; }
         Chiaki.cloud.setQualityLevel(q.level);
         Chiaki.cloud.reconnectOnce = true;   // головний екран сам натисне «Грати» з новою якістю
         panel.page = "main";

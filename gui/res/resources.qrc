@@ -1,4 +1,12 @@
 <RCC>
+  <qresource prefix="/anyplay-fonts">
+    <file alias="Oswald-Regular.ttf">fonts/Oswald-Regular.ttf</file>
+    <file alias="Oswald-Medium.ttf">fonts/Oswald-Medium.ttf</file>
+    <file alias="Oswald-SemiBold.ttf">fonts/Oswald-SemiBold.ttf</file>
+    <file alias="Inter-Regular.ttf">fonts/Inter-Regular.ttf</file>
+    <file alias="Inter-Medium.ttf">fonts/Inter-Medium.ttf</file>
+    <file alias="Inter-SemiBold.ttf">fonts/Inter-SemiBold.ttf</file>
+  </qresource>
   <qresource prefix="/anyplay">
     <file>anyplay-controls.json</file>
     <file>anyplay-controls-gta6.json</file>

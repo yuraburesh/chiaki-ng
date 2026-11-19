@@ -40,6 +40,7 @@ int main(int argc, char *argv[]) { return real_main(argc, argv); }
 #include <QCommandLineParser>
 #include <QMap>
 #include <QSurfaceFormat>
+#include <QFontDatabase>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -151,6 +152,10 @@ int real_main(int argc, char *argv[])
 	QtWebEngineQuick::initialize();
 #endif
 	QApplication app(argc, argv);
+
+	// шрифти нового дизайну AnyPlay: Oswald для заголовків, Inter для тексту (обидва під ліцензією OFL, файли в gui/res/fonts)
+	for(const char *f : {"Oswald-Regular", "Oswald-Medium", "Oswald-SemiBold", "Inter-Regular", "Inter-Medium", "Inter-SemiBold"})
+		QFontDatabase::addApplicationFont(QStringLiteral(":/anyplay-fonts/%1.ttf").arg(QLatin1String(f)));
 
 #ifdef Q_OS_MACOS
 	QGuiApplication::setWindowIcon(QIcon(":/icons/anyplay-icon.png"));

@@ -56,7 +56,7 @@ public:
 	int build() const { return build_; }
 	QString version() const { return version_; }
 	QString notes() const { return notes_; }
-	bool mandatory() const { return mandatory_; }
+	bool mandatory() const { return mandatory_ && !may_play_; }   // поки сервер дозволяє грати, не блокуємо
 	QString manual() const { return manual_; }
 	QString phase() const { return phase_; }
 	qint64 received() const { return received_; }
@@ -114,7 +114,7 @@ private:
 
 	bool available_ = false, mandatory_ = false, prompt_ = false, dismissed_ = false;
 	bool start_after_check_ = false, canceled_ = false, needs_move_ = false, moving_ = false;
-	bool range_sent_ = false, forced_ = false;
+	bool range_sent_ = false, forced_ = false, may_play_ = false;
 	int build_ = 0, min_build_ = 0;
 	QString version_, notes_, manual_, url_, sha256_;
 	qint64 size_ = 0, received_ = 0, total_ = 0, offset_ = 0;

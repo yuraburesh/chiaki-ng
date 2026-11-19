@@ -85,6 +85,14 @@ AnyPlayUpdater::AnyPlayUpdater(AnyPlayCloud *cloud, QmlBackend *backend, QObject
 		if(this->cloud->state() == QLatin1String("update") && !check_reply
 		   && QDateTime::currentMSecsSinceEpoch() - last_check_ms_ > 60 * 1000)
 			check();
+		// сервер дозволяє грати (бронь іде, наприклад, після обриву гри): обов'язкове оновлення не блокує екран,
+		// інакше людина не змогла б підключитись знову до кінця броні
+		const bool play = this->cloud->state() == QLatin1String("play");
+		if(play != may_play_)
+		{
+			may_play_ = play;
+			emit changed();
+		}
 		updatePrompt();
 	});
 	// почалась гра: завантаження ставимо на паузу (докачаємо потім), вікно ховаємо до кінця гри
@@ -141,7 +149,7 @@ void AnyPlayUpdater::updatePrompt()
 		if(busy || phase_ == QLatin1String("error"))
 			p = true;
 		// під час оплаченої броні вікно саме не вискакує (лише кнопкою на головному екрані), щоб не заважати грі
-		else if(available_ && (mandatory_ || forced_ || (!dismissed_ && cloud->state() != QLatin1String("play"))))
+		else if(available_ && (forced_ || (!dismissed_ && !may_play_) || (mandatory_ && !may_play_)))
 			p = true;
 	}
 	if(p != prompt_)
@@ -482,6 +490,13 @@ void AnyPlayUpdater::install(const QString &file)
 	QSettings().setValue(QLatin1String(ATTEMPT_KEY), build_);
 	// коротка пауза, щоб людина встигла побачити «Встановлюємо…»
 	QTimer::singleShot(700, this, [this, file]() {
+		if(streaming())
+		{
+			// гра встигла початися — програму не закриваємо; файл уже перевірений, поставимо після гри
+			QSettings().remove(QLatin1String(ATTEMPT_KEY));
+			setPhase(QStringLiteral("idle"));
+			return;
+		}
 #if defined(Q_OS_WIN)
 		installWindows(file);
 #elif defined(Q_OS_MACOS)
@@ -498,7 +513,8 @@ void AnyPlayUpdater::installWindows(const QString &file)
 	const QString log = QDir::toNativeSeparators(updatesDir() + QStringLiteral("/install.log"));
 	const QStringList args = {
 		QStringLiteral("/SILENT"), QStringLiteral("/SUPPRESSMSGBOXES"), QStringLiteral("/NORESTART"),
-		QStringLiteral("/SP-"), QStringLiteral("/CLOSEAPPLICATIONS"), QStringLiteral("/ANYPLAYUPDATE"),
+		QStringLiteral("/SP-"), QStringLiteral("/CLOSEAPPLICATIONS"), QStringLiteral("/FORCECLOSEAPPLICATIONS"),
+		QStringLiteral("/ANYPLAYUPDATE"),
 		QStringLiteral("/LOG=") + log,
 	};
 	if(!QProcess::startDetached(QDir::toNativeSeparators(file), args, QFileInfo(file).absolutePath()))
@@ -573,13 +589,53 @@ void AnyPlayUpdater::moveToApplications()
 	moving_ = true;
 	emit changed();
 	QTimer::singleShot(700, this, [this, bundle, dest]() {
-		if(!runMacHelper(bundle, dest))
+		if(streaming())
 		{
 			QSettings().remove(QLatin1String(MOVE_KEY));
-			setPhase(QStringLiteral("error"), tr("Не вдалося перенести AnyPlay у «Програми». Перетягни програму туди сам і відкрий її знову."));
+			setPhase(QStringLiteral("idle"));
 			return;
 		}
-		quitForUpdate();
+		// Копію робимо ще до виходу: програму, запущену з образу диска чи «Завантажень», macOS відкриває
+		// з тимчасової копії (AppTranslocation), яка може зникнути, щойно програма закриється.
+		// Копія лежить поруч із місцем призначення (той самий диск); скрипт поставить її на місце й прибере папку.
+		const QString stage = QFileInfo(dest).absolutePath() + QStringLiteral("/.anyplay-move-%1").arg(QCoreApplication::applicationPid());
+		const QString copied = stage + QLatin1Char('/') + QFileInfo(dest).fileName();
+		const auto fail = [this, stage]() {
+			QDir(stage).removeRecursively();
+			QSettings().remove(QLatin1String(MOVE_KEY));
+			setPhase(QStringLiteral("error"), tr("Не вдалося перенести AnyPlay у «Програми». Перетягни програму туди сам і відкрий її знову."));
+		};
+		QDir(stage).removeRecursively();
+		if(!QDir().mkpath(stage))
+		{
+			fail();
+			return;
+		}
+		QProcess *copy = new QProcess(this);
+		connect(copy, &QProcess::finished, this, [this, copy, stage, copied, dest, fail](int code, QProcess::ExitStatus status) {
+			copy->deleteLater();
+			if(streaming())
+			{
+				QDir(stage).removeRecursively();
+				QSettings().remove(QLatin1String(MOVE_KEY));
+				setPhase(QStringLiteral("idle"));
+				return;
+			}
+			if(status != QProcess::NormalExit || code != 0 || !QFileInfo::exists(copied + QStringLiteral("/Contents/MacOS"))
+			   || !runMacHelper(copied, dest))
+			{
+				fail();
+				return;
+			}
+			quitForUpdate();
+		});
+		connect(copy, &QProcess::errorOccurred, this, [copy, fail](QProcess::ProcessError e) {
+			if(e != QProcess::FailedToStart)
+				return;   // решту розбере finished
+			copy->deleteLater();
+			fail();
+		});
+		copy->start(QStringLiteral("/usr/bin/ditto"), { bundle, copied });
 	});
 #endif
 }
@@ -671,7 +727,7 @@ void AnyPlayUpdater::later()
 		phase_ = QStringLiteral("idle");
 		error_.clear();
 	}
-	if(!mandatory_)
+	if(!mandatory())
 		dismissed_ = true;
 	updatePrompt();
 	emit changed();

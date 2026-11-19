@@ -39,10 +39,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# копія, яку програма зробила перед виходом (перенесення в «Програми»): .anyplay-move-<pid>/AnyPlay.app
+MOVE_DIR=""
+if [[ "$MODE" == "copy" && "$(basename "$(dirname "$SRC")")" == .anyplay-move-* ]]; then
+	MOVE_DIR="$(dirname "$SRC")"
+fi
+
 finish_ok() {
 	log "готово: $DEST"
 	printf 'ok\n' > "$RESULT"
 	[[ "$MODE" == "zip" ]] && rm -f "$SRC"
+	[[ -n "$MOVE_DIR" ]] && rm -rf "$MOVE_DIR"
 	open "$DEST" || log "не вдалося відкрити $DEST"
 	exit 0
 }
@@ -69,6 +76,7 @@ fail() {
 	fi
 	printf 'failed\n%s\n' "$manual" > "$RESULT"
 	if [[ -d "$DEST" ]]; then
+		[[ -n "$MOVE_DIR" ]] && rm -rf "$MOVE_DIR"
 		open "$DEST" 2>/dev/null
 	elif [[ "$MODE" == "copy" ]]; then
 		open "$SRC" 2>/dev/null

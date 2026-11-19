@@ -71,6 +71,9 @@ class AnyPlayUpdate(val build: Int, val version: String, val url: String, val sh
 /** Файл не той, що обіцяв сервер: зайвий розмір або інша контрольна сума */
 private class CorruptUpdateException: IOException()
 
+/** На телефоні не вистачає місця для файлу оновлення і його встановлення */
+private class NoSpaceException(val missing: Long): IOException()
+
 /**
  * Перевіряє оновлення і веде користувача через завантаження та встановлення.
  * Живе разом з AnyPlayActivity; вікна показує лише коли головний екран на виду
@@ -149,7 +152,7 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	}
 
 	private enum class Phase { IDLE, PERMISSION, DOWNLOADING, INSTALLING }
-	private enum class Failure { NETWORK, CORRUPT, INSTALL }
+	private enum class Failure { NETWORK, CORRUPT, INSTALL, SPACE }
 
 	private var phase = Phase.IDLE
 	private var offer: AnyPlayUpdate? = null
@@ -163,6 +166,9 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	private var resumed = false
 	private var deferred: (() -> Unit)? = null // що показати, коли головний екран знову на виду
 	private var confirmLaunched = false
+	private var lastState = ""                 // стан з останнього опитування сервера (play, wait, update…)
+	private var offerDialog: AlertDialog? = null   // вікно «Доступна версія», яке не можна закрити (обов'язкове)
+	private var missingBytes = 0L
 
 	private val canShow get() = resumed && !activity.isFinishing && canShowExtra()
 
@@ -215,6 +221,12 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	/** Кожне опитування сервера (раз на кілька секунд, лише коли екран на виду) */
 	fun poll(state: String)
 	{
+		lastState = state
+		// сервер дозволяє грати (бронь іде, наприклад, після обриву гри): обов'язкове вікно не тримає екран,
+		// інакше до кінця броні не вийшло б підключитись знову. Покажемо його, коли сервер попросить оновитись
+		val d = offerDialog
+		if(state == "play" && phase == Phase.IDLE && d != null && dialog === d)
+			dismissDialog()
 		runDeferred()
 		val since = SystemClock.elapsedRealtime() - lastCheck
 		if(since > CHECK_EVERY_MS || (state == "update" && phase == Phase.IDLE && dialog == null && since > CHECK_UPDATE_STATE_MS))
@@ -303,19 +315,22 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	private fun showOffer(u: AnyPlayUpdate)
 	{
 		dialog?.dismiss()
+		// поки сервер дозволяє грати (бронь іде), навіть обов'язкове оновлення можна відкласти
+		val blocking = u.mandatory && lastState != "play"
 		var text = "Щоб встановити оновлення, ми ненадовго закриємо AnyPlay і відкриємо знову. Вхід і броні збережуться."
 		if(u.notes.isNotEmpty())
 			text += "\n\nЩо нового: ${u.notes}"
-		if(u.mandatory)
+		if(blocking)
 			text += "\n\nБез цього оновлення грати не вийде."
 		val b = MaterialAlertDialogBuilder(activity)
 			.setTitle("Доступна версія ${u.build}")
 			.setMessage(text)
-			.setCancelable(!u.mandatory)
+			.setCancelable(!blocking)
 			.setPositiveButton("Оновити") { _, _ -> start(u) }
-		if(!u.mandatory)
+		if(!blocking)
 			b.setNegativeButton("Пізніше", null)
-		present(b)
+		val d = present(b)
+		offerDialog = if(blocking) d else null
 	}
 
 	/** Показує вікно й пам'ятає його, поки його не закриють */
@@ -330,6 +345,8 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 				statusText = null
 				progressBar = null
 			}
+			if(offerDialog === d)
+				offerDialog = null
 		}
 		return d
 	}
@@ -494,7 +511,13 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 			catch(e: Exception)
 			{
 				ensureActive()   // «Скасувати» обриває з’єднання — це не помилка
-				failed(u, if(e is CorruptUpdateException) Failure.CORRUPT else Failure.NETWORK)
+				missingBytes = (e as? NoSpaceException)?.missing ?: 0L
+				failed(u, when(e)
+				{
+					is CorruptUpdateException -> Failure.CORRUPT
+					is NoSpaceException -> Failure.SPACE
+					else -> Failure.NETWORK
+				})
 				return@launch
 			}
 			setStatus("Перевіряємо файл…")
@@ -526,6 +549,11 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 		dir.listFiles()?.forEach { if(it.name != file.name) it.delete() }
 		if(file.length() > u.size)
 			file.delete()
+		// місце: решта файлу + ще одна його копія для встановлення (система копіює APK до себе) + запас
+		val need = (u.size - file.length()) + u.size + 50L * 1024 * 1024
+		val free = dir.usableSpace
+		if(free in 1 until need)
+			throw NoSpaceException(need - free)
 		var url = URL(u.url)
 		var hops = 0
 		var restarted = false
@@ -781,6 +809,7 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 				Failure.NETWORK -> "Не вдалося завантажити оновлення. Перевір інтернет."
 				Failure.CORRUPT -> "Файл пошкоджений, спробуй ще раз."
 				Failure.INSTALL -> "Не вдалося встановити оновлення. Спробуй ще раз або завантаж нову версію вручну."
+				Failure.SPACE -> "На телефоні не вистачає місця для оновлення. Звільни ще приблизно ${Math.max(1L, Math.round(missingBytes / MB))} МБ і спробуй ще раз."
 			}
 			val b = MaterialAlertDialogBuilder(activity)
 				.setTitle("Оновлення AnyPlay")

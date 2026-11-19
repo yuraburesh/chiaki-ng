@@ -10,6 +10,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.metallic.chiaki.BuildConfig
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.metallic.chiaki.databinding.ActivityAnyplayBinding
 import com.metallic.chiaki.stream.StreamActivity
@@ -42,6 +43,8 @@ class AnyPlayActivity: AppCompatActivity()
 	private var pollJob: Job? = null
 	private var busy = false             // шукаємо приставку перед грою
 	private var adminInfo: JSONObject? = null   // лише для адміна: хто грає, наступні броні, заявки
+	// оновлення програми: вікна лише на цьому екрані й не під час пошуку приставки чи входу
+	private val updater = AnyPlayUpdater(this) { !busy && state != "pairing" }
 
 	private val isAdmin get() = loggedIn && session.optBoolean("admin")
 
@@ -50,6 +53,13 @@ class AnyPlayActivity: AppCompatActivity()
 		super.onCreate(savedInstanceState)
 		state = if(loggedIn) "wait" else "login"
 		bindViews()
+		updater.onCreate()
+	}
+
+	override fun onDestroy()
+	{
+		updater.onDestroy()
+		super.onDestroy()
 	}
 
 	/** Екран повернули: вертикальна й горизонтальна розкладки різні, стан програми лишається */
@@ -64,7 +74,7 @@ class AnyPlayActivity: AppCompatActivity()
 		binding = ActivityAnyplayBinding.inflate(layoutInflater)
 		setContentView(binding.root)
 
-		binding.versionLabel.text = "AnyPlay для Android, збірка ${AnyPlayCloud.BUILD}"
+		binding.versionLabel.text = "AnyPlay для Android, збірка ${BuildConfig.ANYPLAY_BUILD}"
 		binding.logoutButton.setOnClickListener {
 			MaterialAlertDialogBuilder(this)
 				.setMessage("Вийти з AnyPlay на цьому телефоні?")
@@ -104,15 +114,18 @@ class AnyPlayActivity: AppCompatActivity()
 			{
 				if(loggedIn && state != "pairing")
 					refresh()
+				updater.poll(state)
 				delay(POLL_MS)
 			}
 		}
+		updater.onResume()
 	}
 
 	override fun onPause()
 	{
 		super.onPause()
 		pollJob?.cancel()
+		updater.onPause()
 	}
 
 	private suspend fun refresh()
@@ -271,6 +284,10 @@ class AnyPlayActivity: AppCompatActivity()
 			"play" -> if(isAdmin) adminPlay() else play()
 			"offline" -> lifecycleScope.launch { refresh() }
 			"wait" -> openWeb(if((session.optJSONObject("next")?.optLong("start") ?: 0L) > 0) "mine" else "book")
+			"update" -> updater.updateNow {
+				openBot()
+				toast("Нову версію можна завантажити в боті: кнопка «Програма».")
+			}
 			else -> openBot()
 		}
 	}
@@ -559,8 +576,8 @@ class AnyPlayActivity: AppCompatActivity()
 			"update" ->
 			{
 				binding.cardTitle.text = "Потрібна нова версія"
-				binding.cardText.text = "Ця версія програми застаріла й більше не підключається до приставки. Завантаж нову в боті: кнопка «Програма»."
-				binding.primaryButton.text = "Завантажити в боті"
+				binding.cardText.text = "Ця версія програми застаріла й більше не підключається до приставки. Натисни «Оновити»: нова версія встановиться сама, вхід і броні збережуться."
+				binding.primaryButton.text = "Оновити"
 			}
 			"offline" ->
 			{

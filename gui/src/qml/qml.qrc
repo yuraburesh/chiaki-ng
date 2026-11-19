@@ -9,6 +9,7 @@
         <file>AnyPlayPsnLogin.qml</file>
         <file>AnyPlayStreamMenu.qml</file>
         <file>AnyPlayGuide.qml</file>
+        <file>AnyPlayUpdateDialog.qml</file>
     <file>StreamView.qml</file>
     <file>StreamMenuWindow.qml</file>
     <file>ConfirmDialog.qml</file>

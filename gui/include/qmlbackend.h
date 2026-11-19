@@ -7,6 +7,7 @@
 #include "qmlcontroller.h"
 #include "qmlsettings.h"
 #include "anyplaycloud.h"
+#include "anyplayupdater.h"
 
 #include <QObject>
 #include <QMutex>
@@ -83,6 +84,7 @@ class QmlBackend : public QObject
     Q_PROPERTY(QmlMainWindow* window READ qmlWindow CONSTANT)
     Q_PROPERTY(QmlSettings* settings READ qmlSettings CONSTANT)
     Q_PROPERTY(AnyPlayCloud* cloud READ anyplayCloud CONSTANT)
+    Q_PROPERTY(AnyPlayUpdater* updater READ anyplayUpdater CONSTANT)
     Q_PROPERTY(StreamSession* session READ qmlSession NOTIFY sessionChanged)
     Q_PROPERTY(QList<QmlController*> controllers READ qmlControllers NOTIFY controllersChanged)
     Q_PROPERTY(bool discoveryEnabled READ discoveryEnabled WRITE setDiscoveryEnabled NOTIFY discoveryEnabledChanged)
@@ -121,6 +123,7 @@ public:
     QmlSettings *qmlSettings() const;
     StreamSession *qmlSession() const;
     AnyPlayCloud *anyplayCloud() const { return anyplay_cloud; }
+    AnyPlayUpdater *anyplayUpdater() const { return anyplay_updater; }
     bool anyplayClient() const;   // орендар (не адмін): приставку в режим спокою не переводимо ніколи
     QList<QmlController*> qmlControllers() const;
 
@@ -303,6 +306,7 @@ private:
     Settings *settings = {};
     QmlSettings *settings_qml = {};
     AnyPlayCloud *anyplay_cloud = {};
+    AnyPlayUpdater *anyplay_updater = {};
     bool anyplayMayPlay();
     QmlMainWindow *window = {};
     AnyPlayBrowserWatch *psn_watch = {};

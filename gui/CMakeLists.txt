@@ -7,7 +7,7 @@ if(APPLE)
 	enable_language(OBJCXX)
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Concurrent Svg Qml Quick Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Concurrent Svg Qml Quick Widgets Network)
 if(Qt6_VERSION VERSION_GREATER_EQUAL "6.10.0")
 	find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 endif()
@@ -32,6 +32,8 @@ set(SOURCE_FILES
 	src/anyplaycloud.cpp
 	include/anyplaybrowser.h
 	src/anyplaybrowser.cpp
+	include/anyplayupdater.h
+	src/anyplayupdater.cpp
 	include/sessionlog.h
 	src/sessionlog.cpp
 	include/settings.h
@@ -103,6 +105,21 @@ add_executable(chiaki WIN32
 )
 target_include_directories(chiaki PRIVATE include)
 
+# AnyPlay: номер збірки — один на всі платформи, лежить у anyplay-build.txt у корені репозиторію.
+# Сервер порівнює його з опублікованим оновленням, тож без файлу збирати не можна.
+set(ANYPLAY_BUILD_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../anyplay-build.txt")
+if(NOT EXISTS "${ANYPLAY_BUILD_FILE}")
+	message(FATAL_ERROR "Не знайдено ${ANYPLAY_BUILD_FILE} з номером збірки AnyPlay")
+endif()
+file(READ "${ANYPLAY_BUILD_FILE}" ANYPLAY_BUILD)
+string(STRIP "${ANYPLAY_BUILD}" ANYPLAY_BUILD)
+if(NOT ANYPLAY_BUILD MATCHES "^[1-9][0-9]*$")
+	message(FATAL_ERROR "У ${ANYPLAY_BUILD_FILE} має бути лише номер збірки (ціле число), а там: '${ANYPLAY_BUILD}'")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ANYPLAY_BUILD_FILE}")
+message(STATUS "AnyPlay build: ${ANYPLAY_BUILD}")
+target_compile_definitions(chiaki PRIVATE ANYPLAY_BUILD_NUMBER=${ANYPLAY_BUILD})
+
 add_library(placebo-libav-impl src/libav_impl.c)
 target_link_libraries(placebo-libav-impl PkgConfig::LIBPLACEBO FFMPEG::avcodec FFMPEG::avutil FFMPEG::avformat)
 target_link_libraries(chiaki PkgConfig::LIBPLACEBO placebo-libav-impl)
@@ -113,7 +130,7 @@ if(CHIAKI_ENABLE_CLI)
 	target_link_libraries(chiaki chiaki-cli-lib)
 endif()
 
-target_link_libraries(chiaki Qt::Core Qt::Gui Qt::GuiPrivate Qt::Concurrent Qt::Svg Qt::Qml Qt::Quick Qt::Widgets)
+target_link_libraries(chiaki Qt::Core Qt::Gui Qt::GuiPrivate Qt::Concurrent Qt::Svg Qt::Qml Qt::Quick Qt::Widgets Qt::Network)
 if (${Qt6DBus_FOUND} AND NOT WIN32)
 	target_link_libraries(chiaki Qt::DBus)
 if (NOT APPLE)

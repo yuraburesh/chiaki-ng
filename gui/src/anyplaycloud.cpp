@@ -1,4 +1,5 @@
 #include "anyplaycloud.h"
+#include "anyplayupdater.h"
 #include "settings.h"
 #include "qmlbackend.h"
 #include "qmlsettings.h"
@@ -6,6 +7,7 @@
 
 #include <QClipboard>
 #include <QDateTime>
+#include <QDebug>
 #include <QGuiApplication>
 #include <QDesktopServices>
 #include <QJsonArray>
@@ -24,8 +26,8 @@ static const int BEAT_MS = 20 * 1000;
 static const int PAIR_MS = 2000;
 static const int PAIR_MAX_TRIES = 300; // ~10 хв
 
-// Номер версії програми: сервер порівнює його з мінімальним і просить оновитись, якщо програма застаріла
-static const int ANYPLAY_BUILD = 103;
+// Номер версії програми (з anyplay-build.txt): сервер порівнює його з мінімальним і просить оновитись, якщо програма застаріла
+static const int ANYPLAY_BUILD = AnyPlayBuildNumber;
 
 AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent)
 	: QObject(parent), settings(settings), backend(backend)
@@ -142,6 +144,7 @@ void AnyPlayCloud::request(const QString &method, const QString &path, const QJs
 	req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 	req.setTransferTimeout(15000);
 	req.setRawHeader("X-AnyPlay-Build", QByteArray::number(ANYPLAY_BUILD));   // сервер знає, чи програма не застаріла
+	req.setRawHeader("X-AnyPlay-Platform", anyplayPlatform());                // і для якої системи шукати оновлення
 	if(auth && !token_.isEmpty())
 		req.setRawHeader("Authorization", "Bearer " + token_.toUtf8());
 	QNetworkReply *reply = method == "GET" ? nam.get(req)
@@ -286,6 +289,11 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 			heartbeat();
 		}
 		setState("play");
+	}
+	else if(st == "update" && playing_ && backend->qmlSession())
+	{
+		// трансляція вже йде — не обриваємо гру через оновлення: стан «update» покажемо, коли гра закінчиться
+		qInfo() << "AnyPlay: update requested during a stream, keeping the stream";
 	}
 	else
 	{

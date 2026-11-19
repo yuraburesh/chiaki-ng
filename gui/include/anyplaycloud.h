@@ -51,6 +51,7 @@ public:
 	AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent = nullptr);
 
 	QString state() const { return state_; }
+	QString server() const { return server_; }   // адреса сервера AnyPlay (для перевірки оновлень)
 	bool loggedIn() const { return !token_.isEmpty(); }
 	bool admin() const { return admin_; }
 	QString userName() const { return user_; }

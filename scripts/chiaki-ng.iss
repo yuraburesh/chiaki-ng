@@ -6,16 +6,31 @@
 #define MyAppURL "https://chiaki-ng.github.io/chiaki-ng/"
 #define MyAppExeName "chiaki.exe"
 #define MyAppPath "..\chiaki-ng-Win"
-#define MyAppVersion() \
-  GetVersionComponents(MyAppPath + "\" + MyAppExeName, Local[0], Local[1], Local[2], Local[3]), \
-  Str(Local[0]) + "." + Str(Local[1]) + "." + Str(Local[2])
+; AnyPlay: the build number comes from anyplay-build.txt in the repository root (same number the app is built with)
+#define AnyPlayBuildFile AddBackslash(SourcePath) + "..\anyplay-build.txt"
+#if !FileExists(AnyPlayBuildFile)
+  #error anyplay-build.txt with the AnyPlay build number was not found
+#endif
+#define AnyPlayBuildHandle FileOpen(AnyPlayBuildFile)
+#define AnyPlayBuild Trim(FileRead(AnyPlayBuildHandle))
+#expr FileClose(AnyPlayBuildHandle)
+#if AnyPlayBuild == ""
+  #error anyplay-build.txt is empty
+#endif
+#define MyAppVersion "1.0." + AnyPlayBuild
 
 [Setup]
+; AnyPlay: the in-app updater runs this installer silently with /ANYPLAYUPDATE (see [Run] and [Code]).
+; AppMutex is intentionally not used: in silent mode it would just abort the install,
+; while we need to wait for AnyPlay to close itself (InitializeSetup below).
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
 AppId={{A329DCDE-074D-4C82-959A-3CFAC9A26B1F}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}
+; AnyPlay relaunches itself from [Run] after an update; a Restart Manager restart would start it twice
+RestartApplications=no
 ;AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
@@ -65,4 +80,40 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; AnyPlay: relaunch the app after an in-app update (no postinstall flag, so it also runs in silent mode)
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: IsAnyPlayUpdate
+
+[Code]
+// The installer was started by the AnyPlay app itself (in-app update)
+function IsAnyPlayUpdate: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/ANYPLAYUPDATE') = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+// The app holds the AnyPlayAppMutex mutex and quits right after starting the installer.
+// Wait up to 15 seconds for it to close; after that /CLOSEAPPLICATIONS handles files still in use.
+function InitializeSetup: Boolean;
+var
+  Waited: Integer;
+begin
+  Result := True;
+  if not IsAnyPlayUpdate then
+    Exit;
+  Waited := 0;
+  while CheckForMutexes('AnyPlayAppMutex') and (Waited < 15000) do
+  begin
+    Sleep(250);
+    Waited := Waited + 250;
+  end;
+  if Waited > 0 then
+    Log(Format('AnyPlay: waited %d ms for the app to close', [Waited]));
+end;
 

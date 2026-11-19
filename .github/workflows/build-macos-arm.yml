@@ -143,11 +143,28 @@ jobs:
           rm -rf dmgroot && mkdir dmgroot && cp -a AnyPlay.app dmgroot/ && ln -s /Applications dmgroot/Applications
           hdiutil create -volname AnyPlay -srcfolder dmgroot -fs HFS+ -format UDZO chiaki-ng.dmg
           codesign --force --entitlements gui/entitlements.xml --deep --sign - chiaki-ng.dmg
+          # AnyPlay: архів для оновлення з програми (ditto зберігає підпис, права й посилання всередині програми)
+          build=$(tr -d '[:space:]' < anyplay-build.txt)
+          if [[ ! "$build" =~ ^[0-9]+$ ]]; then echo "У anyplay-build.txt має бути лише номер збірки"; exit 1; fi
+          rm -f AnyPlay-Mac-*.zip
+          ditto -c -k --keepParent AnyPlay.app "AnyPlay-Mac-${build}.zip"
+          # той самий шлях, що й у програмі: розпакувати й перевірити підпис.
+          # Якщо підпис не сходиться, програма відмовиться ставити такий архів — тож його й не публікуємо (DMG лишається)
+          rm -rf ziptest && mkdir ziptest
+          if ditto -x -k "AnyPlay-Mac-${build}.zip" ziptest && codesign --verify --deep ziptest/AnyPlay.app; then
+            ls -la AnyPlay-Mac-*.zip
+          else
+            echo "::error::Підпис програми в AnyPlay-Mac-${build}.zip не сходиться, архів для оновлення не публікуємо"
+            rm -f AnyPlay-Mac-*.zip
+          fi
+          rm -rf ziptest
 
       - name: Upload chiaki-ng Artifact
         uses: actions/upload-artifact@v7
         with:
           name: chiaki-ng-macos_arm64-Release
-          path: chiaki-ng.dmg
+          path: |
+            chiaki-ng.dmg
+            AnyPlay-Mac-*.zip
           if-no-files-found: error
           retention-days: 7

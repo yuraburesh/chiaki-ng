@@ -11,6 +11,7 @@ import org.streetpea.chiaking
 Rectangle {
     id: home
     property var cloud: Chiaki.cloud
+    property var updater: Chiaki.updater
     property int tick: 0
     property bool serviceMode: false     // адмін тимчасово відкрив повний (сервісний) інтерфейс
     readonly property bool isAdmin: cloud.loggedIn && cloud.admin
@@ -81,11 +82,13 @@ Rectangle {
     function levelName() { return levelNames[home.cloud.qualityLevel] || levelNames[1]; }
     function qualityName() { return home.cloud.autoQuality ? qsTr("Авто: %1").arg(levelName()) : levelName(); }
 
-    readonly property bool popupOpen: guidePopup.opened || qualityPopup.opened || psnPopup.opened || extendPopup.opened || clientsPopup.opened || sharedPopup.opened || bookPopup.opened
+    readonly property bool popupOpen: guidePopup.opened || qualityPopup.opened || psnPopup.opened || extendPopup.opened || clientsPopup.opened || sharedPopup.opened || bookPopup.opened || updateDialog.visible
     Keys.onReturnPressed: if (!popupOpen) primary.clicked()
     Keys.onEnterPressed: if (!popupOpen) primary.clicked()
     Keys.onEscapePressed: {
-        if (popupOpen)
+        if (updateDialog.visible)
+            updateDialog.escape();
+        else if (popupOpen)
             closePopups();
         else
             root.showConfirmDialog(qsTr("Вийти"), qsTr("Закрити AnyPlay?"), () => Qt.quit());
@@ -154,6 +157,14 @@ Rectangle {
             }
         }
         Item { Layout.fillWidth: true }
+        HomeButton {   // вийшла нова версія, а вікно відкладене «Пізніше» — тут його можна відкрити знову
+            visible: !!home.updater && home.updater.available && !home.updater.prompt
+            text: qsTr("Оновлення %1").arg(home.updater ? home.updater.build : "")
+            font.pixelSize: 14
+            padding: 10
+            leftPadding: 18; rightPadding: 18
+            onClicked: home.updater.show()
+        }
         Label {
             visible: home.cloud.loggedIn && home.cloud.userName !== ""
             text: "" + home.cloud.userName
@@ -245,7 +256,9 @@ Rectangle {
                     case "pairing": return qsTr("Відкрився бот @play_any_bot. Натисни там «Start» і повертайся сюди.");
                     case "offline": return qsTr("Спробуємо знову за хвилину.");
                     case "no_console": return qsTr("Приставка тимчасово недоступна — кнопка «🆘 Допомога» в боті.");
-                    case "update": return qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Завантаж нову в боті: кнопка «Програма». Встановлюється поверх старої, вхід і броні зберігаються.");
+                    case "update": return home.updater && home.updater.available
+                        ? qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Натисни «Оновити програму»: AnyPlay завантажить нову версію, ненадовго закриється і відкриється знову. Вхід і броні збережуться.")
+                        : qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Завантаж нову в боті: кнопка «Програма». Встановлюється поверх старої, вхід і броні зберігаються.");
                     default: return c.nextStart
                         ? qsTr("До початку гри (%1–%2). Доступ відкриється автоматично, програму можна не закривати.").arg(c.formatTime(c.nextStart)).arg(c.formatTime(c.nextEnd))
                         : qsTr("Обери час і оплати прямо тут — кнопка нижче.");
@@ -267,7 +280,7 @@ Rectangle {
                     case "pairing": return qsTr("Скасувати");
                     case "offline": return qsTr("Спробувати ще");
                     case "no_console": return qsTr("Відкрити бота");
-                    case "update": return qsTr("Завантажити нову версію");
+                    case "update": return home.updater && home.updater.available ? qsTr("Оновити програму") : qsTr("Завантажити нову версію");
                     default: return qsTr("Забронювати час");
                     }
                 }
@@ -278,7 +291,12 @@ Rectangle {
                     case "pairing": home.cloud.cancelLogin(); break;
                     case "offline": home.cloud.refresh(); break;
                     case "no_console": home.cloud.openBot(); break;
-                    case "update": home.cloud.openBot(); break;
+                    case "update":
+                        if (home.updater && home.updater.available)
+                            home.updater.show();
+                        else
+                            home.cloud.openBot();
+                        break;
                     default: bookPopup.open();
                     }
                 }
@@ -503,6 +521,10 @@ Rectangle {
         Timer { id: toastTimer; interval: 8000; onTriggered: toast.message = "" }
         Connections {
             target: Chiaki.cloud
+            function onMessage(text) { toast.show(text); }
+        }
+        Connections {
+            target: Chiaki.updater
             function onMessage(text) { toast.show(text); }
         }
         // геймпад підключили або від'єднали — кажемо, чим тепер керувати
@@ -1066,6 +1088,12 @@ Rectangle {
                 onClicked: { sharedPopup.close(); home.cloud.uploadConsole(); }
             }
         }
+    }
+
+    // ── оновлення програми: саме вискакує, коли вийшла нова версія (але не під час гри) ──
+    AnyPlayUpdateDialog {
+        id: updateDialog
+        anchors.fill: parent
     }
 
     // ── компоненти в стилі бренду ──

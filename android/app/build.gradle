@@ -19,6 +19,16 @@ def chiakiVersionPatch = grepVersionComponent(rootCMakeListsContent, "CHIAKI_VER
 def chiakiVersion = "$chiakiVersionMajor.$chiakiVersionMinor.$chiakiVersionPatch"
 println("Determined Chiaki Version: $chiakiVersion")
 
+// AnyPlay: номер збірки один на всі платформи — файл anyplay-build.txt у корені сховища
+def anyplayBuildFile = file("../../anyplay-build.txt")
+if(!anyplayBuildFile.exists())
+    throw new GradleException("Не знайдено anyplay-build.txt у корені сховища")
+def anyplayBuildText = anyplayBuildFile.text.trim()
+if(!(anyplayBuildText ==~ /[0-9]+/))
+    throw new GradleException("anyplay-build.txt має містити лише число, а там: '$anyplayBuildText'")
+def anyplayBuild = anyplayBuildText.toInteger()
+println("AnyPlay build: $anyplayBuild")
+
 android {
     namespace "com.metallic.chiaki"
     compileSdk 35
@@ -32,8 +42,9 @@ android {
             // AnyPlay: сучасні телефони (64 біти); старі 32-бітні додамо окремо, якщо знадобляться
             abiFilters "arm64-v8a"
         }
-        versionCode 103
-        versionName "1.0." + 103
+        versionCode anyplayBuild
+        versionName "1.0." + anyplayBuild
+        buildConfigField "int", "ANYPLAY_BUILD", "$anyplayBuild"
         externalNativeBuild {
             cmake {
                 arguments "-DCHIAKI_ENABLE_TESTS=OFF",
@@ -58,6 +69,7 @@ android {
 
     buildFeatures {
         viewBinding true
+        buildConfig true
         prefab true
     }
 

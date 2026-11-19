@@ -41,6 +41,10 @@ int main(int argc, char *argv[]) { return real_main(argc, argv); }
 #include <QMap>
 #include <QSurfaceFormat>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 Q_DECLARE_METATYPE(ChiakiLogLevel)
 Q_DECLARE_METATYPE(ChiakiRegistEventType)
 
@@ -66,6 +70,11 @@ int RunMain(QGuiApplication &app, Settings *settings, bool exit_app_on_stream_ex
 
 int real_main(int argc, char *argv[])
 {
+#ifdef _WIN32
+	// AnyPlay: встановлювач оновлення чекає, доки зникне цей м'ютекс, тобто доки програма закриється.
+	// Дескриптор не закриваємо: Windows звільнить його сама, коли процес завершиться.
+	CreateMutexW(nullptr, FALSE, L"AnyPlayAppMutex");
+#endif
 	qRegisterMetaType<DiscoveryHost>();
 	qRegisterMetaType<RegisteredHost>();
 	qRegisterMetaType<HostMAC>();

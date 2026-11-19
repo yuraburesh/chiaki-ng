@@ -1494,18 +1494,42 @@ Item {
     // ноутбук не встигає декодувати чи малювати (кадри губляться, а мережа в порядку): спрощуємо обробку картинки без перепідключення
     Timer {
         property int slow: 0
+        property int ticks: 0
+        property int lastLost: 0
+        property int check: 0       // скільки тиків ще дивимось, чи спрощення допомогло
+        property int still: 0       // скільки з них кадри губились так само
+        property bool gaveUp: false
         interval: 2000; repeat: true
         running: !!Chiaki.session && Chiaki.session.connected
-        onRunningChanged: slow = 0
+        onRunningChanged: { slow = 0; ticks = 0; check = 0; still = 0; gaveUp = false; lastLost = Chiaki.session ? Chiaki.session.framesLost : 0; }
         onTriggered: {
             if (!Chiaki.session)
                 return;
-            const dropped = Chiaki.window.droppedFrames;
-            if (dropped >= 8 && Chiaki.session.averagePacketLoss < 0.01) slow++;
+            ticks++;
+            // кадри, що загубились у мережі, теж рахуються в droppedFrames: такі тики не беремо до уваги
+            const lost = Chiaki.session.framesLost - lastLost;
+            lastLost = Chiaki.session.framesLost;
+            // перші 10 с після підключення та згорнуте вікно: кадри відкидаються не через обробку
+            if (gaveUp || ticks <= 5 || Chiaki.window.visibility === Window.Minimized || Chiaki.window.visibility === Window.Hidden) {
+                slow = 0;
+                return;
+            }
+            const renderSlow = Chiaki.window.droppedFrames >= 8 && lost === 0 && Chiaki.session.averagePacketLoss < 0.01;
+            if (check > 0) {
+                if (renderSlow) still++;
+                if (--check === 0 && still >= 3) {
+                    // простіша обробка не допомогла (наприклад, екран 50 Гц): повертаємо як було й у цій грі більше не чіпаємо
+                    Chiaki.cloud.renderUndo();
+                    gaveUp = true;
+                }
+                return;
+            }
+            if (renderSlow) slow++;
             else slow = Math.max(0, slow - 1);
             if (slow >= 4) {
                 slow = 0;
                 if (Chiaki.cloud.renderLighter()) {
+                    check = 5; still = 0;
                     anyplayProfileLabel.modeText = qsTr("Спрощую обробку картинки, щоб гра йшла плавно");
                     anyplayProfileLabel.opacity = 1;
                     anyplayProfileTimer.interval = 4000;

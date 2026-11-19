@@ -765,7 +765,11 @@ int AnyPlayCloud::qualityLevel() const
 	if(res <= 2)
 		return 0;
 	if(res >= 4)
-		return qs->videoPreset() == static_cast<int>(PlaceboPreset::HighQualitySpatial) ? 3 : 2;
+	{
+		// «Ультра» — ШІ-чіткість; найважчу ШІ з розширених налаштувань теж вважаємо «Ультра»
+		const int p = qs->videoPreset();
+		return p == static_cast<int>(PlaceboPreset::HighQualitySpatial) || p == static_cast<int>(PlaceboPreset::HighQualityAdvancedSpatial) ? 3 : 2;
+	}
 	return fps >= 60 ? 1 : 0;
 }
 
@@ -780,8 +784,18 @@ void AnyPlayCloud::setQualityLevel(int level)
 	// через інтернет завеликий бітрейт забиває канал і дає затримку, тому тут стеля нижча, ніж у домашній мережі
 	qs->setResolutionRemotePS5(res); qs->setFpsRemotePS5(fps); qs->setBitrateRemotePS5(level >= 2 ? 15000 : 0);
 	qs->setResolutionLocalPS5(res);  qs->setFpsLocalPS5(fps);  qs->setBitrateLocalPS5(level >= 2 ? 25000 : 0);
-	// H.265: при тій самій швидкості інтернету картинка чистіша, ніж у H.264
-	qs->setCodecRemotePS5(CHIAKI_CODEC_H265); qs->setCodecLocalPS5(CHIAKI_CODEC_H265);
+	// H.265: при тій самій швидкості інтернету картинка чистіша, ніж у H.264 (HDR, якщо його обрали, лишаємо: це теж H.265)
+	if(!chiaki_codec_is_h265(static_cast<ChiakiCodec>(qs->codecRemotePS5())))
+		qs->setCodecRemotePS5(CHIAKI_CODEC_H265);
+	if(!chiaki_codec_is_h265(static_cast<ChiakiCodec>(qs->codecLocalPS5())))
+		qs->setCodecLocalPS5(CHIAKI_CODEC_H265);
+	// рівень обрали вручну: даємо ноутбуку нову спробу без старого обмеження обробки
+	if(!autoQuality())
+	{
+		QSettings s;
+		s.remove(QStringLiteral("anyplay/render_cap"));
+		s.remove(QStringLiteral("anyplay/render_cap_until"));
+	}
 	applyRender(level);
 	emit changed();
 }
@@ -793,7 +807,7 @@ void AnyPlayCloud::prepareAutoQuality()
 		return;
 	if(qs->bitrateRemotePS5() > 15000)   // старе значення «Максимальної»: через інтернет воно давало затримку
 		qs->setBitrateRemotePS5(15000);
-	applyRender(qualityLevel());   // перед кожною грою: обробка картинки під рівень (з урахуванням слабкого ноутбука)
+	applyRender(qualityLevel(), true);   // перед кожною грою: обробка картинки під рівень (з урахуванням слабкого ноутбука)
 	if(!autoQuality())
 		return;
 	QSettings s;
@@ -802,7 +816,9 @@ void AnyPlayCloud::prepareAutoQuality()
 	{
 		s.remove(QStringLiteral("anyplay/auto_up"));
 		const int level = qualityLevel();
-		if(level < QUALITY_TOP && now > s.value(QStringLiteral("anyplay/auto_no_up_until"), 0).toLongLong())
+		// свою обробку (Custom) «Авто» не замінює на ШІ-чіткість, тому вище «Максимальної» тоді не йдемо
+		const int top = qs->videoPreset() == static_cast<int>(PlaceboPreset::Custom) ? 2 : QUALITY_TOP;
+		if(level < top && now > s.value(QStringLiteral("anyplay/auto_no_up_until"), 0).toLongLong())
 		{
 			setQualityLevel(level + 1);
 			s.setValue(QStringLiteral("anyplay/auto_raised_at"), now);
@@ -810,11 +826,14 @@ void AnyPlayCloud::prepareAutoQuality()
 	}
 }
 
-void AnyPlayCloud::applyRender(int level)
+void AnyPlayCloud::applyRender(int level, bool keepOwn)
 {
 	level = qBound(0, level, QUALITY_TOP);
 	QmlSettings *qs = backend->qmlSettings();
-	if(qs)
+	// свою обробку з розширених налаштувань (власну чи найважчу ШІ) перед грою не перезаписуємо
+	const int saved = qs ? qs->videoPreset() : -1;
+	const bool own = keepOwn && (saved == static_cast<int>(PlaceboPreset::Custom) || saved == static_cast<int>(PlaceboPreset::HighQualityAdvancedSpatial));
+	if(qs && !own)
 		qs->setVideoPreset(static_cast<int>(level == 0 ? PlaceboPreset::Fast : level == 1 ? PlaceboPreset::Default
 			: level == 2 ? PlaceboPreset::HighQuality : PlaceboPreset::HighQualitySpatial));
 	// якщо цей ноутбук нещодавно не встигав, обробку тримаємо не вище тієї, що він тягнув (3 дні)
@@ -822,8 +841,10 @@ void AnyPlayCloud::applyRender(int level)
 	int r = level;
 	if(QDateTime::currentSecsSinceEpoch() < s.value(QStringLiteral("anyplay/render_cap_until"), 0).toLongLong())
 		r = qMin(r, s.value(QStringLiteral("anyplay/render_cap"), QUALITY_TOP).toInt());
+	r = qBound(0, r, QUALITY_TOP);
+	// PlaceboPreset і VideoPreset ідуть в однаковому порядку
 	if(QmlMainWindow *w = backend->qmlWindow())
-		w->setVideoPreset(QUALITY_RENDER[qBound(0, r, QUALITY_TOP)]);   // діє одразу, без перепідключення
+		w->setVideoPreset(own && r >= level ? static_cast<QmlMainWindow::VideoPreset>(saved) : QUALITY_RENDER[r]);   // діє одразу, без перепідключення
 }
 
 bool AnyPlayCloud::renderLighter()
@@ -842,12 +863,31 @@ bool AnyPlayCloud::renderLighter()
 	else
 		return false;
 	// рівень у налаштуваннях не чіпаємо; лише обмежуємо обробку на цьому ноутбуці на 3 дні
-	w->setVideoPreset(next);
 	QSettings s;
+	render_undo_ = { static_cast<int>(p), s.value(QStringLiteral("anyplay/render_cap")), s.value(QStringLiteral("anyplay/render_cap_until")) };
+	w->setVideoPreset(next);
 	s.setValue(QStringLiteral("anyplay/render_cap"), next == QmlMainWindow::VideoPreset::HighQuality ? 2 : next == QmlMainWindow::VideoPreset::Default ? 1 : 0);
 	s.setValue(QStringLiteral("anyplay/render_cap_until"), QDateTime::currentSecsSinceEpoch() + 3 * 24 * 3600);
-	emit message(tr("Ноутбук не встигає обробляти картинку: спрощую обробку, щоб гра йшла плавно."));
+	// повідомлення показує сам екран гри (тост головного екрана тут не видно, а після гри він уже застарів)
 	return true;
+}
+
+void AnyPlayCloud::renderUndo()
+{
+	if(render_undo_.preset < 0)
+		return;
+	if(QmlMainWindow *w = backend->qmlWindow())
+		w->setVideoPreset(static_cast<QmlMainWindow::VideoPreset>(render_undo_.preset));
+	QSettings s;
+	if(render_undo_.cap.isValid())
+		s.setValue(QStringLiteral("anyplay/render_cap"), render_undo_.cap);
+	else
+		s.remove(QStringLiteral("anyplay/render_cap"));
+	if(render_undo_.until.isValid())
+		s.setValue(QStringLiteral("anyplay/render_cap_until"), render_undo_.until);
+	else
+		s.remove(QStringLiteral("anyplay/render_cap_until"));
+	render_undo_.preset = -1;
 }
 
 bool AnyPlayCloud::autoQualityDown()

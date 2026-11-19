@@ -100,7 +100,8 @@ public:
 	Q_INVOKABLE bool autoQualityDown();            // зв'язок слабкий: рівень нижче (false — нижче нікуди)
 	Q_INVOKABLE void autoQualityGood();            // довго грали без втрат
 	Q_INVOKABLE bool renderLighter();              // ноутбук не встигає малювати: простіша обробка картинки на цю гру
-	void applyRender(int level);
+	Q_INVOKABLE void renderUndo();                 // спрощення не допомогло (кадри губляться не через обробку): повертаємо як було
+	void applyRender(int level, bool keepOwn = false);
 	Q_INVOKABLE void refreshAdmin();
 	Q_INVOKABLE void adminKick(qint64 bookingId);    // адмін: завершити поточну гру клієнта
 	Q_INVOKABLE void adminSetClosed(bool closed);    // адмін: закрити / відкрити доступ усім клієнтам
@@ -164,6 +165,7 @@ private:
 	QTimer psn_wait_timer, pay_timer, admin_timer;
 	QJsonObject admin_cmp_;
 	bool reconnect_once_ = false;
+	struct { int preset = -1; QVariant cap, until; } render_undo_;   // що було до останнього спрощення обробки
 	qint64 link_job_user_ = 0;   // прив'язка за кодом, який адмін написав у боті: кому звітувати
 	void setBusy(bool b) { if(busy_ != b) { busy_ = b; emit busyChanged(); } }
 };

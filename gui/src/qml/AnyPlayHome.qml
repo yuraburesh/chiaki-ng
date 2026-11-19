@@ -538,7 +538,7 @@ Rectangle {
         }
     }
 
-    // ── якість: три зрозумілі варіанти ──
+    // ── якість: чотири зрозумілі рівні та «Авто» ──
     HomePopup {
         id: qualityPopup
         closeOnOutside: true

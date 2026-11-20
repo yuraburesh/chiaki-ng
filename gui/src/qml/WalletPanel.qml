@@ -75,11 +75,26 @@ GridLayout {
         return String(code || "").toUpperCase();
     }
 
-    onVisibleChanged: if (visible) { status = ""; own = false; cloud.loadWallet(); }
+    // ── валюта балансу: у чому тримати гроші; усе, що є і що прийде, перераховується за курсом ──
+    readonly property var curList: wallet.data.currencies || ["UAH", "PLN", "USDT"]
+    readonly property string balCur: wallet.data.currency || wallet.primary
+    property var curPreview: null          // відповідь сервера «що вийде», поки клієнт не підтвердив
+    property string curAsked: ""
+    function curName(c) { return c === "UAH" ? qsTr("Гривні ₴") : c === "PLN" ? qsTr("Злоті zł") : "USDT"; }
+    function askCurrency(c) {
+        status = "";
+        if (c === balCur && wallet.others.length === 0) { curPreview = null; curAsked = ""; return; }
+        curAsked = c;
+        curPreview = null;
+        cloud.walletCurrency(c, true);
+    }
+
+    onVisibleChanged: if (visible) { status = ""; own = false; curPreview = null; curAsked = ""; cloud.loadWallet(); }
     Component.onCompleted: if (visible) cloud.loadWallet()
     Connections {
         target: panel.cloud
-        function onWalletResult(ok, text) { panel.status = text; panel.statusOk = ok; }
+        function onWalletResult(ok, text) { panel.status = text; panel.statusOk = ok; panel.curPreview = null; panel.curAsked = ""; }
+        function onWalletCurrencyPreview(info) { if (panel.curAsked !== "") panel.curPreview = info; }
     }
     // відкрите поповнення: перепитуємо сервер, щоб гроші з'явились на балансі самі
     Timer {
@@ -120,6 +135,87 @@ GridLayout {
             Layout.topMargin: 6
             role: "lead"
             text: qsTr("Це не обов'язково: за кожну гру можна заплатити й переказом. Спосіб оплати обираєш щоразу сам. Якщо на балансі не вистачає, решту доплачуєш карткою.")
+        }
+
+        ApText { role: "cap"; text: qsTr("Валюта балансу"); Layout.topMargin: 24; Layout.bottomMargin: 6 }
+        GridLayout {
+            Layout.fillWidth: true
+            columns: 3
+            columnSpacing: 6
+            Repeater {
+                model: panel.curList
+                AmountButton {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    text: panel.curName(modelData)
+                    checked: panel.curAsked !== "" ? panel.curAsked === modelData : panel.balCur === modelData
+                    enabled: !panel.cloud.busy
+                    onClicked: panel.askCurrency(modelData)
+                }
+            }
+        }
+        ApText {
+            visible: !panel.curPreview
+            Layout.fillWidth: true
+            Layout.maximumWidth: 520
+            Layout.topMargin: 6
+            role: "small"
+            text: qsTr("Поповнюй будь-яким способом: гроші самі перерахуються у вибрану валюту за курсом НБУ.")
+        }
+        Rectangle {   // що вийде після зміни валюти: показуємо до того, як щось міняти
+            visible: !!panel.curPreview
+            Layout.fillWidth: true
+            Layout.topMargin: 8
+            radius: ap.radius
+            color: "#0affffff"
+            border.width: 1; border.color: ap.edge
+            implicitHeight: curCol.implicitHeight + 28
+            ColumnLayout {
+                id: curCol
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 14 }
+                spacing: 4
+                readonly property var pv: panel.curPreview || ({})
+                readonly property var parts: pv.parts || []
+                ApText {
+                    Layout.fillWidth: true
+                    font.weight: Font.Medium
+                    text: curCol.parts.length
+                        ? qsTr("Баланс стане %1").arg(wallet.money(curCol.pv.to ? curCol.pv.to.amount : 0, curCol.pv.to ? curCol.pv.to.currency : panel.curAsked))
+                        : qsTr("Нові поповнення зараховуватимуться в цій валюті")
+                }
+                Repeater {
+                    model: curCol.parts
+                    ApText {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        role: "small"
+                        text: qsTr("%1 → %2, курс %3").arg(wallet.money(modelData.from.amount, modelData.from.currency))
+                            .arg(wallet.money(modelData.to.amount, modelData.to.currency)).arg(modelData.rate)
+                    }
+                }
+                ApText {
+                    visible: Number(curCol.pv.fee) > 0
+                    Layout.fillWidth: true
+                    role: "small"
+                    text: qsTr("Комісія за зміну валюти: %1%").arg(String(curCol.pv.fee).replace(".", ","))
+                }
+                RowLayout {
+                    Layout.topMargin: 8
+                    spacing: 8
+                    ApButton {
+                        small: true
+                        enabled: !panel.cloud.busy
+                        text: curCol.parts.length ? qsTr("Перевести") : qsTr("Обрати")
+                        onClicked: panel.cloud.walletCurrency(panel.curAsked, false)
+                    }
+                    ApButton {
+                        small: true; ghost: true
+                        text: qsTr("Скасувати")
+                        onClicked: { panel.curPreview = null; panel.curAsked = ""; }
+                    }
+                }
+            }
         }
 
         ApText { role: "cap"; text: qsTr("Поповнити"); Layout.topMargin: 24; Layout.bottomMargin: 6 }

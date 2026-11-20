@@ -272,6 +272,8 @@ private:
     bool handleShortcut(QKeyEvent *event);
     bool event(QEvent *event) override;
     void updateMouseLookCapture();
+    void syncStreamCursor();
+    void startCursorGuard();
     void recenterMouseLookCursor();
     void pollMouseLook();
     QObject *focusObject() const override;
@@ -324,6 +326,7 @@ private:
     int grab_input = 0;
     bool mouse_look_active = false;
     QTimer *mouse_look_timer = nullptr;
+    QTimer *cursor_guard_timer = nullptr;
     int dropped_frames = 0;
     bool is_window_adjustable = false;
     bool is_stream_window_adjustable = false;

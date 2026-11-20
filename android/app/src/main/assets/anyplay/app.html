@@ -132,11 +132,14 @@ h2{font:600 26px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 .day span{display:block;font:500 11px/1.3 var(--body);color:var(--faint)}
 .day.on{background:var(--ink);color:var(--dark);border-color:var(--ink)}
 .day.on span{color:#221d2ebf}
-.times{display:grid;grid-template-columns:repeat(auto-fill,minmax(66px,1fr));gap:6px}
-.times button{background:#ffffff0a;border:1px solid var(--edge);border-radius:2px;padding:6px 0 5px;font:500 15px/1.25 var(--body);font-variant-numeric:tabular-nums;text-align:center}
-.times button small{display:block;font-size:10.5px;color:var(--faint);font-weight:500}
+.times{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:6px}
+.times button{background:#ffffff0a;border:1px solid var(--edge);border-radius:2px;padding:7px 0 6px;font:500 17px/1.25 var(--body);font-variant-numeric:tabular-nums;text-align:center}
+.times button small{display:block;font-size:11.5px;color:var(--faint);font-weight:500}
 .times button.on{background:var(--ink);color:var(--dark);border-color:var(--ink)}
 .times button.on small{color:#221d2eb3}
+.times button.now{border-color:var(--gold)}
+.times button.now small{color:var(--gold)}
+.times button.now.on small{color:#221d2eb3}
 .times .note{grid-column:1/-1;color:var(--mute);padding:6px 0}
 .mt{margin-top:18px}
 .bk{border-bottom:1px solid var(--hair);padding:10px 0 12px}
@@ -149,6 +152,7 @@ h2{font:600 26px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 #bar{flex:0 0 auto;border-top:1px solid var(--hair);background:#221d2ed9;padding:10px var(--pad) calc(10px + env(safe-area-inset-bottom,0px))}
 #bar .in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:18px}
 #barHint{flex:1 1 auto;min-width:0;color:var(--mute);font-size:13px;line-height:1.4}
+#barHint .bwhen{display:block;color:var(--gold,#ffd479);font:600 22px/1.2 var(--display);letter-spacing:1px;font-variant-numeric:tabular-nums;margin-bottom:2px}
 #barBtn{flex:0 0 auto;min-width:260px}
 
 /* ── оплата ── */
@@ -173,6 +177,9 @@ body:not(.wallet) .wonly{display:none!important}
 .amts button.on{background:var(--ink);color:var(--dark);border-color:var(--ink)}
 .amts button[disabled]{opacity:.45}
 #wCur{margin-bottom:8px}
+.amts.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+#wBalBox{margin-top:8px}
+#wBalBox .t{font-weight:500}
 .own{display:flex;align-items:flex-end;gap:10px;margin-top:8px}
 .own input{flex:1 1 auto;min-width:0}
 .own .btn{flex:0 0 auto;width:auto}
@@ -366,6 +373,11 @@ body.wallet #methods{margin-top:6px}
           <p class="lead" style="margin-top:8px">Баланс — це передоплата за гру в AnyPlay. Поповнюєш один раз, а далі платиш за броні й продовження <b>одним натиском</b>: без переказу і без чекання, поки знайдеться оплата.</p>
           <p class="lead" style="margin-top:6px">Це не обов'язково: за кожну гру можна заплатити й переказом. Спосіб оплати обираєш щоразу сам. Якщо на балансі не вистачає, решту доплачуєш карткою.</p>
         </div>
+        <div><p class="cap">Валюта балансу</p>
+          <div class="amts c3" id="wBal"></div>
+          <p class="small" id="wBalHint" style="margin-top:6px">Поповнюй будь-яким способом: гроші самі перерахуються у вибрану валюту за курсом НБУ.</p>
+          <div class="paybox hidden" id="wBalBox"></div>
+        </div>
         <div><p class="cap">Поповнити</p>
           <div class="seg hidden" id="wCur"></div>
           <div class="amts" id="wAmts"></div>
@@ -540,7 +552,8 @@ function failView(r, retry){
   $('retryBtn').onclick = retry;
 }
 function show(v){ hideViews(); $('loading').classList.add('hidden'); $(VIEWS[v]).classList.remove('hidden'); }
-function bar(text, hint, enabled, fn){ $('bar').classList.remove('hidden'); $('barBtn').textContent = text; $('barHint').textContent = hint || '';
+function bar(text, hint, enabled, fn, big){ $('bar').classList.remove('hidden'); $('barBtn').textContent = text;
+  $('barHint').innerHTML = (big ? '<b class="bwhen">' + esc(big) + '</b>' : '') + esc(hint || '');
   $('barHint').classList.toggle('hidden', !hint); $('barBtn').disabled = !enabled; $('barBtn').onclick = fn; }
 function hideBar(){ $('bar').classList.add('hidden'); }
 
@@ -783,8 +796,9 @@ function renderStarts(){
   $('tzNote').textContent = 'Час показано за годинником твого телефона.';
   if(starts === null){ el.innerHTML = '<div class="note">Шукаємо вільний час…</div>'; return; }
   if(!starts.length){ el.innerHTML = '<div class="note">На цей день такий час уже не вміщується. Обери інший день або меншу тривалість.</div>'; return; }
-  starts.forEach(s => { const c = document.createElement('button'); c.type = 'button'; c.className = s === start ? 'on' : '';
-    c.innerHTML = hm(s) + '<small>до ' + hm(s + (t ? t.hours * 3600 : 0)) + '</small>';
+  const soon = Date.now() / 1000 + 900;   // вільно просто зараз: найближчий час підписуємо «зараз»
+  starts.forEach(s => { const c = document.createElement('button'); c.type = 'button'; c.className = (s === start ? 'on' : '') + (s < soon ? ' now' : '');
+    c.innerHTML = hm(s) + '<small>' + (s < soon ? 'зараз, ' : '') + 'до ' + hm(s + (t ? t.hours * 3600 : 0)) + '</small>';
     c.onclick = () => { start = s === start ? 0 : s; haptic(); renderStarts(); renderBar(); }; el.appendChild(c); });
 }
 function renderBar(){
@@ -793,10 +807,10 @@ function renderBar(){
   const t = tariff();
   if(!start || !t){ bar('Обери час початку', '', false, null); return; }
   const when = upFirst(range(start, start + t.hours * 3600)), p = payPlan(t, method, bookPay), m = x => money(x, p.cur, p.sym);
-  if(p.pay === 'wallet') bar('Оплатити з балансу ' + m(p.price), when + '. Бронь підтвердиться одразу, без переказу. Залишиться ' + m(p.bal - p.price) + '.', !busy, book);
-  else if(p.pay === 'mix') bar('Доплатити ' + m(p.rest) + ' ' + viaWord(method), when + '. Місце тримаємо ' + B.holdMinutes + ' хв. Як тільки надійде доплата ' + m(p.rest)
-    + ', спишемо ' + m(p.part) + ' з балансу, і бронь підтвердиться.', !busy, book);
-  else bar('Забронювати за ' + priceStr(t.prices[method]), when + '. Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book);
+  if(p.pay === 'wallet') bar('Оплатити з балансу ' + m(p.price), 'Бронь підтвердиться одразу, без переказу. Залишиться ' + m(p.bal - p.price) + '.', !busy, book, when);
+  else if(p.pay === 'mix') bar('Доплатити ' + m(p.rest) + ' ' + viaWord(method), 'Місце тримаємо ' + B.holdMinutes + ' хв. Як тільки надійде доплата ' + m(p.rest)
+    + ', спишемо ' + m(p.part) + ' з балансу, і бронь підтвердиться.', !busy, book, when);
+  else bar('Забронювати за ' + priceStr(t.prices[method]), 'Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book, when);
 }
 async function book(){
   if(busy) return;
@@ -1021,7 +1035,7 @@ async function extend(){
 // ── баланс: передоплата за гру. Суми дає сервер; спосіб оплати (з балансу чи переказом) клієнт обирає щоразу сам ──
 const CUR = {uah: 'UAH', pln: 'PLN', usdt: 'USDT'}, SYM = {UAH: '₴', PLN: 'zł', USDT: 'USDT'}, CUR_NAME = {UAH: 'Гривні', PLN: 'Злоті', USDT: 'USDT'};
 let W = null, wKey = '';   // {balances: [{currency, amount, symbol}], primary}; null — сервер без балансу або ще не відповів
-let WDet = null, wPoll = null, wDataKey = '', topCur = '', topAmt = 0, tpSwap = null;   // WDet — відповідь /api/app/wallet для вкладки «Баланс»
+let WDet = null, wPoll = null, wDataKey = '', topCur = '', topAmt = 0, tpSwap = null, balAsk = '', balPrev = null;   // WDet — відповідь /api/app/wallet для вкладки «Баланс»
 const isAdmin = () => MODE === 'menu' ? !!G.admin : !!H.admin;
 // адмінам баланс не потрібен; старий сервер не дає поля wallet — тоді й жодного інтерфейсу балансу
 const walletOn = () => !!(W && Array.isArray(W.balances)) && !isAdmin();
@@ -1187,7 +1201,7 @@ function renderWallet(){
   if(!WDet) return;
   const t = WDet.topup || {}, curs = (t.methods || []).map(m => curOf(m.code)).filter((c, i, a) => a.indexOf(c) === i);
   if(!curs.includes(topCur)) topCur = curs.includes(W && W.primary) ? W.primary : curs[0] || (W && W.primary) || 'UAH';
-  wDataKey = JSON.stringify([WDet.balances, WDet.pending, WDet.history, topCur, topAmt, busy]);
+  wDataKey = JSON.stringify([WDet.balances, WDet.pending, WDet.history, topCur, topAmt, busy, WDet.currency, balAsk, balPrev]);
   document.querySelectorAll('.balv').forEach(e => e.textContent = wText());
   const main = wMain(), others = (W && W.balances || []).filter(b => b.currency !== main.currency && +b.amount > 0);
   const res = (WDet.reserved || []).filter(b => +b.amount > 0), lines = [];
@@ -1196,6 +1210,20 @@ function renderWallet(){
   if(res.length) lines.push('Відкладено під доплату за бронь: ' + res.map(b => money(b.amount, b.currency, b.symbol)).join(', ') + '. Якщо доплата не надійде, гроші повернуться на баланс.');
   $('wOther').classList.toggle('hidden', !lines.length);
   $('wOther').textContent = lines.join(' ');
+  // валюта балансу: у чому тримати гроші; спершу показуємо, що вийде, і лише потім міняємо
+  const bc = WDet.currency || main.currency || 'UAH', bl = WDet.currencies || ['UAH', 'PLN', 'USDT'];
+  $('wBal').innerHTML = bl.map(c => '<button type="button" data-bal="' + esc(c) + '" class="' + ((balAsk || bc) === c ? 'on' : '') + '"' + (busy ? ' disabled' : '') + '>'
+    + esc((CUR_NAME[c] || c) + (c === 'USDT' ? '' : ' ' + SYM[c])) + '</button>').join('');
+  $('wBalHint').classList.toggle('hidden', !!balPrev);
+  $('wBalBox').classList.toggle('hidden', !balPrev);
+  if(balPrev){
+    const ps = balPrev.parts || [], to = balPrev.to || {};
+    $('wBalBox').innerHTML = '<span class="t">' + (ps.length ? 'Баланс стане ' + money(to.amount, to.currency, to.symbol) : 'Нові поповнення зараховуватимуться в цій валюті') + '</span>'
+      + ps.map(x => '<span class="small">' + money(x.from.amount, x.from.currency, x.from.symbol) + ' → ' + money(x.to.amount, x.to.currency, x.to.symbol) + ', курс ' + esc(x.rate) + '</span>').join('')
+      + (+balPrev.fee > 0 ? '<span class="small">Комісія за зміну валюти: ' + String(balPrev.fee).replace('.', ',') + '%</span>' : '')
+      + '<div class="actions"><button type="button" class="btn sm" data-balok="1"' + (busy ? ' disabled' : '') + '>' + (ps.length ? 'Перевести' : 'Обрати') + '</button>'
+      + '<button type="button" class="btn sm ghost" data-balno="1">Скасувати</button></div>';
+  }
   // валюту поповнення обирають, лише коли способів оплати кілька
   $('wCur').classList.toggle('hidden', curs.length < 2);
   $('wCur').innerHTML = curs.map(c => '<button type="button" data-cur="' + esc(c) + '" class="' + (c === topCur ? 'on' : '') + '">' + esc(CUR_NAME[c] || c) + '</button>').join('');
@@ -1259,10 +1287,33 @@ async function topupCancel(id){
   topAmt = 0;
   if(view === 'wallet') loadWallet(true);
 }
+// валюта балансу: preview — спитати сервер, що вийде; без preview — перевести все й запам'ятати вибір
+async function balCurrency(c, preview){
+  if(busy || !WDet || !c) return;
+  const cur = WDet.currency || wMain().currency, others = (WDet.balances || []).some(b => b.currency !== c && +b.amount > 0);
+  if(preview && c === cur && !others){ balAsk = ''; balPrev = null; renderWallet(); return; }
+  if(preview){ balAsk = c; balPrev = null; }
+  busy = true; renderWallet();
+  const r = await api('POST', '/api/app/wallet/currency', preview ? {currency: c, preview: true} : {currency: c, requestId: requestIdFor('balcur|' + c)});
+  busy = false; if(!preview) requestSettled(r);
+  if(!r.json.ok){
+    balAsk = ''; balPrev = null; renderWallet();
+    toast(r.status === 404 ? 'Зміна валюти балансу з\'явиться після оновлення сервера.' : r.json.error === 'rates' ? 'Зараз не вдалося отримати курс. Спробуй за кілька хвилин.' : errText(r));
+    return;
+  }
+  if(preview){ balPrev = r.json; renderWallet(); return; }
+  balAsk = ''; balPrev = null;
+  toast('Готово: баланс тепер у валюті ' + ({UAH: 'гривні', PLN: 'злоті'}[c] || 'USDT') + '.');
+  if(r.json.wallet){ WDet = Object.assign({}, WDet, r.json.wallet, {currency: c}); setWallet({balances: WDet.balances || [], primary: WDet.primary || c}); }
+  renderWallet(); loadWallet(true);
+}
 $('vWallet').addEventListener('click', e => {
   const b = e.target.closest('button'); if(!b || b.disabled || b.dataset.tab) return;
   const find = id => (WDet && WDet.pending || []).find(p => String(tpId(p)) === id);
-  if(b.dataset.cur){ topCur = b.dataset.cur; topAmt = 0; haptic(); renderWallet(); }
+  if(b.dataset.bal){ haptic(); balCurrency(b.dataset.bal, true); }
+  else if(b.dataset.balok){ haptic(); balCurrency(balAsk, false); }
+  else if(b.dataset.balno){ balAsk = ''; balPrev = null; renderWallet(); }
+  else if(b.dataset.cur){ topCur = b.dataset.cur; topAmt = 0; haptic(); renderWallet(); }
   else if(b.dataset.amt === 'own'){ topAmt = -1; haptic(); renderWallet(); try { $('wOwnAmt').focus(); } catch(x) {} }
   else if(b.dataset.amt){ haptic(); topUp(+b.dataset.amt); }
   else if(b.id === 'wOwnGo') topUp(parseInt($('wOwnAmt').value.replace(/\D/g, ''), 10) || 0);
@@ -1329,14 +1380,17 @@ function renderPsn(s){
 
 // ── як керувати самою приставкою ──
 const HELP = [
-  ['Головний екран приставки', 'Натисни й утримуй кнопку <b>PS</b> (кругла, внизу по центру) близько секунди. Відкриється головний екран PS5 зі списком ігор.', ['PS', 'утримати']],
-  ['Швидке меню', 'Коротко натисни <b>PS</b>. Знизу з\'явиться панель: звук, друзі, перемикання між грою і меню.', ['PS']],
-  ['Закрити гру', 'Відкрий головний екран, хрестовиною наведи на гру, натисни <b>OPTIONS</b> (овальна кнопка з трьома рисками, праворуч від PS) і обери «Закрити гру».', ['OPTIONS']],
-  ['Запустити іншу гру', 'На головному екрані обери гру хрестовиною ← → і натисни <b>✕</b>. Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься.', ['← →', '✕']],
-  ['Рух по меню', 'Хрестовина або лівий стік рухають вибір, <b>✕</b> підтверджує, <b>○</b> повертає назад. У самій грі <b>OPTIONS</b> відкриває паузу.', ['✕', '○']],
-  ['Кнопки на екрані', 'Тачпад: прямокутник між L і R, короткий дотик дорівнює натисканню. <b>L3</b> і <b>R3</b>: двічі швидко торкнись стіка й тримай. Овальна кнопка ліворуч від PS: Create (знімки екрана). Меню AnyPlay: кнопка з трьома крапками або «Назад» на телефоні.', ['L3', 'R3']],
+  ['Швидке меню приставки', 'Коротко натисни <b>PS</b> (кругла кнопка внизу по центру). Знизу з\'явиться панель: звук, друзі, перемикання між грою і меню. Ще раз <b>PS</b> ховає її.', ['PS']],
+  ['Головний екран приставки', 'Натисни <b>PS</b> і тримай близько секунди. Відкриється головний екран PS5 зі списком ігор, гра при цьому не закривається.', ['PS', 'тримати 1 с']],
+  ['Рух по меню приставки', 'Хрестовина або лівий стік рухають вибір, <b>✕</b> підтверджує, <b>○</b> повертає назад.', ['✕', '○']],
+  ['Запустити гру', 'На головному екрані обери гру хрестовиною ← → і натисни <b>✕</b>.', ['← →', '✕']],
+  ['Перейти в іншу гру', 'Відкрий головний екран, обери іншу гру і натисни <b>✕</b>. Приставка спитає, чи закрити попередню: погодься.', ['PS', '✕']],
+  ['Закрити гру', 'На головному екрані наведи на гру, натисни <b>OPTIONS</b> (овальна кнопка з трьома рисками, праворуч від PS) і обери «Закрити гру».', ['OPTIONS']],
+  ['Пауза і меню самої гри', 'У грі <b>OPTIONS</b> відкриває паузу, карту й налаштування гри. Овальна кнопка ліворуч від PS: Create (знімки екрана).', ['OPTIONS']],
+  ['Тачпад, L3 і R3', 'Тачпад: прямокутник між L і R, короткий дотик дорівнює натисканню. <b>L3</b> і <b>R3</b>: двічі швидко торкнись стіка й тримай.', ['L3', 'R3']],
+  ['Меню AnyPlay', 'Кнопка з трьома крапками на екрані або «Назад» на телефоні. Там час до кінця гри, продовження, якість картинки, кнопки на екрані й вихід.', ['⋯']],
   ['Свій геймпад', 'Можна підключити до телефона геймпад через Bluetooth чи кабель і сховати кнопки на екрані: меню AnyPlay, «Кнопки на екрані».', []],
-  ['Чого не робити', 'Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, обери «Вийти з гри» в меню AnyPlay.', []]
+  ['Закінчити гру', 'Відкрий меню AnyPlay й обери «Вийти з гри». Приставку вимикати не треба.', []]
 ];
 function loadHelp(){
   $('help').innerHTML = HELP.map(h => '<div class="row"><span><span class="t">' + h[0] + '</span><span class="s">' + h[1] + '</span></span><span class="keys">'

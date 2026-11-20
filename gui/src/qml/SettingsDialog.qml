@@ -941,7 +941,7 @@ DialogView {
 
                     Label {
                         Layout.alignment: Qt.AlignRight
-                        text: qsTr("(Вимкнено)")
+                        text: qsTr("(Увімкнено)")
                     }
 
                     Label {

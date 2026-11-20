@@ -288,6 +288,14 @@ Settings::Settings(const QString &conf, QObject *parent) : QObject(parent),
 		settings.setValue("settings/keyboard_enabled", true);
 		settings.setValue("anyplay/defaults_version", 1);
 	}
+	// AnyPlay 106: frames are shown in step with the screen (no torn picture when the camera turns) and the
+	// pointer is hidden over the game; applied once so that an old switch position does not keep the tearing
+	if(settings.value("anyplay/defaults_version", 0).toInt() < 2)
+	{
+		settings.setValue("settings/vsync", true);
+		settings.setValue("settings/hide_cursor", true);
+		settings.setValue("anyplay/defaults_version", 2);
+	}
 	default_settings.setFallbacksEnabled(false);
 	MigrateSettings(&default_settings);
 	MigrateVideoProfile(&default_settings);

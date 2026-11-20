@@ -133,6 +133,7 @@ public:
 	Q_INVOKABLE void topUp(const QString &method, double amount);               // поповнити баланс переказом
 	Q_INVOKABLE void topUpPaid(qint64 topupId, const QString &sender);          // «Я оплатив» для поповнення
 	Q_INVOKABLE void topUpCancel(qint64 topupId);
+	Q_INVOKABLE void walletCurrency(const QString &currency, bool preview);      // валюта балансу: показати, що вийде, або перевести
 	QVariantMap wallet() const { return wallet_; }
 	bool hasWallet() const { return has_wallet_ && !admin_; }
 	QVariantMap bookInfo() const { return book_info_; }
@@ -148,6 +149,7 @@ signals:
 	void bookStartsChanged();
 	void bookResult(bool ok, const QString &text);
 	void walletChanged();
+	void walletCurrencyPreview(const QVariantMap &info);   // що буде після переведення балансу в іншу валюту
 	void walletResult(bool ok, const QString &text);   // поповнення: створено, «Я оплатив», скасовано, зараховано
 	void busyChanged();
 	void linkResult(bool ok, const QString &text);

@@ -1208,6 +1208,35 @@ void AnyPlayCloud::topUpCancel(qint64 topupId)
 	});
 }
 
+// валюта балансу: клієнт обирає гривні, злоті чи USDT; усе на балансі перераховується за курсом
+void AnyPlayCloud::walletCurrency(const QString &currency, bool preview)
+{
+	QJsonObject body;
+	body["currency"] = currency;
+	if(preview)
+		body["preview"] = true;
+	else
+		body["requestId"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+	request("POST", "/api/app/wallet/currency", body, [this, preview, currency](int status, const QJsonObject &o) {
+		if(status != 200 || !o.value("ok").toBool())
+		{
+			const QString e = o.value("error").toString();
+			emit walletResult(false, status == 404 ? tr("Зміна валюти балансу з'явиться після оновлення сервера.")
+				: e == "rates" ? tr("Зараз не вдалося отримати курс. Спробуй за кілька хвилин.")
+				: walletError(e, status));
+			return;
+		}
+		if(preview)
+		{
+			emit walletCurrencyPreview(o.toVariantMap());
+			return;
+		}
+		emit walletResult(true, tr("Готово: баланс тепер у валюті %1.").arg(currency == "UAH" ? tr("гривні") : currency == "PLN" ? tr("злоті") : QStringLiteral("USDT")));
+		loadWallet();
+		refresh();
+	});
+}
+
 // ── якість картинки ──
 static const char *QUALITY_NAMES[] = { "Економна", "Оптимальна", "Максимальна", "Ультра" };
 static const int QUALITY_TOP = 3;

@@ -2782,6 +2782,35 @@ static bool mouseLookSupported()
 #endif
 }
 
+#ifdef Q_OS_MACOS
+// Mac: while the mouse turns the camera the pointer is frozen in place, so it is hidden at system level;
+// a window cursor alone is only applied on the next pointer move, which never comes in this mode
+static bool mac_cursor_hidden = false;
+static void macSetCursorHidden(bool hidden)
+{
+    if (hidden == mac_cursor_hidden)
+        return;
+    mac_cursor_hidden = hidden;
+    if (hidden)
+        CGDisplayHideCursor(kCGDirectMainDisplay);
+    else
+        CGDisplayShowCursor(kCGDirectMainDisplay);
+}
+#endif
+
+// AnyPlay: Qt Quick resets the window cursor to the arrow once the item that had its own cursor (a menu button)
+// disappears from under the pointer, which happens a frame after the menu closes. So the hidden cursor is
+// asserted again: on every pointer event that goes to the game and from a slow timer while the game is shown.
+void QmlMainWindow::syncStreamCursor()
+{
+    if (!has_video || grab_input != 0)
+        return;
+    if (!mouse_look_active && !(settings && settings->GetHideCursor()))
+        return;
+    if (cursor().shape() != Qt::BlankCursor)
+        setCursor(Qt::BlankCursor);
+}
+
 void QmlMainWindow::updateMouseLookCapture()
 {
     const bool should_capture = session && session->GetMouseRightStickEnabled()
@@ -2795,6 +2824,7 @@ void QmlMainWindow::updateMouseLookCapture()
         setCursor(Qt::BlankCursor);
 #ifdef Q_OS_MACOS
         CGAssociateMouseAndMouseCursorPosition(false);
+        macSetCursorHidden(true);
         macMouseDeltaStart();
 #endif
         recenterMouseLookCursor();
@@ -2815,6 +2845,7 @@ void QmlMainWindow::updateMouseLookCapture()
 #ifdef Q_OS_MACOS
     macMouseDeltaStop();
     CGAssociateMouseAndMouseCursorPosition(true);
+    macSetCursorHidden(false);
 #endif
     setMouseGrabEnabled(false);
     if (session)
@@ -2857,6 +2888,7 @@ void QmlMainWindow::pollMouseLook()
 {
     if (!mouse_look_active || !session)
         return;
+    syncStreamCursor();
 #if defined(Q_OS_MACOS)
     // Mac: total raw mouse movement since the last call
     double dx = 0, dy = 0;
@@ -2879,6 +2911,23 @@ void QmlMainWindow::pollMouseLook()
     session->UpdateMouseRightStick();
 }
 
+void QmlMainWindow::startCursorGuard()
+{
+    if (!cursor_guard_timer) {
+        cursor_guard_timer = new QTimer(this);
+        cursor_guard_timer->setInterval(200);
+        connect(cursor_guard_timer, &QTimer::timeout, this, [this]() {
+            if (!has_video || !session) {
+                cursor_guard_timer->stop();
+                return;
+            }
+            syncStreamCursor();
+        });
+    }
+    if (!cursor_guard_timer->isActive())
+        cursor_guard_timer->start();
+}
+
 void QmlMainWindow::grabInput()
 {
     setCursor(Qt::ArrowCursor);
@@ -2896,6 +2945,8 @@ void QmlMainWindow::releaseInput()
     if (!grab_input && has_video && settings->GetHideCursor())
         setCursor(Qt::BlankCursor);
     updateMouseLookCapture();
+    if (!grab_input)
+        startCursorGuard();
     if (session)
         session->BlockInput(grab_input);
 }
@@ -5993,6 +6044,7 @@ void QmlMainWindow::completeStartupVideoVisibility(quint64 generation)
         setCursor(Qt::BlankCursor);
     emit hasVideoChanged();
     updateMouseLookCapture();
+    startCursorGuard();
     startup_video_visible_refresh_pending.storeRelease(1);
     armQuickNeedSync("completeStartupVideoVisibility");
     quick_need_render.storeRelaxed(1);
@@ -7874,6 +7926,7 @@ bool QmlMainWindow::event(QEvent *event)
         if (static_cast<QMouseEvent*>(event)->source() != Qt::MouseEventNotSynthesized)
             return true;
         if (session && !grab_input) {
+            syncStreamCursor();
             if (event->type() == QEvent::MouseMove)
                 session->HandleMouseMoveEvent(static_cast<QMouseEvent*>(event), width(), height());
             else if (event->type() == QEvent::MouseButtonPress)

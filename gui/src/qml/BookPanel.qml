@@ -316,6 +316,21 @@ ColumnLayout {
                 text: panel.cloud.bookStartsLoading ? qsTr("Шукаємо вільний час…")
                     : qsTr("На цей день для такої тривалості вільного часу немає: обери інший день або менше годин.")
             }
+            // приставка вільна просто зараз: найближчий початок окремою помітною кнопкою
+            TimeButton {
+                id: nowBtn
+                readonly property var first: panel.cloud.bookStarts.length ? panel.cloud.bookStarts[0] : 0
+                readonly property bool soon: first > 0 && first - Date.now() / 1000 < 900 && !(panel.tariff && panel.tariff.fixed)
+                visible: !panel.cloud.bookStartsLoading && soon
+                Layout.fillWidth: true
+                Layout.bottomMargin: 6
+                accent: true
+                verticalPadding: 11
+                text: panel.tariff ? qsTr("Грати зараз: %1–%2").arg(panel.hhmm(first)).arg(panel.hhmm(first + panel.tariff.hours * 3600))
+                                   : qsTr("Грати зараз: %1").arg(panel.hhmm(first))
+                checked: panel.start === first
+                onClicked: { panel.start = first; panel.wantTime = panel.hhmm(first); }
+            }
             GridLayout {
                 id: times
                 Layout.fillWidth: true
@@ -550,6 +565,7 @@ ColumnLayout {
     component TimeButton: AbstractButton {
         id: tb
         checkable: false        // обраний стан задає панель через checked
+        property bool accent: false   // «Грати зараз»: золота рамка й напис
         hoverEnabled: true
         focusPolicy: Qt.TabFocus
         horizontalPadding: 0
@@ -562,14 +578,14 @@ ColumnLayout {
             text: tb.text
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
-            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 14
-            color: tb.checked ? ap.dark : ap.ink
+            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 16
+            color: tb.checked ? ap.dark : (tb.accent ? ap.gold : ap.ink)
         }
         background: Rectangle {
             radius: ap.radius
-            color: tb.checked ? ap.ink : (tb.hovered ? "#14ffffff" : "#0affffff")
+            color: tb.checked ? (tb.accent ? ap.gold : ap.ink) : (tb.hovered ? "#14ffffff" : "#0affffff")
             border.width: tb.visualFocus ? 2 : 1
-            border.color: tb.visualFocus ? ap.cyan : (tb.checked || tb.hovered ? ap.ink : ap.edge)
+            border.color: tb.visualFocus ? ap.cyan : (tb.accent ? ap.gold : (tb.checked || tb.hovered ? ap.ink : ap.edge))
         }
     }
 }

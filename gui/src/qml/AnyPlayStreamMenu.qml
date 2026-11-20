@@ -325,6 +325,15 @@ Item {
                                     KeyNavigation.left: qualityBtn
                                 }
                             }
+                            ApText { role: "cap"; text: qsTr("Індикатор під час гри"); Layout.topMargin: 18; Layout.bottomMargin: 2 }
+                            ApOpt {
+                                Layout.maximumWidth: 620
+                                text: qsTr("Показувати кадри за секунду і зв'язок")
+                                sub: qsTr("Маленький рядок у кутку екрана: кадри за секунду, швидкість, втрати, якість")
+                                checked: Chiaki.cloud.showStats
+                                onClicked: Chiaki.cloud.showStats = !Chiaki.cloud.showStats
+                                KeyNavigation.left: qualityBtn
+                            }
                         }
                     }
 

@@ -3197,6 +3197,7 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
 
     if (!frame.frame)
         return;
+    stream_frames_current.fetchAndAddRelaxed(1);
 
     if (bypass_frame_queue) {
         {
@@ -5508,6 +5509,16 @@ renderer_backend_ready:
         if (dropped_frames != dropped_frames_next) {
             dropped_frames = dropped_frames_next;
             emit droppedFramesChanged();
+        }
+        // кадри за секунду: таймер неточний, тому ділимо на справжній проміжок
+        const qint64 now_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+        const int frames = stream_frames_current.fetchAndStoreRelaxed(0);
+        const qint64 span_us = stream_fps_mark_us > 0 ? now_us - stream_fps_mark_us : 1000000;
+        stream_fps_mark_us = now_us;
+        const int fps_next = span_us > 0 ? static_cast<int>((static_cast<qint64>(frames) * 1000000 + span_us / 2) / span_us) : 0;
+        if (fps_next != stream_fps) {
+            stream_fps = fps_next;
+            emit streamFpsChanged();
         }
     });
 

@@ -1257,6 +1257,19 @@ void AnyPlayCloud::setAutoQuality(bool on)
 	emit changed();
 }
 
+bool AnyPlayCloud::showStats() const
+{
+	return QSettings().value(QStringLiteral("anyplay/show_stats"), false).toBool();
+}
+
+void AnyPlayCloud::setShowStats(bool on)
+{
+	if(on == showStats())
+		return;
+	QSettings().setValue(QStringLiteral("anyplay/show_stats"), on);
+	emit changed();
+}
+
 int AnyPlayCloud::qualityLevel() const
 {
 	QmlSettings *qs = backend->qmlSettings();

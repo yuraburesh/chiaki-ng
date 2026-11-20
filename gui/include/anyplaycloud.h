@@ -44,6 +44,7 @@ class AnyPlayCloud : public QObject
 	// якість: 0 — економна, 1 — оптимальна, 2 — максимальна; «авто» сама знижує її при слабкому зв'язку
 	Q_PROPERTY(bool autoQuality READ autoQuality WRITE setAutoQuality NOTIFY changed)
 	Q_PROPERTY(int qualityLevel READ qualityLevel NOTIFY changed)
+	Q_PROPERTY(bool showStats READ showStats WRITE setShowStats NOTIFY changed)   // маленький індикатор під час гри: кадри, швидкість, якість
 	Q_PROPERTY(bool reconnectOnce MEMBER reconnect_once_ NOTIFY changed)   // після зміни якості в грі: підключитись знову самому
 	Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)                // іде прив'язка / перевірка
 	Q_PROPERTY(QVariantMap extendInfo READ extendInfo NOTIFY extendChanged) // продовження: варіанти, ціни, заявка
@@ -107,6 +108,8 @@ public:
 	Q_INVOKABLE void linkClientConsole(qint64 userId, const QString &accountId, const QString &pin); // адмін
 	Q_INVOKABLE void copyText(const QString &text);
 	bool autoQuality() const;
+	bool showStats() const;
+	void setShowStats(bool on);
 	void setAutoQuality(bool on);
 	int qualityLevel() const;
 	Q_INVOKABLE void setQualityLevel(int level);   // застосувати рівень: роздільність, кадри, бітрейт

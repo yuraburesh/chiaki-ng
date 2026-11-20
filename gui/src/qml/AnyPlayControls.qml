@@ -63,7 +63,9 @@ Item {
     function plain(b) { const d = b["do"] || ""; return b.btn && b.btn.length === 1 && !b.when && (d === "" || d === "tap" || d === "turbo" || d === "toggle"); }
     function pnOf(b) { return (b.btn || []).map((x) => padName[x]).join("+"); }
     // у прицілі дія інша (колесо в GTA VI: △)
-    function aimPn(b) { return b.aim && b.aim.btn ? b.aim.btn.map((x) => padName[x]).join("+") : ""; }
+    function aimPn(b) { return b.aim && b.aim.btn ? b.aim.btn.map((x) => padName[x]).join("+") : (b.aim && b.aim.r ? qsTr("правий стік") : ""); }
+    // де діє інший варіант: у прицілі (L2) чи поки відкрите колесо зброї (L1)
+    function aimWhere(b) { return b.aim && b.aim.when === "L1" ? qsTr("у колесі зброї") : qsTr("у прицілі"); }
     function aimNow(b) { return !!(b.aim && b.aim.when) && (engine.buttons || []).indexOf(b.aim.when) >= 0; }
     function howOf(b) {
         const d = b["do"] || "", pn = pnOf(b);
@@ -100,6 +102,12 @@ Item {
                 + (ent && ent.key ? qsTr("сів у транспорт або вийшов клавішею %1. ").arg(bold(kname(ent.key))) : "")
                 + (keys.length ? qsTr("Якщо треба вручну: %1 (на MacBook: Fn + F1), або клацни вкладку тут.").arg(keys.map((k) => bold(kname(k))).join(", "))
                                : qsTr("Клацни вкладку, щоб побачити клавіші."));
+            // колесо зброї: поки тримаєш його клавішу, сектор обирають ще й клавішами руху
+            const wheel = foot ? tagged(foot).find((x) => x.btn && x.btn.length === 1 && x.btn[0] === "L1" && !x["do"]) : null;
+            const up = foot ? tagged(foot).find((x) => x.aim && x.aim.when === "L1" && x.aim.r) : null;
+            if (wheel && wheel.key && up)
+                v.hint += qsTr("<br>Колесо зброї: тримай %1 і обирай сектор клавішами %2 або мишею.")
+                    .arg(bold(kname(wheel.key))).arg(["up", "left", "down", "right"].map((id) => { const b = tagged(foot).find((x) => x.id === id); return b && b.key ? bold(kname(b.key)) : ""; }).filter((k) => k).join(" "));
         } else {
             v.hint = qsTr("Для цієї розкладки один набір клавіш на все.");
         }
@@ -289,7 +297,7 @@ Item {
         const nm = clean(b.name), pn = pnOf(b), d = b["do"] || "";
         if (b.when && (engine.buttons || []).indexOf(b.when) < 0)
             log(qsTr("%1: «%2» працює лише в прицілі").arg(lab).arg(nm));
-        else if (aimNow(b)) log(lab + " → " + aimPn(b) + qsTr(", поки тримаєш (у прицілі): ") + nm);
+        else if (aimNow(b)) log(lab + " → " + aimPn(b) + qsTr(", поки тримаєш (%1): ").arg(aimWhere(b)) + nm);
         else if (d === "cycle") log(lab + " → " + nm + qsTr(" (по колу)"));
         else if (d === "macro") log(lab + " → " + nm + qsTr(" (комбінація)"));
         else if (b.l && b.l.length === 2) log(lab + " → " + qsTr("лівий стік: ") + nm);
@@ -305,7 +313,7 @@ Item {
         const lab = kname(k), nm = clean(b.name), d = b["do"] || "";
         lastKey = lab;
         if (b.when && (engine.buttons || []).indexOf(b.when) < 0) log(qsTr("%1: «%2» працює лише в прицілі").arg(lab).arg(nm));
-        else if (aimNow(b)) log(lab + " → " + aimPn(b) + qsTr(" коротко (у прицілі): ") + nm);
+        else if (aimNow(b)) log(lab + " → " + aimPn(b) + qsTr(" коротко (%1): ").arg(aimWhere(b)) + nm);
         else if (d === "cycle") log(lab + " → " + nm + qsTr(" (по колу)"));
         else if (d === "macro") log(lab + " → " + nm + qsTr(" (комбінація)"));
         else log(lab + " → " + pnOf(b) + qsTr(" коротко: ") + nm);

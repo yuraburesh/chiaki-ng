@@ -460,6 +460,53 @@ Item {
     // ── AnyPlay: нагадування про кінець гри — один раз, за 10 хвилин, на 40 секунд, гру не перекриває ──
     // Мишка під час гри йде в гру, тож кнопки тут немає: клавіша меню відкриває меню одразу на «Продовжити гру».
     // Не показуємо адміну і коли наступна бронь клієнта йде одразу, без перерви (сервер каже «continues»).
+    // AnyPlay: маленький індикатор під час гри (вмикається за бажанням у «Якість»): кадри за секунду,
+    // швидкість зв'язку, втрати і рівень якості. Поверх гри, кліків не перехоплює.
+    Rectangle {
+        id: anyplayStats
+        readonly property real k: Math.max(1, Math.min(2, view.height / 1000))
+        readonly property int level: Chiaki.cloud.qualityLevel
+        readonly property int target: level === 0 ? 30 : 60
+        readonly property int fps: Chiaki.window.streamFps
+        readonly property real loss: Chiaki.session && isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss * 100 : 0
+        readonly property color good: "#c9f5d8"
+        readonly property color warn: "#ffd9a0"
+        readonly property color bad: "#ff9a9a"
+        visible: Chiaki.cloud.showStats && !!Chiaki.session && Chiaki.window.hasVideo && !sessionLoading && !sessionError
+                 && !(menuController.open || menuController.closing)
+        z: 49
+        anchors { top: parent.top; left: parent.left; topMargin: 8 * k; leftMargin: 8 * k }
+        scale: k
+        transformOrigin: Item.TopLeft
+        width: statsRow.implicitWidth + 18
+        height: statsRow.implicitHeight + 8
+        radius: 3
+        color: "#a6000000"
+        Row {
+            id: statsRow
+            anchors.centerIn: parent
+            spacing: 12
+            Text {
+                font.pixelSize: 12; font.weight: Font.DemiBold
+                color: anyplayStats.fps >= anyplayStats.target * 0.9 ? anyplayStats.good : anyplayStats.fps >= anyplayStats.target * 0.6 ? anyplayStats.warn : anyplayStats.bad
+                text: qsTr("%1 кадр/с").arg(anyplayStats.fps)
+            }
+            Text {
+                font.pixelSize: 12; color: "#e6ffffff"
+                text: Chiaki.session ? qsTr("%1 Мбіт/с").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ",")) : ""
+            }
+            Text {
+                font.pixelSize: 12
+                color: anyplayStats.loss < 0.5 ? "#e6ffffff" : anyplayStats.loss < 2 ? anyplayStats.warn : anyplayStats.bad
+                text: qsTr("втрати %1%").arg(anyplayStats.loss.toFixed(1).replace(".", ","))
+            }
+            Text {
+                font.pixelSize: 12; color: "#b3ffffff"
+                text: [qsTr("Економна 540p"), qsTr("Оптимальна 720p"), qsTr("Максимальна 1080p"), qsTr("Ультра 1080p")][Math.max(0, Math.min(3, anyplayStats.level))]
+            }
+        }
+    }
+
     Rectangle {
         id: anyplayEndBanner
         property int tick: 0

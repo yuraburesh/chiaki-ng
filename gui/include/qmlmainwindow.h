@@ -63,6 +63,7 @@ class QmlMainWindow : public QWindow
     Q_OBJECT
     Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
     Q_PROPERTY(int droppedFrames READ droppedFrames NOTIFY droppedFramesChanged)
+    Q_PROPERTY(int streamFps READ streamFps NOTIFY streamFpsChanged)
     Q_PROPERTY(bool keepVideo READ keepVideo WRITE setKeepVideo NOTIFY keepVideoChanged)
     Q_PROPERTY(bool loadingTransitionComplete READ loadingTransitionComplete NOTIFY loadingTransitionCompleteChanged)
     Q_PROPERTY(VideoMode videoMode READ videoMode WRITE setVideoMode NOTIFY videoModeChanged)
@@ -187,6 +188,7 @@ signals:
     void pendingFrameAgeChanged();
     void loadingTransitionCompleteChanged();
     void statsOverlayActiveChanged();
+    void streamFpsChanged();
 
 private:
     friend class BufferedPlaybackPacerThread;
@@ -207,6 +209,7 @@ private:
     void scheduleBufferedUpdate(UpdateRequestReason reason);
     void updateStatsOverlayGeometry();
     bool statsOverlayActive() const { return stats_overlay_visible; }
+    int streamFps() const { return stream_fps; }
     void armQuickNeedSync(const char *reason);
     void scheduleRenderIfBacklog(UpdateRequestReason reason = UpdateRequestReason::PendingFrame);
     void handleBufferedPlaybackWake(qint64 timer_fire_us);
@@ -327,6 +330,10 @@ private:
     bool mouse_look_active = false;
     QTimer *mouse_look_timer = nullptr;
     QTimer *cursor_guard_timer = nullptr;
+    // AnyPlay: скільки кадрів гри показано за останню секунду (для індикатора під час гри)
+    QAtomicInteger<int> stream_frames_current = 0;
+    int stream_fps = 0;
+    qint64 stream_fps_mark_us = 0;
     int dropped_frames = 0;
     bool is_window_adjustable = false;
     bool is_stream_window_adjustable = false;

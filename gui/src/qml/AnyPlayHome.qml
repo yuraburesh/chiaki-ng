@@ -844,6 +844,13 @@ Rectangle {
                                     onClicked: home.setQuality(modelData.level)
                                 }
                             }
+                            ApText { role: "cap"; text: qsTr("Індикатор під час гри"); Layout.topMargin: 18; Layout.bottomMargin: 2 }
+                            ApOpt {
+                                text: qsTr("Показувати кадри за секунду і зв'язок")
+                                sub: qsTr("Маленький рядок у кутку екрана під час гри: кадри за секунду, швидкість, втрати, якість")
+                                checked: home.cloud.showStats
+                                onClicked: home.cloud.showStats = !home.cloud.showStats
+                            }
                         }
                     }
                     // праворуч: необов'язкова перевірка інтернету

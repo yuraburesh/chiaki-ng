@@ -305,7 +305,7 @@ class StreamActivity : AppCompatActivity()
 		}
 		val texts = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }
 		texts.addView(TextView(c).apply {
-			text = "Лишилось $minutes хв. Продовжити гру?"
+			text = "Лишилось $minutes хв. Продовжити бронювання?"
 			typeface = AnyPlayStyle.display(c)
 			isAllCaps = true
 			letterSpacing = 0.08f

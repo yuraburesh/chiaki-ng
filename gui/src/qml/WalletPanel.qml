@@ -76,7 +76,9 @@ GridLayout {
     }
 
     // ── валюта балансу: у чому тримати гроші; усе, що є і що прийде, перераховується за курсом ──
-    readonly property var curList: wallet.data.currencies || ["UAH", "PLN", "USDT"]
+    // сервер дає коди рядками ("UAH"); старий формат — об'єкти {code}
+    readonly property var curList: (wallet.data.currencies || ["UAH", "PLN", "USDT"]).map(x => typeof x === "string" ? x : (x && x.code) || "")
+                                                                                  .filter(x => x !== "")
     readonly property string balCur: wallet.data.currency || wallet.primary
     property var curPreview: null          // відповідь сервера «що вийде», поки клієнт не підтвердив
     property string curAsked: ""
@@ -222,8 +224,8 @@ GridLayout {
         Flow {   // валюта поповнення, якщо способів кілька
             visible: panel.methods.length > 1
             Layout.fillWidth: true
-            Layout.bottomMargin: 8
-            spacing: 5
+            Layout.bottomMargin: 10
+            spacing: 8
             Repeater {
                 model: panel.methods
                 ApButton {
@@ -233,6 +235,9 @@ GridLayout {
                     font.family: ap.body
                     font.capitalization: Font.MixedCase
                     font.letterSpacing: 0
+                    font.pixelSize: 15
+                    topPadding: 11; bottomPadding: 11
+                    leftPadding: 16; rightPadding: 16
                     text: modelData.label
                     onClicked: { panel.method = modelData.code; panel.own = false; panel.status = ""; }
                 }
@@ -316,7 +321,7 @@ GridLayout {
         Repeater {
             model: [
                 { t: qsTr("Поповнюєш на будь-яку суму"), s: qsTr("переказом, як за звичайну бронь; гроші з'являться на балансі за 1–2 хвилини") },
-                { t: qsTr("Платиш з балансу за секунду"), s: qsTr("бронь чи продовження гри прямо під час гри, нічого не переказуєш") },
+                { t: qsTr("Платиш з балансу за секунду"), s: qsTr("бронь чи продовження бронювання прямо під час гри, нічого не переказуєш") },
                 { t: qsTr("Не вистачає — доплачуєш карткою"), s: qsTr("частину спишемо з балансу, решту переказуєш як звичайну оплату") },
                 { t: qsTr("Скасував бронь — гроші на баланс"), s: qsTr("повертаються одразу, можна витратити на наступну гру") },
                 { t: qsTr("Залишок не згорає"), s: qsTr("лишається на балансі для наступних ігор") }

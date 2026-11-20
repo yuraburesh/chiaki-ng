@@ -2,6 +2,9 @@
 #include "settings.h"
 
 #include <QCoreApplication>
+#include <QPointF>
+#include <algorithm>
+#include <cmath>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -22,6 +25,7 @@ constexpr int TapMs = 90;            // коротке натискання (к�
 const QString OverrideGroupBase = QStringLiteral("anyplay_keys");
 const QString LayoutKey = QStringLiteral("anyplay/layout");
 const QString SensitivityKey = QStringLiteral("anyplay/mouse_sensitivity");
+const QString VehicleSensitivityKey = QStringLiteral("anyplay/mouse_sensitivity_vehicle");
 const QString InvertYKey = QStringLiteral("anyplay/invert_y");
 const QString AskGameKey = QStringLiteral("anyplay/ask_game");
 const QStringList LayoutIds = {QStringLiteral("gta6"), QStringLiteral("gta5"), QStringLiteral("universal")};
@@ -39,6 +43,7 @@ constexpr int HapticHitsNeeded = 3;  // кадри вібрації (по 10 м�
 constexpr float MinSensitivity = 0.3f;
 constexpr float MaxSensitivity = 3.0f;
 std::atomic<float> cached_sensitivity{-1.0f}; // -1: ще не прочитано з налаштувань
+std::atomic<float> cached_vehicle_sensitivity{-1.0f}; // -1: ще не прочитано; 0: не задано, діє та сама, що пішки
 std::atomic<int> cached_invert{-1};
 std::atomic<bool> pad_preview{false};   // екран клавіш показує справжній геймпад
 
@@ -211,6 +216,7 @@ QPointer<KeyWatcher> key_watcher;
 AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 {
 	Instances().append(this);
+	clock.start();
 	macro_timer.setSingleShot(true);
 	connect(&macro_timer, &QTimer::timeout, this, &AnyPlayInput::NextMacroStep);
 	turbo_timer.setInterval(TurboIntervalMs);
@@ -306,6 +312,13 @@ QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, const QS
 			const QJsonObject aim = bo.value("aim").toObject();
 			binding.aim_when = ButtonFromName(aim.value("when").toString());
 			binding.aim_out = StepFromJson(aim);
+			const QJsonObject hold = bo.value("hold").toObject();
+			if(!hold.isEmpty())
+			{
+				binding.hold_open = true;
+				binding.hold_out = StepFromJson(hold);
+				binding.hold_min = qMax(0, hold.value("ms").toInt(300));
+			}
 			binding.profile = bo.value("profile").toString();
 			binding.owner = profile.id;
 			if(apply_overrides)
@@ -409,8 +422,27 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 		auto it = active.find(name);
 		if(it == active.end())
 			return Find(name) != nullptr;
+		// клавіша зброї: коротке натискання тримає колесо, доки гра не встигне прийняти вибір
+		if(it->hold_min > 0 && it->pressed_at > 0)
+		{
+			const qint64 left = it->hold_min - (clock.elapsed() - it->pressed_at);
+			if(left > 0)
+			{
+				const qint64 at = it->pressed_at;
+				QTimer::singleShot(static_cast<int>(left), this, [this, name, at]() {
+					auto again = active.find(name);
+					if(again == active.end() || again->pressed_at != at)
+						return;
+					active.erase(again);
+					AfterRelease();
+					emit Changed();
+				});
+				return true;
+			}
+		}
 		const bool turbo = it->kind == APBinding::Kind::Turbo;
 		active.erase(it);
+		AfterRelease();
 		if(turbo)
 		{
 			bool any_turbo = false;
@@ -431,6 +463,22 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 	APBinding b = *binding; // копія: перемикання режиму нижче робить вказівник недійсним
 	if(!Allowed(b))
 		return true; // клавіша наша, але без прицілу нічого не робить
+	if(!(Output().buttons & CHIAKI_CONTROLLER_BUTTON_L1))
+		wheel_sector = -1;   // колесо відкривається заново: вибір коліщатком починаємо спочатку
+	if(b.hold_open && !AimNow(b))
+	{
+		// клавіша зброї: колесо відкрите на її секторі, поки тримаєш; відпустив — гра бере цю зброю
+		NoteSlot(b);
+		macro.clear();
+		macro_index = -1;
+		macro_timer.stop();
+		b.kind = APBinding::Kind::Hold;
+		b.out = b.hold_out;
+		b.pressed_at = clock.elapsed();
+		active.insert(name, b);
+		emit Changed();
+		return true;
+	}
 	if(AimNow(b))
 	{
 		// у прицілі інша дія (наприклад △), тримається, поки тримаєш клавішу
@@ -476,6 +524,11 @@ bool AnyPlayInput::Tap(const QString &name)
 	const APBinding b = *binding;
 	if(!Allowed(b))
 		return true;
+	if(b.kind == APBinding::Kind::Cycle && WheelStep(b))
+	{
+		emit Changed();
+		return true;
+	}
 	if(AimNow(b))
 	{
 		AddTap(b.aim_out, TapMs);   // у прицілі: коротко інша кнопка (колесо в GTA VI: △)
@@ -524,6 +577,72 @@ void AnyPlayInput::Cycle(const APBinding &b)
 	StartMacro(list[slot]->steps);
 }
 
+// Колесо зброї вже відкрите (тримають Tab чи клавішу зброї): коліщатко миші не відкриває його заново,
+// а переводить правий стік на сусідній сектор, по колу за годинниковою стрілкою (вгору — наступний).
+bool AnyPlayInput::WheelStep(const APBinding &b)
+{
+	if(!(Output().buttons & CHIAKI_CONTROLLER_BUTTON_L1) || macro_index >= 0)
+		return false;
+	QList<QPointF> dirs;
+	for(const APBinding *s : Slots(b.owner))
+	{
+		const APStep st = s->hold_open ? s->hold_out : (s->steps.size() > 1 ? s->steps[1] : APStep());
+		const QPointF d(st.rx, st.ry);
+		if(qAbs(d.x()) + qAbs(d.y()) < 0.1)
+			continue;
+		bool dup = false;
+		for(const QPointF &e : dirs)
+			dup |= qAbs(e.x() - d.x()) + qAbs(e.y() - d.y()) < 0.05;
+		if(!dup)
+			dirs.append(d);
+	}
+	if(dirs.size() < 2)
+		return false;
+	// за годинниковою стрілкою від верху
+	auto angle = [](const QPointF &d) { double a = std::atan2(d.x(), -d.y()); return a < 0 ? a + 2 * M_PI : a; };
+	std::sort(dirs.begin(), dirs.end(), [&](const QPointF &x, const QPointF &y) { return angle(x) < angle(y); });
+	int idx = wheel_sector;
+	if(idx < 0 || idx >= dirs.size())
+	{
+		// з того сектора, куди зараз дивиться стік (клавіша зброї чи W A S D), інакше з останньої зброї
+		const APStep now = Output();
+		idx = -1;
+		if(qAbs(now.rx) + qAbs(now.ry) > 0.3)
+		{
+			const double a = angle(QPointF(now.rx, now.ry));
+			double best = 10;
+			for(int i = 0; i < dirs.size(); i++)
+			{
+				double diff = std::fabs(angle(dirs[i]) - a);
+				diff = std::min(diff, 2 * M_PI - diff);
+				if(diff < best) { best = diff; idx = i; }
+			}
+		}
+		if(idx < 0)
+		{
+			const auto list = Slots(b.owner);
+			const APBinding *cur = slot >= 0 && slot < list.size() ? list[slot] : nullptr;
+			const APStep st = cur ? (cur->hold_open ? cur->hold_out : (cur->steps.size() > 1 ? cur->steps[1] : APStep())) : APStep();
+			idx = 0;
+			for(int i = 0; i < dirs.size(); i++)
+				if(qAbs(dirs[i].x() - st.rx) + qAbs(dirs[i].y() - st.ry) < 0.05)
+					idx = i;
+			idx -= b.dir;   // перший крок коліщатка лишає на поточній зброї видимою і йде на сусідню
+		}
+	}
+	const int n = dirs.size();
+	wheel_sector = ((idx + b.dir) % n + n) % n;
+	wheel_rx = float(dirs[wheel_sector].x());
+	wheel_ry = float(dirs[wheel_sector].y());
+	return true;
+}
+
+void AnyPlayInput::AfterRelease()
+{
+	if(!(Output().buttons & CHIAKI_CONTROLLER_BUTTON_L1))
+		wheel_sector = -1;
+}
+
 void AnyPlayInput::NoteSlot(const APBinding &b)
 {
 	const QList<const APBinding *> list = Slots(b.owner);
@@ -534,6 +653,7 @@ void AnyPlayInput::NoteSlot(const APBinding &b)
 
 void AnyPlayInput::ReleaseAll()
 {
+	wheel_sector = -1;
 	active.clear();
 	taps.clear();
 	macro.clear();
@@ -696,8 +816,20 @@ void AnyPlayInput::SetAutoVehicle(bool enabled)
 	settings.setValue(AutoVehicleKey, enabled);
 }
 
-float AnyPlayInput::MouseSensitivity()
+float AnyPlayInput::MouseSensitivity(const QString &mode)
 {
+	if(IsVehicleMode(mode))
+	{
+		float w = cached_vehicle_sensitivity.load(std::memory_order_relaxed);
+		if(w < 0)
+		{
+			const QVariant saved = QSettings().value(VehicleSensitivityKey);
+			w = saved.isValid() ? qBound(MinSensitivity, saved.toFloat(), MaxSensitivity) : 0.0f;
+			cached_vehicle_sensitivity.store(w, std::memory_order_relaxed);
+		}
+		if(w > 0)
+			return w;
+	}
 	float v = cached_sensitivity.load(std::memory_order_relaxed);
 	if(v < 0)
 	{
@@ -707,9 +839,15 @@ float AnyPlayInput::MouseSensitivity()
 	return v;
 }
 
-void AnyPlayInput::SetMouseSensitivity(float value)
+void AnyPlayInput::SetMouseSensitivity(float value, const QString &mode)
 {
 	value = qBound(MinSensitivity, value, MaxSensitivity);
+	if(IsVehicleMode(mode))
+	{
+		cached_vehicle_sensitivity.store(value, std::memory_order_relaxed);
+		QSettings().setValue(VehicleSensitivityKey, static_cast<double>(value));
+		return;
+	}
 	cached_sensitivity.store(value, std::memory_order_relaxed);
 	QSettings().setValue(SensitivityKey, static_cast<double>(value));
 }
@@ -764,6 +902,12 @@ APStep AnyPlayInput::Output() const
 		AddStep(&sum, t.step);
 	if(macro_index >= 0 && macro_index < macro.size())
 		AddStep(&sum, macro[macro_index]);
+	// колесо зброї відкрите і сектор обрали коліщатком: правий стік дивиться саме туди
+	if(wheel_sector >= 0 && (sum.buttons & CHIAKI_CONTROLLER_BUTTON_L1))
+	{
+		sum.rx = wheel_rx;
+		sum.ry = wheel_ry;
+	}
 	return sum;
 }
 
@@ -950,6 +1094,7 @@ QVariantList AnyPlayInput::ProfilesForEditor()
 			row["when"] = bo.value("when").toString();
 			row["aim"] = bo.value("aim").toObject().toVariantMap();   // {when, btn}: що робить у прицілі
 			row["x"] = bo.value("x").toInt(0) != 0;
+			row["hold"] = !bo.value("hold").toObject().isEmpty();   // клавіша зброї: натисни або тримай
 			row["profile"] = b.profile;
 			row["steps"] = b.steps.size();
 			bindings.append(row);

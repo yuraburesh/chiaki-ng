@@ -15,7 +15,11 @@ class QmlBackend;
 class AnyPlayCloud : public QObject
 {
 	Q_OBJECT
-	Q_PROPERTY(QString state READ state NOTIFY changed)          // login | pairing | wait | play | no_console | offline | update | other_device
+	Q_PROPERTY(QString state READ state NOTIFY changed)
+	// вхід, коли Telegram не на цьому комп'ютері: QR-код для телефона і шість цифр для бота
+	Q_PROPERTY(QString pairShort MEMBER pair_short_ NOTIFY changed)
+	Q_PROPERTY(QString pairQr MEMBER pair_qr_ NOTIFY changed)
+	Q_PROPERTY(QString pairBot MEMBER pair_bot_ NOTIFY changed)          // login | pairing | wait | play | no_console | offline | update | other_device
 	Q_PROPERTY(QString otherDevice READ otherDevice NOTIFY changed)   // other_device: на якому пристрої клієнт зараз грає
 	Q_PROPERTY(bool paymentChecking READ paymentChecking NOTIFY changed)  // гра в кредит: оплату продовження ще перевіряють, endTs — кінець кредиту
 	Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY changed)
@@ -90,7 +94,8 @@ public:
 	bool playOwn() const { return play_own_; }
 	bool busy() const { return busy_; }
 
-	Q_INVOKABLE void login();
+	Q_INVOKABLE void login(bool openTelegram = true);
+	Q_INVOKABLE void openPairLink();
 	Q_INVOKABLE void cancelLogin();
 	Q_INVOKABLE void logout();
 	Q_INVOKABLE void refresh();
@@ -174,6 +179,7 @@ private:
 	QmlBackend *backend;
 	QNetworkAccessManager nam;
 	QTimer poll_timer, pair_timer, beat_timer;
+	QString pair_short_, pair_qr_, pair_bot_, pair_link_;
 	QString server_, token_, pair_code_, state_ = "login", user_, console_, notice_, my_psn_;
 	bool admin_ = false, playing_ = false, my_psn_ready_ = false, closed_ = false;
 	qint64 end_ = 0, next_start_ = 0, next_end_ = 0, skew_ = 0;

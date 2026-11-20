@@ -477,7 +477,9 @@ Rectangle {
                         role: "lead"
                         text: {
                             switch (home.st) {
-                            case "pairing": return qsTr("Відкрився бот @play_any_bot. Натисни там «Start» і повертайся сюди.");
+                            case "pairing": return home.cloud.pairShort
+                                ? qsTr("Відскануй QR-код телефоном і натисни «Start» у боті. Або надішли боту %1 цей код:").arg(home.cloud.pairBot || "@play_any_bot")
+                                : qsTr("Відкрився бот @play_any_bot. Натисни там «Start» і повертайся сюди.");
                             case "offline": return qsTr("Спробуємо знову за хвилину.");
                             case "no_console": return qsTr("Приставка тимчасово недоступна: кнопка «🆘 Допомога» в боті.");
                             case "update": return home.updater && home.updater.available
@@ -489,11 +491,45 @@ Rectangle {
                             }
                         }
                     }
+                    // вхід з телефона: шість цифр великими і QR-код
+                    ApText {
+                        visible: home.st === "pairing" && home.cloud.pairShort !== ""
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        role: "big"; size: Math.round(home.bigSize * 0.8)
+                        color: ap.gold
+                        font.letterSpacing: 8
+                        text: home.cloud.pairShort.replace(/(\d{3})(\d{3})/, "$1 $2")
+                    }
+                    Rectangle {
+                        visible: home.st === "pairing" && home.cloud.pairQr !== ""
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.topMargin: 4
+                        width: 210; height: 210
+                        radius: ap.radius
+                        color: "#ffffff"
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            source: parent.visible ? home.cloud.pairQr : ""
+                            fillMode: Image.PreserveAspectFit
+                            smooth: false
+                            cache: false
+                        }
+                    }
+                    ApButton {
+                        visible: home.st === "pairing" && home.cloud.pairShort !== ""
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.topMargin: 6
+                        minWidth: 260
+                        text: qsTr("Відкрити Telegram тут")
+                        onClicked: home.cloud.openPairLink()
+                    }
                     ApButton {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.topMargin: 10
                         minWidth: 260
-                        ghost: home.st === "other_device"   // тут нічого не треба робити: «Грати» з'явиться саме
+                        ghost: home.st === "other_device" || (home.st === "pairing" && home.cloud.pairShort !== "")   // тут нічого не треба робити: «Грати» з'явиться саме
                         text: {
                             switch (home.st) {
                             case "pairing": return qsTr("Скасувати");
@@ -505,6 +541,14 @@ Rectangle {
                             }
                         }
                         onClicked: home.primaryAction()
+                    }
+                    ApButton {   // Telegram на телефоні, а не на цьому комп'ютері
+                        visible: home.st === "login"
+                        Layout.alignment: Qt.AlignHCenter
+                        minWidth: 260
+                        ghost: true
+                        text: qsTr("Вхід з телефона: QR-код або код")
+                        onClicked: home.cloud.login(false)
                     }
                 }
             }
@@ -574,7 +618,7 @@ Rectangle {
                                 visible: home.st === "play" && !home.cloud.paymentChecking   // у кредит продовження вже оформлене й перевіряється
                                 ghost: true
                                 height: primaryBtn.height
-                                text: qsTr("Продовжити гру")
+                                text: qsTr("Продовжити бронювання")
                                 onClicked: extendPopup.open()
                             }
                         }

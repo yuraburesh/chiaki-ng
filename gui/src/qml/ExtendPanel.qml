@@ -82,7 +82,7 @@ ColumnLayout {
     ApText {
         visible: !panel.compact
         role: "h2"
-        text: qsTr("Продовжити гру")
+        text: qsTr("Продовжити бронювання")
     }
     // ── стан оплати одним рядком: не оплачено / перевіряємо / оплачено / відхилено ──
     Rectangle {

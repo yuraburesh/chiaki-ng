@@ -48,6 +48,8 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 	private var session = JSONObject()
 	private var skew = 0L                // час сервера мінус час телефона, секунди
 	private var pairJob: Job? = null
+	private var pairShort = ""   // шість цифр для бота, якщо Telegram на іншому пристрої
+	private var pairBot = ""
 	private var pollJob: Job? = null
 	private var busy = false             // шукаємо приставку перед грою
 	private var adminInfo: JSONObject? = null   // лише для адміна: хто грає, наступні броні, заявки
@@ -153,7 +155,9 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 	{
 		when(name)
 		{
-			"login" -> if(state == "login") login()
+			"login" -> if(state == "login") login(true)
+			"loginCode" -> if(state == "login") login(false)
+			"openTg" -> if(state == "pairing" && pairLink.isNotEmpty()) openLink(pairLink)
 			"cancelLogin" -> cancelLogin()
 			"play" -> if(isAdmin && adminInfo != null) adminPlay() else play()
 			"retry", "refresh" -> if(loggedIn && state != "pairing") lifecycleScope.launch { refresh() }
@@ -230,9 +234,15 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 	}
 
 	// ── вхід через Telegram ──
-	private fun login()
+	private var pairLink = ""
+
+	/** openTg: одразу відкрити Telegram на цьому телефоні; інакше показати код, який надсилають боту з іншого пристрою */
+	private fun login(openTg: Boolean)
 	{
 		state = "pairing"
+		pairShort = ""
+		pairBot = ""
+		pairLink = ""
 		render()
 		pairJob?.cancel()
 		pairJob = lifecycleScope.launch {
@@ -246,7 +256,12 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 				toast("Сервер AnyPlay недоступний. Перевір інтернет і спробуй ще раз.")
 				return@launch
 			}
-			openLink(link)
+			pairShort = start.json.optString("short")
+			pairBot = start.json.optString("bot")
+			pairLink = link
+			render()
+			if(openTg || pairShort.isEmpty())
+				openLink(link)
 			var tries = 0
 			while(isActive && tries++ < PAIR_MAX_TRIES)
 			{
@@ -509,6 +524,8 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			.put("build", BuildConfig.ANYPLAY_BUILD)
 			.put("user", if(loggedIn) session.optString("user") else "")
 			.put("quality", AnyPlayQuality.json(this))
+			.put("pairShort", if(state == "pairing") pairShort else "")
+			.put("pairBot", pairBot)
 		// зі стану сервера лише те, що показує сторінка: ключів доступу до PSN тут немає
 		val s = JSONObject()
 		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice"))

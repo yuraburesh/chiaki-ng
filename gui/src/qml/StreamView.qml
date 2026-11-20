@@ -561,7 +561,7 @@ Item {
                 }
                 Text {
                     id: endBannerAsk
-                    text: qsTr("Продовжити гру?")
+                    text: qsTr("Продовжити бронювання?")
                     font.family: endAp.body; font.weight: Font.DemiBold; font.pixelSize: 16
                     color: endAp.ink
                 }

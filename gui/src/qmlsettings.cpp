@@ -2363,6 +2363,19 @@ void QmlSettings::setAnyplayMouseSensitivity(qreal value)
         emit anyplayMouseSensitivityChanged();
 }
 
+qreal QmlSettings::anyplayVehicleSensitivity() const
+{
+    return AnyPlayInput::MouseSensitivity(QStringLiteral("vehicle"));
+}
+
+void QmlSettings::setAnyplayVehicleSensitivity(qreal value)
+{
+    const float old = AnyPlayInput::MouseSensitivity(QStringLiteral("vehicle"));
+    AnyPlayInput::SetMouseSensitivity(static_cast<float>(value), QStringLiteral("vehicle"));
+    if (!qFuzzyCompare(old, AnyPlayInput::MouseSensitivity(QStringLiteral("vehicle"))))
+        emit anyplayMouseSensitivityChanged();
+}
+
 bool QmlSettings::anyplayInvertY() const
 {
     return AnyPlayInput::InvertY();

@@ -36,6 +36,10 @@ Item {
     property var layouts: Chiaki.settings.anyplayLayouts()
     property var cfg: ({ layout: "", start: "foot", profiles: [] })
     property string mode: "foot"
+    // чутливість миші своя пішки і в транспорті (авіація — як транспорт); вкладка «Меню» показує пішки
+    readonly property bool vehicleSens: mode === "vehicle" || mode === "air"
+    readonly property real sensNow: vehicleSens ? Chiaki.settings.anyplayVehicleSensitivity : Chiaki.settings.anyplayMouseSensitivity
+    function setSens(v) { if (vehicleSens) Chiaki.settings.anyplayVehicleSensitivity = v; else Chiaki.settings.anyplayMouseSensitivity = v; }
     property var waiting: null              // {p, id, name}: чекаємо нову клавішу для цієї дії
     readonly property var view: buildView(cfg, mode)
     readonly property alias wireData: wires.wd    // лінії (для перевірки)
@@ -69,7 +73,7 @@ Item {
     function aimNow(b) { return !!(b.aim && b.aim.when) && (engine.buttons || []).indexOf(b.aim.when) >= 0; }
     function howOf(b) {
         const d = b["do"] || "", pn = pnOf(b);
-        if (d === "macro") return qsTr("комбінація");
+        if (d === "macro") return b.hold ? qsTr("натисни або тримай") : qsTr("комбінація");
         if (d === "cycle") return aimPn(b) ? qsTr("по колу; у прицілі: %1").arg(aimPn(b)) : qsTr("по колу");
         if (b.when) return pn + qsTr(", у прицілі");
         if (b.profile && !b.btn) return qsTr("режим");
@@ -107,10 +111,10 @@ Item {
             const up = foot ? tagged(foot).find((x) => x.aim && x.aim.when === "L1" && x.aim.r) : null;
             v.hintShort = "";
             if (wheel && wheel.key && up)
-                v.hintShort = qsTr("Колесо зброї: тримай %1 і обирай сектор клавішами %2 або мишею.")
+                v.hintShort = qsTr("Колесо зброї: тримай %1 і обирай сектор клавішами %2, коліщатком або мишею.")
                     .arg(bold(kname(wheel.key))).arg(["up", "left", "down", "right"].map((id) => { const b = tagged(foot).find((x) => x.id === id); return b && b.key ? bold(kname(b.key)) : ""; }).filter((k) => k).join(" "));
             if (wheel && wheel.key && up)
-                v.hint += qsTr("<br>Колесо зброї: тримай %1 і обирай сектор клавішами %2 або мишею.")
+                v.hint += qsTr("<br>Колесо зброї: тримай %1 і обирай сектор клавішами %2, коліщатком або мишею. Цифра зброї: натисни, щоб одразу взяти, або тримай, щоб колесо лишилось відкритим.")
                     .arg(bold(kname(wheel.key))).arg(["up", "left", "down", "right"].map((id) => { const b = tagged(foot).find((x) => x.id === id); return b && b.key ? bold(kname(b.key)) : ""; }).filter((k) => k).join(" "));
         } else {
             v.hint = qsTr("Для цієї розкладки один набір клавіш на все.");
@@ -445,7 +449,7 @@ Item {
         onPointChanged: {
             const p = point.position;
             if (last.x >= 0 && root.live) {
-                const s = Chiaki.settings.anyplayMouseSensitivity, inv = Chiaki.settings.anyplayInvertY ? -1 : 1;
+                const s = root.sensNow, inv = Chiaki.settings.anyplayInvertY ? -1 : 1;
                 const dx = (p.x - last.x) / 25 * s, dy = (p.y - last.y) / 25 * s * inv;
                 if (dx || dy) {
                     root.rsv = [Math.max(-1, Math.min(1, root.rsv[0] + dx)), Math.max(-1, Math.min(1, root.rsv[1] + dy))];
@@ -461,14 +465,24 @@ Item {
     // низьке вікно в меню гри (ноутбук 13"): щільніші рядки й без зайвого, щоб усе вмістилось без прокрутки
     readonly property bool tight: inGame && flick.height > 0 && flick.height < 800
     readonly property bool tighter: tight && flick.height < 670   // 1366×768 і менше
+    // висота рядка підписів і «Інших дій»: якщо геймпад уже найменший, а сторінка ще не вміщується, рядки щільнішають
+    readonly property real baseRow: tighter ? 23 : tight ? 26 : 31
+    property real rowH: 31
+    onBaseRowChanged: { rowH = baseRow; fitTimer.restart(); }
     function refit() {
         if (!visible || flick.height < 200)
             return;
         const over = page.height - flick.height, gh = gp.height;
         const floorH = page.narrow ? 150 : Math.max(150, Math.max(colL.height, colR.height) - 10);   // нижче за стовпці підписів зменшувати нема сенсу
-        if (over > 1 && gh > floorH)
+        if (over > 1 && gh > floorH + 1)
             gpCap = Math.max(floorH, gh - over - 2) * padW / padH;
-        else if (over < -24 && gpCap < 540)
+        else if (over > 1 && rowH > 17) {
+            rowH = Math.max(17, rowH - Math.max(1, Math.ceil(over / 24)));
+            fitTimer.restart();
+        } else if (over < -40 && rowH < baseRow) {
+            rowH = Math.min(baseRow, rowH + 1);
+            fitTimer.restart();
+        } else if (over < -24 && gpCap < 540)
             gpCap = Math.min(540, (gh - over - 12) * padW / padH);
     }
     Timer { id: fitTimer; interval: 40; onTriggered: root.refit() }
@@ -512,7 +526,7 @@ Item {
         Column {
             id: page
             readonly property real cw: Math.min(1440, root.width - 2 * root.sideInset)
-            readonly property bool narrow: cw <= (root.inGame ? 760 : 900)   // у меню гри ліворуч список розділів, тож місця менше
+            readonly property bool narrow: cw <= (root.inGame ? 600 : 900)   // у меню гри ліворуч список розділів, тож місця менше
             x: (root.width - cw) / 2
             width: cw
             topPadding: 0
@@ -714,7 +728,7 @@ Item {
                         spacing: 8
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Чутливість миші")
+                            text: root.vehicleSens ? qsTr("Миша в транспорті") : qsTr("Миша пішки")
                             color: "#d9ffffff"
                             font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 12
                         }
@@ -725,8 +739,8 @@ Item {
                             padding: 0
                             from: 0.3; to: 3.0; stepSize: 0.1
                             focusPolicy: Qt.NoFocus
-                            value: Chiaki.settings.anyplayMouseSensitivity
-                            onMoved: Chiaki.settings.anyplayMouseSensitivity = Math.round(value * 10) / 10
+                            value: root.sensNow
+                            onMoved: root.setSens(Math.round(value * 10) / 10)
                             onPressedChanged: if (!pressed) root.forceActiveFocus()
                             Accessible.name: qsTr("Чутливість миші")
                             background: Item {
@@ -745,7 +759,7 @@ Item {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             width: 22
-                            text: Number(Chiaki.settings.anyplayMouseSensitivity).toFixed(1).replace(".", ",")
+                            text: Number(root.sensNow).toFixed(1).replace(".", ",")
                             color: ap.ink
                             font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 12
                         }
@@ -766,7 +780,7 @@ Item {
                                 }
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: qsTr("Інвертувати вертикаль")
+                                    text: root.tighter ? qsTr("Інверсія") : qsTr("Інвертувати вертикаль")
                                     color: "#d9ffffff"
                                     font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 12
                                 }
@@ -1100,7 +1114,7 @@ Item {
                 visible: root.view.extra.length > 0
                 width: page.cw
                 height: visible ? extraGrid.y + extraGrid.height : 0
-                readonly property int cols: Math.max(1, Math.floor((width + 24) / ((root.tighter ? 196 : 230) + 24)))
+                readonly property int cols: Math.max(1, Math.floor((width + 24) / ((root.tighter ? 168 : 230) + 24)))
                 readonly property real colW: (width - (cols - 1) * 24) / cols
                 Rectangle { width: parent.width; height: 1; color: "#2bffffff" }
                 Cap { id: extraCap; y: 11; text: qsTr("Інші дії") }
@@ -1119,7 +1133,7 @@ Item {
                             width: extra.colW
                             // рядки однакової висоти в межах ряду сітки, як у прототипі
                             readonly property int rowIdx: Math.floor(index / extra.cols)
-                            readonly property real natural: Math.max(31, Math.max(liText.implicitHeight, liKeys.implicitHeight) + 8)
+                            readonly property real natural: Math.max(root.rowH, Math.max(liText.implicitHeight, liKeys.implicitHeight) + (root.rowH < 26 ? 2 : 8))
                             height: extra.rowHeight(rowIdx)
                             Column {
                                 id: liText
@@ -1141,7 +1155,7 @@ Item {
                                 id: liKeys
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: Math.min(implicitW, parent.width * 0.6)
+                                width: Math.min(implicitW, parent.width * 0.75)   // дві клавіші (Колесо↑ Колесо↓) в один рядок
                                 readonly property real implicitW: { let w = 0; for (let i = 0; i < chipsRep.count; i++) if (chipsRep.itemAt(i)) w += chipsRep.itemAt(i).implicitWidth + (i ? 3 : 0); return w; }
                                 layoutDirection: Qt.RightToLeft
                                 spacing: 3
@@ -1152,7 +1166,7 @@ Item {
                     }
                 }
                 function rowHeight(r) {
-                    let h = root.tighter ? 23 : root.tight ? 26 : 31;
+                    let h = root.rowH;
                     for (let i = r * cols; i < Math.min(extraRep.count, (r + 1) * cols); i++)
                         if (extraRep.itemAt(i)) h = Math.max(h, extraRep.itemAt(i).natural);
                     return h;
@@ -1398,7 +1412,7 @@ Item {
         readonly property real naturalWidth: pillRect.width + 8 + content.width
         implicitWidth: naturalWidth
         width: colWidth
-        height: page.narrow ? 28 : (root.tighter ? 23 : root.tight ? 26 : 31)
+        height: page.narrow ? 28 : root.rowH
         Rectangle {
             visible: page.narrow
             anchors.bottom: parent.bottom

@@ -176,7 +176,9 @@ body:not(.wallet) .wonly{display:none!important}
 .amts button{background:#ffffff0a;border:1px solid var(--edge);border-radius:2px;padding:10px 0;font:500 15px/1.25 var(--body);font-variant-numeric:tabular-nums;text-align:center;white-space:nowrap;min-width:0}
 .amts button.on{background:var(--ink);color:var(--dark);border-color:var(--ink)}
 .amts button[disabled]{opacity:.45}
-#wCur{margin-bottom:8px}
+#wCur{margin-bottom:10px}
+.paircode{font-variant-numeric:tabular-nums;letter-spacing:6px;color:var(--gold)}
+#wCur button{padding:11px 18px;font-size:15px}
 .amts.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
 #wBalBox{margin-top:8px}
 #wBalBox .t{font-weight:500}
@@ -388,7 +390,7 @@ body.wallet #methods{margin-top:6px}
       <div class="wcol">
         <div class="how"><p class="cap">Як це працює</p>
           <div class="row"><span><span class="t">Поповнюєш на будь-яку суму</span><span class="s">переказом, як за звичайну бронь; гроші з'являться на балансі за 1–2 хвилини</span></span><span></span></div>
-          <div class="row"><span><span class="t">Платиш з балансу за секунду</span><span class="s">бронь чи продовження гри прямо під час гри, нічого не переказуєш</span></span><span></span></div>
+          <div class="row"><span><span class="t">Платиш з балансу за секунду</span><span class="s">бронь чи продовження бронювання прямо під час гри, нічого не переказуєш</span></span><span></span></div>
           <div class="row"><span><span class="t">Не вистачає — доплачуєш карткою</span><span class="s">частину спишемо з балансу, решту переказуєш як звичайну оплату</span></span><span></span></div>
           <div class="row"><span><span class="t">Скасував бронь — гроші на баланс</span><span class="s">повертаються одразу, можна витратити на наступну гру</span></span><span></span></div>
           <div class="row"><span><span class="t">Залишок не згорає</span><span class="s">лишається на балансі для наступних ігор</span></span><span></span></div>
@@ -400,7 +402,7 @@ body.wallet #methods{margin-top:6px}
     <!-- продовження -->
     <div id="vExtend" class="hidden">
       <button type="button" class="back" data-tab="home">‹ Гра</button>
-      <div class="vhead t-only"><h2 class="vtitle">Продовжити гру</h2></div>
+      <div class="vhead t-only"><h2 class="vtitle">Продовжити бронювання</h2></div>
       <p class="lead" id="extInfo"></p>
       <div id="extPending" class="hidden"></div>
       <div class="method mt hidden" id="extModes"></div>
@@ -541,7 +543,7 @@ const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','q
 document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
 const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality'};
-const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити гру', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Якість картинки'};
+const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Якість картинки'};
 let view = null, viewTok = 0, method = null, busy = false;
 
 function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
@@ -609,11 +611,16 @@ function homeChanged(){
 }
 function renderGate(){
   const pairing = H.state === 'pairing';
+  const code = H.pairShort ? String(H.pairShort).replace(/(\d{3})(\d{3})/, '$1 $2') : '';
   $('gate').innerHTML = (pairing
-    ? '<span class="eyebrow">Вхід</span><p class="big">Підтвердь вхід у Telegram</p><p class="lead">Відкрився бот AnyPlay. Натисни там «Старт» і повернись сюди: програма продовжить сама.</p><div class="spin"></div>'
-      + '<div class="actions"><button type="button" class="btn ghost" data-act="cancelLogin">Скасувати</button></div>'
+    ? '<span class="eyebrow">Вхід</span><p class="big">Підтвердь вхід у Telegram</p><p class="lead">Натисни «Старт» у боті AnyPlay і повернись сюди: програма продовжить сама.</p>'
+      + (code ? '<p class="lead" style="margin-top:10px">Telegram на іншому пристрої? Надішли боту ' + esc(H.pairBot || '@play_any_bot') + ' цей код:</p>'
+        + '<p class="big paircode">' + esc(code) + '</p>' : '') + '<div class="spin"></div>'
+      + '<div class="actions">' + (code ? '<button type="button" class="btn" data-act="openTg">Відкрити Telegram</button>' : '')
+      + '<button type="button" class="btn ghost" data-act="cancelLogin">Скасувати</button></div>'
     : '<span class="eyebrow">Ласкаво просимо</span><p class="big">Грай у PS5 зі свого телефона</p><p class="lead">Увійди через Telegram: це той самий акаунт, з якого ти бронюєш час у боті.</p>'
-      + '<div class="actions"><button type="button" class="btn" data-act="login">Увійти через Telegram</button></div>')
+      + '<div class="actions"><button type="button" class="btn" data-act="login">Увійти через Telegram</button>'
+      + '<button type="button" class="btn ghost" data-act="loginCode">Telegram на іншому пристрої</button></div>')
     + '<p class="small" style="margin-top:14px">AnyPlay для Android, збірка ' + esc(H.build || '') + '</p>';
 }
 let heroKey = '';
@@ -637,7 +644,7 @@ function heroUser(){
     if(c.psn) lines.push('Акаунт PSN: ' + esc(c.psn) + ' (' + (c.own ? 'твій' : 'спільний') + ').');
     if(lines.length) h += '<p class="lead">' + lines.join(' ') + '</p>';
     return h + '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button>'
-      + (checking ? '' : bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити гру</button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
+      + (checking ? '' : bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити бронювання</button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
   }
   // приставка тримає одне підключення: поки клієнт грає на іншому своєму пристрої, тут «Грати» немає (інакше той вибило б)
   if(st === 'other_device') return '<span class="eyebrow">Гра вже йде</span><p class="big">На іншому пристрої</p>'
@@ -1211,7 +1218,7 @@ function renderWallet(){
   $('wOther').classList.toggle('hidden', !lines.length);
   $('wOther').textContent = lines.join(' ');
   // валюта балансу: у чому тримати гроші; спершу показуємо, що вийде, і лише потім міняємо
-  const bc = WDet.currency || main.currency || 'UAH', bl = WDet.currencies || ['UAH', 'PLN', 'USDT'];
+  const bc = WDet.currency || main.currency || 'UAH', bl = (WDet.currencies || ['UAH', 'PLN', 'USDT']).map(x => typeof x === 'string' ? x : (x && x.code) || '').filter(Boolean);
   $('wBal').innerHTML = bl.map(c => '<button type="button" data-bal="' + esc(c) + '" class="' + ((balAsk || bc) === c ? 'on' : '') + '"' + (busy ? ' disabled' : '') + '>'
     + esc((CUR_NAME[c] || c) + (c === 'USDT' ? '' : ' ' + SYM[c])) + '</button>').join('');
   $('wBalHint').classList.toggle('hidden', !!balPrev);
@@ -1496,7 +1503,7 @@ $('netBtn').onclick = netTest;
 $('netApply').onclick = () => { if(netRec >= 0){ setQuality(netRec, true); $('netApply').classList.add('hidden'); } };
 
 // ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
-const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити гру'], ['quality', 'Якість'], ['console', 'Керування приставкою'], ['controls', 'Кнопки на екрані'], ['exit', 'Вийти з гри']];
+const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['quality', 'Якість'], ['console', 'Керування приставкою'], ['controls', 'Кнопки на екрані'], ['exit', 'Вийти з гри']];
 let pmSel = 'back', pmDetail = false, G = {};
 function pmInit(){
   $('pm').classList.remove('hidden');
@@ -1519,7 +1526,7 @@ function pmRender(){
   const until = G.left >= 0 ? hm(pmEnd()) : '';
   let h = '';
   if(pmSel === 'back') h = '<p class="cap">Гра на паузі не стоїть</p><p class="lead">Поки відкрите це меню, гра на приставці йде далі. Повернись кнопкою ліворуч або кнопкою «Назад».</p>';
-  else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити гру</p>'; view = 'extend'; loadExtend(); }
+  else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити бронювання</p>'; view = 'extend'; loadExtend(); }
   else if(pmSel === 'quality'){ h = '<p class="cap">Якість картинки</p><p class="lead">Нова якість діє з нового підключення: картинка зникне на кілька секунд.</p>'; view = 'quality'; loadQuality(); }
   else if(pmSel === 'console'){ h = '<p class="cap">Керування приставкою</p><p class="small">Це працює в будь-якій грі й у меню PS5.</p>'; view = 'help'; loadHelp(); }
   else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="lead">' + (G.controls === false

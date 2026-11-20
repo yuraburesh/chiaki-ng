@@ -41,6 +41,12 @@ struct APBinding
 	// інша дія, поки натиснута aim_when (колесо в GTA VI: без прицілу — колесо зброї по колу, у прицілі — △)
 	uint32_t aim_when = 0;
 	APStep aim_out;
+	// Клавіша зброї (slot1…): поки тримаєш — колесо відкрите на цьому секторі, відпустив — зброя обрана.
+	// Коротке натискання тримає колесо щонайменше hold_min мс, щоб гра встигла прийняти вибір.
+	bool hold_open = false;
+	APStep hold_out;
+	int hold_min = 0;
+	qint64 pressed_at = 0;   // коли натиснули (лише для утримуваних дій)
 	QString profile;     // режим, у який перемкнутись: id або "toggle" (пішки <-> транспорт)
 	QString owner;       // режим, якому належить дія
 };
@@ -99,8 +105,11 @@ class AnyPlayInput : public QObject
 		static void SetAutoVehicle(bool enabled);
 
 		// Миша -> правий стік (камера): чутливість 0.3–3.0 і інверсія вертикалі. Читаються з будь-якого потоку.
-		static float MouseSensitivity();
-		static void SetMouseSensitivity(float value);
+		// Окремо для «пішки» і для транспорту (транспорт і авіація — mode "vehicle" чи "air"; решта — пішки).
+		// Поки для транспорту нічого не задано, діє та сама, що пішки.
+		static float MouseSensitivity(const QString &mode = QString());
+		static void SetMouseSensitivity(float value, const QString &mode = QString());
+		static bool IsVehicleMode(const QString &mode) { return mode == QLatin1String("vehicle") || mode == QLatin1String("air"); }
 		static bool InvertY();
 		static void SetInvertY(bool invert);
 		// Показувати вибір гри («У що граєш?») перед грою
@@ -158,6 +167,8 @@ class AnyPlayInput : public QObject
 		void Run(const APBinding &b, bool tap);
 		void Cycle(const APBinding &b);
 		void NoteSlot(const APBinding &b);
+		bool WheelStep(const APBinding &b);   // колесо зброї відкрите: коліщатко миші переводить вибір на сусідній сектор
+		void AfterRelease();
 		QList<const APBinding *> Slots(const QString &owner) const;
 		APStep Output() const;
 		void SwitchProfile(const QString &target);
@@ -181,6 +192,9 @@ class AnyPlayInput : public QObject
 		QTimer turbo_timer;
 		bool turbo_phase = false;
 		int slot = 0; // яка зброя з колеса вибрана останньою (для перебору по колу)
+		int wheel_sector = -1;            // сектор колеса, обраний коліщатком миші, поки колесо відкрите
+		float wheel_rx = 0, wheel_ry = 0;
+		QElapsedTimer clock;
 
 		bool preview = false;
 		bool auto_vehicle = true;

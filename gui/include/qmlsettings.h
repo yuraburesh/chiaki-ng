@@ -170,6 +170,7 @@ class QmlSettings : public QObject
     // AnyPlay: вибір гри перед грою, чутливість миші (камера) та інверсія вертикалі
     Q_PROPERTY(bool anyplayAskGame READ anyplayAskGame WRITE setAnyplayAskGame NOTIFY anyplayAskGameChanged)
     Q_PROPERTY(qreal anyplayMouseSensitivity READ anyplayMouseSensitivity WRITE setAnyplayMouseSensitivity NOTIFY anyplayMouseSensitivityChanged)
+    Q_PROPERTY(qreal anyplayVehicleSensitivity READ anyplayVehicleSensitivity WRITE setAnyplayVehicleSensitivity NOTIFY anyplayMouseSensitivityChanged)
     Q_PROPERTY(bool anyplayInvertY READ anyplayInvertY WRITE setAnyplayInvertY NOTIFY anyplayInvertYChanged)
 
 public:
@@ -650,6 +651,8 @@ public:
     void setAnyplayAskGame(bool ask);
     qreal anyplayMouseSensitivity() const;
     void setAnyplayMouseSensitivity(qreal value);
+    qreal anyplayVehicleSensitivity() const;
+    void setAnyplayVehicleSensitivity(qreal value);
     bool anyplayInvertY() const;
     void setAnyplayInvertY(bool invert);
     Q_INVOKABLE void clearKeyMapping();

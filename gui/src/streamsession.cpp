@@ -1075,7 +1075,8 @@ void StreamSession::UpdateMouseRightStick()
 
 	// mouse speed during this tick, in pixels per second
 	// AnyPlay: чутливість миші й інверсія вертикалі з екрана клавіш (діють одразу, навіть посеред гри)
-	const float sensitivity = AnyPlayInput::MouseSensitivity();
+	// пішки і в транспорті своя чутливість (режим змінюється сам, коли сідаєш у транспорт)
+	const float sensitivity = AnyPlayInput::MouseSensitivity(anyplay ? anyplay->CurrentProfileId() : QString());
 	const float sx = static_cast<float>(mouse_accum_x) / dt * mouse_gain_x * sensitivity;
 	const float sy = static_cast<float>(mouse_accum_y) / dt * mouse_gain_y * sensitivity * (AnyPlayInput::InvertY() ? -1.0f : 1.0f);
 	mouse_accum_x = 0;

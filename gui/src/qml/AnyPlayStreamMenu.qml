@@ -178,7 +178,7 @@ Item {
                     Layout.alignment: Qt.AlignTop
                     spacing: 0
                     PauseItem { id: resumeBtn; pageId: "back"; text: qsTr("Повернутись у гру"); KeyNavigation.down: extendBtn }
-                    PauseItem { id: extendBtn; pageId: "extend"; text: qsTr("Продовжити гру"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
+                    PauseItem { id: extendBtn; pageId: "extend"; text: qsTr("Продовжити бронювання"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
                     PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: qualityBtn }
                     PauseItem { id: qualityBtn; pageId: "quality"; text: qsTr("Якість"); KeyNavigation.up: keysBtn; KeyNavigation.down: consoleBtn }
                     PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: qualityBtn; KeyNavigation.down: homeBtn }
@@ -267,7 +267,7 @@ Item {
                         ColumnLayout {
                             width: content.width
                             spacing: 12
-                            ApText { role: "cap"; text: qsTr("Продовжити гру") }
+                            ApText { role: "cap"; text: qsTr("Продовжити бронювання") }
                             ExtendPanel {
                                 id: extendPanel
                                 Layout.fillWidth: true

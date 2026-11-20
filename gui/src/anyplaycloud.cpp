@@ -191,12 +191,13 @@ void AnyPlayCloud::request(const QString &method, const QString &path, const QJs
 	});
 }
 
-void AnyPlayCloud::login()
+void AnyPlayCloud::login(bool openTelegram)
 {
 	QJsonObject body;
 	body["name"] = QSysInfo::machineHostName();
+	pair_short_.clear(); pair_qr_.clear(); pair_bot_.clear(); pair_link_.clear();
 	setState("pairing");
-	request("POST", "/api/app/pair", body, [this](int status, const QJsonObject &o) {
+	request("POST", "/api/app/pair", body, [this, openTelegram](int status, const QJsonObject &o) {
 		if(status != 200 || !o.value("ok").toBool())
 		{
 			setState("login");
@@ -205,15 +206,30 @@ void AnyPlayCloud::login()
 		}
 		pair_code_ = o.value("code").toString();
 		pair_tries_ = 0;
-		QDesktopServices::openUrl(QUrl(o.value("link").toString()));
+		pair_link_ = o.value("link").toString();
+		pair_short_ = o.value("short").toString();
+		pair_bot_ = o.value("bot").toString();
+		const QString qr = o.value("qr").toString();
+		pair_qr_ = qr.isEmpty() ? QString() : server_ + qr;
+		emit changed();
+		// старий сервер без коду й QR: як раніше, лише відкриваємо Telegram
+		if(openTelegram || pair_short_.isEmpty())
+			QDesktopServices::openUrl(QUrl(pair_link_));
 		pair_timer.start();
 	}, false);
+}
+
+void AnyPlayCloud::openPairLink()
+{
+	if(!pair_link_.isEmpty())
+		QDesktopServices::openUrl(QUrl(pair_link_));
 }
 
 void AnyPlayCloud::cancelLogin()
 {
 	pair_timer.stop();
 	pair_code_.clear();
+	pair_short_.clear(); pair_qr_.clear(); pair_link_.clear();
 	setState(loggedIn() ? "wait" : "login");
 }
 

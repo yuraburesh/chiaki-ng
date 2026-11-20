@@ -1,5 +1,5 @@
 // AnyPlay: головний екран — вхід через Telegram, стан броні, кнопка «Грати».
-// Вигляд — сторінка assets/anyplay/app.html з вкладками «Гра», «Бронювання», «Якість», «Мій PSN», «Як керувати»;
+// Вигляд — сторінка assets/anyplay/app.html з вкладками «Гра», «Бронювання», «Баланс», «Якість», «Мій PSN», «Як керувати»;
 // тут лише стан і дії: сервер, вхід, гра, панель адміна, оновлення.
 package com.metallic.chiaki.anyplay
 
@@ -514,6 +514,10 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice"))
 			session.opt(k)?.let { s.put(k, it) }
 		session.optJSONObject("console")?.let { s.put("console", JSONObject().put("psn", it.optString("psn")).put("own", it.optBoolean("own"))) }
+		// баланс клієнта {balances, primary}: сторінка показує вкладку «Баланс» і оплату з балансу лише коли він є
+		// (у адміна балансу немає, старий сервер поля не дає)
+		if(!isAdmin)
+			session.optJSONObject("wallet")?.let { s.put("wallet", it) }
 		o.put("session", s)
 		if(isAdmin)
 			adminInfo?.let { o.put("adminView", adminView(it)) }

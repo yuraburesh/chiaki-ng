@@ -35,6 +35,7 @@ input{-webkit-user-select:text;user-select:text}
 .brand span{display:block;font:500 10px/1.3 var(--body);letter-spacing:1.6px;color:var(--faint);margin-top:2px}
 .nav{grid-area:nav;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
 .nav::-webkit-scrollbar{display:none}
+.nav.fade{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
 .nav button{flex:0 0 auto;border-bottom:2px solid transparent;padding:10px 12px 9px;font:500 15px/1.2 var(--display);letter-spacing:1.6px;text-transform:uppercase;opacity:.62;white-space:nowrap}
 .nav button.on{opacity:1;border-bottom-color:var(--ink)}
 .who{grid-area:who;display:flex;align-items:center;gap:10px;padding-bottom:9px;font-size:13px;color:var(--mute);white-space:nowrap;min-width:0}
@@ -160,6 +161,41 @@ input.field{width:100%;padding:12px 2px;border:0;border-bottom:1px solid var(--e
 input.field:focus{border-bottom-color:var(--ink)}
 .code{font:500 40px/1.1 var(--display);letter-spacing:8px;padding:8px 0;font-variant-numeric:tabular-nums;-webkit-user-select:text;user-select:text}
 
+/* ── баланс: передоплата за гру; без балансу на сервері (стара версія) або в адміна все це сховано ── */
+body:not(.wallet) .wonly{display:none!important}
+.bal{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--edge);border-radius:2px;padding:4px 10px;background:#ffffff0a;
+  font:600 13px/1.3 var(--body);color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bal small{font:500 10.5px/1 var(--display);letter-spacing:1.4px;text-transform:uppercase;color:var(--mute)}
+.wcol{display:flex;flex-direction:column;gap:20px;min-width:0}
+.wbig{font-size:clamp(52px,min(8vw,16vh),88px);margin-top:8px}
+.amts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.amts button{background:#ffffff0a;border:1px solid var(--edge);border-radius:2px;padding:10px 0;font:500 15px/1.25 var(--body);font-variant-numeric:tabular-nums;text-align:center;white-space:nowrap;min-width:0}
+.amts button.on{background:var(--ink);color:var(--dark);border-color:var(--ink)}
+.amts button[disabled]{opacity:.45}
+#wCur{margin-bottom:8px}
+.own{display:flex;align-items:flex-end;gap:10px;margin-top:8px}
+.own input{flex:1 1 auto;min-width:0}
+.own .btn{flex:0 0 auto;width:auto}
+.paybox{display:flex;flex-direction:column;gap:8px;border:1px solid var(--edge);border-radius:2px;padding:14px 16px;background:#ffffff08;margin-top:10px}
+.paybox .amount{font-size:34px}
+.paybox .actions{margin-top:2px}
+.paybox .btn{min-width:0}
+.xlink{align-self:flex-start;font-size:12.5px;color:var(--bad);padding:4px 0 0}
+.how{counter-reset:h}
+.how .row .t::before{counter-increment:h;content:counter(h) ". ";color:var(--mute)}
+/* спосіб оплати: з балансу (або баланс + картка) чи переказом */
+.method{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.method button{display:flex;flex-direction:column;gap:2px;min-width:0;background:#ffffff0a;border:1px solid var(--edge);border-radius:2px;padding:9px 10px;text-align:left;font:500 13.5px/1.3 var(--body)}
+.method button small{font-size:11.5px;line-height:1.35;color:var(--faint)}
+.method button.on{border-color:var(--ink);background:#ffffff1f}
+.method button.on small{color:var(--mute)}
+.method button[disabled]{opacity:.45}
+#extModes{max-width:460px}
+body.wallet #methods{margin-top:6px}
+.need{font-size:12.5px;line-height:1.45;color:var(--gold);margin-top:8px}
+.need button{color:var(--cyan);text-decoration:underline;text-underline-offset:2px}
+#payPart{color:var(--gold)}
+
 /* ── перевірка інтернету ── */
 #netRes{margin-top:12px}
 #netBox .btn{min-width:0}
@@ -194,11 +230,11 @@ input.field:focus{border-bottom-color:var(--ink)}
   .top{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand who" "nav nav";padding-top:12px}
   .brand{font-size:21px;padding-bottom:8px}
   .brand span{font-size:9.5px;letter-spacing:1.2px}
-  .who{display:none}
+  /* угорі праворуч лишається тільки баланс; ім'я і «Вийти» внизу головного екрана */
+  .who b,.who .lnk{display:none}
   .foot2 .me{display:flex}
   .nav{margin:0 calc(-1 * var(--pad));padding:0 calc(var(--pad) - 9px)}
   .nav button{padding:9px 9px 8px;font-size:14.5px;letter-spacing:1.3px}
-  .nav.fade{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
   .grid2{grid-template-columns:minmax(0,1fr);gap:28px}
   .home{grid-template-columns:minmax(0,1fr);grid-template-areas:"hero" "side" "foot";grid-template-rows:auto;row-gap:28px}
   .btn{min-width:0;width:100%}
@@ -213,6 +249,8 @@ input.field:focus{border-bottom-color:var(--ink)}
   #pm.detail .pm-right{display:flex}
   .pm-back{display:block}
   .amount{font-size:40px}
+  .amts button{font-size:14.5px;padding:10px 2px}
+  .paybox{padding:12px 14px}
 }
 /* ── телефон горизонтально: усе на одному екрані ── */
 @media (max-height:500px) and (min-width:560px){
@@ -224,6 +262,11 @@ input.field:focus{border-bottom-color:var(--ink)}
   .who{padding-bottom:6px}
   .who b{max-width:110px}
   .lnk{padding:3px 9px}
+  .bal{padding:3px 9px}
+  /* з балансом угорі місця на вкладки мало: ім'я і «Вийти» переходять униз головного екрана */
+  body.wallet .who b,body.wallet .who .lnk{display:none}
+  body.wallet .foot2 .me{display:flex}
+  .side .row .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   main{padding:12px var(--pad) 12px}
   .grid2{gap:12px 40px}
   .home{column-gap:40px}
@@ -257,7 +300,7 @@ input.field:focus{border-bottom-color:var(--ink)}
 /* дуже низький горизонтальний екран: рядки без підписів */
 @media (max-height:370px) and (min-width:560px){
   .side .row .s{display:none}
-  .side .row{min-height:38px}
+  .side .row{min-height:36px}
   .timer{font-size:clamp(46px,18vh,100px)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:3s!important}}
@@ -271,11 +314,12 @@ input.field:focus{border-bottom-color:var(--ink)}
     <nav class="nav" id="nav" aria-label="Розділи">
       <button type="button" data-tab="home">Гра</button>
       <button type="button" data-tab="book" class="noadmin">Бронювання</button>
+      <button type="button" data-tab="wallet" class="noadmin wonly">Баланс</button>
       <button type="button" data-tab="quality">Якість</button>
       <button type="button" data-tab="psn" class="noadmin">Мій PSN</button>
       <button type="button" data-tab="help">Як керувати</button>
     </nav>
-    <div class="who" id="who"><b id="whoName"></b><button type="button" class="lnk" data-act="logout">Вийти</button></div>
+    <div class="who" id="who"><button type="button" class="bal noadmin wonly" data-tab="wallet" aria-label="Баланс"><small>Баланс</small><span class="balv"></span></button><b id="whoName"></b><button type="button" class="lnk" data-act="logout">Вийти</button></div>
   </header>
   <!-- окреме вікно (одна сторінка): назад і назва -->
   <header class="subhead"><button type="button" id="back" aria-label="Назад">‹</button><h1 id="subTitle">AnyPlay</h1></header>
@@ -305,10 +349,40 @@ input.field:focus{border-bottom-color:var(--ink)}
           <div><p class="cap">1. Скільки граємо</p><div class="pick" id="tariffs"></div></div>
           <div><p class="cap">2. День</p><div class="days" id="days"></div>
             <p class="cap mt">3. Початок</p><div class="times" id="starts"></div><p class="small" id="tzNote" style="margin-top:8px"></p></div>
-          <div id="methodsWrap"><p class="cap">4. Оплата</p><div class="pick" id="methods"></div></div>
+          <div id="methodsWrap"><p class="cap">4. Оплата</p>
+            <div class="method wonly" id="payModes"></div><div class="need hidden" id="payNeed"></div>
+            <div class="pick" id="methods"></div></div>
         </div>
       </div>
       <div id="pMine" class="hidden"><div id="mine"></div></div>
+    </div>
+
+    <!-- баланс: скільки є, поповнення, як це працює, історія -->
+    <div id="vWallet" class="hidden grid2">
+      <div class="wcol">
+        <div><h2 class="vtitle">Баланс</h2>
+          <div class="timer wbig"><span class="balv"></span></div>
+          <p class="small hidden" id="wOther"></p>
+          <p class="lead" style="margin-top:8px">Баланс — це передоплата за гру в AnyPlay. Поповнюєш один раз, а далі платиш за броні й продовження <b>одним натиском</b>: без переказу і без чекання, поки знайдеться оплата.</p>
+          <p class="lead" style="margin-top:6px">Це не обов'язково: за кожну гру можна заплатити й переказом. Спосіб оплати обираєш щоразу сам. Якщо на балансі не вистачає, решту доплачуєш карткою.</p>
+        </div>
+        <div><p class="cap">Поповнити</p>
+          <div class="seg hidden" id="wCur"></div>
+          <div class="amts" id="wAmts"></div>
+          <div class="own hidden" id="wOwn"><input class="field" id="wOwnAmt" inputmode="numeric" maxlength="7" autocomplete="off" aria-label="Сума поповнення"><button type="button" class="btn sm" id="wOwnGo">Поповнити</button></div>
+          <div id="wPending"></div>
+        </div>
+      </div>
+      <div class="wcol">
+        <div class="how"><p class="cap">Як це працює</p>
+          <div class="row"><span><span class="t">Поповнюєш на будь-яку суму</span><span class="s">переказом, як за звичайну бронь; гроші з'являться на балансі за 1–2 хвилини</span></span><span></span></div>
+          <div class="row"><span><span class="t">Платиш з балансу за секунду</span><span class="s">бронь чи продовження гри прямо під час гри, нічого не переказуєш</span></span><span></span></div>
+          <div class="row"><span><span class="t">Не вистачає — доплачуєш карткою</span><span class="s">частину спишемо з балансу, решту переказуєш як звичайну оплату</span></span><span></span></div>
+          <div class="row"><span><span class="t">Скасував бронь — гроші на баланс</span><span class="s">повертаються одразу, можна витратити на наступну гру</span></span><span></span></div>
+          <div class="row"><span><span class="t">Залишок не згорає</span><span class="s">лишається на балансі для наступних ігор</span></span><span></span></div>
+        </div>
+        <div><p class="cap">Історія</p><div id="wHist"></div></div>
+      </div>
     </div>
 
     <!-- продовження -->
@@ -317,6 +391,7 @@ input.field:focus{border-bottom-color:var(--ink)}
       <div class="vhead t-only"><h2 class="vtitle">Продовжити гру</h2></div>
       <p class="lead" id="extInfo"></p>
       <div id="extPending" class="hidden"></div>
+      <div class="method mt hidden" id="extModes"></div>
       <div id="extPick" class="steps mt">
         <div><p class="cap">1. На скільки продовжити</p><div class="pick" id="extHours"></div></div>
         <div id="extMethodsWrap"><p class="cap">2. Оплата</p><div class="pick" id="extMethods"></div></div>
@@ -374,6 +449,7 @@ input.field:focus{border-bottom-color:var(--ink)}
     <div class="hero">
       <span class="eyebrow" id="payWhen"></span>
       <div class="amount" id="payAmount"></div>
+      <p class="lead hidden" id="payPart"></p>
       <p class="lead" id="payTimer"></p>
     </div>
     <div>
@@ -441,17 +517,19 @@ function fmtTime(ts){
 const num = (x, digits) => x.toFixed(digits).replace('.', ',');
 const ERR = {busy: 'Цей час щойно зайняли. Обери інший.', limit: 'У тебе вже максимум броней. Спершу зіграй або скасуй одну з них.',
   closed: 'Зараз технічні роботи, бронювання тимчасово закрите.', pending: 'Попереднє продовження ще перевіряється. Зачекай хвилину.',
-  no_session: 'Продовжити можна лише під час гри.', status: 'Цю бронь уже не можна оплатити.', auth: 'Вхід застарів. Увійди через Telegram знову.'};
+  no_session: 'Продовжити можна лише під час гри.', status: 'Цю бронь уже не можна оплатити.', auth: 'Вхід застарів. Увійди через Telegram знову.',
+  funds: 'Баланс щойно змінився, і на цю оплату його вже не вистачає. Перевір суму і спробуй ще раз.',
+  amount: 'На таку суму поповнити не вийде. Обери іншу.', not_found: 'Не знайдено: схоже, це вже змінилось. Онови сторінку.'};
 function errText(r){ return r.json.text || ERR[r.json.error] || (r.status === 0 ? 'Немає зв\'язку з сервером. Перевір інтернет.' : 'Не вдалося (помилка ' + r.status + '). Спробуй ще раз.'); }
 
 // ── режим сторінки: головний екран програми, меню під час гри або одна сторінка у вікні ──
 const HASH = decodeURIComponent((location.hash || '#home').slice(1));
 const ROUTE = HASH.split(':')[0], ARG = HASH.split(':')[1] || '';
-const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','quality'].includes(ROUTE) ? 'single' : 'home';
+const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','quality','wallet'].includes(ROUTE) ? 'single' : 'home';
 document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
-const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality'};
-const TITLES = {book: 'Бронювання', extend: 'Продовжити гру', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Якість картинки'};
+const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality'};
+const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити гру', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Якість картинки'};
 let view = null, viewTok = 0, method = null, busy = false;
 
 function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
@@ -470,6 +548,7 @@ function hideBar(){ $('bar').classList.add('hidden'); }
 function go(v){
   if(view === 'psn' && v !== 'psn') clearInterval(psnTimer);
   if(view === 'quality' && v !== 'quality') netStop();
+  if(view === 'wallet' && v !== 'wallet') clearInterval(wPoll);
   view = v; viewTok++;
   hideBar(); $('main').scrollTop = 0;
   $('subTitle').textContent = TITLES[v] || 'AnyPlay';
@@ -477,6 +556,7 @@ function go(v){
   if(v === 'gate'){ renderGate(); show('gate'); }
   else if(v === 'home'){ renderHome(true); show('home'); loadHomeMine(true); }
   else if(v === 'book'){ loadBook(false); }
+  else if(v === 'wallet'){ loadWallet(false); }
   else if(v === 'extend'){ loadExtend(); }
   else if(v === 'psn'){ psnKey = ''; loadPsn(); }
   else if(v === 'help'){ loadHelp(); }
@@ -500,13 +580,17 @@ function homeChanged(){
   if(MODE !== 'home') return;
   if(typeof H.skew === 'number') skew = H.skew;
   document.body.classList.toggle('admin', !!H.admin);
+  // баланс приходить разом зі станом сервера; немає поля (старий сервер) — інтерфейсу балансу немає
+  const sw = H.session && H.session.wallet;
+  W = sw && Array.isArray(sw.balances) ? sw : null;
+  wChanged();
   const gated = !H.loggedIn || H.state === 'login' || H.state === 'pairing';
   $('top').classList.toggle('gated', gated);
   $('whoName').textContent = H.user || ''; $('meName').textContent = H.user || '';
   $('ver').textContent = 'AnyPlay для Android, збірка ' + (H.build || '');
   if(gated){ if(view !== 'gate') go('gate'); else renderGate(); return; }
   if(view === 'gate' || view == null){ go('home'); return; }
-  if(H.admin && (view === 'book' || view === 'psn')){ go('home'); return; }
+  if((H.admin && (view === 'book' || view === 'psn')) || (view === 'wallet' && !walletOn())){ go('home'); return; }
   if(view === 'home'){ renderHome(false); loadHomeMine(false); }
   if(view === 'quality') renderQuality();
 }
@@ -570,7 +654,7 @@ function heroAdmin(a){
 }
 const CHIP = {hold: ['wait', 'чекає оплату'], pending_review: ['wait', 'перевіряємо оплату'], paid: ['ok', 'оплачено'], active: ['live', 'йде гра']};
 function bookingRow(m, click){
-  const c = CHIP[m.status] || ['', m.status];
+  const c = m.status === 'paid' && m.pay === 'wallet' ? ['ok', 'оплачено з балансу'] : CHIP[m.status] || ['', m.status];
   return '<div class="row' + (click ? ' click" data-tab="book" data-sub="mine' : '') + '"><span><span class="t">' + esc(upFirst(range(m.start, m.end))) + '</span><span class="s">'
     + esc(m.title) + ', ' + esc(m.price) + '</span></span><span class="chip ' + c[0] + '">' + esc(c[1]) + '</span></div>';
 }
@@ -591,11 +675,15 @@ function renderSide(){
       + (a && a.waiting > 0 ? '<span class="chip wait">чекають: ' + a.waiting + '</span>' : '<span class="chip">немає заявок</span>') + '</div>'
       + '<div class="row click" data-act="adminShared"><span><span class="t">Спільний PSN</span><span class="s">для клієнтів без свого акаунта</span></span><span class="chip">' + esc(a ? a.shared : '') + '</span></div>';
   } else {
-    const land = window.innerHeight < 500 && window.innerWidth > window.innerHeight, max = land ? (window.innerHeight < 370 ? 1 : 2) : 3;
+    // телефон горизонтально: усе на одному екрані, тому з рядком «Баланс» броней показуємо на одну менше
+    const land = window.innerHeight < 500 && window.innerWidth > window.innerHeight, wal = walletOn();
+    const max = land ? Math.max(1, (window.innerHeight < 370 ? 1 : 2) - (wal ? 1 : 0)) : 3;
     h += '<p class="cap">Мої броні</p>';
     if(homeMine === null) h += '<p class="small" style="padding:10px 0">Завантажуємо…</p>';
     else if(!homeMine.length) h += '<p class="small" style="padding:10px 0">Броней поки немає.</p>';
     else h += homeMine.slice(0, max).map(m => bookingRow(m, true)).join('') + (homeMine.length > max ? '<button type="button" class="more" data-tab="book" data-sub="mine">Усі броні: ' + homeMine.length + '</button>' : '');
+    if(wal) h += '<div class="row click" data-tab="wallet" style="margin-top:6px"><span><span class="t">Баланс</span><span class="s">плати за гру одним натиском, без переказу щоразу</span></span>'
+      + '<span class="chip balv">' + esc(wText()) + '</span></div>';
   }
   h += '<p class="cap">Налаштування гри</p>'
     + '<div class="row click" data-tab="quality"><span><span class="t">Якість картинки</span><span class="s">' + (q.auto ? 'сама підлаштовується під інтернет' : 'стала, обрана вручну') + '</span></span><span class="chip">' + esc(q.name || 'Авто') + '</span></div>';
@@ -621,7 +709,7 @@ function tick(){
 setInterval(tick, 1000);
 
 // ── бронювання ──
-let B = null, code = null, dayIdx = 0, starts = null, start = 0;
+let B = null, code = null, dayIdx = 0, starts = null, start = 0, bookPay = 'wallet';   // bookPay: wallet (з балансу) | transfer
 async function loadBook(keep){
   const tok = viewTok;
   if(!B || !keep) loadingView();
@@ -629,12 +717,20 @@ async function loadBook(keep){
   if(tok !== viewTok) return;
   if(r.status !== 200 || !r.json.ok){ failView(r, () => loadBook(false)); return; }
   B = r.json; skew = B.now - Math.floor(Date.now() / 1000);
+  // свіжий баланс разом з цінами (wChanged нижче перемалює лише якщо він змінився)
+  const bw = B.wallet && Array.isArray(B.wallet.balances) && !isAdmin() ? B.wallet : null;
+  if(bw) W = Object.assign({}, W || {}, bw);
   if(MODE === 'home'){ homeMine = B.mine; homeMineAt = Date.now(); }
-  if(!method || !B.methods.some(m => m.code === method)) method = B.methods.length ? B.methods[0].code : null;
+  // спосіб оплати за замовчуванням — у валюті, якою клієнт зазвичай платить (вона ж валюта балансу)
+  if(!method || !B.methods.some(m => m.code === method)){
+    const prim = walletOn() && B.methods.find(m => curOf(m.code) === W.primary);
+    method = prim ? prim.code : B.methods.length ? B.methods[0].code : null;
+  }
   if(!code || !B.tariffs.some(t => t.code === code)) code = B.tariffs.length ? B.tariffs[0].code : null;
   if(dayIdx >= B.days.length) dayIdx = 0;
   if(!keep){ starts = null; start = 0; }
   show('book'); renderBook();
+  if(bw) wChanged();
   if(!keep) loadStarts();
 }
 async function loadStarts(){
@@ -664,7 +760,18 @@ function renderBook(){
     c.innerHTML = '<span>' + (i === 0 ? 'Сьогодні' : i === 1 ? 'Завтра' : WD[dt.getDay()]) + '</span><b>' + dt.getDate() + '</b><span>' + MON[dt.getMonth()] + '</span>';
     c.onclick = () => { dayIdx = i; haptic(); renderBook(); loadStarts(); }; dEl.appendChild(c); });
   const on = dEl.children[dayIdx]; if(on && on.scrollIntoView) try { on.scrollIntoView({block: 'nearest', inline: 'nearest'}); } catch(e) {}
-  $('methodsWrap').classList.toggle('hidden', B.methods.length < 2);
+  const wal = walletOn();
+  $('methodsWrap').classList.toggle('hidden', B.methods.length < 2 && !wal);
+  $('methods').classList.toggle('hidden', B.methods.length < 2);
+  // з балансу (або баланс + картка, якщо не вистачає) чи переказом — клієнт обирає щоразу сам
+  if(wal){
+    const t = tariff(), p = payPlan(t, method, bookPay);
+    $('payModes').innerHTML = payModesHtml(p, method, false);
+    $('payModes').querySelectorAll('[data-pm]').forEach(b => b.onclick = () => { if(b.disabled) return; bookPay = b.dataset.pm; haptic(); renderBook(); });
+    $('payNeed').classList.toggle('hidden', !p.mix);
+    $('payNeed').innerHTML = p.mix ? 'На балансі ' + money(p.bal, p.cur, p.sym) + ', не вистачає ' + money(p.rest, p.cur, p.sym) + ': їх доплатиш ' + viaWord(method) + '.'
+      + (MODE === 'home' ? ' Або <button type="button" data-tab="wallet">поповни баланс</button>.' : '') : '';
+  } else $('payNeed').classList.add('hidden');
   const mEl = $('methods'); mEl.innerHTML = '';
   B.methods.forEach(m => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (m.code === method ? ' on' : '');
     const t = tariff(); c.innerHTML = '<span><span class="ot">' + esc(m.label) + '</span><span class="small">' + esc(t ? t.prices[m.code] || '' : '') + '</span></span><i></i>';
@@ -685,14 +792,29 @@ function renderBar(){
   if(bookTab !== 'new' || B.openCount >= B.limit || B.closed){ hideBar(); return; }
   const t = tariff();
   if(!start || !t){ bar('Обери час початку', '', false, null); return; }
-  bar('Забронювати за ' + (t.prices[method] || ''), upFirst(range(start, start + t.hours * 3600)) + '. Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book);
+  const when = upFirst(range(start, start + t.hours * 3600)), p = payPlan(t, method, bookPay), m = x => money(x, p.cur, p.sym);
+  if(p.pay === 'wallet') bar('Оплатити з балансу ' + m(p.price), when + '. Бронь підтвердиться одразу, без переказу. Залишиться ' + m(p.bal - p.price) + '.', !busy, book);
+  else if(p.pay === 'mix') bar('Доплатити ' + m(p.rest) + ' ' + viaWord(method), when + '. Місце тримаємо ' + B.holdMinutes + ' хв. Як тільки надійде доплата ' + m(p.rest)
+    + ', спишемо ' + m(p.part) + ' з балансу, і бронь підтвердиться.', !busy, book);
+  else bar('Забронювати за ' + (t.prices[method] || ''), when + '. Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book);
 }
 async function book(){
-  if(busy) return; busy = true; renderBar();
-  const r = await api('POST', '/api/app/book', {code, start, method});
-  busy = false;
-  if(r.status !== 200 || !r.json.ok){ toast(errText(r)); await loadBook(true); loadStarts(); return; }
-  haptic(); start = 0; openPay(r.json.pending, 'book');
+  if(busy) return;
+  const t = tariff(), p = payPlan(t, method, bookPay);
+  busy = true; renderBar();
+  // той самий requestId при повторі після обриву зв'язку: сервер не створить другу бронь і не спише двічі
+  const r = await api('POST', '/api/app/book', {code, start, method, pay: p.pay, requestId: requestIdFor(['book', code, start, method, p.pay].join('|'))});
+  busy = false; requestSettled(r);
+  if(r.status !== 200 || !r.json.ok){ toast(errText(r)); if(r.json.error === 'funds') walletRefresh(); await loadBook(true); loadStarts(); return; }
+  haptic(); start = 0;
+  if(r.json.wallet) setWallet(r.json.wallet);
+  if(r.json.paid){   // оплачено з балансу: без вікна оплати, бронь одразу твоя
+    toast('Бронь оплачено з балансу, залишилось ' + money(r.json.wallet ? wBal(p.cur) : p.bal - p.price, p.cur, p.sym) + '.');
+    walletRefresh(); bookTab = 'mine'; await loadBook(true); loadStarts(); return;
+  }
+  const pend = withPart(r.json);
+  if(pend.walletPart) walletRefresh();   // частину вже відклали з балансу
+  openPay(pend, 'book');
   loadBook(true); loadStarts();
 }
 let confirmId = 0;
@@ -717,22 +839,35 @@ function renderMine(){
 }
 async function cancelBooking(id){
   confirmId = 0;
-  const r = await api('POST', '/api/app/book/cancel', {bookingId: id});
-  toast(r.json.text || errText(r));
-  if(r.json.refund === 'bot') setTimeout(() => openUrl('https://t.me/play_any_bot'), 1500);
-  act('refresh');
+  const r = await api('POST', '/api/app/book/cancel', {bookingId: id}), rf = r.json.refund;
+  // гроші за скасовану бронь повертаються на баланс одразу
+  if(rf && typeof rf === 'object' && rf.to === 'wallet') toast(r.json.text || 'Бронь скасовано. ' + money(rf.amount, rf.currency, rf.symbol) + ' повернули на баланс.');
+  else toast(r.json.text || errText(r));
+  if(rf === 'bot') setTimeout(() => openUrl('https://t.me/play_any_bot'), 1500);   // сервер без балансу: повернення через бот
+  if(r.json.wallet) setWallet(r.json.wallet);
+  if(W) walletRefresh(); else act('refresh');
   if(view === 'extend') loadExtend(); else if(view === 'book'){ await loadBook(true); loadStarts(); }
 }
 
 // ── оплата ──
-let P = null, payFrom = 'book', payTick = null, payPoll = null;
+// from: book | extend | topup (поповнення балансу)
+let P = null, payFrom = 'book', payTick = null, payPoll = null, payBal0 = 0;
 function openPay(p, from){
   P = p; payFrom = from;
+  const top = from === 'topup', cur = p.currency || curOf(p.method);
+  payBal0 = wBal(cur);
   $('sheet').classList.remove('hidden'); hideBar();
-  $('payWhen').textContent = upFirst(range(p.start, p.end));
-  $('payAmount').textContent = p.price;
+  $('payWhen').textContent = top ? 'Поповнення балансу' : upFirst(range(p.start, p.end));
+  $('payAmount').textContent = p.price || money(+p.amount, cur, p.symbol);
+  // змішана оплата: частину вже відклали з балансу, тут лише доплата
+  const wp = p.walletPart;
+  $('payPart').classList.toggle('hidden', !wp);
+  $('payPart').textContent = wp ? 'Ще ' + money(wp.amount, wp.currency || cur, wp.symbol) + ' спишемо з балансу, щойно надійде ця доплата.' : '';
+  $('payCancel').dataset.sure = ''; $('payCancel').textContent = top ? 'Скасувати поповнення' : 'Скасувати цю бронь';
   const req = $('payReq'); req.innerHTML = '';
   const rows = [{label: 'Сума', value: p.amount + ' ' + p.currency, copyValue: p.amount, copy: true}].concat(p.requisites || []);
+  // коментар до переказу («AnyPlay T5»): за ним автоперевірка теж знаходить платіж
+  if(p.comment && !rows.some(x => x.value === p.comment)) rows.push({label: 'Коментар до переказу', value: p.comment, copy: true});
   rows.forEach(x => { const d = document.createElement('div'); d.className = 'req';
     d.innerHTML = '<div><span>' + esc(x.label) + '</span><b>' + esc(x.value) + '</b></div>';
     if(x.url){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm ghost'; b.textContent = 'Відкрити'; b.onclick = () => openUrl(x.value); d.appendChild(b); }
@@ -741,58 +876,76 @@ function openPay(p, from){
   if(p.payUrl){ const d = document.createElement('div'); d.className = 'actions'; d.innerHTML = '<button type="button" class="btn">Відкрити сторінку оплати</button>'; d.firstChild.onclick = () => openUrl(p.payUrl); req.appendChild(d); }
   const review = p.status === 'pending_review';
   $('payForm').classList.toggle('hidden', review); $('payWait').classList.toggle('hidden', !review); $('payOk').classList.add('hidden');
-  if(review){ $('payWaitText').textContent = 'Позначку «Я оплатив» отримали. Перевіряємо платіж, це займає до кількох хвилин. Можна закрити це вікно: час додасться сам.'; startPayPoll(); }
+  if(review){ $('payWaitText').textContent = top ? 'Позначку «Я оплатив» отримали. Перевіряємо платіж, це займає до кількох хвилин. Можна закрити це вікно: гроші з\'являться на балансі самі.'
+    : 'Позначку «Я оплатив» отримали. Перевіряємо платіж, це займає до кількох хвилин. Можна закрити це вікно: час додасться сам.'; startPayPoll(); }
   clearInterval(payTick); payTick = setInterval(payTimer, 1000); payTimer();
   $('sheet').querySelector('main').scrollTop = 0;
 }
 function payTimer(){
   if(!P) return;
-  const left = P.holdUntil - nowTs();
-  $('payTimer').textContent = P.status === 'pending_review' ? '' : left > 0 ? 'Місце за тобою ще ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : 'Час на оплату вийшов. Якщо вже оплатив, натисни «Я оплатив».';
+  const left = P.holdUntil - nowTs(), mmss = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+  $('payTimer').textContent = P.status === 'pending_review' || !(P.holdUntil > 0) ? '' : left > 0 ? (payFrom === 'topup' ? 'Чекаємо переказ ще ' : 'Місце за тобою ще ') + mmss
+    : 'Час на оплату вийшов. Якщо вже оплатив, натисни «Я оплатив».';
 }
 function closePay(){
   clearInterval(payTick); clearInterval(payPoll); P = null;
   $('sheet').classList.add('hidden');
   act('refresh'); homeMineAt = 0;
   if(payFrom === 'extend'){ if(view === 'extend') loadExtend(); }
+  else if(payFrom === 'topup'){ if(view === 'wallet') loadWallet(true); }
   else { bookTab = 'mine'; if(view === 'book') loadBook(true); else if(MODE !== 'menu') go('book'); }
 }
 async function payDone(){
   if(!P || busy) return; busy = true; $('payDone').disabled = true;
-  const r = await api('POST', '/api/app/extend/paid', {bookingId: P.id, sender: $('paySender').value.trim()});
+  const top = payFrom === 'topup', sender = $('paySender').value.trim();
+  const r = top ? await api('POST', '/api/app/wallet/topup/paid', {topupId: tpId(P), sender}) : await api('POST', '/api/app/extend/paid', {bookingId: P.id, sender});
   busy = false; $('payDone').disabled = false;
   if(r.status !== 200 || !r.json.ok){ toast(errText(r)); return; }
   if(r.json.paid){ payOk(); return; }
   P.status = 'pending_review';
   $('payForm').classList.add('hidden'); $('payWait').classList.remove('hidden');
-  $('payWaitText').textContent = r.json.auto ? 'Шукаємо твій платіж автоматично. Зазвичай це до двох хвилин. Можна закрити це вікно: час додасться сам, а ми напишемо в бот.'
+  $('payWaitText').textContent = top ? (r.json.auto ? 'Шукаємо твій платіж автоматично. Зазвичай це до двох хвилин. Можна закрити це вікно: гроші з\'являться на балансі самі.'
+      : 'Дякуємо! Адміністратор перевірить оплату, і гроші з\'являться на балансі. Ми напишемо в бот. Це вікно можна закрити.')
+    : r.json.auto ? 'Шукаємо твій платіж автоматично. Зазвичай це до двох хвилин. Можна закрити це вікно: час додасться сам, а ми напишемо в бот.'
     : 'Дякуємо! Адміністратор перевірить оплату й підтвердить бронь. Ми напишемо в бот. Це вікно можна закрити.';
   startPayPoll();
 }
 function payOk(){
   clearInterval(payPoll); haptic(); act('refresh');
+  if(W) walletRefresh();
   $('payForm').classList.add('hidden'); $('payWait').classList.add('hidden'); $('payOk').classList.remove('hidden');
-  $('payOkText').innerHTML = '<b>Оплату підтверджено.</b> ' + (payFrom === 'extend' ? 'Гру продовжено, можна грати далі.' : 'Бронь твоя. У свій час у програмі з\'явиться кнопка «Грати».');
+  $('payOkText').innerHTML = payFrom === 'topup' ? '<b>Баланс поповнено.</b> Тепер броні й продовження можна оплачувати одним натиском.'
+    : '<b>Оплату підтверджено.</b> ' + (payFrom === 'extend' ? 'Гру продовжено, можна грати далі.' : 'Бронь твоя. У свій час у програмі з\'явиться кнопка «Грати».');
 }
 function startPayPoll(){
   clearInterval(payPoll);
   payPoll = setInterval(async () => {
     if(!P) return;
     if(payFrom === 'extend'){ const r = await api('GET', '/api/app/extend'); if(r.json.ok && P && (!r.json.pending || r.json.pending.id !== P.id) && r.json.end >= P.end) payOk(); }
+    else if(payFrom === 'topup'){
+      // поповнення зникло з відкритих: якщо баланс у цій валюті виріс — гроші зараховано
+      const r = await api('GET', '/api/app/wallet'); if(!r.json.ok || !P || payFrom !== 'topup') return;
+      const id = tpId(P), cur = P.currency || curOf(P.method), x = (r.json.pending || []).find(y => tpId(y) === id);
+      if(x && x.status !== 'paid') return;
+      const grew = (r.json.balances || []).some(b => b.currency === cur && +b.amount > payBal0 + 0.001);
+      WDet = r.json; setWallet({balances: r.json.balances || [], primary: r.json.primary});
+      if(x || grew) payOk(); else { closePay(); toast('Це поповнення закрито: оплату за ним не знайшли. Якщо гроші вже списались, напиши в підтримку.'); }
+    }
     else { const r = await api('GET', '/api/app/book'); if(!r.json.ok || !P) return; const m = r.json.mine.find(x => x.id === P.id || (x.pending && x.pending.id === P.id));
       if(m && (m.status === 'paid' || m.status === 'active')) payOk(); }
   }, 5000);
 }
 async function payCancel(){
   if(!P) return;
-  if($('payCancel').dataset.sure !== '1'){ $('payCancel').dataset.sure = '1'; $('payCancel').textContent = 'Натисни ще раз, щоб скасувати'; setTimeout(() => { $('payCancel').dataset.sure = ''; $('payCancel').textContent = 'Скасувати цю бронь'; }, 4000); return; }
-  $('payCancel').dataset.sure = ''; $('payCancel').textContent = 'Скасувати цю бронь';
-  const id = P.id; clearInterval(payTick); clearInterval(payPoll); P = null; $('sheet').classList.add('hidden');
-  await cancelBooking(id);
+  const top = payFrom === 'topup', label = top ? 'Скасувати поповнення' : 'Скасувати цю бронь';
+  if($('payCancel').dataset.sure !== '1'){ $('payCancel').dataset.sure = '1'; $('payCancel').textContent = 'Натисни ще раз, щоб скасувати'; setTimeout(() => { $('payCancel').dataset.sure = ''; $('payCancel').textContent = label; }, 4000); return; }
+  $('payCancel').dataset.sure = ''; $('payCancel').textContent = label;
+  const id = top ? tpId(P) : P.id; clearInterval(payTick); clearInterval(payPoll); P = null; $('sheet').classList.add('hidden');
+  if(top) await topupCancel(id); else await cancelBooking(id);
 }
 
 // ── продовження ──
-let E = null, extHours = 0;
+let E = null, extHours = 0, extPay = 'wallet';
 async function loadExtend(){
   const tok = viewTok;
   if(!E) loadingView();
@@ -800,9 +953,10 @@ async function loadExtend(){
   if(tok !== viewTok) return;
   if(r.status !== 200 || !r.json.ok){ failView(r, loadExtend); return; }
   E = r.json; show('extend');
-  if(!E.active){ $('extInfo').innerHTML = 'Продовжити можна під час гри: коли твоя бронь уже почалась. Щоб зіграти в інший час, зроби нову бронь.'; $('extPick').classList.add('hidden'); $('extPending').classList.add('hidden'); hideBar(); return; }
+  if(E.wallet && Array.isArray(E.wallet.balances) && !isAdmin()) W = Object.assign({}, W || {}, E.wallet);
+  if(!E.active){ $('extInfo').innerHTML = 'Продовжити можна під час гри: коли твоя бронь уже почалась. Щоб зіграти в інший час, зроби нову бронь.'; $('extPick').classList.add('hidden'); $('extPending').classList.add('hidden'); $('extModes').classList.add('hidden'); hideBar(); wChanged(); return; }
   if(!method || !E.methods.some(m => m.code === method)) method = E.method;
-  renderExtend();
+  renderExtend(); wChanged();
 }
 function renderExtend(){
   $('extInfo').innerHTML = (E.paymentChecking   // гра в кредит: час броні вийшов, оплату продовження ще перевіряють
@@ -818,9 +972,19 @@ function renderExtend(){
     $('extPay').onclick = () => openPay(pend, 'extend');
     if($('extCancel')) $('extCancel').onclick = () => cancelBooking(pend.id);
   }
+  // з балансу чи переказом — та сама вибірка, що й при бронюванні; гра не переривається
+  const picking = !(pend && pend.status === 'pending_review') && E.options.length > 0, wal = walletOn() && picking;
+  $('extModes').classList.toggle('hidden', !wal);
+  if(wal){
+    const o1 = E.options.find(x => x.hours === extHours && x.free) || E.options.find(x => x.free) || null;
+    $('extModes').innerHTML = payModesHtml(payPlan(o1, method, extPay), method, true);
+    $('extModes').querySelectorAll('[data-pm]').forEach(b => b.onclick = () => { if(b.disabled) return; extPay = b.dataset.pm; haptic(); renderExtend(); });
+  }
   const hEl = $('extHours'); hEl.innerHTML = '';
   E.options.forEach(o => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (o.hours === extHours ? ' on' : '') + (o.free ? '' : ' off');
-    c.innerHTML = '<span>+' + o.hours + ' год, до ' + hm(E.end + o.hours * 3600) + '</span><span class="chip">' + (o.free ? esc(o.prices[method] || o.price) : 'зайнято') + '</span>';
+    const p = payPlan(o, method, extPay), m = x => money(x, p.cur, p.sym);
+    const price = p.pay === 'wallet' ? 'з балансу ' + m(p.price) : p.pay === 'mix' ? m(p.part) + ' + ' + m(p.rest) + ' ' + viaWord(method) : o.prices[method] || o.price;
+    c.innerHTML = '<span>+' + o.hours + ' год, до ' + hm(E.end + o.hours * 3600) + '</span><span class="chip">' + (o.free ? esc(price) : 'зайнято') + '</span>';
     c.onclick = () => { if(!o.free){ toast('На стільки продовжити не вийде: далі час уже заброньований.'); return; } extHours = o.hours; haptic(); renderExtend(); }; hEl.appendChild(c); });
   $('extMethodsWrap').classList.toggle('hidden', E.methods.length < 2);
   const mEl = $('extMethods'); mEl.innerHTML = '';
@@ -829,15 +993,275 @@ function renderExtend(){
   const o = E.options.find(x => x.hours === extHours && x.free);
   if(E.closed || (pend && pend.status === 'pending_review')) hideBar();
   else if(!o) bar('Обери, на скільки продовжити', '', false, null);
-  else bar('Продовжити на ' + o.hours + ' ' + hoursAcc(o.hours) + ' за ' + (o.prices[method] || o.price), 'Гратимеш до ' + hm(E.end + o.hours * 3600) + '.', !busy, extend);
+  else {
+    const p = payPlan(o, method, extPay), m = x => money(x, p.cur, p.sym), until = 'Гратимеш до ' + hm(E.end + o.hours * 3600) + '.';
+    if(p.pay === 'wallet') bar('Оплатити з балансу ' + m(p.price), 'Плюс ' + o.hours + ' год: ' + until.charAt(0).toLowerCase() + until.slice(1) + ' Залишиться ' + m(p.bal - p.price) + '. Гра не переривається.', !busy, extend);
+    else if(p.pay === 'mix') bar('Доплатити ' + m(p.rest) + ' ' + viaWord(method), until + ' Ще ' + m(p.part) + ' спишемо з балансу, щойно надійде доплата. Гра не переривається.', !busy, extend);
+    else bar('Продовжити на ' + o.hours + ' ' + hoursAcc(o.hours) + ' за ' + (o.prices[method] || o.price), until, !busy, extend);
+  }
 }
 async function extend(){
-  if(busy) return; busy = true; renderExtend();
-  const r = await api('POST', '/api/app/extend', {hours: extHours, method});
-  busy = false;
-  if(r.status !== 200 || !r.json.ok){ toast(errText(r)); loadExtend(); return; }
-  haptic(); extHours = 0; openPay(r.json.pending, 'extend');
+  if(busy) return;
+  const o = E.options.find(x => x.hours === extHours && x.free), p = payPlan(o, method, extPay), hours = extHours;
+  busy = true; renderExtend();
+  const r = await api('POST', '/api/app/extend', {hours, method, pay: p.pay, requestId: requestIdFor(['extend', hours, E.end, method, p.pay].join('|'))});
+  busy = false; requestSettled(r);
+  if(r.status !== 200 || !r.json.ok){ toast(errText(r)); if(r.json.error === 'funds') walletRefresh(); loadExtend(); return; }
+  haptic(); extHours = 0;
+  if(r.json.wallet) setWallet(r.json.wallet);
+  if(r.json.paid){   // з балансу: час додано одразу, вікна оплати немає
+    toast('Гру продовжено на ' + hours + ' год, списано ' + money(p.price, p.cur, p.sym) + ' з балансу.');
+    walletRefresh(); loadExtend(); return;
+  }
+  const pend = withPart(r.json);
+  if(pend.walletPart) walletRefresh();
+  openPay(pend, 'extend');
 }
+
+// ── баланс: передоплата за гру. Суми дає сервер; спосіб оплати (з балансу чи переказом) клієнт обирає щоразу сам ──
+const CUR = {uah: 'UAH', pln: 'PLN', usdt: 'USDT'}, SYM = {UAH: '₴', PLN: 'zł', USDT: 'USDT'}, CUR_NAME = {UAH: 'Гривні', PLN: 'Злоті', USDT: 'USDT'};
+let W = null, wKey = '';   // {balances: [{currency, amount, symbol}], primary}; null — сервер без балансу або ще не відповів
+let WDet = null, wPoll = null, wDataKey = '', topCur = '', topAmt = 0, tpSwap = null;   // WDet — відповідь /api/app/wallet для вкладки «Баланс»
+const isAdmin = () => MODE === 'menu' ? !!G.admin : !!H.admin;
+// адмінам баланс не потрібен; старий сервер не дає поля wallet — тоді й жодного інтерфейсу балансу
+const walletOn = () => !!(W && Array.isArray(W.balances)) && !isAdmin();
+function curOf(m){
+  const all = [].concat(B && B.methods || [], E && E.methods || [], WDet && WDet.topup && WDet.topup.methods || []), x = all.find(y => y.code === m);
+  return (x && x.currency) || CUR[m] || String(m || 'UAH').toUpperCase();
+}
+function wItem(cur){ return W && W.balances ? W.balances.find(b => b.currency === cur) : null; }
+function wBal(cur){ const b = wItem(cur); return b ? +b.amount || 0 : 0; }
+function wSym(cur){ const b = wItem(cur); return (b && b.symbol) || SYM[cur] || cur || ''; }
+// сума: «320 ₴», «1 000 ₴», «190,37 ₴», «−75 ₴»
+function money(a, cur, sym){
+  a = Math.round((+a || 0) * 100);
+  const x = Math.abs(a), int = Math.floor(x / 100), fr = x % 100;
+  return (a < 0 ? '−' : '') + String(int).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + (fr ? ',' + pad2(fr) : '') + ' ' + (sym || wSym(cur));
+}
+// що показувати як «баланс»: валюта, якою клієнт зазвичай платить, а якщо там порожньо — та, де гроші є
+function wMain(){
+  const list = W && W.balances || [], prim = W && W.primary || 'UAH', nz = list.filter(b => +b.amount > 0);
+  return nz.find(b => b.currency === prim) || nz[0] || list.find(b => b.currency === prim) || {currency: prim, amount: 0};
+}
+function wText(){ const b = wMain(); return money(b.amount, b.currency, b.symbol); }
+/** Баланс змінився (стан сервера, відповідь на оплату, вкладка «Баланс»): оновити суму всюди, де вона видна */
+function wChanged(){
+  const on = walletOn();
+  document.body.classList.toggle('wallet', on);
+  const t = on ? wText() : '';
+  document.querySelectorAll('.balv').forEach(e => e.textContent = t);
+  const key = on ? JSON.stringify(W.balances) : '';
+  if(key === wKey) return;
+  wKey = key;
+  if(view === 'home' && MODE === 'home') renderSide();
+  else if(view === 'book' && B) renderBook();
+  else if(view === 'extend' && E && E.active) renderExtend();
+  else if(view === 'wallet' && WDet) renderWallet();
+  navFade();
+}
+function setWallet(w){ if(w && Array.isArray(w.balances)){ W = Object.assign({}, W || {}, w); wChanged(); } }
+async function wFetch(){
+  if(isAdmin()) return false;
+  const r = await api('GET', '/api/app/wallet');
+  if(r.status !== 200 || !r.json.ok || !Array.isArray(r.json.balances)) return false;
+  WDet = r.json; setWallet({balances: r.json.balances, primary: r.json.primary || (W && W.primary)});
+  return true;
+}
+/** Одразу після оплати з балансу, поповнення чи скасування: свіжий стан сервера в програмі й баланс тут */
+function walletRefresh(){
+  act('refresh'); homeMineAt = 0;
+  wFetch().then(ok => { if(ok && view === 'wallet') renderWallet(); });
+}
+
+// requestId: один на дію клієнта. Повтор тієї самої дії після обриву зв'язку йде з тим самим id, тож сервер не спише двічі
+let reqMemo = {key: '', id: ''};
+function uuid(){
+  const b = new Uint8Array(16);
+  try { crypto.getRandomValues(b); } catch(e) { for(let i = 0; i < 16; i++) b[i] = Math.random() * 256 | 0; }
+  b[6] = b[6] & 15 | 64; b[8] = b[8] & 63 | 128;
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+}
+function requestIdFor(key){ if(reqMemo.key !== key) reqMemo = {key, id: uuid()}; return reqMemo.id; }
+// сервер відповів (успіх чи відмова): наступне натискання вже нова дія. Немає зв'язку або збій сервера: id лишається для повтору
+function requestSettled(r){ if(r.status > 0 && r.status < 500) reqMemo = {key: '', id: ''}; }
+
+// ціна варіанта (тариф, продовження) у способі оплати m: з рядка сервера («250.00 ₴») або готове число
+function priceOf(o, m){
+  if(!o) return 0;
+  const v = o.amounts && o.amounts[m] != null ? o.amounts[m] : o.prices && o.prices[m] != null ? o.prices[m] : o.price;
+  const n = typeof v === 'number' ? v : parseFloat(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.').replace(/[^\d.]/g, ''));
+  return isFinite(n) ? n : 0;
+}
+/**
+ * Як платимо: choice — wallet (з балансу) | transfer. pay для сервера: wallet | mix (баланс + доплата) | transfer.
+ * Готову відповідь сервера беремо з walletBy[спосіб] = {walletOk, walletPart}: там уже враховано, наприклад, резерв
+ * неоплаченого продовження, яке новий вибір замінить. Без неї (старіший сервер) рахуємо з балансу самі.
+ */
+function payPlan(o, m, choice){
+  const cur = curOf(m), sym = wSym(cur), on0 = walletOn(), price = priceOf(o, m);
+  let bal = on0 ? wBal(cur) : 0, ok = bal + 0.005 >= price, part = Math.min(bal, price);
+  const wb = on0 && o && o.walletBy ? o.walletBy[m] : null;
+  if(wb && typeof wb.walletOk === 'boolean'){
+    ok = wb.walletOk;
+    part = ok ? price : wb.walletPart ? +wb.walletPart.amount || 0 : 0;
+    bal = Math.max(bal, part);   // доступно для цієї оплати
+  }
+  if(ok) part = price;
+  const on = on0 && choice === 'wallet' && bal > 0;
+  return {cur, sym, bal, price, on, ok: on && ok, mix: on && !ok, part: on ? part : 0, rest: on ? Math.max(0, Math.round((price - part) * 100) / 100) : price,
+    pay: !on ? 'transfer' : ok ? 'wallet' : 'mix', walletOk: ok, walletPart: part};
+}
+const viaWord = m => m === 'uah' ? 'карткою' : 'переказом';
+/** Дві кнопки способу оплати: «З балансу» (або «Баланс + картка», коли не вистачає) і «Переказом» */
+function payModesHtml(p, m, ext){
+  const empty = !(p.bal > 0), mm = [].concat(B && B.methods || [], E && E.methods || []).find(x => x.code === m), $m = x => money(x, p.cur, p.sym);
+  const mix = !ext && !p.walletOk && !empty;
+  const wl = mix ? (m === 'uah' ? 'Баланс + картка' : 'Баланс + переказ') : 'З балансу';
+  const ws = empty ? 'баланс порожній' : ext ? 'є ' + $m(p.bal) + ', не вистачить — доплатиш ' + viaWord(m)
+    : mix ? $m(p.walletPart) + ' з балансу, ' + $m(p.price - p.walletPart) + ' ' + viaWord(m) : 'є ' + $m(p.bal) + ', спишеться одразу';
+  const ts = m === 'uah' ? 'уся сума карткою, Apple Pay, Google Pay' : 'уся сума: ' + (mm ? mm.label : 'переказ');
+  return '<button type="button" data-pm="wallet" class="' + (p.on ? 'on' : '') + '" aria-pressed="' + p.on + '"' + (empty ? ' disabled' : '') + '>' + wl + '<small>' + esc(ws) + '</small></button>'
+    + '<button type="button" data-pm="transfer" class="' + (p.on ? '' : 'on') + '" aria-pressed="' + !p.on + '">Переказом<small>' + esc(ts) + '</small></button>';
+}
+// відповідь на бронь чи продовження з доплатою: реквізити доплати й скільки відкладено з балансу
+function withPart(j){ const p = Object.assign({}, j.pending || j); if(!p.walletPart && j.walletPart) p.walletPart = j.walletPart; return p; }
+
+// ── вкладка «Баланс»: скільки є, поповнення (сума з копійками, як за бронь), як це працює, історія ──
+const tpId = p => p.topupId != null ? p.topupId : p.id;
+const tpBase = p => p.base != null ? +p.base : Math.floor(+p.amount + 1e-9);   // сума без «копійок» для впізнавання платежу
+const tpCur = p => p.currency || curOf(p.method);
+const idv = s => /^\d+$/.test(String(s)) ? +s : s;
+async function loadWallet(keep){
+  const tok = viewTok;
+  if(!WDet || !keep) loadingView();
+  const r = await api('GET', '/api/app/wallet');
+  if(tok !== viewTok) return;
+  if(r.status !== 200 || !r.json.ok){ if(!keep || !WDet) failView(r, () => loadWallet(false)); return; }
+  WDet = r.json; wDataKey = '';
+  setWallet({balances: WDet.balances || [], primary: WDet.primary || (W && W.primary)});
+  show('wallet'); renderWallet();
+  clearInterval(wPoll); wPoll = setInterval(wPollTick, 6000);
+}
+// поки є відкрите поповнення, раз на кілька секунд дивимось, чи гроші вже прийшли
+async function wPollTick(){
+  if(view !== 'wallet' || !WDet || busy || !(WDet.pending || []).length || !$('sheet').classList.contains('hidden')) return;
+  const r = await api('GET', '/api/app/wallet');
+  if(view !== 'wallet' || r.status !== 200 || !r.json.ok) return;
+  const grew = (r.json.balances || []).some(b => +b.amount > wBal(b.currency) + 0.005);
+  WDet = r.json; setWallet({balances: WDet.balances || [], primary: WDet.primary || (W && W.primary)});
+  // перемальовуємо лише коли щось змінилось: інакше збилось би «Натисни ще раз, щоб скасувати»
+  if(JSON.stringify([WDet.balances, WDet.pending, WDet.history, topCur, topAmt, busy]) !== wDataKey) renderWallet();
+  if(grew){ haptic(); toast('Баланс поповнено. Зараз на балансі ' + wText() + '.'); act('refresh'); }
+}
+function histWhen(ts){
+  if(!(ts > 0)) return '';
+  const d = new Date((ts - skew) * 1000), y = new Date(Date.now() - 864e5), t = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  return d.toDateString() === new Date().toDateString() ? 'сьогодні о ' + t : d.toDateString() === y.toDateString() ? 'вчора о ' + t : d.getDate() + '.' + pad2(d.getMonth() + 1) + ' о ' + t;
+}
+function payboxHtml(p){
+  const id = esc(tpId(p)), cur = tpCur(p), mm = (WDet && WDet.topup && WDet.topup.methods || []).find(x => x.code === p.method);
+  const h = '<div class="paybox" data-tp="' + id + '"><span class="small">' + esc(p.method === 'uah' ? 'Переказ на картку AnyPlay' : 'Переказ: ' + (mm ? mm.label : cur)) + '</span>'
+    + '<div class="amount">' + money(+p.amount, cur, p.symbol) + '</div>';
+  if(p.status === 'pending_review') return h + '<span class="small">Позначку «Я оплатив» отримали. Перевіряємо платіж: гроші з\'являться на балансі самі, зазвичай за кілька хвилин.</span>'
+    + '<div class="actions" style="flex-direction:row;align-items:center"><span class="chip wait">перевіряємо оплату</span><button type="button" class="btn sm ghost" data-tpay="' + id + '">Реквізити</button></div></div>';
+  return h + '<span class="small">' + (p.auto === false ? 'Переказуй точну суму до копійки, а потім натисни «Я оплатив»: адміністратор перевірить оплату, і гроші з\'являться на балансі.'
+      : 'Переказуй точну суму до копійки: так оплата знайдеться сама і з\'явиться на балансі за 1–2 хвилини.') + (p.holdUntil > 0 ? ' Чекаємо переказ до ' + esc(fmtTime(p.holdUntil)) + '.' : '') + '</span>'
+    + '<div class="actions"><button type="button" class="btn" data-tpay="' + id + '">Оплатити</button><button type="button" class="btn ghost" data-tdone="' + id + '">Я оплатив</button></div>'
+    + '<button type="button" class="xlink" data-tcancel="' + id + '">Скасувати поповнення</button></div>';
+}
+function renderWallet(){
+  if(!WDet) return;
+  const t = WDet.topup || {}, curs = (t.methods || []).map(m => curOf(m.code)).filter((c, i, a) => a.indexOf(c) === i);
+  if(!curs.includes(topCur)) topCur = curs.includes(W && W.primary) ? W.primary : curs[0] || (W && W.primary) || 'UAH';
+  wDataKey = JSON.stringify([WDet.balances, WDet.pending, WDet.history, topCur, topAmt, busy]);
+  document.querySelectorAll('.balv').forEach(e => e.textContent = wText());
+  const main = wMain(), others = (W && W.balances || []).filter(b => b.currency !== main.currency && +b.amount > 0);
+  const res = (WDet.reserved || []).filter(b => +b.amount > 0), lines = [];
+  if(others.length) lines.push('Ще на балансі: ' + others.map(b => money(b.amount, b.currency, b.symbol)).join(', ') + '.');
+  // «Баланс + картка»: ця частина чекає на доплату; бронь скасується — повернеться на баланс
+  if(res.length) lines.push('Відкладено під доплату за бронь: ' + res.map(b => money(b.amount, b.currency, b.symbol)).join(', ') + '. Якщо доплата не надійде, гроші повернуться на баланс.');
+  $('wOther').classList.toggle('hidden', !lines.length);
+  $('wOther').textContent = lines.join(' ');
+  // валюту поповнення обирають, лише коли способів оплати кілька
+  $('wCur').classList.toggle('hidden', curs.length < 2);
+  $('wCur').innerHTML = curs.map(c => '<button type="button" data-cur="' + esc(c) + '" class="' + (c === topCur ? 'on' : '') + '">' + esc(CUR_NAME[c] || c) + '</button>').join('');
+  const open = (WDet.pending || []).filter(p => p.status === 'hold' && tpCur(p) === topCur), amts = ((t.amounts || {})[topCur] || []).map(Number);
+  const sel = topAmt > 0 ? topAmt : open.length ? tpBase(open[0]) : 0, own = topAmt === -1 || (sel > 0 && !amts.includes(sel));
+  $('wAmts').innerHTML = amts.map(a => '<button type="button" data-amt="' + a + '" class="' + (a === sel ? 'on' : '') + '"' + (busy ? ' disabled' : '') + '>' + money(a, topCur) + '</button>').join('')
+    + '<button type="button" data-amt="own" class="' + (own ? 'on' : '') + '"' + (busy ? ' disabled' : '') + '>Інша сума</button>';
+  $('wOwn').classList.toggle('hidden', topAmt !== -1);
+  const mn = (t.min || {})[topCur], mx = (t.max || {})[topCur];
+  $('wOwnAmt').placeholder = mn && mx ? 'Сума, від ' + money(mn, topCur) + ' до ' + money(mx, topCur) : 'Сума';
+  $('wPending').innerHTML = (WDet.pending || []).map(payboxHtml).join('');
+  const hs = WDet.history || [];
+  $('wHist').innerHTML = hs.length ? hs.map(x => '<div class="row"><span><span class="t">' + esc(x.title || '') + '</span><span class="s">' + esc(x.subtitle || histWhen(x.ts)) + '</span></span>'
+      + '<span class="chip' + (+x.amount > 0 ? ' ok' : '') + '">' + (+x.amount > 0 ? '+' : '') + money(x.amount, x.currency, x.symbol) + '</span></div>').join('')
+    : '<p class="small" style="padding:10px 0">Операцій поки немає. Тут буде видно поповнення, оплати з балансу й повернення.</p>';
+}
+function tpScroll(p){ const el = document.querySelector('[data-tp="' + tpId(p) + '"]'); if(el && el.scrollIntoView) try { el.scrollIntoView({block: 'nearest', behavior: 'smooth'}); } catch(e) {} }
+async function topUp(a){
+  if(busy || !WDet) return;
+  const t = WDet.topup || {}, mn = +((t.min || {})[topCur]) || 0, mx = +((t.max || {})[topCur]) || 0;
+  if(!(a > 0) || (mn && a < mn) || (mx && a > mx)){
+    toast(mn && mx ? 'Поповнити можна на суму від ' + money(mn, topCur) + ' до ' + money(mx, topCur) + '.' : 'Вкажи суму поповнення.'); return; }
+  const mm = (t.methods || []).find(x => curOf(x.code) === topCur), m = mm ? mm.code : topCur.toLowerCase();
+  const open = (WDet.pending || []).filter(p => p.status === 'hold' && tpCur(p) === topCur), same = open.find(p => tpBase(p) === a);
+  if(same){ topAmt = 0; renderWallet(); tpScroll(same); return; }
+  // уже чекаємо поповнення на іншу суму: замінюємо лише після другого натискання (раптом за ним уже переказали)
+  if(open.length && !(tpSwap && tpSwap.a === a && Date.now() < tpSwap.until)){
+    tpSwap = {a, until: Date.now() + 5000};
+    toast('Уже чекаємо поповнення на ' + money(tpBase(open[0]), topCur) + '. Натисни ще раз, щоб замінити його на ' + money(a, topCur) + '.'); return;
+  }
+  tpSwap = null; busy = true; topAmt = a; renderWallet();
+  for(const p of open) await api('POST', '/api/app/wallet/topup/cancel', {topupId: tpId(p)});
+  const r = await api('POST', '/api/app/wallet/topup', {method: m, amount: a, requestId: requestIdFor(['topup', m, a].join('|'))});
+  busy = false; requestSettled(r); topAmt = 0;
+  if(r.status !== 200 || !r.json.ok){
+    const j = r.json;
+    toast(j.error === 'limit' ? 'Уже відкрито кілька поповнень. Спершу оплати або скасуй одне з них.'
+      : j.error === 'amount' && j.min && j.max ? 'Поповнити можна на суму від ' + money(j.min, topCur) + ' до ' + money(j.max, topCur) + '.' : errText(r));
+    await loadWallet(true); return;
+  }
+  haptic(); $('wOwnAmt').value = '';
+  WDet.pending = [r.json].concat((WDet.pending || []).filter(p => !open.includes(p) && tpId(p) !== tpId(r.json)));
+  renderWallet(); tpScroll(r.json);
+  loadWallet(true);
+}
+async function topupPaid(id){
+  if(busy) return; busy = true;
+  const r = await api('POST', '/api/app/wallet/topup/paid', {topupId: idv(id), sender: ''});
+  busy = false;
+  if(r.status !== 200 || !r.json.ok){ toast(errText(r)); return; }
+  haptic();
+  if(r.json.paid){ toast('Баланс поповнено.'); walletRefresh(); }
+  else toast(r.json.auto ? 'Шукаємо твій платіж автоматично, зазвичай до двох хвилин. Баланс поповниться сам.'
+    : 'Дякуємо! Адміністратор перевірить оплату, і гроші з\'являться на балансі. Ми напишемо в бот.');
+  if(view === 'wallet') loadWallet(true);
+}
+async function topupCancel(id){
+  const r = await api('POST', '/api/app/wallet/topup/cancel', {topupId: idv(id)});
+  toast(r.status === 200 && r.json.ok ? 'Поповнення скасовано.' : r.json.error === 'paid' ? 'Це поповнення вже зараховано на баланс.' : errText(r));
+  if(r.json.error === 'paid') walletRefresh();
+  topAmt = 0;
+  if(view === 'wallet') loadWallet(true);
+}
+$('vWallet').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b || b.disabled || b.dataset.tab) return;
+  const find = id => (WDet && WDet.pending || []).find(p => String(tpId(p)) === id);
+  if(b.dataset.cur){ topCur = b.dataset.cur; topAmt = 0; haptic(); renderWallet(); }
+  else if(b.dataset.amt === 'own'){ topAmt = -1; haptic(); renderWallet(); try { $('wOwnAmt').focus(); } catch(x) {} }
+  else if(b.dataset.amt){ haptic(); topUp(+b.dataset.amt); }
+  else if(b.id === 'wOwnGo') topUp(parseInt($('wOwnAmt').value.replace(/\D/g, ''), 10) || 0);
+  else if(b.dataset.tpay){ const p = find(b.dataset.tpay); if(p){ haptic(); openPay(p, 'topup'); } }
+  else if(b.dataset.tdone) topupPaid(b.dataset.tdone);
+  else if(b.dataset.tcancel){
+    if(b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = 'Натисни ще раз, щоб скасувати';
+      setTimeout(() => { if(b.isConnected){ b.dataset.sure = ''; b.textContent = 'Скасувати поповнення'; } }, 4000); return; }
+    topupCancel(b.dataset.tcancel);
+  }
+});
+$('wOwnAmt').addEventListener('keydown', e => { if(e.key === 'Enter') $('wOwnGo').click(); });
 
 // ── свій акаунт PSN ──
 let psnTimer = null, psnBusy = false, psnKey = '';
@@ -1018,6 +1442,7 @@ function pmInit(){
   $('pmBack').onclick = () => { pmDetail = false; pmRender(); };
   pmSel = PM.some(p => p[0] === ARG) ? ARG : 'back'; pmDetail = !!ARG;
   pmTick(); pmRender();
+  wFetch();   // баланс для «Продовжити гру»: з балансу чи переказом (у адміна й на старому сервері його немає)
 }
 function pmRender(){
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === pmSel));

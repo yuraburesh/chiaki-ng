@@ -55,16 +55,33 @@ QtObject {
         const m = String(text || "").replace(/[\s  ]/g, "").replace(",", ".").match(/\d+(\.\d+)?/);
         return m ? Number(m[0]) : NaN;
     }
+    // ціна від сервера («250.00 грн», «22.00 zł») у тому ж вигляді, що й суми балансу: «250 ₴», «22 zł».
+    // Без балансу (старий сервер) — як дав сервер
+    function price(text) {
+        const s = String(text === undefined || text === null ? "" : text);
+        const m = s.replace(/[\u00a0\u202f]/g, " ").match(/^\s*(\d[\d ]*(?:[.,]\d+)?)\s*(грн|₴|zł|USDT)\s*$/i);
+        if (!on || !m)
+            return s;
+        const cur = /zł/i.test(m[2]) ? "PLN" : (/usdt/i.test(m[2]) ? "USDT" : "UAH");
+        return money(Number(m[1].replace(/ /g, "").replace(",", ".")), cur);
+    }
     // скільки з балансу піде на ціну варіанта (тариф броні чи +N год продовження) у валюті способу оплати.
-    // Якщо сервер сам підказав для варіанта walletOk / walletPart (одне значення або {спосіб: значення}) — беремо його.
+    // Сервер дає готову відповідь для кожного способу: walletBy[спосіб] = {walletOk, walletPart} (там уже враховано,
+    // наприклад, резерв неоплаченого продовження, яке новий вибір замінить); інакше — walletOk / walletPart варіанта.
     function quote(o, priceText, method) {
-        const cur = currencyOf(method), bal = balance(cur);
+        const cur = currencyOf(method);
+        let bal = balance(cur);
         let price = parse(priceText);
         if (!(price > 0))
             price = 0;
         let ok = bal > 0 && price > 0 && bal + 0.004 >= price;
         let part = Math.min(bal, price);
-        if (o) {
+        const by = o && o.walletBy ? o.walletBy[method] : null;
+        if (by && typeof by.walletOk === "boolean") {
+            ok = by.walletOk && price > 0;
+            part = ok ? price : (by.walletPart ? Math.min(Number(by.walletPart.amount) || 0, price) : 0);
+            bal = Math.max(bal, part);   // доступно для цієї оплати
+        } else if (o) {
             // підказку беремо, лише якщо вона саме для цієї валюти: окремо для способу, з валютою в walletPart,
             // або без валюти взагалі — тоді сервер рахував у звичній валюті клієнта
             const perMethod = o.walletOk !== null && typeof o.walletOk === "object";

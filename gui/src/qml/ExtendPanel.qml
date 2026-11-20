@@ -121,10 +121,10 @@ ColumnLayout {
                     text: {
                         const p = panel.pending;
                         if (payState.kind === "review")
-                            return qsTr("Оплату ще НЕ підтверджено: перевіряємо платіж %1").arg(p.price);
+                            return qsTr("Оплату ще НЕ підтверджено: перевіряємо платіж %1").arg(wallet.price(p.price));
                         if (payState.kind === "hold")
                             return qsTr("Ще не оплачено: +%1 год (%2–%3), %4").arg(panel.hoursOf(p))
-                                .arg(panel.cloud.formatTime(p.start)).arg(panel.cloud.formatTime(p.end)).arg(p.price);
+                                .arg(panel.cloud.formatTime(p.start)).arg(panel.cloud.formatTime(p.end)).arg(wallet.price(p.price));
                         if (payState.kind === "paid")
                             return qsTr("✓ Оплачено, гру продовжено до %1").arg(panel.cloud.formatTime(panel.paidEnd));
                         if (payState.kind === "rejected")
@@ -212,8 +212,11 @@ ColumnLayout {
                 text: modelData.label
                 onClicked: {
                     panel.method = modelData.code;
-                    if (panel.pending && panel.pending.method !== modelData.code)
-                        panel.cloud.extend(panel.hoursOf(panel.pending), modelData.code, panel.walletPart ? "mix" : "transfer");
+                    if (panel.pending && panel.pending.method !== modelData.code) {
+                        // заявку «Баланс + картка» в іншій валюті лишаємо такою, лише якщо в цій валюті щось є на балансі
+                        const mix = !!panel.walletPart && wallet.balance(wallet.currencyOf(modelData.code)) > 0;
+                        panel.cloud.extend(panel.hoursOf(panel.pending), modelData.code, mix ? "mix" : "transfer");
+                    }
                 }
             }
         }
@@ -244,7 +247,7 @@ ColumnLayout {
                     anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                     // ціна з урахуванням способу: «з балансу 75 ₴», «60 ₴ + 15 ₴ карткою» або просто ціна
                     text: !opt.modelData.free ? qsTr("зайнято")
-                        : panel.payChoice !== "wallet" ? panel.priceFor(opt.modelData)
+                        : panel.payChoice !== "wallet" ? wallet.price(panel.priceFor(opt.modelData))
                         : q.ok ? qsTr("з балансу %1").arg(wallet.money(q.price, q.currency))
                         : qsTr("%1 + %2 %3").arg(wallet.money(q.part, q.currency)).arg(wallet.money(q.rest, q.currency)).arg(wallet.viaText(panel.curMethod))
                 }
@@ -260,7 +263,7 @@ ColumnLayout {
         RowLayout {
             spacing: 14
             Text {
-                text: panel.pending ? panel.pending.price : ""
+                text: panel.pending ? wallet.price(panel.pending.price) : ""
                 font.family: ap.display; font.weight: Font.Medium; font.pixelSize: panel.compact ? 34 : 44; font.letterSpacing: 1
                 color: ap.ink
             }
@@ -279,7 +282,7 @@ ColumnLayout {
         ApButton {   // головне: відкрити оплату одразу з потрібною сумою
             visible: !!panel.pending && !!panel.pending.payUrl
             Layout.fillWidth: !panel.compact
-            text: qsTr("Оплатити %1").arg(panel.pending ? panel.pending.price : "")
+            text: qsTr("Оплатити %1").arg(panel.pending ? wallet.price(panel.pending.price) : "")
             onClicked: Qt.openUrlExternally(panel.pending.payUrl)
         }
         ApText {

@@ -48,6 +48,7 @@ ColumnLayout {
     // що піде на сервер: wallet — уся сума з балансу, mix — баланс + доплата переказом, transfer — уся сума переказом
     readonly property string payMode: payChoice === "wallet" ? (quote.ok ? "wallet" : "mix") : "transfer"
     function money(x) { return wallet.money(x, quote.currency); }
+    function price(text) { return wallet.price(text); }   // «250.00 грн» від сервера → «250 ₴», як суми балансу
     // стовпці: 4 на широкому вікні, 2 на середньому, 1 на вузькому
     readonly property int cols: width >= 960 ? 4 : (width >= 540 ? 2 : 1)
     readonly property real colGap: width >= 1100 ? 36 : 24
@@ -58,8 +59,11 @@ ColumnLayout {
     function reload() { status = ""; cloud.loadBook(); }
     function loadStarts() {
         start = 0;
-        if (days.length > dayIndex && code !== "")
-            cloud.loadBookStarts(days[dayIndex].date, code);
+        // дні беремо прямо з відповіді сервера: тарифи й дні приходять разом, а обробник зміни тарифу
+        // спрацьовує раніше, ніж оновиться days (інакше на першому відкритті вільний час не з'являвся)
+        const d = (cloud.bookInfo && cloud.bookInfo.days) || days;
+        if (d.length > dayIndex && code !== "")
+            cloud.loadBookStarts(d[dayIndex].date, code);
     }
     function pad2(n) { return String(n).padStart(2, "0"); }
     function dayLabel(i) {
@@ -163,7 +167,7 @@ ColumnLayout {
             RowLayout {
                 spacing: 14
                 Text {
-                    text: panel.payItem ? panel.payItem.pending.price : ""
+                    text: panel.payItem ? wallet.price(panel.payItem.pending.price) : ""
                     font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 44; font.letterSpacing: 1
                     color: ap.ink
                 }
@@ -187,7 +191,7 @@ ColumnLayout {
                 visible: !!panel.payItem && !!panel.payItem.pending.payUrl
                 Layout.fillWidth: true
                 Layout.topMargin: 4
-                text: qsTr("Оплатити %1").arg(panel.payItem ? panel.payItem.pending.price : "")
+                text: qsTr("Оплатити %1").arg(panel.payItem ? wallet.price(panel.payItem.pending.price) : "")
                 onClicked: Qt.openUrlExternally(panel.payItem.pending.payUrl)
             }
             ApText {
@@ -291,7 +295,7 @@ ColumnLayout {
                     onClicked: panel.code = modelData.code
                     ApChip {
                         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-                        text: tOpt.modelData.prices[panel.curMethod] || ""
+                        text: panel.price(tOpt.modelData.prices[panel.curMethod] || "")
                     }
                 }
             }
@@ -350,7 +354,7 @@ ColumnLayout {
             ColumnLayout {
                 spacing: 2
                 Text {
-                    text: panel.tariff ? (panel.tariff.prices[panel.curMethod] || "") : ""
+                    text: panel.tariff ? wallet.price(panel.tariff.prices[panel.curMethod] || "") : ""
                     font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 44; font.letterSpacing: 1
                     color: ap.ink
                 }
@@ -474,7 +478,7 @@ ColumnLayout {
                 ApRow {
                     hairline: !mineCard.asking && !mineCard.modelData.extPending && !mineCard.modelData.cancelNote
                     title: panel.rangeText(mineCard.modelData.start, mineCard.modelData.end)
-                    subtitle: qsTr("%1, %2").arg(mineCard.modelData.title).arg(mineCard.modelData.price)
+                    subtitle: qsTr("%1, %2").arg(mineCard.modelData.title).arg(wallet.price(mineCard.modelData.price))
                     ApChip { text: mineCard.chip.text; kind: mineCard.chip.kind }
                     ApButton {
                         visible: !!mineCard.modelData.canCancel && !mineCard.asking
@@ -491,7 +495,7 @@ ColumnLayout {
                     text: mineCard.modelData.extPending
                         ? (mineCard.modelData.extPending.status === "hold"
                             ? qsTr("Продовження до %1 (%2) ще не оплачено.") : qsTr("Продовження до %1 (%2): перевіряємо оплату."))
-                            .arg(panel.hhmm(mineCard.modelData.extPending.end)).arg(mineCard.modelData.extPending.price)
+                            .arg(panel.hhmm(mineCard.modelData.extPending.end)).arg(wallet.price(mineCard.modelData.extPending.price))
                         : ""
                 }
                 ApText {   // правило скасування: до якого часу можна і що буде з оплатою
@@ -504,7 +508,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     visible: mineCard.asking
                     text: mineCard.modelData.cancelKind === "refund"
-                        ? (wallet.on ? qsTr("Скасувати цю бронь? Ти її оплатив, тому %1 одразу повернемо на баланс: їх можна витратити на наступну гру.").arg(mineCard.modelData.price)
+                        ? (wallet.on ? qsTr("Скасувати цю бронь? Ти її оплатив, тому %1 одразу повернемо на баланс: їх можна витратити на наступну гру.").arg(wallet.price(mineCard.modelData.price))
                                      : qsTr("Скасувати цю бронь? Ти її оплатив, тому ми повернемо %1. Бот у Telegram запитає, куди повернути кошти.").arg(mineCard.modelData.price))
                         : qsTr("Скасувати цю бронь? Оплати за неї не було, тож повертати нічого не треба.")
                 }

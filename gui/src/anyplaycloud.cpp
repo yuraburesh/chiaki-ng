@@ -287,6 +287,15 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 		}
 		if(walletNew || had != has_wallet_ || wasAdmin != admin_)
 			emit walletChanged();
+		// баланс змінився деінде (поповнення, інший пристрій, адмін): ціни «з балансу» на екранах бронювання
+		// й продовження рахувались для старого балансу — перепитуємо
+		if(walletNew && had && !admin_)
+		{
+			if(!book_info_.isEmpty())
+				loadBook();
+			if(extend_info_.value("active").toBool())
+				loadExtend();
+		}
 	}
 	user_ = o.value("user").toString();
 	my_psn_ = o.value("myPsn").toString();
@@ -684,6 +693,9 @@ void AnyPlayCloud::loadExtend()
 		if(status != 200 || !o.value("ok").toBool())
 			return;
 		extend_info_ = o.toVariantMap();
+		// баланс з тієї ж відповіді, що й «вистачає / не вистачає» у варіантах: на екрані вони не розходяться
+		if(applyWalletBalances(o.value("wallet")))
+			emit walletChanged();
 		emit extendChanged();
 	});
 }
@@ -708,7 +720,10 @@ void AnyPlayCloud::extend(int hours, const QString &method, const QString &pay)
 			if(applyWalletBalances(o.value("wallet")))
 				emit walletChanged();
 			const QJsonObject b = o.value("booking").toObject();
-			qint64 end = b.value("end").toVariant().toLongLong();
+			// end — кінець усієї гри (з бронями впритул), booking.end — кінець саме цього продовження
+			qint64 end = o.value("end").toVariant().toLongLong();
+			if(end <= 0)
+				end = b.value("end").toVariant().toLongLong();
 			if(end <= 0 && oldEnd > 0)
 				end = oldEnd + hours * 3600;
 			const QString c = b.value("currency").toString().isEmpty() ? cur : b.value("currency").toString();
@@ -793,6 +808,8 @@ void AnyPlayCloud::loadBook()
 		if(status != 200 || !o.value("ok").toBool())
 			return;
 		book_info_ = o.toVariantMap();
+		if(applyWalletBalances(o.value("wallet")))   // баланс з тієї ж відповіді, що й ціни «з балансу»
+			emit walletChanged();
 		// оплату знайдено / бронь підтверджено — перестаємо опитувати
 		bool waiting = false;
 		for(const auto &v : o.value("mine").toArray())

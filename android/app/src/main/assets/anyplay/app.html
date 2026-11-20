@@ -656,7 +656,7 @@ const CHIP = {hold: ['wait', 'чекає оплату'], pending_review: ['wait'
 function bookingRow(m, click){
   const c = m.status === 'paid' && m.pay === 'wallet' ? ['ok', 'оплачено з балансу'] : CHIP[m.status] || ['', m.status];
   return '<div class="row' + (click ? ' click" data-tab="book" data-sub="mine' : '') + '"><span><span class="t">' + esc(upFirst(range(m.start, m.end))) + '</span><span class="s">'
-    + esc(m.title) + ', ' + esc(m.price) + '</span></span><span class="chip ' + c[0] + '">' + esc(c[1]) + '</span></div>';
+    + esc(m.title) + ', ' + esc(priceStr(m.price)) + '</span></span><span class="chip ' + c[0] + '">' + esc(c[1]) + '</span></div>';
 }
 let homeMine = null, homeMineAt = 0;
 async function loadHomeMine(force){
@@ -753,7 +753,7 @@ function renderBook(){
     : 'У тебе вже <b>' + B.openCount + ' з ' + B.limit + '</b> броней: це максимум. Нову можна додати після гри або якщо скасуєш одну з них у вкладці «Мої броні».';
   const tEl = $('tariffs'); tEl.innerHTML = '';
   B.tariffs.forEach(t => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (t.code === code ? ' on' : '');
-    c.innerHTML = '<span>' + (t.fixed || !/^h\d+$/.test(t.code) ? esc(t.title) : t.hours + ' год') + '</span><span class="chip">' + esc(t.prices[method] || '') + '</span>';
+    c.innerHTML = '<span>' + (t.fixed || !/^h\d+$/.test(t.code) ? esc(t.title) : t.hours + ' год') + '</span><span class="chip">' + esc(priceStr(t.prices[method])) + '</span>';
     c.onclick = () => { code = t.code; haptic(); renderBook(); loadStarts(); }; tEl.appendChild(c); });
   const dEl = $('days'); dEl.innerHTML = '';
   B.days.forEach((d, i) => { const dt = new Date(d.date + 'T12:00:00'); const c = document.createElement('button'); c.type = 'button'; c.className = 'day' + (i === dayIdx ? ' on' : '');
@@ -774,7 +774,7 @@ function renderBook(){
   } else $('payNeed').classList.add('hidden');
   const mEl = $('methods'); mEl.innerHTML = '';
   B.methods.forEach(m => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (m.code === method ? ' on' : '');
-    const t = tariff(); c.innerHTML = '<span><span class="ot">' + esc(m.label) + '</span><span class="small">' + esc(t ? t.prices[m.code] || '' : '') + '</span></span><i></i>';
+    const t = tariff(); c.innerHTML = '<span><span class="ot">' + esc(m.label) + '</span><span class="small">' + esc(t ? priceStr(t.prices[m.code]) : '') + '</span></span><i></i>';
     c.onclick = () => { method = m.code; haptic(); renderBook(); }; mEl.appendChild(c); });
   renderStarts(); renderMine(); renderBar();
 }
@@ -796,7 +796,7 @@ function renderBar(){
   if(p.pay === 'wallet') bar('Оплатити з балансу ' + m(p.price), when + '. Бронь підтвердиться одразу, без переказу. Залишиться ' + m(p.bal - p.price) + '.', !busy, book);
   else if(p.pay === 'mix') bar('Доплатити ' + m(p.rest) + ' ' + viaWord(method), when + '. Місце тримаємо ' + B.holdMinutes + ' хв. Як тільки надійде доплата ' + m(p.rest)
     + ', спишемо ' + m(p.part) + ' з балансу, і бронь підтвердиться.', !busy, book);
-  else bar('Забронювати за ' + (t.prices[method] || ''), when + '. Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book);
+  else bar('Забронювати за ' + priceStr(t.prices[method]), when + '. Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book);
 }
 async function book(){
   if(busy) return;
@@ -823,7 +823,7 @@ function renderMine(){
   if(!B.mine.length){ el.innerHTML = '<p class="lead">Броней поки немає. Обери час у вкладці «Забронювати».</p>'; return; }
   B.mine.forEach(m => { const c = document.createElement('div'); c.className = 'bk';
     let h = bookingRow(m, false);
-    if(m.extPending) h += '<div class="meta">Продовження до ' + hm(m.extPending.end) + ' за ' + esc(m.extPending.price) + ': ' + (m.extPending.status === 'hold' ? 'чекає оплати' : 'перевіряємо оплату') + '.</div>';
+    if(m.extPending) h += '<div class="meta">Продовження до ' + hm(m.extPending.end) + ' за ' + esc(priceStr(m.extPending.price)) + ': ' + (m.extPending.status === 'hold' ? 'чекає оплати' : 'перевіряємо оплату') + '.</div>';
     if(m.cancelNote) h += '<div class="meta">' + esc(m.cancelNote) + '</div>';
     let b = '';
     if(m.pending && m.status === 'hold') b += '<button type="button" class="btn sm" data-pay="' + m.id + '">Оплатити</button>';
@@ -858,7 +858,7 @@ function openPay(p, from){
   payBal0 = wBal(cur);
   $('sheet').classList.remove('hidden'); hideBar();
   $('payWhen').textContent = top ? 'Поповнення балансу' : upFirst(range(p.start, p.end));
-  $('payAmount').textContent = p.price || money(+p.amount, cur, p.symbol);
+  $('payAmount').textContent = p.price ? priceStr(p.price) : money(+p.amount, cur, p.symbol);
   // змішана оплата: частину вже відклали з балансу, тут лише доплата
   const wp = p.walletPart;
   $('payPart').classList.toggle('hidden', !wp);
@@ -966,7 +966,7 @@ function renderExtend(){
   $('extPending').classList.toggle('hidden', !pend); $('extPick').classList.toggle('hidden', !!pend && pend.status === 'pending_review');
   if(pend){
     const hold = pend.status === 'hold';
-    $('extPending').innerHTML = '<div class="bk"><div class="row"><span><span class="t">Продовження до ' + hm(pend.end) + '</span><span class="s">' + esc(pend.price) + '</span></span><span class="chip wait">'
+    $('extPending').innerHTML = '<div class="bk"><div class="row"><span><span class="t">Продовження до ' + hm(pend.end) + '</span><span class="s">' + esc(priceStr(pend.price)) + '</span></span><span class="chip wait">'
       + (hold ? 'чекає оплати' : 'перевіряємо оплату') + '</span></div><div class="actions" style="flex-direction:row"><button type="button" class="btn sm' + (hold ? '' : ' ghost') + '" id="extPay">' + (hold ? 'Оплатити' : 'Реквізити') + '</button>'
       + (hold ? '<button type="button" class="btn sm ghost bad" id="extCancel">Передумав</button>' : '') + '</div></div>';
     $('extPay').onclick = () => openPay(pend, 'extend');
@@ -983,7 +983,7 @@ function renderExtend(){
   const hEl = $('extHours'); hEl.innerHTML = '';
   E.options.forEach(o => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (o.hours === extHours ? ' on' : '') + (o.free ? '' : ' off');
     const p = payPlan(o, method, extPay), m = x => money(x, p.cur, p.sym);
-    const price = p.pay === 'wallet' ? 'з балансу ' + m(p.price) : p.pay === 'mix' ? m(p.part) + ' + ' + m(p.rest) + ' ' + viaWord(method) : o.prices[method] || o.price;
+    const price = p.pay === 'wallet' ? 'з балансу ' + m(p.price) : p.pay === 'mix' ? m(p.part) + ' + ' + m(p.rest) + ' ' + viaWord(method) : priceStr(o.prices[method] || o.price);
     c.innerHTML = '<span>+' + o.hours + ' год, до ' + hm(E.end + o.hours * 3600) + '</span><span class="chip">' + (o.free ? esc(price) : 'зайнято') + '</span>';
     c.onclick = () => { if(!o.free){ toast('На стільки продовжити не вийде: далі час уже заброньований.'); return; } extHours = o.hours; haptic(); renderExtend(); }; hEl.appendChild(c); });
   $('extMethodsWrap').classList.toggle('hidden', E.methods.length < 2);
@@ -997,7 +997,7 @@ function renderExtend(){
     const p = payPlan(o, method, extPay), m = x => money(x, p.cur, p.sym), until = 'Гратимеш до ' + hm(E.end + o.hours * 3600) + '.';
     if(p.pay === 'wallet') bar('Оплатити з балансу ' + m(p.price), 'Плюс ' + o.hours + ' год: ' + until.charAt(0).toLowerCase() + until.slice(1) + ' Залишиться ' + m(p.bal - p.price) + '. Гра не переривається.', !busy, extend);
     else if(p.pay === 'mix') bar('Доплатити ' + m(p.rest) + ' ' + viaWord(method), until + ' Ще ' + m(p.part) + ' спишемо з балансу, щойно надійде доплата. Гра не переривається.', !busy, extend);
-    else bar('Продовжити на ' + o.hours + ' ' + hoursAcc(o.hours) + ' за ' + (o.prices[method] || o.price), until, !busy, extend);
+    else bar('Продовжити на ' + o.hours + ' ' + hoursAcc(o.hours) + ' за ' + priceStr(o.prices[method] || o.price), until, !busy, extend);
   }
 }
 async function extend(){
@@ -1044,6 +1044,13 @@ function wMain(){
   return nz.find(b => b.currency === prim) || nz[0] || list.find(b => b.currency === prim) || {currency: prim, amount: 0};
 }
 function wText(){ const b = wMain(); return money(b.amount, b.currency, b.symbol); }
+// ціна від сервера («250.00 грн», «22.00 zł») у тому ж вигляді, що й суми балансу: «250 ₴», «22 zł». Без балансу (старий сервер) — як є
+function priceStr(s){
+  s = s == null ? '' : String(s);
+  const x = s.replace(/[\u00a0\u202f]/g, ' ').match(/^\s*(\d[\d ]*(?:[.,]\d+)?)\s*(грн|₴|zł|USDT)\s*$/i);
+  if(!walletOn() || !x) return s;
+  return money(+x[1].replace(/ /g, '').replace(',', '.'), /zł/i.test(x[2]) ? 'PLN' : /usdt/i.test(x[2]) ? 'USDT' : 'UAH');
+}
 /** Баланс змінився (стан сервера, відповідь на оплату, вкладка «Баланс»): оновити суму всюди, де вона видна */
 function wChanged(){
   const on = walletOn();
@@ -1054,12 +1061,18 @@ function wChanged(){
   if(key === wKey) return;
   wKey = key;
   if(view === 'home' && MODE === 'home') renderSide();
-  else if(view === 'book' && B) renderBook();
-  else if(view === 'extend' && E && E.active) renderExtend();
+  else if(view === 'book' && B){ if(wStale(B)) loadBook(true); else renderBook(); }
+  else if(view === 'extend' && E && E.active){ if(wStale(E)) loadExtend(); else renderExtend(); }
   else if(view === 'wallet' && WDet) renderWallet();
   navFade();
 }
 function setWallet(w){ if(w && Array.isArray(w.balances)){ W = Object.assign({}, W || {}, w); wChanged(); } }
+// «вистачає / не вистачає» у цінах сервер рахував для балансу x.wallet; якщо зараз баланс інший — дані застаріли
+let wSyncAt = 0;
+function wStale(x){
+  if(!W || !W.balances || !x || !x.wallet || !Array.isArray(x.wallet.balances) || JSON.stringify(x.wallet.balances) === JSON.stringify(W.balances) || Date.now() - wSyncAt < 1500) return false;
+  wSyncAt = Date.now(); return true;
+}
 async function wFetch(){
   if(isAdmin()) return false;
   const r = await api('GET', '/api/app/wallet');

@@ -599,7 +599,8 @@ bool AnyPlayInput::WheelStep(const APBinding &b)
 	if(dirs.size() < 2)
 		return false;
 	// за годинниковою стрілкою від верху
-	auto angle = [](const QPointF &d) { double a = std::atan2(d.x(), -d.y()); return a < 0 ? a + 2 * M_PI : a; };
+	constexpr double Pi = 3.14159265358979323846;   // M_PI і std::min на Windows ненадійні (макроси min/max)
+	auto angle = [](const QPointF &d) { double a = std::atan2(d.x(), -d.y()); return a < 0 ? a + 2 * Pi : a; };
 	std::sort(dirs.begin(), dirs.end(), [&](const QPointF &x, const QPointF &y) { return angle(x) < angle(y); });
 	int idx = wheel_sector;
 	if(idx < 0 || idx >= dirs.size())
@@ -614,7 +615,7 @@ bool AnyPlayInput::WheelStep(const APBinding &b)
 			for(int i = 0; i < dirs.size(); i++)
 			{
 				double diff = std::fabs(angle(dirs[i]) - a);
-				diff = std::min(diff, 2 * M_PI - diff);
+				diff = qMin(diff, 2 * Pi - diff);
 				if(diff < best) { best = diff; idx = i; }
 			}
 		}

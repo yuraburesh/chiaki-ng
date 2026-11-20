@@ -1,8 +1,7 @@
-// AnyPlay: бронювання й оплата прямо в програмі — день, тривалість, час, оплата. Без Telegram.
+// AnyPlay: бронювання й оплата прямо в програмі — день, скільки грати, початок, оплата (чотири стовпці). Без Telegram.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
-import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
 
@@ -25,6 +24,7 @@ ColumnLayout {
     property string code: ""
     property string method: ""
     property double start: 0
+    property string wantTime: ""           // час початку, який клієнт обрав раніше: на іншому дні чи тарифі беремо найближчий після нього
     property bool choosing: false          // true — показуємо вибір часу, навіть якщо є неоплачена бронь
     property string status: ""
     property bool statusOk: true
@@ -37,7 +37,12 @@ ColumnLayout {
         return null;
     }
     readonly property bool showPay: !!payItem && !choosing
-    spacing: 12
+    // стовпці: 4 на широкому вікні, 2 на середньому, 1 на вузькому
+    readonly property int cols: width >= 960 ? 4 : (width >= 540 ? 2 : 1)
+    readonly property real colGap: width >= 1100 ? 36 : 24
+    readonly property real colW: Math.floor((width - (cols - 1) * colGap) / cols)
+    spacing: 20
+    AnyPlayStyle { id: ap }
 
     function reload() { status = ""; cloud.loadBook(); }
     function loadStarts() {
@@ -45,25 +50,32 @@ ColumnLayout {
         if (days.length > dayIndex && code !== "")
             cloud.loadBookStarts(days[dayIndex].date, code);
     }
+    function pad2(n) { return String(n).padStart(2, "0"); }
     function dayLabel(i) {
         if (i === 0) return qsTr("Сьогодні");
         if (i === 1) return qsTr("Завтра");
         const d = new Date((days[i].start + 12 * 3600) * 1000);
-        return [qsTr("Нд"), qsTr("Пн"), qsTr("Вт"), qsTr("Ср"), qsTr("Чт"), qsTr("Пт"), qsTr("Сб")][d.getDay()] + " " + d.getDate() + "." + String(d.getMonth() + 1).padStart(2, "0");
+        return [qsTr("Нд"), qsTr("Пн"), qsTr("Вт"), qsTr("Ср"), qsTr("Чт"), qsTr("Пт"), qsTr("Сб")][d.getDay()] + ", " + d.getDate() + "." + pad2(d.getMonth() + 1);
     }
     function hhmm(ts) {
         const d = new Date(ts * 1000);
-        return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+        return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
     }
+    // «Сьогодні, 19:00–22:00» / «Сб, 21.11, 18:00–20:00»; кінець наступного дня — з назвою дня
     function rangeText(a, b) {
-        const d = new Date(a * 1000), now = new Date();
-        const same = d.toDateString() === now.toDateString();
-        const day = same ? qsTr("сьогодні") : (d.getDate() + "." + String(d.getMonth() + 1).padStart(2, "0"));
-        return day + ", " + hhmm(a) + "–" + hhmm(b);
+        const da = new Date(a * 1000), db = new Date(b * 1000 - 1000), now = new Date();
+        const same = (x, y) => x.toDateString() === y.toDateString();
+        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+        const name = (d) => same(d, now) ? qsTr("Сьогодні") : same(d, tomorrow) ? qsTr("Завтра")
+            : [qsTr("Нд"), qsTr("Пн"), qsTr("Вт"), qsTr("Ср"), qsTr("Чт"), qsTr("Пт"), qsTr("Сб")][d.getDay()] + ", " + d.getDate() + "." + pad2(d.getMonth() + 1);
+        return name(da) + ", " + hhmm(a) + "–" + (same(da, db) ? "" : name(db).toLowerCase() + " ") + hhmm(b);
     }
-    function statusText(s) {
-        return s === "hold" ? qsTr("чекає оплату") : s === "pending_review" ? qsTr("перевіряємо оплату")
-             : s === "active" ? qsTr("йде гра") : qsTr("оплачено ✓");
+    function statusChip(m) {
+        const now = Math.floor(Date.now() / 1000) + cloud.clockSkew;
+        if (m.status === "hold") return { text: qsTr("чекає оплату"), kind: "wait" };
+        if (m.status === "pending_review") return { text: qsTr("перевіряємо оплату"), kind: "wait" };
+        if (m.status === "active" || (m.start <= now && now < m.end)) return { text: qsTr("йде гра"), kind: "live" };
+        return { text: qsTr("оплачено"), kind: "ok" };
     }
 
     onVisibleChanged: if (visible) { choosing = false; confirmId = 0; reload(); }
@@ -80,107 +92,134 @@ ColumnLayout {
             if (ok) panel.choosing = false;
             panel.loadStarts();
         }
+        // нові вільні старти: фіксований початок обираємо сам, інакше найближчий до обраного раніше часу
+        function onBookStartsChanged() {
+            const s = panel.cloud.bookStarts;
+            if (panel.cloud.bookStartsLoading || !s.length || panel.start > 0)
+                return;
+            if (panel.tariff && panel.tariff.fixed) { panel.start = s[0]; return; }
+            if (panel.wantTime === "")
+                return;
+            for (let i = 0; i < s.length; i++)
+                if (panel.hhmm(s[i]) >= panel.wantTime) { panel.start = s[i]; return; }
+        }
     }
 
-    Label { text: qsTr("Бронювання"); font.pixelSize: 24; font.bold: true; color: "white" }
-    Label {
-        Layout.fillWidth: true; wrapMode: Text.WordWrap
-        visible: panel.mine.length > 0 && !panel.showPay
-        color: "#bfaed8"; font.pixelSize: 14
-        text: qsTr("Твої броні (%1) і їх скасування — внизу цього вікна. Тут можна забронювати ще.").arg(panel.mine.length)
-    }
-
-    Label {
-        Layout.fillWidth: true; wrapMode: Text.WordWrap
-        visible: !!panel.info.closed
-        color: "#ffd23f"; font.pixelSize: 15
-        text: qsTr("Зараз технічні роботи — бронювання тимчасово недоступне.")
+    // ── заголовок ──
+    ColumnLayout {
+        Layout.fillWidth: true
+        spacing: 6
+        ApText { role: "h2"; text: qsTr("Бронювання") }
+        ApText {
+            Layout.fillWidth: true
+            Layout.maximumWidth: 640
+            role: "hint"
+            text: panel.showPay ? qsTr("Час закріплено за тобою. Лишилось оплатити.")
+                                : qsTr("Обери день, скільки грати і початок. Час закріплюється за тобою одразу, оплата тут же.")
+        }
+        ApText {
+            Layout.fillWidth: true
+            visible: panel.mine.length > 0 && !panel.showPay
+            role: "small"
+            text: qsTr("Твої броні (%1) і їх скасування: внизу сторінки.").arg(panel.mine.length)
+        }
+        ApText {
+            Layout.fillWidth: true
+            visible: !!panel.info.closed
+            color: ap.gold
+            text: qsTr("Зараз технічні роботи, бронювання тимчасово недоступне.")
+        }
     }
 
     // ───────── оплата закріпленого часу ─────────
-    Rectangle {
+    GridLayout {
         Layout.fillWidth: true
         visible: panel.showPay
-        radius: 16; color: "#1f1240"; border.color: "#3322e4ff"
-        implicitHeight: payCol.implicitHeight + 28
+        columns: panel.width >= 760 ? 2 : 1
+        columnSpacing: 48
+        rowSpacing: 20
         ColumnLayout {
-            id: payCol
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 14 }
-            spacing: 8
-            Label {
-                Layout.fillWidth: true; wrapMode: Text.WordWrap
-                color: "white"; font.pixelSize: 16; font.bold: true
-                text: panel.payItem ? qsTr("%1, %2").arg(panel.payItem.title).arg(panel.rangeText(panel.payItem.start, panel.payItem.end)) : ""
-            }
-            Label {
-                Layout.fillWidth: true; wrapMode: Text.WordWrap
-                color: "#bfaed8"; font.pixelSize: 14
-                text: qsTr("Час закріплено за тобою. Переказуй точну суму до копійки — так оплата знайдеться автоматично.")
+            Layout.preferredWidth: panel.width >= 760 ? (panel.width - 48) / 2 : panel.width
+            Layout.alignment: Qt.AlignTop
+            spacing: 10
+            ApText { role: "cap"; text: qsTr("Оплата") }
+            ApText {
+                Layout.fillWidth: true
+                font.weight: Font.Medium
+                font.pixelSize: 16
+                text: panel.payItem ? qsTr("%1, %2").arg(panel.rangeText(panel.payItem.start, panel.payItem.end)).arg(panel.payItem.title) : ""
             }
             RowLayout {
-                spacing: 10
-                Label { text: qsTr("Сума:"); color: "#bfaed8"; font.pixelSize: 16 }
-                Label { text: panel.payItem ? panel.payItem.pending.price : ""; color: "#ffd23f"; font.bold: true; font.pixelSize: 26 }
-                Button { text: qsTr("Копіювати"); flat: true; onClicked: panel.cloud.copyText(panel.payItem.pending.amount) }
+                spacing: 14
+                Text {
+                    text: panel.payItem ? panel.payItem.pending.price : ""
+                    font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 44; font.letterSpacing: 1
+                    color: ap.ink
+                }
+                ApButton { small: true; ghost: true; text: qsTr("Копіювати суму"); onClicked: panel.cloud.copyText(panel.payItem.pending.amount) }
             }
-            Button {
+            ApText {
+                Layout.fillWidth: true
+                role: "hint"
+                text: qsTr("Переказуй точну суму до копійки: так оплата знайдеться автоматично.")
+            }
+            ApButton {
                 visible: !!panel.payItem && !!panel.payItem.pending.payUrl
                 Layout.fillWidth: true
-                Layout.preferredHeight: 56
-                font.pixelSize: 18; font.bold: true
+                Layout.topMargin: 4
                 text: qsTr("Оплатити %1").arg(panel.payItem ? panel.payItem.pending.price : "")
                 onClicked: Qt.openUrlExternally(panel.payItem.pending.payUrl)
-                contentItem: Label {
-                    text: parent.text; font: parent.font; color: "white"
-                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    radius: 16
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: "#ff9a3c" }
-                        GradientStop { position: 0.5; color: "#ff2e9a" }
-                        GradientStop { position: 1.0; color: "#7b2cff" }
-                    }
-                }
+            }
+            ApText {
+                visible: !!panel.payItem && !!panel.payItem.pending.payUrl
+                Layout.fillWidth: true
+                role: "small"
+                text: qsTr("Відкриється сторінка оплати з уже вписаною сумою: карткою, Apple Pay чи Google Pay.")
+            }
+        }
+        ColumnLayout {
+            Layout.preferredWidth: panel.width >= 760 ? (panel.width - 48) / 2 : panel.width
+            Layout.alignment: Qt.AlignTop
+            spacing: 0
+            ApText {
+                visible: !!panel.payItem && panel.payItem.pending.requisites && panel.payItem.pending.requisites.length > 0
+                role: "cap"
+                Layout.bottomMargin: 6
+                text: panel.payItem && panel.payItem.pending.payUrl ? qsTr("Або переказ за реквізитами") : qsTr("Реквізити")
             }
             Repeater {
                 model: panel.payItem ? panel.payItem.pending.requisites : []
-                RowLayout {
+                ApRow {
+                    id: reqRow
                     required property var modelData
-                    Layout.fillWidth: true
-                    spacing: 10
-                    Label { text: modelData.label + ":"; color: "#bfaed8"; font.pixelSize: 15; Layout.preferredWidth: 150 }
-                    Label { Layout.fillWidth: true; text: modelData.value; color: "white"; font.pixelSize: 17; font.bold: true; elide: Text.ElideMiddle }
-                    Button {
-                        text: modelData.url ? qsTr("Відкрити") : qsTr("Копіювати")
-                        onClicked: modelData.url ? Qt.openUrlExternally(modelData.value) : panel.cloud.copyText(modelData.value)
+                    title: modelData.value
+                    subtitle: modelData.label
+                    ApButton {
+                        small: true; ghost: true
+                        text: reqRow.modelData.url ? qsTr("Відкрити") : qsTr("Копіювати")
+                        onClicked: reqRow.modelData.url ? Qt.openUrlExternally(reqRow.modelData.value) : panel.cloud.copyText(reqRow.modelData.value)
                     }
                 }
             }
-            TextField {
+            ApField {
                 id: senderField
                 Layout.fillWidth: true
+                Layout.topMargin: 14
                 visible: !!panel.payItem && (panel.payItem.pending.method === "uah" || panel.payItem.pending.method === "pln")
                 placeholderText: qsTr("Ім'я та прізвище відправника, як у банку (необов'язково)")
-                font.pixelSize: 14
             }
-            RowLayout {
+            Flow {
                 Layout.fillWidth: true
+                Layout.topMargin: 14
                 spacing: 10
-                Button {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 52
-                    highlighted: true
-                    Material.accent: "#ff2e9a"
+                ApButton {
+                    ghost: !!panel.payItem && !!panel.payItem.pending.payUrl
                     enabled: !panel.cloud.busy
-                    font.pixelSize: 17; font.bold: true
                     text: panel.cloud.busy ? qsTr("Надсилаємо…") : qsTr("✓ Я оплатив")
                     onClicked: panel.cloud.payBooking(panel.payItem.id, senderField.text)
                 }
-                Button {
-                    Layout.preferredHeight: 52
-                    flat: true
+                ApButton {
+                    ghost: true
                     text: qsTr("Скасувати бронь")
                     onClicked: panel.cloud.cancelBooking(panel.payItem.id)
                 }
@@ -188,241 +227,269 @@ ColumnLayout {
         }
     }
 
-    // ───────── вибір часу ─────────
-    ColumnLayout {
+    // ───────── вибір часу: 1. День, 2. Скільки грати, 3. Початок, 4. Оплата ─────────
+    GridLayout {
         Layout.fillWidth: true
         visible: !panel.showPay && !panel.info.closed
-        spacing: 10
+        columns: panel.cols
+        columnSpacing: panel.colGap
+        rowSpacing: 28
 
-        Label { text: qsTr("1. День"); color: "#22e4ff"; font.pixelSize: 13; font.bold: true; font.letterSpacing: 2 }
-        Flow {
-            Layout.fillWidth: true
-            spacing: 8
+        // 1. День
+        ColumnLayout {
+            Layout.preferredWidth: panel.colW
+            Layout.maximumWidth: panel.colW
+            Layout.alignment: Qt.AlignTop
+            spacing: 0
+            ApText { role: "cap"; text: qsTr("1. День"); Layout.bottomMargin: 6 }
             Repeater {
                 model: panel.days.length
-                Chip {
+                ApOpt {
                     required property int index
                     text: panel.dayLabel(index)
-                    on: panel.dayIndex === index
+                    checked: panel.dayIndex === index
                     onClicked: panel.dayIndex = index
                 }
             }
         }
 
-        Label { text: qsTr("2. Скільки грати"); color: "#22e4ff"; font.pixelSize: 13; font.bold: true; font.letterSpacing: 2; Layout.topMargin: 4 }
-        Flow {
-            Layout.fillWidth: true
-            spacing: 8
+        // 2. Скільки грати
+        ColumnLayout {
+            Layout.preferredWidth: panel.colW
+            Layout.maximumWidth: panel.colW
+            Layout.alignment: Qt.AlignTop
+            spacing: 0
+            ApText { role: "cap"; text: qsTr("2. Скільки грати"); Layout.bottomMargin: 6 }
             Repeater {
                 model: panel.tariffs
-                Chip {
+                ApOpt {
+                    id: tOpt
                     required property var modelData
                     text: modelData.title
-                    sub: modelData.prices[panel.curMethod] || ""
-                    on: panel.code === modelData.code
+                    radio: false
+                    checked: panel.code === modelData.code
                     onClicked: panel.code = modelData.code
+                    ApChip {
+                        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                        text: tOpt.modelData.prices[panel.curMethod] || ""
+                    }
                 }
             }
         }
 
-        Label { text: qsTr("3. Початок"); color: "#22e4ff"; font.pixelSize: 13; font.bold: true; font.letterSpacing: 2; Layout.topMargin: 4 }
-        Label {
-            Layout.fillWidth: true; wrapMode: Text.WordWrap
-            visible: panel.cloud.bookStartsLoading || panel.cloud.bookStarts.length === 0
-            color: "#bfaed8"; font.pixelSize: 14
-            text: panel.cloud.bookStartsLoading ? qsTr("Шукаємо вільний час…")
-                : qsTr("На цей день для такої тривалості вільного часу немає — обери інший день або менше годин.")
-        }
-        Flow {
-            Layout.fillWidth: true
-            spacing: 6
-            Repeater {
-                model: panel.cloud.bookStarts
-                Chip {
-                    required property var modelData
-                    small: true
-                    text: panel.hhmm(modelData)
-                    on: panel.start === modelData
-                    onClicked: panel.start = modelData
+        // 3. Початок
+        ColumnLayout {
+            Layout.preferredWidth: panel.colW
+            Layout.maximumWidth: panel.colW
+            Layout.alignment: Qt.AlignTop
+            spacing: 0
+            ApText { role: "cap"; text: qsTr("3. Початок"); Layout.bottomMargin: 6 }
+            ApText {
+                Layout.fillWidth: true
+                Layout.topMargin: 6
+                visible: panel.cloud.bookStartsLoading || panel.cloud.bookStarts.length === 0
+                role: "hint"
+                text: panel.cloud.bookStartsLoading ? qsTr("Шукаємо вільний час…")
+                    : qsTr("На цей день для такої тривалості вільного часу немає: обери інший день або менше годин.")
+            }
+            GridLayout {
+                id: times
+                Layout.fillWidth: true
+                visible: !panel.cloud.bookStartsLoading && panel.cloud.bookStarts.length > 0
+                columns: panel.tariff && panel.tariff.fixed ? 1 : (panel.colW >= 240 ? 4 : 3)
+                columnSpacing: 5
+                rowSpacing: 5
+                Repeater {
+                    model: panel.cloud.bookStarts
+                    TimeButton {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 1
+                        text: panel.tariff && panel.tariff.fixed ? qsTr("%1, фіксований початок").arg(panel.hhmm(modelData)) : panel.hhmm(modelData)
+                        checked: panel.start === modelData
+                        onClicked: { panel.start = modelData; panel.wantTime = panel.hhmm(modelData); }
+                    }
                 }
             }
-        }
-        Label {
-            visible: panel.cloud.bookStarts.length > 0
-            color: "#88ffffff"; font.pixelSize: 12
-            text: qsTr("Час — за годинником твого комп'ютера.")
+            ApText {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                visible: panel.cloud.bookStarts.length > 0
+                role: "small"
+                text: qsTr("Час за годинником твого комп'ютера. Показано лише вільні початки.")
+            }
         }
 
-        Label { visible: panel.methods.length > 1; text: qsTr("4. Оплата"); color: "#22e4ff"; font.pixelSize: 13; font.bold: true; font.letterSpacing: 2; Layout.topMargin: 4 }
-        Flow {
-            Layout.fillWidth: true
-            visible: panel.methods.length > 1
-            spacing: 8
-            Repeater {
-                model: panel.methods
-                Chip {
-                    required property var modelData
-                    text: modelData.label
-                    on: panel.curMethod === modelData.code
-                    onClicked: panel.method = modelData.code
+        // 4. Оплата
+        ColumnLayout {
+            Layout.preferredWidth: panel.colW
+            Layout.maximumWidth: panel.colW
+            Layout.alignment: Qt.AlignTop
+            spacing: 12
+            ApText { role: "cap"; text: qsTr("4. Оплата") }
+            ColumnLayout {
+                spacing: 2
+                Text {
+                    text: panel.tariff ? (panel.tariff.prices[panel.curMethod] || "") : ""
+                    font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 44; font.letterSpacing: 1
+                    color: ap.ink
+                }
+                ApText {
+                    Layout.preferredWidth: panel.colW
+                    role: "small"
+                    text: panel.start > 0 && panel.tariff
+                        ? panel.rangeText(panel.start, panel.start + panel.tariff.hours * 3600) + ", " + String(panel.tariff.title).split(",")[0].toLowerCase()
+                        : qsTr("Обери час початку")
                 }
             }
-        }
-
-        Button {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 58
-            Layout.topMargin: 6
-            enabled: panel.start > 0 && !!panel.tariff && !panel.cloud.busy
-            font.pixelSize: 19; font.bold: true
-            text: panel.start > 0 && panel.tariff
-                ? qsTr("Забронювати %1–%2 за %3").arg(panel.hhmm(panel.start)).arg(panel.hhmm(panel.start + panel.tariff.hours * 3600)).arg(panel.tariff.prices[panel.curMethod] || "")
-                : qsTr("Обери час початку")
-            onClicked: panel.cloud.book(panel.start, panel.code, panel.curMethod)
-            contentItem: Label {
-                text: parent.text; font: parent.font
-                color: parent.enabled ? "white" : "#88ffffff"
-                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-            }
-            background: Rectangle {
-                radius: 16
-                opacity: parent.enabled ? 1 : 0.4
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "#ff9a3c" }
-                    GradientStop { position: 0.5; color: "#ff2e9a" }
-                    GradientStop { position: 1.0; color: "#7b2cff" }
+            Flow {   // спосіб оплати, якщо їх кілька
+                visible: panel.methods.length > 1
+                Layout.fillWidth: true
+                spacing: 5
+                Repeater {
+                    model: panel.methods
+                    TimeButton {
+                        required property var modelData
+                        text: modelData.label
+                        checked: panel.curMethod === modelData.code
+                        horizontalPadding: 10
+                        onClicked: panel.method = modelData.code
+                    }
                 }
             }
-        }
-        Button {
-            visible: !!panel.payItem
-            flat: true
-            text: qsTr("← Назад до оплати")
-            onClicked: panel.choosing = false
+            ApButton {
+                Layout.fillWidth: true
+                font.pixelSize: 15
+                font.letterSpacing: 1.6
+                leftPadding: 14; rightPadding: 14
+                enabled: panel.start > 0 && !!panel.tariff && !panel.cloud.busy
+                text: panel.start > 0 && panel.tariff
+                    ? qsTr("Забронювати %1–%2").arg(panel.hhmm(panel.start)).arg(panel.hhmm(panel.start + panel.tariff.hours * 3600))
+                    : qsTr("Обери час початку")
+                onClicked: panel.cloud.book(panel.start, panel.code, panel.curMethod)
+            }
+            ApText {
+                Layout.preferredWidth: panel.colW
+                role: "small"
+                text: qsTr("Після бронювання відкриється оплата з уже вписаною сумою: карткою, Apple Pay чи Google Pay.")
+            }
+            ApButton {
+                visible: !!panel.payItem
+                ghost: true; small: true
+                text: qsTr("← Назад до оплати")
+                onClicked: panel.choosing = false
+            }
         }
     }
 
-    Label {
+    ApText {
         Layout.fillWidth: true
         visible: panel.status !== ""
-        wrapMode: Text.WordWrap
-        font.pixelSize: 15
-        color: panel.statusOk ? "#3dff9a" : "#ff4d6d"
+        color: panel.statusOk ? ap.ok : ap.bad
+        font.weight: Font.Medium
         text: panel.status
     }
 
     // ───────── мої броні ─────────
     ColumnLayout {
         Layout.fillWidth: true
+        Layout.topMargin: 8
         visible: panel.mine.length > 0
-        spacing: 6
-        Label { text: qsTr("Мої броні"); color: "white"; font.pixelSize: 17; font.bold: true; Layout.topMargin: 6 }
+        spacing: 0
+        ApText { role: "cap"; text: qsTr("Мої броні"); Layout.bottomMargin: 6 }
         Repeater {
             model: panel.mine
-            Rectangle {
+            ColumnLayout {
                 id: mineCard
                 required property var modelData
                 readonly property bool asking: panel.confirmId === modelData.id
+                readonly property var chip: panel.statusChip(modelData)
                 Layout.fillWidth: true
-                radius: 14; color: "#1f1240"; border.color: "#22ffffff"
-                implicitHeight: mineCol.implicitHeight + 22
-                ColumnLayout {
-                    id: mineCol
-                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 11 }
-                    spacing: 4
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 10
-                        Label {
-                            Layout.fillWidth: true
-                            elide: Text.ElideRight
-                            color: "white"; font.pixelSize: 16; font.bold: true
-                            text: { const t = panel.rangeText(mineCard.modelData.start, mineCard.modelData.end); return t.charAt(0).toUpperCase() + t.slice(1); }
-                        }
-                        Label {
-                            font.pixelSize: 14
-                            color: mineCard.modelData.status === "hold" ? "#ffd23f" : (mineCard.modelData.status === "pending_review" ? "#22e4ff" : "#3dff9a")
-                            text: panel.statusText(mineCard.modelData.status)
-                        }
-                    }
-                    Label {
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap
-                        color: "#d8cdea"; font.pixelSize: 14
-                        text: qsTr("%1, %2").arg(mineCard.modelData.title).arg(mineCard.modelData.price)
-                    }
-                    Label {
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap
-                        visible: !!mineCard.modelData.extPending
-                        color: "#ffd23f"; font.pixelSize: 13
-                        text: mineCard.modelData.extPending
-                            ? (mineCard.modelData.extPending.status === "hold"
-                                ? qsTr("Продовження до %1 (%2) ще не оплачено.") : qsTr("Продовження до %1 (%2): перевіряємо оплату."))
-                                .arg(panel.hhmm(mineCard.modelData.extPending.end)).arg(mineCard.modelData.extPending.price)
-                            : ""
-                    }
-                    Label {   // правило скасування: до якого часу можна і що буде з оплатою
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap
-                        visible: !!mineCard.modelData.cancelNote && !mineCard.asking
-                        color: "#bfaed8"; font.pixelSize: 13
-                        text: mineCard.modelData.cancelNote || ""
-                    }
-                    Button {
+                spacing: 6
+                ApRow {
+                    hairline: !mineCard.asking && !mineCard.modelData.extPending && !mineCard.modelData.cancelNote
+                    title: panel.rangeText(mineCard.modelData.start, mineCard.modelData.end)
+                    subtitle: qsTr("%1, %2").arg(mineCard.modelData.title).arg(mineCard.modelData.price)
+                    ApChip { text: mineCard.chip.text; kind: mineCard.chip.kind }
+                    ApButton {
                         visible: !!mineCard.modelData.canCancel && !mineCard.asking
-                        flat: true
-                        text: qsTr("Скасувати бронь")
+                        small: true; ghost: true
+                        text: qsTr("Скасувати")
                         onClicked: panel.confirmId = mineCard.modelData.id
                     }
-                    Label {
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap
-                        visible: mineCard.asking
-                        color: "white"; font.pixelSize: 14
-                        text: mineCard.modelData.cancelKind === "refund"
-                            ? qsTr("Скасувати цю бронь? Ти її оплатив, тому ми повернемо %1. Бот у Telegram запитає, куди повернути кошти.").arg(mineCard.modelData.price)
-                            : qsTr("Скасувати цю бронь? Оплати за неї не було, тож повертати нічого не треба.")
-                    }
-                    RowLayout {
-                        visible: mineCard.asking
-                        spacing: 10
-                        Button {
-                            highlighted: true
-                            Material.accent: "#ff4d6d"
-                            text: qsTr("Так, скасувати")
-                            onClicked: panel.cloud.cancelBooking(mineCard.modelData.id)
-                        }
-                        Button { flat: true; text: qsTr("Ні, лишити"); onClicked: panel.confirmId = 0 }
-                    }
+                }
+                ApText {
+                    Layout.fillWidth: true
+                    visible: !!mineCard.modelData.extPending
+                    color: ap.gold
+                    role: "small"
+                    text: mineCard.modelData.extPending
+                        ? (mineCard.modelData.extPending.status === "hold"
+                            ? qsTr("Продовження до %1 (%2) ще не оплачено.") : qsTr("Продовження до %1 (%2): перевіряємо оплату."))
+                            .arg(panel.hhmm(mineCard.modelData.extPending.end)).arg(mineCard.modelData.extPending.price)
+                        : ""
+                }
+                ApText {   // правило скасування: до якого часу можна і що буде з оплатою
+                    Layout.fillWidth: true
+                    visible: !!mineCard.modelData.cancelNote && !mineCard.asking
+                    role: "small"
+                    text: mineCard.modelData.cancelNote || ""
+                }
+                ApText {
+                    Layout.fillWidth: true
+                    visible: mineCard.asking
+                    text: mineCard.modelData.cancelKind === "refund"
+                        ? qsTr("Скасувати цю бронь? Ти її оплатив, тому ми повернемо %1. Бот у Telegram запитає, куди повернути кошти.").arg(mineCard.modelData.price)
+                        : qsTr("Скасувати цю бронь? Оплати за неї не було, тож повертати нічого не треба.")
+                }
+                RowLayout {
+                    visible: mineCard.asking
+                    spacing: 10
+                    ApButton { small: true; danger: true; text: qsTr("Так, скасувати"); onClicked: panel.cloud.cancelBooking(mineCard.modelData.id) }
+                    ApButton { small: true; ghost: true; text: qsTr("Ні, лишити"); onClicked: panel.confirmId = 0 }
+                }
+                Rectangle {
+                    visible: mineCard.asking || !!mineCard.modelData.extPending || !!mineCard.modelData.cancelNote
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    Layout.preferredHeight: 1
+                    color: ap.hair
                 }
             }
         }
-        Button {
+        ApButton {
             visible: panel.showPay && (panel.info.openCount || 0) < (panel.info.limit || 1)
-            flat: true
+            Layout.topMargin: 14
+            ghost: true
             text: qsTr("+ Забронювати ще час")
             onClicked: panel.choosing = true
         }
     }
 
-    component Chip: Rectangle {
-        id: chip
-        property string text
-        property string sub: ""
-        property bool on: false
-        property bool small: false
-        signal clicked()
-        implicitWidth: chipCol.implicitWidth + (small ? 22 : 30)
-        implicitHeight: chipCol.implicitHeight + (small ? 14 : 18)
-        radius: 12
-        color: on ? "#3a1a6e" : (chipMouse.containsMouse ? "#2a1650" : "#1f1240")
-        border.color: on ? "#22e4ff" : "#22ffffff"
-        border.width: on ? 2 : 1
-        ColumnLayout {
-            id: chipCol
-            anchors.centerIn: parent
-            spacing: 0
-            Label { Layout.alignment: Qt.AlignHCenter; text: chip.text; color: "white"; font.pixelSize: chip.small ? 15 : 16; font.bold: true }
-            Label { Layout.alignment: Qt.AlignHCenter; visible: chip.sub !== ""; text: chip.sub; color: "#ffe7f6"; font.pixelSize: 12 }
+    // кнопка часу: тонка рамка, обрана — суцільна світла
+    component TimeButton: AbstractButton {
+        id: tb
+        checkable: false        // обраний стан задає панель через checked
+        hoverEnabled: true
+        focusPolicy: Qt.TabFocus
+        horizontalPadding: 0
+        verticalPadding: 8
+        implicitWidth: tbText.implicitWidth + leftPadding + rightPadding
+        implicitHeight: tbText.implicitHeight + topPadding + bottomPadding
+        Keys.onReturnPressed: clicked()
+        contentItem: Text {
+            id: tbText
+            text: tb.text
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 14
+            color: tb.checked ? ap.dark : ap.ink
         }
-        MouseArea { id: chipMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: chip.clicked() }
+        background: Rectangle {
+            radius: ap.radius
+            color: tb.checked ? ap.ink : (tb.hovered ? "#14ffffff" : "#0affffff")
+            border.width: tb.visualFocus ? 2 : 1
+            border.color: tb.visualFocus ? ap.cyan : (tb.checked || tb.hovered ? ap.ink : ap.edge)
+        }
     }
 }

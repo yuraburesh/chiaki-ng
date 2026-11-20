@@ -1065,8 +1065,10 @@ void StreamSession::UpdateMouseRightStick()
 	mouse_tick_clock.restart();
 
 	// mouse speed during this tick, in pixels per second
-	const float sx = static_cast<float>(mouse_accum_x) / dt * mouse_gain_x;
-	const float sy = static_cast<float>(mouse_accum_y) / dt * mouse_gain_y;
+	// AnyPlay: чутливість миші й інверсія вертикалі з екрана клавіш (діють одразу, навіть посеред гри)
+	const float sensitivity = AnyPlayInput::MouseSensitivity();
+	const float sx = static_cast<float>(mouse_accum_x) / dt * mouse_gain_x * sensitivity;
+	const float sy = static_cast<float>(mouse_accum_y) / dt * mouse_gain_y * sensitivity * (AnyPlayInput::InvertY() ? -1.0f : 1.0f);
 	mouse_accum_x = 0;
 	mouse_accum_y = 0;
 
@@ -1136,10 +1138,10 @@ void StreamSession::HandleKeyboardEvent(QKeyEvent *event)
 			SetGamepadMode(false);
 #ifdef Q_OS_MACOS
 		// macOS reports Caps Lock as a toggle: "press" when it turns on, "release" when it turns off
+		// AnyPlay: тож це коротке натискання (як коліщатко), інакше кнопка відпускалась би миттєво
 		if(name == QLatin1String("CapsLock"))
 		{
-			anyplay->HandleInput(name, true);
-			anyplay->HandleInput(name, false);
+			anyplay->Tap(name);
 			return;
 		}
 		// Cmd alone is a game key (PS button by default), but Cmd+O opens the stream menu.

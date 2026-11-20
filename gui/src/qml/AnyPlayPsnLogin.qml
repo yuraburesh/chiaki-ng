@@ -4,7 +4,6 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
-import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
 
@@ -32,7 +31,7 @@ DialogView {
             return;
         if (!Chiaki.checkPsnRedirectURL(t)) {
             phase = "error";
-            errorText = qsTr("Це не та адреса. Потрібна адреса сторінки, на якій написано лише слово «redirect» — вона починається з https://remoteplay.dl.playstation.net/…");
+            errorText = qsTr("Це не та адреса. Потрібна адреса сторінки, на якій написано лише слово «redirect»: вона починається з https://remoteplay.dl.playstation.net/…");
             return;
         }
         phase = "check";
@@ -98,60 +97,66 @@ DialogView {
     property Timer okTimer: Timer { interval: 1200; onTriggered: { Chiaki.settings.remotePlayAsk = false; root.showMainView(); } }
 
     Item {
+        AnyPlayStyle { id: ap }
+        ApBackground { anchors.fill: parent }
         Flickable {
+            id: flick
             anchors.fill: parent
             contentHeight: col.implicitHeight + 60
             clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar {
+                policy: flick.contentHeight > flick.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                contentItem: Rectangle { implicitWidth: 4; radius: 2; color: "#55ffffff" }
+            }
             ColumnLayout {
                 id: col
-                anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 30 }
-                width: Math.min(parent.width - 60, 720)
-                spacing: 14
+                anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 28 }
+                width: Math.min(parent.width - 48, 760)
+                spacing: 0
 
-                Label {
-                    Layout.fillWidth: true; wrapMode: Text.WordWrap
-                    color: "#bfaed8"; font.pixelSize: 15
-                    text: qsTr("Пароль ти вводиш лише на офіційному сайті Sony у своєму браузері — ні програма, ні ми його не бачимо.")
+                ApText { role: "h2"; text: dialog.create ? qsTr("Реєстрація в PSN") : qsTr("Вхід у PSN") }
+                ApText {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 6
+                    Layout.bottomMargin: 14
+                    role: "hint"
+                    text: qsTr("Пароль ти вводиш лише на офіційному сайті Sony у своєму браузері. Ні програма, ні ми його не бачимо.")
                 }
 
-                StepCard {
+                StepRow {
                     num: "1"
                     title: dialog.create ? qsTr("Створи акаунт на сайті Sony") : qsTr("Увійди на сайті Sony")
                     text: dialog.create
                         ? qsTr("У браузері відкрилась сторінка реєстрації Sony. Заповни її (2–3 хвилини, безкоштовно) і підтверди пошту. Якщо після реєстрації Sony не продовжила вхід сама, натисни «Акаунт уже створено».")
                         : qsTr("У браузері відкрилась сторінка Sony. Введи пошту й пароль свого акаунта PSN.")
                     Flow {
-                        Layout.fillWidth: true
+                        width: parent.width
                         spacing: 8
-                        Button {
-                            text: qsTr("Відкрити сторінку Sony ще раз ↗")
-                            onClicked: dialog.openSony()
-                        }
-                        Button {
-                            visible: dialog.create
-                            text: qsTr("Акаунт уже створено — увійти")
-                            onClicked: dialog.openLogin()
-                        }
+                        ApButton { small: true; text: qsTr("Відкрити сторінку Sony ще раз ↗"); onClicked: dialog.openSony() }
+                        ApButton { small: true; ghost: true; visible: dialog.create; text: qsTr("Акаунт уже створено, увійти"); onClicked: dialog.openLogin() }
                     }
-                    Label {
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap
-                        color: "#bfaed8"; font.pixelSize: 13
+                    ApText {
+                        width: parent.width
+                        role: "small"
                         text: qsTr("Сторінка порожня або не відкривається? Спробуй інший браузер або скопіюй посилання й відкрий його сам.")
                     }
                     Flow {
-                        Layout.fillWidth: true
-                        spacing: 8
+                        width: parent.width
+                        spacing: 6
                         Repeater {
                             model: dialog.browsers
-                            Button {
+                            ApButton {
                                 required property string modelData
-                                flat: true
+                                small: true; ghost: true
+                                font.family: ap.body; font.capitalization: Font.MixedCase; font.letterSpacing: 0
                                 text: modelData
                                 onClicked: dialog.openSony(modelData)
                             }
                         }
-                        Button {
-                            flat: true
+                        ApButton {
+                            small: true; ghost: true
+                            font.family: ap.body; font.capitalization: Font.MixedCase; font.letterSpacing: 0
                             text: qsTr("Скопіювати посилання")
                             onClicked: {
                                 const link = Chiaki.psnPageUrl(dialog.create);
@@ -161,38 +166,38 @@ DialogView {
                         }
                     }
                 }
-                StepCard {
+                StepRow {
                     num: "2"
                     visible: dialog.auto
                     title: qsTr("Більше нічого робити не треба")
                     text: Qt.platform.os === "osx"
-                        ? qsTr("Після входу з'явиться майже порожня сторінка з одним словом «redirect» — так і має бути. Програма сама це помітить і продовжить. Якщо Mac спитає, чи дозволити AnyPlay доступ до браузера, натисни «Дозволити»: програма читає лише адресу цієї сторінки.")
-                        : qsTr("Після входу з'явиться майже порожня сторінка з одним словом «redirect» — так і має бути. Програма сама це помітить і продовжить.")
-                    Button {
-                        flat: true
+                        ? qsTr("Після входу з'явиться майже порожня сторінка з одним словом «redirect», так і має бути. Програма сама це помітить і продовжить. Якщо Mac спитає, чи дозволити AnyPlay доступ до браузера, натисни «Дозволити»: програма читає лише адресу цієї сторінки.")
+                        : qsTr("Після входу з'явиться майже порожня сторінка з одним словом «redirect», так і має бути. Програма сама це помітить і продовжить.")
+                    ApButton {
+                        small: true; ghost: true
                         visible: !dialog.manual
                         text: qsTr("Не спрацювало? Вставити адресу вручну")
                         onClicked: dialog.manual = true
                     }
                 }
-                StepCard {
+                StepRow {
                     num: dialog.auto ? "3" : "2"
                     visible: !dialog.auto || dialog.manual || dialog.waited >= 90 || dialog.phase === "error"
                     title: dialog.auto ? qsTr("Запасний спосіб: скопіюй адресу сторінки «redirect»") : qsTr("Скопіюй адресу сторінки «redirect»")
                     text: qsTr("На сторінці зі словом «redirect» клацни по адресному рядку браузера вгорі й натисни %1. Потім повернись у це вікно: програма сама підхопить скопійовану адресу. Якщо ні, встав її в поле нижче (%2).").arg(dialog.copyKey).arg(dialog.pasteKey)
                     RowLayout {
-                        Layout.fillWidth: true
+                        width: parent.width
                         spacing: 10
-                        TextField {
+                        ApField {
                             id: urlField
                             Layout.fillWidth: true
                             placeholderText: qsTr("https://remoteplay.dl.playstation.net/remoteplay/redirect?code=…")
-                            font.pixelSize: 14
                             enabled: dialog.phase !== "check" && dialog.phase !== "ok"
                             onTextEdited: if (Chiaki.checkPsnRedirectURL(text.trim())) dialog.submit(text)
                             onAccepted: dialog.submit(text)
                         }
-                        Button {
+                        ApButton {
+                            small: true
                             text: qsTr("Вставити")
                             enabled: dialog.phase !== "check" && dialog.phase !== "ok"
                             onClicked: { const t = Chiaki.clipboardText(); urlField.text = t; dialog.lastClip = t; dialog.submit(t); }
@@ -200,18 +205,23 @@ DialogView {
                     }
                 }
 
+                // ── стан: чекаємо / перевіряємо / готово / помилка ──
                 Rectangle {
+                    id: stateBox
+                    readonly property color tone: dialog.phase === "ok" ? ap.ok : (dialog.phase === "error" ? ap.bad : ap.cyan)
                     Layout.fillWidth: true
-                    radius: 14
-                    implicitHeight: stateLabel.implicitHeight + 28
-                    color: dialog.phase === "ok" ? "#143d2a" : (dialog.phase === "error" ? "#3d1420" : "#1f1240")
-                    border.color: dialog.phase === "ok" ? "#3dff9a" : (dialog.phase === "error" ? "#ff4d6d" : "#33ffffff")
-                    Label {
+                    Layout.topMargin: 22
+                    implicitHeight: stateLabel.implicitHeight + 24
+                    radius: ap.radius
+                    color: "#0dffffff"
+                    border.color: Qt.rgba(tone.r, tone.g, tone.b, 0.55)
+                    Rectangle { anchors { left: parent.left; top: parent.top; bottom: parent.bottom } width: 3; color: stateBox.tone }
+                    ApText {
                         id: stateLabel
-                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 14 }
-                        wrapMode: Text.WordWrap
-                        font.pixelSize: 16; font.bold: true
-                        color: "white"
+                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: 18; rightMargin: 14 }
+                        font.weight: Font.Medium
+                        font.pixelSize: 15
+                        color: dialog.phase === "ok" ? ap.ok : (dialog.phase === "error" ? ap.bad : ap.ink)
                         text: dialog.phase === "ok" ? qsTr("✓ Вхід у PSN виконано! Повертаємось…")
                             : dialog.phase === "check" ? qsTr("Перевіряємо вхід у Sony…")
                             : dialog.phase === "error" ? dialog.errorText
@@ -223,34 +233,36 @@ DialogView {
         }
     }
 
-    component StepCard: Rectangle {
+    // крок: номер ліворуч, назва, пояснення і кнопки; тонка лінія знизу
+    component StepRow: Item {
         id: sc
         property string num
         property string title
         property string text
         default property alias extra: scExtra.data
         Layout.fillWidth: true
-        radius: 16
-        color: "#160d2b"
-        border.color: "#33ffffff"
-        implicitHeight: scRow.implicitHeight + 28
+        implicitHeight: scRow.implicitHeight + 32
+        AnyPlayStyle { id: sap }
         RowLayout {
             id: scRow
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 14 }
-            spacing: 14
-            Rectangle {
+            anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 16 }
+            spacing: 18
+            Text {
                 Layout.alignment: Qt.AlignTop
-                width: 36; height: 36; radius: 18
-                color: "#ff2e9a"
-                Label { anchors.centerIn: parent; text: sc.num; color: "white"; font.bold: true; font.pixelSize: 17 }
+                Layout.preferredWidth: 28
+                text: sc.num
+                font.family: sap.display; font.weight: Font.Medium; font.pixelSize: 30
+                color: sap.cyan
             }
-            ColumnLayout {
+            Column {   // звичайний стовпець: висота сама стежить за текстом, що переноситься, і кнопками
                 id: scExtra
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
                 spacing: 8
-                Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: sc.title; color: "white"; font.pixelSize: 18; font.bold: true }
-                Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: sc.text; color: "#d8cdea"; font.pixelSize: 15 }
+                ApText { width: parent.width; font.weight: Font.DemiBold; font.pixelSize: 16; text: sc.title }
+                ApText { width: parent.width; role: "lead"; text: sc.text }
             }
         }
+        Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: 1; color: sap.hair }
     }
 }

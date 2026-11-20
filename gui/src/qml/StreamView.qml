@@ -18,7 +18,13 @@ Item {
     readonly property bool useSeparateMenuWindow: Chiaki.window.runtimeRendererBackend === 1
     // AnyPlay: клієнтам показуємо своє просте меню гри — воно трохи вище
     readonly property bool anyplayClientMenu: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin
-    readonly property int streamMenuHeight: anyplayClientMenu ? 330 : 200
+    // меню клієнта в стилі паузи GTA: на весь екран поверх гри (гру видно крізь праву частину)
+    readonly property int streamMenuHeight: anyplayClientMenu ? Math.max(330, Math.round(view.height)) : 200
+    // меню AnyPlay відкривається клавішею ` під Esc (Ctrl+O / Cmd+O теж працює, але не показуємо: Ctrl у GTA — «присісти»)
+    readonly property string anyplayMenuKey: Chiaki.controllers.length
+        ? qsTr("клавіша ` (під Esc) або %1 на геймпаді").arg(Chiaki.settings.stringForStreamMenuShortcut())
+        : qsTr("клавіша ` (під Esc)")
+    property string anyplayMenuPage: ""   // з якої сторінки відкрити меню клієнта («extend» — з нагадування про кінець гри)
     readonly property bool streamStatsVisible: Chiaki.settings.showStreamStats && Chiaki.session && !(menuController.open || menuController.closing) && !sessionLoading && !sessionError && !(Chiaki.settings.audioVideoDisabled & 0x02)
     property int separateMenuX: 0
     property int separateMenuY: 0
@@ -179,16 +185,16 @@ Item {
                     if(Chiaki.settings.dpadTouchEnabled)
                     {
                         if(Chiaki.settings.audioVideoDisabled == 0x01)
-                            qsTr("Звук вимкнено в налаштуваннях\n") + qsTr("Натисніть %1, щоб відкрити меню").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O")) + "\n" + qsTr("Натисніть %1, щоб перемкнути хрестовину / тачпад").arg(Chiaki.settings.stringForDpadShortcut())
+                            qsTr("Звук вимкнено в налаштуваннях\n") + qsTr("Меню AnyPlay: %1").arg(view.anyplayMenuKey) + "\n" + qsTr("Натисніть %1, щоб перемкнути хрестовину / тачпад").arg(Chiaki.settings.stringForDpadShortcut())
                         else
-                            qsTr("Натисніть %1, щоб відкрити меню").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O")) + "\n" + qsTr("Натисніть %1, щоб перемкнути хрестовину / тачпад").arg(Chiaki.settings.stringForDpadShortcut())
+                            qsTr("Меню AnyPlay: %1").arg(view.anyplayMenuKey) + "\n" + qsTr("Натисніть %1, щоб перемкнути хрестовину / тачпад").arg(Chiaki.settings.stringForDpadShortcut())
                     }
                     else
                     {
                         if(Chiaki.settings.audioVideoDisabled == 0x01)
-                            qsTr("Звук вимкнено в налаштуваннях\n") + qsTr("Натисніть %1, щоб відкрити меню").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"))
+                            qsTr("Звук вимкнено в налаштуваннях\n") + qsTr("Меню AnyPlay: %1").arg(view.anyplayMenuKey)
                         else
-                            qsTr("Натисніть %1, щоб відкрити меню").arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"))
+                            qsTr("Меню AnyPlay: %1").arg(view.anyplayMenuKey)
                     }
                 }
                 visible: sessionLoading
@@ -451,28 +457,87 @@ Item {
         }
     }
 
-    // ── AnyPlay: нагадування в кінці гри ──
+    // ── AnyPlay: нагадування про кінець гри — за 15 і за 5 хвилин, по 40 секунд, гру не перекриває ──
+    // Мишка під час гри йде в гру, тож кнопки тут немає: клавіша меню відкриває меню одразу на «Продовжити гру».
+    // Не показуємо адміну і коли наступна бронь клієнта йде одразу, без перерви (сервер каже «continues»).
     Rectangle {
         id: anyplayEndBanner
         property int tick: 0
+        property int mark: 0                 // за скільки хвилин до кінця вже нагадали (15 чи 5)
+        property double hideAt: 0
         readonly property int secsLeft: { tick; return Chiaki.cloud.endTs - Math.floor(Date.now() / 1000) - Chiaki.cloud.clockSkew; }
-        visible: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin && Chiaki.cloud.state === "play" && Chiaki.cloud.endTs > 0
-                 && secsLeft > 0 && secsLeft <= 10 * 60 && !(menuController.open || menuController.closing)
+        readonly property bool eligible: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin && Chiaki.cloud.state === "play"
+                                         && Chiaki.cloud.endTs > 0 && Chiaki.cloud.continues !== true
+        readonly property bool shown: { tick; return eligible && mark > 0 && secsLeft > 0 && secsLeft <= 15 * 60 && Date.now() < hideAt; }
+        readonly property real k: Math.max(1, Math.min(2, view.height / 1000))
+        visible: shown && !(menuController.open || menuController.closing)
         z: 50
-        anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 16 }
-        width: endBannerText.implicitWidth + 36
-        height: endBannerText.implicitHeight + 18
-        radius: 14
-        color: "#d90b0618"
-        border.color: "#ff2e9a"
-        Timer { interval: 1000; repeat: true; running: Chiaki.cloud.state === "play"; onTriggered: anyplayEndBanner.tick++ }
-        Label {
-            id: endBannerText
+        anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 16 * k }
+        scale: k
+        transformOrigin: Item.Top
+        width: Math.min(view.width / k - 32, endBannerCol.implicitWidth + 40)
+        height: endBannerCol.implicitHeight + 24
+        radius: 4
+        color: "#f2221d2e"
+        border.color: "#80ffd9a0"
+        AnyPlayStyle { id: endAp }
+        Timer {
+            interval: 1000; repeat: true
+            running: Chiaki.cloud.state === "play" && !!Chiaki.session
+            onTriggered: {
+                const b = anyplayEndBanner;
+                b.tick++;
+                const left = b.secsLeft;
+                const m = left <= 5 * 60 ? 5 : (left <= 15 * 60 ? 15 : 0);
+                if (m === 0)
+                    b.mark = 0;            // гру продовжили — наступного разу нагадаємо знову
+                else if (m !== b.mark && left > 0) {
+                    b.mark = m;
+                    b.hideAt = Date.now() + 40000;
+                }
+            }
+        }
+        Column {
+            id: endBannerCol
             anchors.centerIn: parent
-            font.pixelSize: 16; font.bold: true; color: "white"
-            text: qsTr("Лишилось %1 хв. Натисни %2 і обери «Продовжити»")
-                .arg(Math.ceil(anyplayEndBanner.secsLeft / 60))
-                .arg(Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"))
+            width: Math.min(implicitWidth, anyplayEndBanner.width - 40)
+            spacing: 6
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 10
+                Text {
+                    anchors.baseline: endBannerAsk.baseline
+                    text: qsTr("Лишилось %1 хв.").arg(Math.max(1, Math.ceil(anyplayEndBanner.secsLeft / 60)))
+                    font.family: endAp.display; font.weight: Font.Medium; font.pixelSize: 18
+                    font.letterSpacing: 1.5; font.capitalization: Font.AllUppercase
+                    color: endAp.gold
+                }
+                Text {
+                    id: endBannerAsk
+                    text: qsTr("Продовжити гру?")
+                    font.family: endAp.body; font.weight: Font.DemiBold; font.pixelSize: 16
+                    color: endAp.ink
+                }
+            }
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 6
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Натисни")
+                    font.family: endAp.body; font.pixelSize: 13
+                    color: endAp.mute
+                }
+                ApChip { anchors.verticalCenter: parent.verticalCenter; key: true; text: "`" }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: Chiaki.controllers.length
+                        ? qsTr("(під Esc) або %1 на геймпаді: відкриється меню AnyPlay з продовженням").arg(Chiaki.settings.stringForStreamMenuShortcut())
+                        : qsTr("(під Esc): відкриється меню AnyPlay з продовженням")
+                    font.family: endAp.body; font.pixelSize: 13
+                    color: endAp.mute
+                }
+            }
         }
     }
 
@@ -506,7 +571,8 @@ Item {
             AnyPlayStreamMenu {
                 id: clientPanel
                 visible: menuContent.clientMenu
-                anchors { fill: parent; leftMargin: 24; rightMargin: 24; topMargin: 8; bottomMargin: 18 }
+                anchors.fill: parent
+                openPage: view.anyplayMenuPage
                 onResume: menuController.close()
                 onExit: {
                     if (Chiaki.session)
@@ -996,6 +1062,7 @@ Item {
         open: useSeparateMenuWindow && menuController.open
         closing: useSeparateMenuWindow && menuController.closing
         clientMenu: view.anyplayClientMenu
+        anyplayPage: view.anyplayMenuPage
         onCloseRequested: menuController.close()
         onDisplaySettingsRequested: {
             menuController.close();
@@ -1387,6 +1454,8 @@ Item {
         function onMenuRequested() {
             if (sessionPinDialog.opened || sessionStopDialog.opened || separateSessionPinWindow.visible || separateSessionStopWindow.visible)
                 return;
+            if (!menuController.open)
+                view.anyplayMenuPage = anyplayEndBanner.shown ? "extend" : "";
             menuController.toggle();
             Chiaki.window.requestOverlayUpdate();
         }
@@ -1434,17 +1503,17 @@ Item {
         anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 30 }
         width: anyplayStartHintText.implicitWidth + 40
         height: anyplayStartHintText.implicitHeight + 20
-        radius: 14
-        color: "#d90b0618"
-        border.color: "#22e4ff"
+        radius: 4
+        color: "#f2221d2e"
+        border.color: "#66ffffff"
         opacity: 0
         visible: opacity > 0 && !(menuController.open || menuController.closing)
         Behavior on opacity { NumberAnimation { duration: 400 } }
         Label {
             id: anyplayStartHintText
             anchors.centerIn: parent
-            font.pixelSize: 16; font.bold: true; color: "white"
-            text: qsTr("Меню гри — %1: там клавіші, продовження і вихід").arg(Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O")
+            font.family: "Inter"; font.weight: Font.Medium; font.pixelSize: 15; color: "#f5f3f7"
+            text: qsTr("Меню AnyPlay: %1. Там клавіші, продовження і вихід").arg(view.anyplayMenuKey)
         }
         Timer { id: anyplayStartHintTimer; interval: 12000; onTriggered: anyplayStartHint.opacity = 0 }
     }

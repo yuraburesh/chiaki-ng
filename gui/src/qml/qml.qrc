@@ -3,6 +3,15 @@
     <file>qtquickcontrols2.conf</file>
     <file>Main.qml</file>
     <file>AnyPlayStyle.qml</file>
+    <file>ApBackground.qml</file>
+    <file>ApButton.qml</file>
+    <file>ApChip.qml</file>
+    <file>ApField.qml</file>
+    <file>ApOpt.qml</file>
+    <file>ApRow.qml</file>
+    <file>ApTabs.qml</file>
+    <file>ApText.qml</file>
+    <file>ApTimer.qml</file>
     <file>MainView.qml</file>
     <file>AnyPlayHome.qml</file>
         <file>ExtendPanel.qml</file>
@@ -11,6 +20,8 @@
         <file>AnyPlayStreamMenu.qml</file>
         <file>AnyPlayGuide.qml</file>
         <file>AnyPlayUpdateDialog.qml</file>
+        <file>AnyPlayControls.qml</file>
+        <file>AnyPlayGamePicker.qml</file>
     <file>StreamView.qml</file>
     <file>StreamMenuWindow.qml</file>
     <file>ConfirmDialog.qml</file>

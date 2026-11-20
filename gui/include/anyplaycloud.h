@@ -21,6 +21,8 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(qint64 endTs READ endTs NOTIFY changed)           // кінець поточної броні (unix, час сервера)
 	Q_PROPERTY(qint64 nextStart READ nextStart NOTIFY changed)
 	Q_PROPERTY(qint64 nextEnd READ nextEnd NOTIFY changed)
+	Q_PROPERTY(qint64 ownEnd READ ownEnd NOTIFY changed)            // кінець саме поточної броні (endTs — кінець усього ланцюжка броней)
+	Q_PROPERTY(bool continues READ continues NOTIFY changed)        // наступна оплачена бронь цього клієнта йде одразу, без перерви
 	Q_PROPERTY(qint64 clockSkew READ clockSkew NOTIFY changed)   // сервер − комп'ютер, секунди
 	Q_PROPERTY(QString consoleName READ consoleName NOTIFY changed)
 	Q_PROPERTY(QString notice READ notice NOTIFY changed)
@@ -58,6 +60,8 @@ public:
 	qint64 endTs() const { return end_; }
 	qint64 nextStart() const { return next_start_; }
 	qint64 nextEnd() const { return next_end_; }
+	qint64 ownEnd() const { return own_end_ > 0 ? own_end_ : end_; }
+	bool continues() const { return continues_; }
 	qint64 clockSkew() const { return skew_; }
 	QString consoleName() const { return console_; }
 	QString notice() const { return notice_; }
@@ -151,6 +155,11 @@ private:
 	QString server_, token_, pair_code_, state_ = "login", user_, console_, notice_, my_psn_;
 	bool admin_ = false, playing_ = false, my_psn_ready_ = false, closed_ = false;
 	qint64 end_ = 0, next_start_ = 0, next_end_ = 0, skew_ = 0;
+	qint64 own_end_ = 0;
+	bool continues_ = false;
+	QTimer start_timer;     // оновитись рівно в момент початку гри, а не чекати звичайного опитування раз на хвилину
+	int start_polls_ = 0;
+	void scheduleStartRefresh();
 	int pair_tries_ = 0;
 	QVariantMap admin_info_, extend_info_;
 	QVariantMap book_info_;

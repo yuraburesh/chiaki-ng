@@ -13,6 +13,58 @@
     <file>anyplay-controls-universal.json</file>
     <file>anyplay-mac-update.sh</file>
   </qresource>
+  <qresource prefix="/anyplay-pad">
+    <file alias="base.png">anyplay-pad/base.png</file>
+    <file alias="cap-l3-dark.png">anyplay-pad/cap-l3-dark.png</file>
+    <file alias="cap-l3.png">anyplay-pad/cap-l3.png</file>
+    <file alias="cap-r3-dark.png">anyplay-pad/cap-r3-dark.png</file>
+    <file alias="cap-r3.png">anyplay-pad/cap-r3.png</file>
+    <file alias="floor.png">anyplay-pad/floor.png</file>
+    <file alias="glow-box.png">anyplay-pad/glow-box.png</file>
+    <file alias="glow-cross.png">anyplay-pad/glow-cross.png</file>
+    <file alias="glow-dpad_down.png">anyplay-pad/glow-dpad_down.png</file>
+    <file alias="glow-dpad_left.png">anyplay-pad/glow-dpad_left.png</file>
+    <file alias="glow-dpad_right.png">anyplay-pad/glow-dpad_right.png</file>
+    <file alias="glow-dpad_up.png">anyplay-pad/glow-dpad_up.png</file>
+    <file alias="glow-l1.png">anyplay-pad/glow-l1.png</file>
+    <file alias="glow-l2.png">anyplay-pad/glow-l2.png</file>
+    <file alias="glow-l3.png">anyplay-pad/glow-l3.png</file>
+    <file alias="glow-moon.png">anyplay-pad/glow-moon.png</file>
+    <file alias="glow-options.png">anyplay-pad/glow-options.png</file>
+    <file alias="glow-ps.png">anyplay-pad/glow-ps.png</file>
+    <file alias="glow-pyramid.png">anyplay-pad/glow-pyramid.png</file>
+    <file alias="glow-r1.png">anyplay-pad/glow-r1.png</file>
+    <file alias="glow-r2.png">anyplay-pad/glow-r2.png</file>
+    <file alias="glow-r3.png">anyplay-pad/glow-r3.png</file>
+    <file alias="glow-share.png">anyplay-pad/glow-share.png</file>
+    <file alias="glow-touchpad.png">anyplay-pad/glow-touchpad.png</file>
+    <file alias="pad.json">anyplay-pad/pad.json</file>
+    <file alias="pr-box.png">anyplay-pad/pr-box.png</file>
+    <file alias="pr-cross.png">anyplay-pad/pr-cross.png</file>
+    <file alias="pr-dpad_down.png">anyplay-pad/pr-dpad_down.png</file>
+    <file alias="pr-dpad_left.png">anyplay-pad/pr-dpad_left.png</file>
+    <file alias="pr-dpad_right.png">anyplay-pad/pr-dpad_right.png</file>
+    <file alias="pr-dpad_up.png">anyplay-pad/pr-dpad_up.png</file>
+    <file alias="pr-moon.png">anyplay-pad/pr-moon.png</file>
+    <file alias="pr-options.png">anyplay-pad/pr-options.png</file>
+    <file alias="pr-ps.png">anyplay-pad/pr-ps.png</file>
+    <file alias="pr-pyramid.png">anyplay-pad/pr-pyramid.png</file>
+    <file alias="pr-share.png">anyplay-pad/pr-share.png</file>
+    <file alias="pr-touchpad.png">anyplay-pad/pr-touchpad.png</file>
+    <file alias="sh-l1-dark.png">anyplay-pad/sh-l1-dark.png</file>
+    <file alias="sh-l1.png">anyplay-pad/sh-l1.png</file>
+    <file alias="sh-r1-dark.png">anyplay-pad/sh-r1-dark.png</file>
+    <file alias="sh-r1.png">anyplay-pad/sh-r1.png</file>
+    <file alias="trig-l2-dark.png">anyplay-pad/trig-l2-dark.png</file>
+    <file alias="trig-l2.png">anyplay-pad/trig-l2.png</file>
+    <file alias="trig-r2-dark.png">anyplay-pad/trig-r2-dark.png</file>
+    <file alias="trig-r2.png">anyplay-pad/trig-r2.png</file>
+  </qresource>
+  <qresource prefix="/anyplay-games">
+    <file alias="gta5.png">anyplay-games/gta5.png</file>
+    <file alias="gta6.png">anyplay-games/gta6.png</file>
+    <file alias="other.png">anyplay-games/other.png</file>
+  </qresource>
   <qresource prefix="/icons">
     <file>settings-20px.svg</file>
     <file alias="ap-bolt.svg">anyplay-icons/bolt.svg</file>

@@ -2,6 +2,8 @@
 
 #include "settings.h"
 
+class AnyPlayInput;
+
 class QmlSettings : public QObject
 {
     Q_OBJECT
@@ -165,6 +167,10 @@ class QmlSettings : public QObject
     Q_PROPERTY(int placeboToneMappingToneLutSize READ placeboToneMappingToneLutSize WRITE setPlaceboToneMappingToneLutSize NOTIFY placeboToneMappingToneLutSizeChanged)
     Q_PROPERTY(float placeboToneMappingContrastRecovery READ placeboToneMappingContrastRecovery WRITE setPlaceboToneMappingContrastRecovery NOTIFY placeboToneMappingContrastRecoveryChanged)
     Q_PROPERTY(float placeboToneMappingContrastSmoothness READ placeboToneMappingContrastSmoothness WRITE setPlaceboToneMappingContrastSmoothness NOTIFY placeboToneMappingContrastSmoothnessChanged)
+    // AnyPlay: вибір гри перед грою, чутливість миші (камера) та інверсія вертикалі
+    Q_PROPERTY(bool anyplayAskGame READ anyplayAskGame WRITE setAnyplayAskGame NOTIFY anyplayAskGameChanged)
+    Q_PROPERTY(qreal anyplayMouseSensitivity READ anyplayMouseSensitivity WRITE setAnyplayMouseSensitivity NOTIFY anyplayMouseSensitivityChanged)
+    Q_PROPERTY(bool anyplayInvertY READ anyplayInvertY WRITE setAnyplayInvertY NOTIFY anyplayInvertYChanged)
 
 public:
     QmlSettings(Settings *settings, QObject *parent = nullptr);
@@ -616,7 +622,7 @@ public:
     Q_INVOKABLE QString changeControllerMouseInput(int button, const QString &mouse_input);
     // AnyPlay controls editor
     Q_INVOKABLE QVariantList anyplayProfiles() const;
-    Q_INVOKABLE QString anyplayKeyName(int key, int modifiers, const QString &text) const;
+    Q_INVOKABLE QString anyplayKeyName(int key, int modifiers, const QString &text, int scanCode = 0) const;
     Q_INVOKABLE QString anyplayMouseName(int button) const;
     Q_INVOKABLE QString anyplayDisplayName(const QString &key) const;
     Q_INVOKABLE void setAnyplayKey(const QString &profile, const QString &id, const QString &key);
@@ -626,6 +632,22 @@ public:
     Q_INVOKABLE void setAnyplayLayout(const QString &id);
     Q_INVOKABLE bool anyplayAutoVehicle() const;
     Q_INVOKABLE void setAnyplayAutoVehicle(bool enabled);
+    // AnyPlay: екран клавіш з геймпадом
+    Q_INVOKABLE QVariantMap anyplayControls() const;
+    Q_INVOKABLE QVariantMap anyplayRebind(const QString &profile, const QString &id, const QString &key);
+    Q_INVOKABLE QVariantMap anyplayPadData() const;
+    // живий показ на екрані клавіш (поза грою): той самий рушій, що й у грі, лише без приставки
+    Q_INVOKABLE bool anyplayPreviewInput(const QString &name, bool pressed);
+    Q_INVOKABLE bool anyplayPreviewTap(const QString &name);
+    Q_INVOKABLE void anyplayPreviewRelease();
+    Q_INVOKABLE void anyplayPreviewSetProfile(const QString &id);
+    Q_INVOKABLE QVariantMap anyplayPreviewState();
+    bool anyplayAskGame() const;
+    void setAnyplayAskGame(bool ask);
+    qreal anyplayMouseSensitivity() const;
+    void setAnyplayMouseSensitivity(qreal value);
+    bool anyplayInvertY() const;
+    void setAnyplayInvertY(bool invert);
     Q_INVOKABLE void clearKeyMapping();
     Q_INVOKABLE void exportSettings();
     Q_INVOKABLE QString chooseSteamBasePath();
@@ -637,6 +659,11 @@ public:
     Q_INVOKABLE QString stringForStreamMenuShortcut() const;
 
 signals:
+    void anyplayAskGameChanged();
+    void anyplayMouseSensitivityChanged();
+    void anyplayInvertYChanged();
+    void anyplayPreviewChanged();   // на екрані клавіш змінилось, що натиснуто
+    void anyplayControlsChanged();  // розкладку або клавіші змінили
     void resolutionLocalPS4Changed();
     void resolutionRemotePS4Changed();
     void resolutionLocalPS5Changed();
@@ -797,6 +824,8 @@ signals:
     void placeboChanged();
 
 private:
+    AnyPlayInput *anyplayPreview();
+    AnyPlayInput *anyplay_preview = nullptr;
     Settings *settings = {};
     QStringList audio_in_devices;
     QStringList audio_out_devices;

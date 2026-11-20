@@ -12,6 +12,7 @@ Window {
     property bool open: false
     property bool closing: false
     property bool clientMenu: false   // AnyPlay: клієнтам — просте меню гри
+    property string anyplayPage: ""   // AnyPlay: з якої сторінки відкрити меню клієнта («extend» — з нагадування про кінець гри)
 
     signal closeRequested()
     signal displaySettingsRequested()
@@ -81,16 +82,29 @@ Window {
         focus: true
         Keys.onMenuPressed: streamMenuWindow.closeRequested()
         Keys.onEscapePressed: streamMenuWindow.closeRequested()
+        // AnyPlay: клавіша ` (під Esc, за фізичним положенням) закриває меню так само, як відкрила
+        Keys.onPressed: (event) => {
+            const k = event.key;
+            const osx = Qt.platform.os === "osx";
+            if (k === Qt.Key_QuoteLeft || k === Qt.Key_AsciiTilde || (osx && (k === Qt.Key_section || k === Qt.Key_plusminus))
+                    || (Qt.platform.os === "windows" && event.nativeScanCode === 0x29)
+                    || (!osx && Qt.platform.os !== "windows" && event.nativeScanCode === 49)) {
+                event.accepted = true;
+                if (!event.isAutoRepeat)
+                    streamMenuWindow.closeRequested();
+            }
+        }
 
         Rectangle {
             anchors.fill: parent
-            color: streamMenuWindow.clientMenu ? "#0b0618" : "#2b2b2b"
+            color: streamMenuWindow.clientMenu ? "transparent" : "#2b2b2b"   // меню клієнта малює свій напівпрозорий фон
         }
 
         AnyPlayStreamMenu {
             id: anyplayMenu
             visible: streamMenuWindow.clientMenu && streamMenuWindow.visible
-            anchors { fill: parent; leftMargin: 24; rightMargin: 24; topMargin: 8; bottomMargin: 18 }
+            anchors.fill: parent
+            openPage: streamMenuWindow.anyplayPage
             onResume: streamMenuWindow.closeRequested()
             onExit: {
                 if (Chiaki.session)

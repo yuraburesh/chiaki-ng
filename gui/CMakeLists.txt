@@ -34,6 +34,8 @@ set(SOURCE_FILES
 	src/anyplaybrowser.cpp
 	include/anyplayupdater.h
 	src/anyplayupdater.cpp
+	include/anyplayspeedtest.h
+	src/anyplayspeedtest.cpp
 	include/sessionlog.h
 	src/sessionlog.cpp
 	include/settings.h

@@ -5,155 +5,393 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>AnyPlay</title>
 <style>
-:root{--bg:#0b0618;--panel:#160d2b;--panel2:#1f1240;--line:#ffffff1f;--text:#fff6ff;--dim:#bfaed8;
-  --pink:#ff2e9a;--orange:#ff9a3c;--cyan:#22e4ff;--violet:#7b2cff;--green:#3dff9a;--red:#ff5c7a}
+/* Новий дизайн AnyPlay: вечірній градієнт, Oswald великими літерами для заголовків, вкладок і кнопок, Inter для тексту,
+   тонкі лінії між рядками, білі суцільні кнопки з ледь заокругленими кутами. Ті самі кольори, що в AnyPlayStyle.qml на комп'ютері. */
+@font-face{font-family:Oswald;font-weight:400;src:url(fonts/Oswald-Regular.ttf) format("truetype")}
+@font-face{font-family:Oswald;font-weight:500;src:url(fonts/Oswald-Medium.ttf) format("truetype")}
+@font-face{font-family:Oswald;font-weight:600;src:url(fonts/Oswald-SemiBold.ttf) format("truetype")}
+@font-face{font-family:Inter;font-weight:400;src:url(fonts/Inter-Regular.ttf) format("truetype")}
+@font-face{font-family:Inter;font-weight:500;src:url(fonts/Inter-Medium.ttf) format("truetype")}
+@font-face{font-family:Inter;font-weight:600;src:url(fonts/Inter-SemiBold.ttf) format("truetype")}
+:root{color-scheme:dark;--bg1:#2b2740;--bg2:#4a3558;--bg3:#7a4a63;--ink:#f5f3f7;--mute:#ffffffa6;--faint:#ffffff6b;--hair:#ffffff1f;--edge:#ffffff40;
+  --panel:#ffffff0d;--dark:#221d2e;--cyan:#8fe3ff;--gold:#ffd9a0;--ok:#c9f5d8;--bad:#ff9a9a;
+  --display:Oswald,"Arial Narrow",sans-serif;--body:Inter,system-ui,-apple-system,Roboto,sans-serif;--pad:16px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Roboto,sans-serif}
-body{min-height:100vh;padding:0 0 calc(104px + env(safe-area-inset-bottom));
-  background:radial-gradient(120% 60% at 50% -10%,#3a0f5e 0,#1a0b33 45%,var(--bg) 75%) fixed}
-header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 14px;
-  background:#1a0b33f2;border-bottom:1px solid var(--line)}
-header button{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:#ffffff14;color:#fff;font-size:20px}
-header h1{flex:1;margin:0;font-size:19px;font-weight:800}
-.wrap{max-width:640px;margin:0 auto}
-.tabs{display:flex;gap:8px;margin:14px 14px 0}
-.tab{flex:1;padding:12px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--dim);font-weight:800;text-align:center;font-size:14px}
-.tab.on{color:#fff;background:linear-gradient(90deg,var(--pink),var(--violet));border-color:transparent}
-section{margin:18px 14px 0}
-h2{font-size:16px;font-weight:800;margin:0 0 10px}
-h2 .n{display:inline-grid;place-items:center;width:24px;height:24px;margin-right:8px;border-radius:7px;font-size:13px;
-  background:linear-gradient(135deg,var(--cyan),var(--violet))}
-.chips{display:flex;gap:8px;flex-wrap:wrap}
-.chip{min-width:72px;padding:10px 12px;border-radius:14px;background:var(--panel);border:1px solid var(--line);text-align:center;font-weight:800;font-size:15px}
-.chip small{display:block;font-size:11px;color:var(--dim);font-weight:700;margin-top:2px}
-.chip.on{background:linear-gradient(135deg,var(--orange),var(--pink));border-color:transparent}
-.chip.on small{color:#fff}
-.chip.off{opacity:.35}
-.days{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
-.days::-webkit-scrollbar{display:none}
-.day{flex:0 0 66px;padding:10px 0;border-radius:16px;background:var(--panel);border:1px solid var(--line);text-align:center}
-.day b{display:block;font-size:22px}
-.day span{font-size:12px;color:var(--dim);font-weight:700}
-.day.on{background:linear-gradient(160deg,var(--cyan),var(--violet));border-color:transparent}
-.day.on span{color:#fff}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
-.slot{padding:10px 0;border-radius:12px;text-align:center;font-weight:800;font-size:15px;background:var(--panel2);border:1px solid #22e4ff55}
-.slot small{display:block;font-size:10px;color:var(--dim);font-weight:700}
-.slot.on{background:linear-gradient(135deg,var(--pink),var(--orange));border-color:transparent}
-.slot.on small{color:#fff}
-.note{padding:14px;border-radius:14px;background:var(--panel);color:var(--dim);font-weight:600;font-size:14px;line-height:1.45}
-.note b{color:#fff}
-.card{border-radius:18px;padding:14px;background:linear-gradient(160deg,#241046,#160d2b);border:1px solid var(--line);margin-bottom:10px}
-.card .top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
-.card b.t{font-size:16px}
-.card .when{color:var(--dim);font-weight:700;font-size:13.5px;margin-top:3px}
-.st{flex:0 0 auto;padding:4px 9px;border-radius:9px;font-size:12px;font-weight:800;background:#ffffff1a}
-.st.paid{background:#3dff9a26;color:var(--green)}
-.st.hold{background:#ff9a3c2e;color:var(--orange)}
-.st.rev{background:#22e4ff26;color:var(--cyan)}
-.meta{color:var(--dim);font-size:13px;line-height:1.45;margin-top:8px}
-.meta b{color:#fff}
-.ic{flex:0 0 30px;width:30px;height:30px;display:inline-block}
-.ic svg{width:100%;height:100%;display:block}
-.hrow{display:flex;gap:12px;align-items:flex-start}
-.hrow .meta{margin-top:4px}
-.okline{display:flex;gap:10px;align-items:center}
-.okline .ic{flex-basis:26px;width:26px;height:26px}
-.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.b{flex:1;min-width:120px;padding:12px 14px;border-radius:13px;border:1px solid var(--line);background:#ffffff14;color:#fff;font-weight:800;font-size:14px;text-align:center}
-.b.ok{background:linear-gradient(90deg,var(--orange),var(--pink),var(--violet));border-color:transparent}
-.b.bad{color:var(--red);border-color:#ff5c7a55}
-.b[disabled]{opacity:.45}
-.bar{position:fixed;left:0;right:0;bottom:0;z-index:6;padding:12px 14px calc(12px + env(safe-area-inset-bottom));background:#0b0618f2;border-top:1px solid var(--line)}
-.bar .in{max-width:640px;margin:0 auto}
-.big{display:block;width:100%;padding:16px;border-radius:16px;border:0;color:#fff;font-weight:800;font-size:17px;
-  background:linear-gradient(90deg,var(--orange),var(--pink),var(--violet))}
-.big[disabled]{opacity:.45}
-.barhint{color:var(--dim);font-size:12.5px;text-align:center;margin-bottom:8px;font-weight:600}
+html,body{height:100%;margin:0}
+html{background:var(--bg1)}
+/* меню під час гри: крізь напівпрозоре тло видно гру */
+html.m-menu,html.m-menu body{background:transparent}
+body{overflow:hidden;color:var(--ink);font:400 14px/1.4 var(--body);background:linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 45%,var(--bg3) 100%);
+  -webkit-user-select:none;user-select:none;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit}
+input{-webkit-user-select:text;user-select:text}
 .hidden{display:none!important}
-#sheet{position:fixed;inset:0;z-index:10;background:#0b0618;overflow-y:auto;padding-bottom:calc(30px + env(safe-area-inset-bottom))}
-.amount{font-size:34px;font-weight:800;text-align:center;margin:6px 0 2px}
-.sub{text-align:center;color:var(--dim);font-weight:700;font-size:14px}
-.req{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px dashed #ffffff1a}
-.req:last-child{border-bottom:0}
-.req .l{flex:1;min-width:0}
-.req .l span{display:block;color:var(--dim);font-size:12px;font-weight:700}
-.req .l b{display:block;font-size:16px;word-break:break-all}
-.req button{flex:0 0 auto;padding:9px 12px;border-radius:11px;border:1px solid var(--line);background:#ffffff14;color:#fff;font-weight:800;font-size:13px}
-input{width:100%;padding:13px 14px;border-radius:13px;border:1px solid #ffffff33;background:#0b0618;color:#fff;font:inherit;font-size:15px}
-#toast{position:fixed;left:14px;right:14px;bottom:calc(120px + env(safe-area-inset-bottom));z-index:20;padding:13px 16px;border-radius:14px;background:#2a1650;border:1px solid #ffffff33;
-  font-weight:700;font-size:14px;text-align:center;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}
-#toast.show{opacity:1;transform:none}
-.spin{width:26px;height:26px;border-radius:50%;border:3px solid #ffffff33;border-top-color:var(--pink);margin:18px auto;animation:r 1s linear infinite}
+
+/* ── каркас ── */
+#app{height:100%;display:flex;flex-direction:column}
+.top{flex:0 0 auto;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"brand nav who";align-items:end;column-gap:24px;
+  padding:10px max(var(--pad),calc((100% - 1180px) / 2)) 0;border-bottom:1px solid var(--hair)}
+.brand{grid-area:brand;font:600 22px/1.1 var(--display);letter-spacing:3px;padding-bottom:9px;white-space:nowrap}
+.brand span{display:block;font:500 10px/1.3 var(--body);letter-spacing:1.6px;color:var(--faint);margin-top:2px}
+.nav{grid-area:nav;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.nav::-webkit-scrollbar{display:none}
+.nav button{flex:0 0 auto;border-bottom:2px solid transparent;padding:10px 12px 9px;font:500 15px/1.2 var(--display);letter-spacing:1.6px;text-transform:uppercase;opacity:.62;white-space:nowrap}
+.nav button.on{opacity:1;border-bottom-color:var(--ink)}
+.who{grid-area:who;display:flex;align-items:center;gap:10px;padding-bottom:9px;font-size:13px;color:var(--mute);white-space:nowrap;min-width:0}
+.who b{font-weight:500;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.top.gated .nav,.top.gated .who,body.admin .noadmin{display:none}
+.lnk{border:1px solid var(--edge);border-radius:2px;padding:5px 11px;font:500 12.5px var(--body);color:var(--ink);background:#ffffff0a;white-space:nowrap}
+.subhead{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:10px var(--pad);border-bottom:1px solid var(--hair)}
+.subhead button{flex:0 0 40px;height:40px;border:1px solid var(--edge);border-radius:2px;font:500 26px/1 var(--display);display:grid;place-items:center;padding:0 0 4px}
+.subhead h1{margin:0;font:600 20px/1.2 var(--display);letter-spacing:2px;text-transform:uppercase;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+main{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:18px var(--pad) 24px}
+.inner{max-width:1180px;margin:0 auto}
+.m-home #app>.subhead,.m-single #app>.top,.m-menu #app{display:none}
+
+/* ── спільні елементи ── */
+.grid2{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px 56px;align-items:start}
+.cap{font:600 13px/1.3 var(--display);letter-spacing:1.8px;text-transform:uppercase;color:var(--mute);margin:0 0 6px}
+.cap.bad{color:var(--bad)}
+h2{font:600 26px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase;margin:0}
+.hint{color:var(--mute);margin:6px 0 0;max-width:62ch}
+.small{display:block;font-size:12px;line-height:1.4;color:var(--faint);margin:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--ink);color:var(--dark);border:1px solid var(--ink);border-radius:2px;padding:13px 26px;
+  font:600 18px/1.15 var(--display);letter-spacing:2.4px;text-transform:uppercase;min-width:240px;text-align:center}
+.btn:active{background:#fff}
+.btn[disabled]{opacity:.45}
+.btn.ghost{background:none;color:var(--ink);border-color:var(--edge);font-size:15px;letter-spacing:1.8px;min-width:0;padding:12px 20px}
+.btn.ghost:active{border-color:var(--ink)}
+.btn.bad{color:var(--bad);border-color:#ff9a9a66}
+.btn.sm{font-size:13px;letter-spacing:1.4px;padding:8px 14px;min-width:0}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;min-height:52px;padding:7px 0;border-bottom:1px solid var(--hair)}
+.row .t{display:block;font:500 14px/1.35 var(--body)}
+.row .s{display:block;font-size:12px;line-height:1.4;color:var(--faint);margin-top:1px}
+.row .s b{color:var(--mute);font-weight:600}
+.row.click{cursor:pointer}
+.row.click:active .t{text-decoration:underline;text-underline-offset:3px}
+.row .n{font:500 13px var(--display);color:var(--faint);margin-right:10px}
+.chip{font:600 12px/1.4 var(--body);border:1px solid var(--edge);border-radius:3px;padding:2px 8px;white-space:nowrap;background:#ffffff12;font-variant-numeric:tabular-nums;color:var(--ink)}
+.chip.ok{border-color:#9be8b880;color:var(--ok)}
+.chip.wait{border-color:#ffd9a080;color:var(--gold)}
+.chip.live{border-color:var(--cyan);color:var(--cyan)}
+.chip.bad{border-color:#ff9a9a80;color:var(--bad)}
+.keys{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:150px}
+.key{font:600 11px/1.4 var(--body);border:1px solid var(--edge);border-radius:3px;padding:1px 6px;background:#ffffff12;white-space:nowrap}
+.spin{width:24px;height:24px;border-radius:50%;border:2px solid #ffffff33;border-top-color:var(--ink);margin:14px 0;animation:r 1s linear infinite}
 @keyframes r{to{transform:rotate(360deg)}}
-.code{font-size:30px;font-weight:800;letter-spacing:5px;text-align:center;padding:12px;border-radius:14px;background:#0b0618;border:1px solid #ffffff33;margin:10px 0}
-ol{margin:8px 0 0;padding-left:20px;color:var(--dim);font-size:14px;line-height:1.5}
-ol b{color:#fff}
+#loading{padding:20px 0}
+
+/* ── головний екран: ліворуч стан гри, праворуч броні й налаштування, номер збірки внизу ── */
+.home{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);grid-template-areas:"hero side" "foot side";grid-template-rows:auto 1fr;column-gap:56px}
+.home>.hero{grid-area:hero}
+.home>.side{grid-area:side}
+.home>.foot2{grid-area:foot;align-self:end}
+.hero{display:flex;flex-direction:column;gap:10px;min-width:0}
+.eyebrow{font:500 15px/1.3 var(--display);letter-spacing:3px;text-transform:uppercase;color:var(--cyan)}
+.eyebrow.bad{color:var(--bad)}
+.timer{font:500 clamp(54px,min(19vw,19vh),116px)/0.95 var(--display);letter-spacing:2px;font-variant-numeric:tabular-nums}
+.timer.play{color:var(--gold)}
+.big{font:600 clamp(28px,min(8vw,9vh),52px)/1.05 var(--display);letter-spacing:2px;text-transform:uppercase;margin:0;overflow-wrap:anywhere}
+.lead{font:400 15px/1.5 var(--body);color:var(--mute);margin:0;max-width:52ch}
+.lead b{color:var(--ink);font-weight:600}
+.foot2{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;margin-top:22px;font-size:11.5px;color:var(--faint)}
+.foot2 .me{display:none;align-items:center;gap:10px;color:var(--mute);font-size:13px}
+#vGate{min-height:calc(100% - 4px);display:flex;align-items:center;justify-content:center;text-align:center}
+#vGate .hero{align-items:center;max-width:560px;padding:12px 0}
+#vGate .lead{max-width:44ch}
+#vGate .spin{margin:6px auto}
+.side .cap{margin-top:20px}
+.side .cap:first-child{margin-top:0}
+.more{display:block;padding:8px 0 0;font-size:12.5px;color:var(--cyan)}
+
+/* ── вибір: рядки з радіо, дні, час ── */
+.vhead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px 24px;margin-bottom:18px}
+.m-single .vtitle,.m-menu .vtitle,.m-single .t-only,.m-menu .t-only{display:none}
+.back{display:inline-block;font:500 14px var(--display);letter-spacing:1.6px;text-transform:uppercase;color:var(--mute);padding:4px 0;margin-bottom:8px}
+.m-single .back,.m-menu .back{display:none}
+.seg{display:inline-flex;border:1px solid var(--edge);border-radius:2px;overflow:hidden;flex:0 0 auto}
+.seg button{padding:8px 16px;font:500 14px/1.2 var(--display);letter-spacing:1.4px;text-transform:uppercase;color:var(--mute)}
+.seg button.on{background:var(--ink);color:var(--dark)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px 40px;align-items:start}
+.pick{display:flex;flex-direction:column}
+.opt{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;min-height:46px;border-bottom:1px solid var(--hair);padding:9px 2px;
+  font:500 14px/1.35 var(--body);color:var(--mute);text-align:left}
+.opt.on{color:var(--ink)}
+.opt .ot{display:block}
+.opt .small{margin-top:2px}
+.opt i{flex:0 0 14px;width:14px;height:14px;border-radius:50%;border:1.5px solid #ffffff80}
+.opt.on i{border-color:#fff;background:radial-gradient(circle,#fff 40%,transparent 48%)}
+.opt.on .chip{background:var(--ink);color:var(--dark);border-color:var(--ink)}
+.opt.off{opacity:.45}
+.days{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.days::-webkit-scrollbar{display:none}
+.day{flex:0 0 60px;border:1px solid var(--edge);border-radius:2px;background:#ffffff0a;padding:5px 0 6px;text-align:center}
+.day b{display:block;font:500 22px/1.15 var(--display)}
+.day span{display:block;font:500 11px/1.3 var(--body);color:var(--faint)}
+.day.on{background:var(--ink);color:var(--dark);border-color:var(--ink)}
+.day.on span{color:#221d2ebf}
+.times{display:grid;grid-template-columns:repeat(auto-fill,minmax(66px,1fr));gap:6px}
+.times button{background:#ffffff0a;border:1px solid var(--edge);border-radius:2px;padding:6px 0 5px;font:500 15px/1.25 var(--body);font-variant-numeric:tabular-nums;text-align:center}
+.times button small{display:block;font-size:10.5px;color:var(--faint);font-weight:500}
+.times button.on{background:var(--ink);color:var(--dark);border-color:var(--ink)}
+.times button.on small{color:#221d2eb3}
+.times .note{grid-column:1/-1;color:var(--mute);padding:6px 0}
+.mt{margin-top:18px}
+.bk{border-bottom:1px solid var(--hair);padding:10px 0 12px}
+.bk .row{border-bottom:0;padding:0;min-height:0}
+.bk .meta{font-size:12.5px;color:var(--mute);margin-top:6px}
+.bk .actions{margin-top:10px;flex-direction:row}
+.bk .actions .btn{flex:1 1 0;width:auto;min-width:0}
+
+/* ── нижня панель з головною дією ── */
+#bar{flex:0 0 auto;border-top:1px solid var(--hair);background:#221d2ed9;padding:10px var(--pad) calc(10px + env(safe-area-inset-bottom,0px))}
+#bar .in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:18px}
+#barHint{flex:1 1 auto;min-width:0;color:var(--mute);font-size:13px;line-height:1.4}
+#barBtn{flex:0 0 auto;min-width:260px}
+
+/* ── оплата ── */
+#sheet{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;background:linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 45%,var(--bg3) 100%)}
+.amount{font:500 46px/1.05 var(--display);letter-spacing:1px;font-variant-numeric:tabular-nums}
+.req{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hair)}
+.req span{display:block;font-size:12px;color:var(--faint)}
+.req b{display:block;font:600 16px/1.35 var(--body);word-break:break-all;-webkit-user-select:text;user-select:text}
+input.field{width:100%;padding:12px 2px;border:0;border-bottom:1px solid var(--edge);border-radius:0;background:transparent;color:var(--ink);font:500 16px var(--body);outline:0}
+input.field:focus{border-bottom-color:var(--ink)}
+.code{font:500 40px/1.1 var(--display);letter-spacing:8px;padding:8px 0;font-variant-numeric:tabular-nums;-webkit-user-select:text;user-select:text}
+
+/* ── перевірка інтернету ── */
+#netRes{margin-top:12px}
+#netBox .btn{min-width:0}
+
+/* ── меню під час гри (як пауза в GTA) ── */
+#pm{position:fixed;inset:0;display:flex;flex-direction:column;padding:12px max(var(--pad),env(safe-area-inset-right,0px)) 6px max(var(--pad),env(safe-area-inset-left,0px));
+  background:linear-gradient(90deg,#0d0a16f5 0%,#0d0a16e6 46%,#0d0a16c4 100%)}
+.pm-head{flex:0 0 auto;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 20px;border-bottom:1px solid var(--hair);padding:4px 0 10px}
+.pm-head .big{font-size:28px}
+.pm-grid{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(210px,290px) minmax(0,1fr);gap:0 48px}
+.pm-left{overflow-y:auto;padding-top:6px}
+.pm-left button{display:block;width:100%;border-bottom:1px solid var(--hair);text-align:left;padding:12px 4px;font:500 17px/1.2 var(--display);letter-spacing:1.8px;text-transform:uppercase;opacity:.6}
+.pm-left button.on{opacity:1;background:linear-gradient(90deg,#ffffff1f,transparent);padding-left:12px}
+.pm-left button.exit{color:var(--bad)}
+.pm-right{overflow-y:auto;min-width:0;padding:14px 0 16px;display:flex;flex-direction:column;gap:10px}
+.pm-back{display:none;font:500 14px var(--display);letter-spacing:1.6px;text-transform:uppercase;color:var(--mute);align-self:flex-start;padding:2px 0}
+.pm-right #bar{position:sticky;bottom:-16px;background:#0d0a16;box-shadow:0 16px 0 #0d0a16;border-top:1px solid var(--hair);padding:10px 0 12px;margin-top:6px}
+.pm-right #bar .in{flex-direction:column;align-items:stretch;gap:8px;margin:0}
+.pm-right #barBtn{width:100%;min-width:0}
+.pm-right .grid2{grid-template-columns:minmax(0,1fr)}
+.m-menu #netBox{display:none}
+.foot{flex:0 0 auto;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 20px;font:500 12px/1.4 var(--display);letter-spacing:1.2px;text-transform:uppercase;color:var(--faint);
+  border-top:1px solid var(--hair);padding:8px 0 calc(4px + env(safe-area-inset-bottom,0px))}
+
+#toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));z-index:30;transform:translate(-50%,10px);width:max-content;max-width:min(92vw,520px);
+  background:#221d2ef2;border:1px solid #ffffff66;border-radius:4px;padding:10px 16px;font-weight:500;text-align:center;opacity:0;transition:.2s;pointer-events:none}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ── телефон вертикально ── */
+@media (max-width:700px){
+  :root{--pad:16px}
+  .top{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand who" "nav nav";padding-top:12px}
+  .brand{font-size:21px;padding-bottom:8px}
+  .brand span{font-size:9.5px;letter-spacing:1.2px}
+  .who{display:none}
+  .foot2 .me{display:flex}
+  .nav{margin:0 calc(-1 * var(--pad));padding:0 calc(var(--pad) - 9px)}
+  .nav button{padding:9px 9px 8px;font-size:14.5px;letter-spacing:1.3px}
+  .nav.fade{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
+  .grid2{grid-template-columns:minmax(0,1fr);gap:28px}
+  .home{grid-template-columns:minmax(0,1fr);grid-template-areas:"hero" "side" "foot";grid-template-rows:auto;row-gap:28px}
+  .btn{min-width:0;width:100%}
+  .actions{flex-direction:column}
+  .vhead .seg{width:100%}
+  .seg button{flex:1}
+  #bar .in{flex-direction:column;align-items:stretch;gap:8px}
+  #barHint{text-align:center}
+  #barBtn{width:100%;min-width:0}
+  .pm-grid{grid-template-columns:minmax(0,1fr)}
+  #pm .pm-right,#pm.detail .pm-left{display:none}
+  #pm.detail .pm-right{display:flex}
+  .pm-back{display:block}
+  .amount{font-size:40px}
+}
+/* ── телефон горизонтально: усе на одному екрані ── */
+@media (max-height:500px) and (min-width:560px){
+  :root{--pad:18px}
+  .top{padding-top:4px;column-gap:18px}
+  .brand{font-size:19px;padding-bottom:6px;letter-spacing:2.6px}
+  .brand span{font-size:8.5px;letter-spacing:1px;margin-top:1px}
+  .nav button{padding:7px 9px 6px;font-size:14px;letter-spacing:1.3px}
+  .who{padding-bottom:6px}
+  .who b{max-width:110px}
+  .lnk{padding:3px 9px}
+  main{padding:12px var(--pad) 12px}
+  .grid2{gap:12px 40px}
+  .home{column-gap:40px}
+  .lhide,.vhead .hint{display:none}
+  #netBox .btn{padding:9px 14px;font-size:14px}
+  .hero{gap:6px}
+  .eyebrow{font-size:13.5px}
+  .lead{font-size:14px;line-height:1.45}
+  .actions{margin-top:4px}
+  .btn{padding:10px 22px;font-size:16px;min-width:200px}
+  .btn.ghost{padding:9px 16px;font-size:14px}
+  .row{min-height:42px;padding:4px 0}
+  .side .cap{margin-top:12px}
+  .foot2{margin-top:10px}
+  .opt{min-height:40px;padding:6px 2px}
+  .vhead{margin-bottom:12px}
+  h2{font-size:22px}
+  #bar{padding:7px var(--pad) calc(7px + env(safe-area-inset-bottom,0px))}
+  #bar .btn{padding:9px 18px}
+  .subhead{padding:6px var(--pad)}
+  .subhead button{height:34px;flex-basis:34px}
+  #pm{padding-top:6px}
+  .pm-head{padding:2px 0 6px}
+  .pm-head .big{font-size:22px}
+  .pm-left{padding-top:2px}
+  .pm-left button{padding:9px 4px;font-size:15px}
+  .pm-right{padding-top:8px}
+  .foot{padding-top:5px}
+  .amount{font-size:36px}
+}
+/* дуже низький горизонтальний екран: рядки без підписів */
+@media (max-height:370px) and (min-width:560px){
+  .side .row .s{display:none}
+  .side .row{min-height:38px}
+  .timer{font-size:clamp(46px,18vh,100px)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:3s!important}}
 </style>
 </head>
 <body>
-<header><button id="back" aria-label="Назад">‹</button><h1 id="title">AnyPlay</h1></header>
-<div class="wrap">
-  <div id="loading"><div class="spin"></div></div>
+<div id="app">
+  <!-- головний екран програми: назва, вкладки, хто увійшов -->
+  <header class="top" id="top">
+    <div class="brand">ANYPLAY<span>ОРЕНДА PS5: GTA ТА ІНШІ ІГРИ</span></div>
+    <nav class="nav" id="nav" aria-label="Розділи">
+      <button type="button" data-tab="home">Гра</button>
+      <button type="button" data-tab="book" class="noadmin">Бронювання</button>
+      <button type="button" data-tab="quality">Якість</button>
+      <button type="button" data-tab="psn" class="noadmin">Мій PSN</button>
+      <button type="button" data-tab="help">Як керувати</button>
+    </nav>
+    <div class="who" id="who"><b id="whoName"></b><button type="button" class="lnk" data-act="logout">Вийти</button></div>
+  </header>
+  <!-- окреме вікно (одна сторінка): назад і назва -->
+  <header class="subhead"><button type="button" id="back" aria-label="Назад">‹</button><h1 id="subTitle">AnyPlay</h1></header>
 
-  <!-- бронювання -->
-  <div id="vBook" class="hidden">
-    <div class="tabs"><div class="tab on" id="tabNew">Забронювати</div><div class="tab" id="tabMine">Мої броні</div></div>
-    <div id="pNew">
-      <section id="fullNote" class="hidden"><div class="note" id="fullText"></div></section>
-      <div id="picker">
-        <section><h2><span class="n">1</span>Скільки граємо</h2><div class="chips" id="tariffs"></div></section>
-        <section><h2><span class="n">2</span>День</h2><div class="days" id="days"></div></section>
-        <section><h2><span class="n">3</span>Початок</h2><div class="grid" id="starts"></div>
-          <div class="meta" id="tzNote"></div></section>
-        <section id="methodsWrap"><h2><span class="n">4</span>Оплата</h2><div class="chips" id="methods"></div></section>
+  <main id="main"><div class="inner">
+    <div id="loading"><div class="spin"></div></div>
+
+    <!-- вхід -->
+    <div id="vGate" class="hidden"><div class="hero" id="gate"></div></div>
+
+    <!-- гра -->
+    <div id="vHome" class="hidden home">
+      <div class="hero" id="hero"></div>
+      <div class="side" id="side"></div>
+      <div class="foot2"><span id="ver"></span><span class="me"><span id="meName"></span><button type="button" class="lnk" data-act="logout">Вийти</button></span></div>
+    </div>
+
+    <!-- бронювання -->
+    <div id="vBook" class="hidden">
+      <div class="vhead">
+        <div><h2 class="vtitle">Бронювання</h2><p class="hint vtitle">Обери, скільки грати, день і початок. Час закріплюється за тобою одразу, оплата тут же.</p></div>
+        <div class="seg"><button type="button" class="on" id="tabNew">Забронювати</button><button type="button" id="tabMine">Мої броні</button></div>
+      </div>
+      <div id="pNew">
+        <div id="fullNote" class="hidden"><p class="lead" id="fullText"></p></div>
+        <div id="picker" class="steps">
+          <div><p class="cap">1. Скільки граємо</p><div class="pick" id="tariffs"></div></div>
+          <div><p class="cap">2. День</p><div class="days" id="days"></div>
+            <p class="cap mt">3. Початок</p><div class="times" id="starts"></div><p class="small" id="tzNote" style="margin-top:8px"></p></div>
+          <div id="methodsWrap"><p class="cap">4. Оплата</p><div class="pick" id="methods"></div></div>
+        </div>
+      </div>
+      <div id="pMine" class="hidden"><div id="mine"></div></div>
+    </div>
+
+    <!-- продовження -->
+    <div id="vExtend" class="hidden">
+      <button type="button" class="back" data-tab="home">‹ Гра</button>
+      <div class="vhead t-only"><h2 class="vtitle">Продовжити гру</h2></div>
+      <p class="lead" id="extInfo"></p>
+      <div id="extPending" class="hidden"></div>
+      <div id="extPick" class="steps mt">
+        <div><p class="cap">1. На скільки продовжити</p><div class="pick" id="extHours"></div></div>
+        <div id="extMethodsWrap"><p class="cap">2. Оплата</p><div class="pick" id="extMethods"></div></div>
       </div>
     </div>
-    <div id="pMine" class="hidden"><section id="mine"></section></div>
-  </div>
 
-  <!-- продовження -->
-  <div id="vExtend" class="hidden">
-    <section><div class="note" id="extInfo"></div></section>
-    <section id="extPending" class="hidden"></section>
-    <div id="extPick">
-      <section><h2><span class="n">1</span>На скільки продовжити</h2><div class="chips" id="extHours"></div></section>
-      <section id="extMethodsWrap"><h2><span class="n">2</span>Оплата</h2><div class="chips" id="extMethods"></div></section>
+    <!-- свій PSN -->
+    <div id="vPsn" class="hidden">
+      <div class="vhead t-only"><h2 class="vtitle">Мій акаунт PSN</h2></div>
+      <div id="psn"></div>
     </div>
-  </div>
 
-  <!-- свій PSN -->
-  <div id="vPsn" class="hidden"><section id="psn"></section></div>
+    <!-- як керувати приставкою -->
+    <div id="vHelp" class="hidden">
+      <div class="vhead"><div><h2 class="vtitle">Як керувати приставкою</h2><p class="hint">Це працює в будь-якій грі й у меню PS5.</p></div></div>
+      <div class="grid2" id="help" style="row-gap:0"></div>
+    </div>
 
-  <!-- як керувати приставкою -->
-  <div id="vHelp" class="hidden"><section id="help"></section></div>
+    <!-- якість картинки і перевірка інтернету -->
+    <div id="vQuality" class="hidden">
+      <div class="grid2">
+        <div><h2 class="vtitle">Якість картинки</h2><p class="hint vtitle lhide">«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш інше, якість буде сталою.</p>
+          <div class="pick mt" id="qList"></div></div>
+        <div id="netBox"><p class="cap">Перевірити інтернет</p>
+          <p class="small">Необов'язково. Перевірка міряє інтернет цього пристрою, а гра ще залежить від того, Wi-Fi це чи кабель. Витрачає до 40 МБ трафіку.</p>
+          <div id="netRows"></div>
+          <div id="netRes"></div>
+          <div class="actions"><button type="button" class="btn ghost" id="netBtn">Перевірити інтернет</button><button type="button" class="btn hidden" id="netApply">Застосувати</button></div>
+        </div>
+      </div>
+    </div>
+  </div></main>
+
+  <div id="bar" class="hidden"><div class="in"><div id="barHint"></div><button type="button" class="btn" id="barBtn"></button></div></div>
 </div>
 
-<div class="bar hidden" id="bar"><div class="in"><div class="barhint" id="barHint"></div><button class="big" id="barBtn"></button></div></div>
+<!-- меню під час гри -->
+<section id="pm" class="hidden" aria-label="Меню під час гри">
+  <div class="pm-head"><p class="big">Пауза AnyPlay</p><span class="eyebrow" id="pmLeft"></span></div>
+  <div class="pm-grid">
+    <nav class="pm-left" id="pmNav"></nav>
+    <div class="pm-right" id="pmRight">
+      <button type="button" class="pm-back" id="pmBack">‹ Меню</button>
+      <div id="pmText"></div>
+      <div id="pmSlot"></div>
+    </div>
+  </div>
+  <div class="foot"><span id="pmNet"></span><span>Закрити меню: «Назад»</span></div>
+</section>
 
 <!-- оплата -->
 <div id="sheet" class="hidden">
-  <header><button id="sheetBack" aria-label="Назад">‹</button><h1>Оплата</h1></header>
-  <div class="wrap">
-    <section>
-      <div class="sub" id="payWhen"></div>
+  <header class="subhead"><button type="button" id="sheetBack" aria-label="Назад">‹</button><h1>Оплата</h1></header>
+  <main><div class="inner grid2">
+    <div class="hero">
+      <span class="eyebrow" id="payWhen"></span>
       <div class="amount" id="payAmount"></div>
-      <div class="sub" id="payTimer"></div>
-    </section>
-    <section><div class="card" id="payReq"></div></section>
-    <section id="payForm">
-      <div class="meta" style="margin:0 0 8px">Ім'я відправника платежу (необов'язково, допомагає швидше знайти оплату)</div>
-      <input id="paySender" maxlength="60" autocomplete="off">
-      <div class="btns"><button class="b ok" id="payDone">Я оплатив</button></div>
-      <div class="btns"><button class="b bad" id="payCancel">Скасувати цю бронь</button></div>
-    </section>
-    <section id="payWait" class="hidden"><div class="note" id="payWaitText"></div><div class="spin"></div></section>
-    <section id="payOk" class="hidden"><div class="note" id="payOkText"></div><div class="btns"><button class="b ok" id="payClose">Готово</button></div></section>
-  </div>
+      <p class="lead" id="payTimer"></p>
+    </div>
+    <div>
+      <div id="payReq"></div>
+      <div id="payForm" class="mt">
+        <p class="small">Ім'я відправника платежу (необов'язково, допомагає швидше знайти оплату)</p>
+        <input class="field" id="paySender" maxlength="60" autocomplete="off">
+        <div class="actions"><button type="button" class="btn" id="payDone">Я оплатив</button><button type="button" class="btn ghost bad" id="payCancel">Скасувати цю бронь</button></div>
+      </div>
+      <div id="payWait" class="hidden mt"><p class="lead" id="payWaitText"></p><div class="spin"></div></div>
+      <div id="payOk" class="hidden mt"><p class="lead" id="payOkText"></p><div class="actions"><button type="button" class="btn" id="payClose">Готово</button></div></div>
+    </div>
+  </div></main>
 </div>
 <div id="toast"></div>
 
 <script>
+'use strict';
 // ── міст до програми (на Android його дає сама програма; у браузері для перевірки — прямий запит) ──
 const native = window.AnyPlay || null;
 const waiting = {}; let reqId = 0;
@@ -172,38 +410,225 @@ function haptic(){ try { native && native.haptic(); } catch(e) {} }
 function copy(t){ if(native) native.copy(String(t)); else if(navigator.clipboard) navigator.clipboard.writeText(String(t)); toast('Скопійовано: ' + t); }
 function openUrl(u){ if(native) native.open(u); else window.open(u, '_blank'); }
 function closeApp(){ if(native) native.close(); else history.back(); }
+// команда програмі (вхід, гра, вихід тощо); виконує головний екран або гра, що відкрила цю сторінку
+function act(name, arg){ try { native && native.action && native.action(String(name), arg == null ? '' : String(arg)); } catch(e) {} }
+function nativeJson(fn, arg){ try { const t = native && native[fn] ? (arg === undefined ? native[fn]() : native[fn](arg)) : ''; return t ? JSON.parse(t) : null; } catch(e) { return null; } }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 const WD = ['Нд','Пн','Вт','Ср','Чт','Пт','Сб'], MON = ['січ','лют','бер','квіт','трав','черв','лип','серп','вер','жовт','лист','груд'];
 let skew = 0;   // час сервера мінус час телефона, с
 const nowTs = () => Math.floor(Date.now() / 1000) + skew;
-function hm(ts){ const d = new Date(ts * 1000); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
+const pad2 = n => String(n).padStart(2, '0');
+function hm(ts){ const d = new Date(ts * 1000); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
 function dayName(ts){ const d = new Date(ts * 1000), a = new Date(), b = new Date(Date.now() + 864e5);
   const same = (x, y) => x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
   return same(d, a) ? 'сьогодні' : same(d, b) ? 'завтра' : WD[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()]; }
 function range(a, b){ return dayName(a) + ', ' + hm(a) + '–' + hm(b); }
+const upFirst = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+// скільки годин: «на 1 годину», «на 2 години», «на 5 годин»
+function hoursAcc(n){ return n % 10 == 1 && n % 100 != 11 ? 'годину' : hoursWord(n); }
 function hoursWord(n){ return n % 10 == 1 && n % 100 != 11 ? 'година' : (n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14) ? 'години' : 'годин'); }
+// таймер: години:хвилини:секунди
+function dur(s){ s = Math.max(0, Math.floor(s)); return Math.floor(s / 3600) + ':' + pad2(Math.floor(s / 60) % 60) + ':' + pad2(s % 60); }
+// час сервера за годинником телефона, як на головному екрані: «19:00», «завтра о 19:00», «24.11 о 19:00»
+function fmtTime(ts){
+  if(!(ts > 0)) return '';
+  const d = new Date((ts - skew) * 1000), a = new Date(), b = new Date(Date.now() + 864e5);
+  const same = (x, y) => x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
+  const t = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  return same(d, a) ? t : same(d, b) ? 'завтра о ' + t : d.getDate() + '.' + pad2(d.getMonth() + 1) + ' о ' + t;
+}
+const num = (x, digits) => x.toFixed(digits).replace('.', ',');
 const ERR = {busy: 'Цей час щойно зайняли. Обери інший.', limit: 'У тебе вже максимум броней. Спершу зіграй або скасуй одну з них.',
   closed: 'Зараз технічні роботи, бронювання тимчасово закрите.', pending: 'Попереднє продовження ще перевіряється. Зачекай хвилину.',
   no_session: 'Продовжити можна лише під час гри.', status: 'Цю бронь уже не можна оплатити.', auth: 'Вхід застарів. Увійди через Telegram знову.'};
 function errText(r){ return r.json.text || ERR[r.json.error] || (r.status === 0 ? 'Немає зв\'язку з сервером. Перевір інтернет.' : 'Не вдалося (помилка ' + r.status + '). Спробуй ще раз.'); }
 
-const HASH = (location.hash || '#book').slice(1), MODE = HASH === 'extend' || HASH === 'psn' || HASH === 'help' ? HASH : 'book';
-let B = null, tab = 'new', code = null, dayIdx = 0, starts = null, start = 0, method = null, busy = false;
+// ── режим сторінки: головний екран програми, меню під час гри або одна сторінка у вікні ──
+const HASH = decodeURIComponent((location.hash || '#home').slice(1));
+const ROUTE = HASH.split(':')[0], ARG = HASH.split(':')[1] || '';
+const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','quality'].includes(ROUTE) ? 'single' : 'home';
+document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
-function show(view){ ['vBook','vExtend','vPsn','vHelp'].forEach(v => $(v).classList.toggle('hidden', v !== view)); $('loading').classList.add('hidden'); }
+const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality'};
+const TITLES = {book: 'Бронювання', extend: 'Продовжити гру', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Якість картинки'};
+let view = null, viewTok = 0, method = null, busy = false;
+
+function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
+function loadingView(){ hideViews(); $('loading').innerHTML = '<div class="spin"></div>'; $('loading').classList.remove('hidden'); }
+function failView(r, retry){
+  hideViews(); $('loading').classList.remove('hidden');
+  $('loading').innerHTML = '<p class="lead">' + esc(errText(r)) + '</p><div class="actions"><button type="button" class="btn ghost" id="retryBtn">Спробувати ще раз</button></div>';
+  $('retryBtn').onclick = retry;
+}
+function show(v){ hideViews(); $('loading').classList.add('hidden'); $(VIEWS[v]).classList.remove('hidden'); }
 function bar(text, hint, enabled, fn){ $('bar').classList.remove('hidden'); $('barBtn').textContent = text; $('barHint').textContent = hint || '';
   $('barHint').classList.toggle('hidden', !hint); $('barBtn').disabled = !enabled; $('barBtn').onclick = fn; }
 function hideBar(){ $('bar').classList.add('hidden'); }
 
-// ── бронювання ──
-async function loadBook(keep){
+/** Відкрити розділ */
+function go(v){
+  if(view === 'psn' && v !== 'psn') clearInterval(psnTimer);
+  if(view === 'quality' && v !== 'quality') netStop();
+  view = v; viewTok++;
+  hideBar(); $('main').scrollTop = 0;
+  $('subTitle').textContent = TITLES[v] || 'AnyPlay';
+  markNav();
+  if(v === 'gate'){ renderGate(); show('gate'); }
+  else if(v === 'home'){ renderHome(true); show('home'); loadHomeMine(true); }
+  else if(v === 'book'){ loadBook(false); }
+  else if(v === 'extend'){ loadExtend(); }
+  else if(v === 'psn'){ psnKey = ''; loadPsn(); }
+  else if(v === 'help'){ loadHelp(); }
+  else if(v === 'quality'){ loadQuality(); }
+}
+function markNav(){
+  const on = view === 'extend' ? 'home' : view;
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === on));
+  const b = document.querySelector('#nav button.on');
+  if(b && b.scrollIntoView) try { b.scrollIntoView({block: 'nearest', inline: 'nearest'}); } catch(e) {}
+  navFade();
+}
+function navFade(){ const n = $('nav'); n.classList.toggle('fade', n.scrollWidth - n.clientWidth - n.scrollLeft > 4); }
+let bookTab = 'new';
+function goTab(t, sub){ if(t === 'book' && sub) bookTab = sub; go(t); }
+
+// ── головний екран: стан від програми ──
+let H = {state: 'login'};
+window.__anyplayHome = json => { try { H = typeof json === 'string' ? JSON.parse(json) : (json || {}); } catch(e) { return; } homeChanged(); };
+function homeChanged(){
+  if(MODE !== 'home') return;
+  if(typeof H.skew === 'number') skew = H.skew;
+  document.body.classList.toggle('admin', !!H.admin);
+  const gated = !H.loggedIn || H.state === 'login' || H.state === 'pairing';
+  $('top').classList.toggle('gated', gated);
+  $('whoName').textContent = H.user || ''; $('meName').textContent = H.user || '';
+  $('ver').textContent = 'AnyPlay для Android, збірка ' + (H.build || '');
+  if(gated){ if(view !== 'gate') go('gate'); else renderGate(); return; }
+  if(view === 'gate' || view == null){ go('home'); return; }
+  if(H.admin && (view === 'book' || view === 'psn')){ go('home'); return; }
+  if(view === 'home'){ renderHome(false); loadHomeMine(false); }
+  if(view === 'quality') renderQuality();
+}
+function renderGate(){
+  const pairing = H.state === 'pairing';
+  $('gate').innerHTML = (pairing
+    ? '<span class="eyebrow">Вхід</span><p class="big">Підтвердь вхід у Telegram</p><p class="lead">Відкрився бот AnyPlay. Натисни там «Старт» і повернись сюди: програма продовжить сама.</p><div class="spin"></div>'
+      + '<div class="actions"><button type="button" class="btn ghost" data-act="cancelLogin">Скасувати</button></div>'
+    : '<span class="eyebrow">Ласкаво просимо</span><p class="big">Грай у PS5 зі свого телефона</p><p class="lead">Увійди через Telegram: це той самий акаунт, з якого ти бронюєш час у боті.</p>'
+      + '<div class="actions"><button type="button" class="btn" data-act="login">Увійти через Telegram</button></div>')
+    + '<p class="small" style="margin-top:14px">AnyPlay для Android, збірка ' + esc(H.build || '') + '</p>';
+}
+let heroKey = '';
+function renderHome(force){
+  const a = H.adminView, adminHero = H.admin && a && ['play','wait','no_console'].includes(H.state);
+  const html = adminHero ? heroAdmin(a) : heroUser();
+  if(force || html !== heroKey){ heroKey = html; $('hero').innerHTML = html; }
+  renderSide();
+  tick();
+}
+function heroUser(){
+  const s = H.session || {}, st = H.state, nx = s.next || {}, bk = s.booking;
+  if(st === 'play'){
+    const end = bk ? bk.end : 0, c = s.console || {};
+    let h = '<span class="eyebrow">' + (end > 0 ? 'Можна грати!' : 'Твоя гра') + '</span>';
+    if(H.busy) return h + '<p class="big">Шукаємо приставку…</p><p class="lead">' + (end > 0 ? 'Твій час до <b>' + esc(fmtTime(end)) + '</b>. ' : '') + 'Це займає до хвилини.</p><div class="spin"></div>';
+    h += end > 0 ? '<div class="timer play" id="tick" data-to="' + end + '">' + dur(end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>';
+    const lines = [];
+    if(end > 0) lines.push('Лишилось до кінця гри. Твій час до <b>' + esc(fmtTime(end)) + '</b>.');
+    if(c.psn) lines.push('Акаунт PSN: ' + esc(c.psn) + ' (' + (c.own ? 'твій' : 'спільний') + ').');
+    if(lines.length) h += '<p class="lead">' + lines.join(' ') + '</p>';
+    return h + '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button>'
+      + (bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити гру</button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
+  }
+  if(st === 'no_console') return '<span class="eyebrow bad">Приставка</span><p class="big">' + (s.closed ? 'Технічні роботи' : 'Приставка зараз недоступна') + '</p>'
+    + '<p class="lead">Ми вже це лагодимо. Твоя бронь і оплата збережені. Якщо є питання, напиши в підтримку.</p>'
+    + '<div class="actions"><button type="button" class="btn" data-act="bot">Відкрити бота</button></div>';
+  if(st === 'update') return '<span class="eyebrow">Оновлення</span><p class="big">Потрібна нова версія</p>'
+    + '<p class="lead">Ця версія програми застаріла й більше не підключається до приставки. Натисни «Оновити»: нова версія встановиться сама, вхід і броні збережуться.</p>'
+    + '<div class="actions"><button type="button" class="btn" data-act="update">Оновити</button></div>';
+  if(st === 'offline') return '<span class="eyebrow bad">Немає зв\'язку</span><p class="big">Перевір інтернет</p><p class="lead">Не вдається з\'єднатися з сервером AnyPlay.</p>'
+    + '<div class="actions"><button type="button" class="btn" data-act="retry">Спробувати ще раз</button></div>';
+  if(nx.start > 0) return '<span class="eyebrow">Твоя наступна гра</span><div class="timer" id="tick" data-to="' + nx.start + '" data-open="1">' + dur(nx.start - nowTs()) + '</div>'
+    + '<p class="lead">Грати можна з <b>' + esc(fmtTime(nx.start)) + '</b> до <b>' + esc(fmtTime(nx.end)) + '</b>. Кнопка «Грати» з\'явиться тут сама.</p>'
+    + '<div class="actions"><button type="button" class="btn" data-tab="book" data-sub="mine">Мої броні</button><button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати ще</button></div>';
+  return '<span class="eyebrow">Бронювання</span><p class="big">Броні поки немає</p><p class="lead">Забронюй час прямо тут. Коли він настане, з\'явиться кнопка «Грати».</p>'
+    + '<div class="actions"><button type="button" class="btn" data-tab="book" data-sub="new">Забронювати</button></div>';
+}
+function heroAdmin(a){
+  return '<span class="eyebrow' + (a.closed ? ' bad' : '') + '">' + (a.closed ? 'Доступ клієнтам закрито' : 'Панель адміна') + '</span>'
+    + '<p class="big">' + esc(H.busy ? 'Шукаємо приставку…' : (a.title || 'Зараз ніхто не грає')) + '</p>'
+    + '<p class="lead">' + (a.lines || []).map(esc).join('<br>') + '</p>' + (H.busy ? '<div class="spin"></div>' : '')
+    + '<div class="actions"><button type="button" class="btn" data-act="play">Підключитись до приставки</button>'
+    + (a.current ? '<button type="button" class="btn ghost" data-act="adminKick">Завершити гру</button>' : '')
+    + '<button type="button" class="btn ghost" data-act="adminToggle">' + (a.closed ? 'Відкрити доступ' : 'Закрити доступ') + '</button></div>';
+}
+const CHIP = {hold: ['wait', 'чекає оплату'], pending_review: ['wait', 'перевіряємо оплату'], paid: ['ok', 'оплачено'], active: ['live', 'йде гра']};
+function bookingRow(m, click){
+  const c = CHIP[m.status] || ['', m.status];
+  return '<div class="row' + (click ? ' click" data-tab="book" data-sub="mine' : '') + '"><span><span class="t">' + esc(upFirst(range(m.start, m.end))) + '</span><span class="s">'
+    + esc(m.title) + ', ' + esc(m.price) + '</span></span><span class="chip ' + c[0] + '">' + esc(c[1]) + '</span></div>';
+}
+let homeMine = null, homeMineAt = 0;
+async function loadHomeMine(force){
+  if(H.admin || !H.loggedIn || (!force && Date.now() - homeMineAt < 30000)) return;
+  homeMineAt = Date.now();
   const r = await api('GET', '/api/app/book');
-  if(r.status !== 200 || !r.json.ok){ $('loading').innerHTML = '<section><div class="note">' + esc(errText(r)) + '</div></section>'; return; }
+  if(r.status === 200 && r.json.ok){ homeMine = r.json.mine || []; if(view === 'home') renderSide(); }
+}
+function renderSide(){
+  const s = H.session || {}, q = H.quality || {}, a = H.adminView;
+  let h = '';
+  if(H.admin){
+    h += '<p class="cap">Адмін</p>'
+      + '<div class="row click" data-act="crm"><span><span class="t">CRM</span><span class="s">броні й клієнти</span></span><span class="chip">бот</span></div>'
+      + '<div class="row click" data-act="adminPsn"><span><span class="t">Свої PSN</span><span class="s">заявки клієнтів на свій акаунт</span></span>'
+      + (a && a.waiting > 0 ? '<span class="chip wait">чекають: ' + a.waiting + '</span>' : '<span class="chip">немає заявок</span>') + '</div>'
+      + '<div class="row click" data-act="adminShared"><span><span class="t">Спільний PSN</span><span class="s">для клієнтів без свого акаунта</span></span><span class="chip">' + esc(a ? a.shared : '') + '</span></div>';
+  } else {
+    const land = window.innerHeight < 500 && window.innerWidth > window.innerHeight, max = land ? (window.innerHeight < 370 ? 1 : 2) : 3;
+    h += '<p class="cap">Мої броні</p>';
+    if(homeMine === null) h += '<p class="small" style="padding:10px 0">Завантажуємо…</p>';
+    else if(!homeMine.length) h += '<p class="small" style="padding:10px 0">Броней поки немає.</p>';
+    else h += homeMine.slice(0, max).map(m => bookingRow(m, true)).join('') + (homeMine.length > max ? '<button type="button" class="more" data-tab="book" data-sub="mine">Усі броні: ' + homeMine.length + '</button>' : '');
+  }
+  h += '<p class="cap">Налаштування гри</p>'
+    + '<div class="row click" data-tab="quality"><span><span class="t">Якість картинки</span><span class="s">' + (q.auto ? 'сама підлаштовується під інтернет' : 'стала, обрана вручну') + '</span></span><span class="chip">' + esc(q.name || 'Авто') + '</span></div>';
+  if(!H.admin){
+    const psn = !s.myPsn ? ['', 'спільний'] : s.myPsnReady ? ['ok', s.myPsn] : ['wait', 'підключається'];
+    h += '<div class="row click" data-tab="psn"><span><span class="t">Акаунт PSN</span><span class="s">на якому акаунті грати</span></span><span class="chip ' + psn[0] + '">' + esc(psn[1]) + '</span></div>'
+      + '<div class="row click" data-act="bot"><span><span class="t">Підтримка</span><span class="s">написати в бот</span></span><span class="chip">Telegram</span></div>';
+  }
+  $('side').innerHTML = h;
+}
+// щосекунди: таймери гри; коли настав час гри, кілька разів питаємо сервер, щоб кнопка «Грати» з'явилась одразу
+let openAt = 0, openAsk = [];
+function tick(){
+  const t = $('tick');
+  if(t && MODE === 'home'){
+    const to = +t.dataset.to, left = to - nowTs();
+    t.textContent = dur(left);
+    if(t.dataset.open && left <= 0 && openAt !== to){ openAt = to; openAsk = [0, 3, 8, 15, 30].map(x => Date.now() + x * 1000); }
+  }
+  while(openAsk.length && Date.now() >= openAsk[0]){ openAsk.shift(); act('refresh'); }
+  if(MODE === 'menu') pmTick();
+}
+setInterval(tick, 1000);
+
+// ── бронювання ──
+let B = null, code = null, dayIdx = 0, starts = null, start = 0;
+async function loadBook(keep){
+  const tok = viewTok;
+  if(!B || !keep) loadingView();
+  const r = await api('GET', '/api/app/book');
+  if(tok !== viewTok) return;
+  if(r.status !== 200 || !r.json.ok){ failView(r, () => loadBook(false)); return; }
   B = r.json; skew = B.now - Math.floor(Date.now() / 1000);
+  if(MODE === 'home'){ homeMine = B.mine; homeMineAt = Date.now(); }
   if(!method || !B.methods.some(m => m.code === method)) method = B.methods.length ? B.methods[0].code : null;
   if(!code || !B.tariffs.some(t => t.code === code)) code = B.tariffs.length ? B.tariffs[0].code : null;
+  if(dayIdx >= B.days.length) dayIdx = 0;
   if(!keep){ starts = null; start = 0; }
-  show('vBook'); renderBook();
+  show('book'); renderBook();
   if(!keep) loadStarts();
 }
 async function loadStarts(){
@@ -217,44 +642,44 @@ async function loadStarts(){
 }
 function tariff(){ return B.tariffs.find(t => t.code === code); }
 function renderBook(){
-  $('title').textContent = 'Бронювання';
-  $('tabNew').classList.toggle('on', tab === 'new'); $('tabMine').classList.toggle('on', tab === 'mine');
+  $('tabNew').classList.toggle('on', bookTab === 'new'); $('tabMine').classList.toggle('on', bookTab === 'mine');
   $('tabMine').textContent = 'Мої броні' + (B.mine.length ? ' (' + B.mine.length + ')' : '');
-  $('pNew').classList.toggle('hidden', tab !== 'new'); $('pMine').classList.toggle('hidden', tab !== 'mine');
+  $('pNew').classList.toggle('hidden', bookTab !== 'new'); $('pMine').classList.toggle('hidden', bookTab !== 'mine');
   const full = B.openCount >= B.limit, closed = B.closed;
   $('fullNote').classList.toggle('hidden', !(full || closed)); $('picker').classList.toggle('hidden', full || closed);
   $('fullText').innerHTML = closed ? 'Зараз технічні роботи, бронювання тимчасово закрите. Спробуй трохи пізніше.'
     : 'У тебе вже <b>' + B.openCount + ' з ' + B.limit + '</b> броней: це максимум. Нову можна додати після гри або якщо скасуєш одну з них у вкладці «Мої броні».';
   const tEl = $('tariffs'); tEl.innerHTML = '';
-  B.tariffs.forEach(t => { const c = document.createElement('div'); c.className = 'chip' + (t.code === code ? ' on' : '');
-    c.innerHTML = (t.fixed || !/^h\d+$/.test(t.code) ? esc(t.title) : t.hours + ' год') + '<small>' + esc(t.prices[method] || '') + '</small>';
+  B.tariffs.forEach(t => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (t.code === code ? ' on' : '');
+    c.innerHTML = '<span>' + (t.fixed || !/^h\d+$/.test(t.code) ? esc(t.title) : t.hours + ' год') + '</span><span class="chip">' + esc(t.prices[method] || '') + '</span>';
     c.onclick = () => { code = t.code; haptic(); renderBook(); loadStarts(); }; tEl.appendChild(c); });
   const dEl = $('days'); dEl.innerHTML = '';
-  B.days.forEach((d, i) => { const dt = new Date(d.date + 'T12:00:00'); const c = document.createElement('div'); c.className = 'day' + (i === dayIdx ? ' on' : '');
+  B.days.forEach((d, i) => { const dt = new Date(d.date + 'T12:00:00'); const c = document.createElement('button'); c.type = 'button'; c.className = 'day' + (i === dayIdx ? ' on' : '');
     c.innerHTML = '<span>' + (i === 0 ? 'Сьогодні' : i === 1 ? 'Завтра' : WD[dt.getDay()]) + '</span><b>' + dt.getDate() + '</b><span>' + MON[dt.getMonth()] + '</span>';
     c.onclick = () => { dayIdx = i; haptic(); renderBook(); loadStarts(); }; dEl.appendChild(c); });
+  const on = dEl.children[dayIdx]; if(on && on.scrollIntoView) try { on.scrollIntoView({block: 'nearest', inline: 'nearest'}); } catch(e) {}
   $('methodsWrap').classList.toggle('hidden', B.methods.length < 2);
   const mEl = $('methods'); mEl.innerHTML = '';
-  B.methods.forEach(m => { const c = document.createElement('div'); c.className = 'chip' + (m.code === method ? ' on' : '');
-    const t = tariff(); c.innerHTML = esc(m.label) + '<small>' + esc(t ? t.prices[m.code] || '' : '') + '</small>';
+  B.methods.forEach(m => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (m.code === method ? ' on' : '');
+    const t = tariff(); c.innerHTML = '<span><span class="ot">' + esc(m.label) + '</span><span class="small">' + esc(t ? t.prices[m.code] || '' : '') + '</span></span><i></i>';
     c.onclick = () => { method = m.code; haptic(); renderBook(); }; mEl.appendChild(c); });
   renderStarts(); renderMine(); renderBar();
 }
 function renderStarts(){
   const el = $('starts'), t = tariff(); el.innerHTML = '';
   $('tzNote').textContent = 'Час показано за годинником твого телефона.';
-  if(starts === null){ el.innerHTML = '<div class="note" style="grid-column:1/-1">Шукаємо вільний час…</div>'; return; }
-  if(!starts.length){ el.innerHTML = '<div class="note" style="grid-column:1/-1">На цей день такий час уже не вміщується. Обери інший день або меншу тривалість.</div>'; return; }
-  starts.forEach(s => { const c = document.createElement('div'); c.className = 'slot' + (s === start ? ' on' : '');
+  if(starts === null){ el.innerHTML = '<div class="note">Шукаємо вільний час…</div>'; return; }
+  if(!starts.length){ el.innerHTML = '<div class="note">На цей день такий час уже не вміщується. Обери інший день або меншу тривалість.</div>'; return; }
+  starts.forEach(s => { const c = document.createElement('button'); c.type = 'button'; c.className = s === start ? 'on' : '';
     c.innerHTML = hm(s) + '<small>до ' + hm(s + (t ? t.hours * 3600 : 0)) + '</small>';
     c.onclick = () => { start = s === start ? 0 : s; haptic(); renderStarts(); renderBar(); }; el.appendChild(c); });
 }
 function renderBar(){
-  if(MODE !== 'book') return;
-  if(tab !== 'new' || B.openCount >= B.limit || B.closed){ hideBar(); return; }
+  if(view !== 'book' || !B) return;
+  if(bookTab !== 'new' || B.openCount >= B.limit || B.closed){ hideBar(); return; }
   const t = tariff();
   if(!start || !t){ bar('Обери час початку', '', false, null); return; }
-  bar('Забронювати за ' + (t.prices[method] || ''), range(start, start + t.hours * 3600) + '. Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book);
+  bar('Забронювати за ' + (t.prices[method] || ''), upFirst(range(start, start + t.hours * 3600)) + '. Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book);
 }
 async function book(){
   if(busy) return; busy = true; renderBar();
@@ -264,21 +689,21 @@ async function book(){
   haptic(); start = 0; openPay(r.json.pending, 'book');
   loadBook(true); loadStarts();
 }
-const ST = {hold: ['hold', 'Чекає оплати'], pending_review: ['rev', 'Перевіряємо оплату'], paid: ['paid', 'Оплачено'], active: ['paid', 'Зараз граєш']};
 let confirmId = 0;
 function renderMine(){
   const el = $('mine'); el.innerHTML = '';
-  if(!B.mine.length){ el.innerHTML = '<div class="note">Броней поки немає. Обери час у вкладці «Забронювати».</div>'; return; }
-  B.mine.forEach(m => { const st = ST[m.status] || ['', m.status]; const c = document.createElement('div'); c.className = 'card';
-    let h = '<div class="top"><div><b class="t">' + esc(m.title) + '</b><div class="when">' + esc(range(m.start, m.end)) + ', ' + esc(m.price) + '</div></div><span class="st ' + st[0] + '">' + st[1] + '</span></div>';
+  if(!B.mine.length){ el.innerHTML = '<p class="lead">Броней поки немає. Обери час у вкладці «Забронювати».</p>'; return; }
+  B.mine.forEach(m => { const c = document.createElement('div'); c.className = 'bk';
+    let h = bookingRow(m, false);
     if(m.extPending) h += '<div class="meta">Продовження до ' + hm(m.extPending.end) + ' за ' + esc(m.extPending.price) + ': ' + (m.extPending.status === 'hold' ? 'чекає оплати' : 'перевіряємо оплату') + '.</div>';
     if(m.cancelNote) h += '<div class="meta">' + esc(m.cancelNote) + '</div>';
-    h += '<div class="btns">';
-    if(m.pending && m.status === 'hold') h += '<button class="b ok" data-pay="' + m.id + '">Оплатити</button>';
-    if(m.pending && m.status === 'pending_review') h += '<button class="b" data-pay="' + m.id + '">Реквізити</button>';
-    if(m.canCancel) h += confirmId === m.id ? '<button class="b bad" data-yes="' + m.id + '">Так, скасувати</button><button class="b" data-no="1">Ні, залишити</button>'
-      : '<button class="b bad" data-cancel="' + m.id + '">Скасувати бронь</button>';
-    h += '</div>'; c.innerHTML = h; el.appendChild(c); });
+    let b = '';
+    if(m.pending && m.status === 'hold') b += '<button type="button" class="btn sm" data-pay="' + m.id + '">Оплатити</button>';
+    if(m.pending && m.status === 'pending_review') b += '<button type="button" class="btn sm ghost" data-pay="' + m.id + '">Реквізити</button>';
+    if(m.canCancel) b += confirmId === m.id ? '<button type="button" class="btn sm ghost bad" data-yes="' + m.id + '">Так, скасувати</button><button type="button" class="btn sm ghost" data-no="1">Ні, залишити</button>'
+      : '<button type="button" class="btn sm ghost bad" data-cancel="' + m.id + '">Скасувати бронь</button>';
+    if(b) h += '<div class="actions" style="flex-direction:row">' + b + '</div>';
+    c.innerHTML = h; el.appendChild(c); });
   el.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => { const m = B.mine.find(x => x.id == b.dataset.pay); if(m) openPay(m.pending, 'book'); });
   el.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => { confirmId = +b.dataset.cancel; renderMine(); });
   el.querySelectorAll('[data-no]').forEach(b => b.onclick = () => { confirmId = 0; renderMine(); });
@@ -289,7 +714,8 @@ async function cancelBooking(id){
   const r = await api('POST', '/api/app/book/cancel', {bookingId: id});
   toast(r.json.text || errText(r));
   if(r.json.refund === 'bot') setTimeout(() => openUrl('https://t.me/play_any_bot'), 1500);
-  if(MODE === 'extend') loadExtend(); else { await loadBook(true); loadStarts(); }
+  act('refresh');
+  if(view === 'extend') loadExtend(); else if(view === 'book'){ await loadBook(true); loadStarts(); }
 }
 
 // ── оплата ──
@@ -297,20 +723,21 @@ let P = null, payFrom = 'book', payTick = null, payPoll = null;
 function openPay(p, from){
   P = p; payFrom = from;
   $('sheet').classList.remove('hidden'); hideBar();
-  $('payWhen').textContent = range(p.start, p.end);
+  $('payWhen').textContent = upFirst(range(p.start, p.end));
   $('payAmount').textContent = p.price;
   const req = $('payReq'); req.innerHTML = '';
   const rows = [{label: 'Сума', value: p.amount + ' ' + p.currency, copyValue: p.amount, copy: true}].concat(p.requisites || []);
   rows.forEach(x => { const d = document.createElement('div'); d.className = 'req';
-    d.innerHTML = '<div class="l"><span>' + esc(x.label) + '</span><b>' + esc(x.value) + '</b></div>';
-    if(x.url){ const b = document.createElement('button'); b.textContent = 'Відкрити'; b.onclick = () => openUrl(x.value); d.appendChild(b); }
-    else if(x.copy){ const b = document.createElement('button'); b.textContent = 'Копіювати'; b.onclick = () => copy(x.copyValue || x.value); d.appendChild(b); }
+    d.innerHTML = '<div><span>' + esc(x.label) + '</span><b>' + esc(x.value) + '</b></div>';
+    if(x.url){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm ghost'; b.textContent = 'Відкрити'; b.onclick = () => openUrl(x.value); d.appendChild(b); }
+    else if(x.copy){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm ghost'; b.textContent = 'Копіювати'; b.onclick = () => copy(x.copyValue || x.value); d.appendChild(b); }
     req.appendChild(d); });
-  if(p.payUrl){ const d = document.createElement('div'); d.className = 'btns'; d.innerHTML = '<button class="b ok">Відкрити сторінку оплати</button>'; d.firstChild.onclick = () => openUrl(p.payUrl); req.appendChild(d); }
+  if(p.payUrl){ const d = document.createElement('div'); d.className = 'actions'; d.innerHTML = '<button type="button" class="btn">Відкрити сторінку оплати</button>'; d.firstChild.onclick = () => openUrl(p.payUrl); req.appendChild(d); }
   const review = p.status === 'pending_review';
   $('payForm').classList.toggle('hidden', review); $('payWait').classList.toggle('hidden', !review); $('payOk').classList.add('hidden');
   if(review){ $('payWaitText').textContent = 'Позначку «Я оплатив» отримали. Перевіряємо платіж, це займає до кількох хвилин. Можна закрити це вікно: час додасться сам.'; startPayPoll(); }
   clearInterval(payTick); payTick = setInterval(payTimer, 1000); payTimer();
+  $('sheet').querySelector('main').scrollTop = 0;
 }
 function payTimer(){
   if(!P) return;
@@ -320,7 +747,9 @@ function payTimer(){
 function closePay(){
   clearInterval(payTick); clearInterval(payPoll); P = null;
   $('sheet').classList.add('hidden');
-  if(payFrom === 'extend') loadExtend(); else { tab = 'mine'; loadBook(true); }
+  act('refresh'); homeMineAt = 0;
+  if(payFrom === 'extend'){ if(view === 'extend') loadExtend(); }
+  else { bookTab = 'mine'; if(view === 'book') loadBook(true); else if(MODE !== 'menu') go('book'); }
 }
 async function payDone(){
   if(!P || busy) return; busy = true; $('payDone').disabled = true;
@@ -335,9 +764,9 @@ async function payDone(){
   startPayPoll();
 }
 function payOk(){
-  clearInterval(payPoll); haptic();
+  clearInterval(payPoll); haptic(); act('refresh');
   $('payForm').classList.add('hidden'); $('payWait').classList.add('hidden'); $('payOk').classList.remove('hidden');
-  $('payOkText').innerHTML = '<div class="okline">' + icon('check') + '<b>Оплату підтверджено.</b></div>' + (payFrom === 'extend' ? 'Гру продовжено, можна грати далі.' : 'Бронь твоя. У свій час у програмі з\'явиться кнопка «Грати».');
+  $('payOkText').innerHTML = '<b>Оплату підтверджено.</b> ' + (payFrom === 'extend' ? 'Гру продовжено, можна грати далі.' : 'Бронь твоя. У свій час у програмі з\'явиться кнопка «Грати».');
 }
 function startPayPoll(){
   clearInterval(payPoll);
@@ -359,10 +788,12 @@ async function payCancel(){
 // ── продовження ──
 let E = null, extHours = 0;
 async function loadExtend(){
-  $('title').textContent = 'Продовжити гру';
+  const tok = viewTok;
+  if(!E) loadingView();
   const r = await api('GET', '/api/app/extend');
-  if(r.status !== 200 || !r.json.ok){ $('loading').innerHTML = '<section><div class="note">' + esc(errText(r)) + '</div></section>'; return; }
-  E = r.json; show('vExtend');
+  if(tok !== viewTok) return;
+  if(r.status !== 200 || !r.json.ok){ failView(r, loadExtend); return; }
+  E = r.json; show('extend');
   if(!E.active){ $('extInfo').innerHTML = 'Продовжити можна під час гри: коли твоя бронь уже почалась. Щоб зіграти в інший час, зроби нову бронь.'; $('extPick').classList.add('hidden'); $('extPending').classList.add('hidden'); hideBar(); return; }
   if(!method || !E.methods.some(m => m.code === method)) method = E.method;
   renderExtend();
@@ -372,23 +803,25 @@ function renderExtend(){
   const pend = E.pending;
   $('extPending').classList.toggle('hidden', !pend); $('extPick').classList.toggle('hidden', !!pend && pend.status === 'pending_review');
   if(pend){
-    $('extPending').innerHTML = '<div class="card"><div class="top"><div><b class="t">Продовження до ' + hm(pend.end) + '</b><div class="when">' + esc(pend.price) + '</div></div><span class="st ' + (pend.status === 'hold' ? 'hold">Чекає оплати' : 'rev">Перевіряємо оплату') + '</span></div>'
-      + '<div class="btns"><button class="b ok" id="extPay">' + (pend.status === 'hold' ? 'Оплатити' : 'Реквізити') + '</button>' + (pend.status === 'hold' ? '<button class="b bad" id="extCancel">Передумав</button>' : '') + '</div></div>';
+    const hold = pend.status === 'hold';
+    $('extPending').innerHTML = '<div class="bk"><div class="row"><span><span class="t">Продовження до ' + hm(pend.end) + '</span><span class="s">' + esc(pend.price) + '</span></span><span class="chip wait">'
+      + (hold ? 'чекає оплати' : 'перевіряємо оплату') + '</span></div><div class="actions" style="flex-direction:row"><button type="button" class="btn sm' + (hold ? '' : ' ghost') + '" id="extPay">' + (hold ? 'Оплатити' : 'Реквізити') + '</button>'
+      + (hold ? '<button type="button" class="btn sm ghost bad" id="extCancel">Передумав</button>' : '') + '</div></div>';
     $('extPay').onclick = () => openPay(pend, 'extend');
     if($('extCancel')) $('extCancel').onclick = () => cancelBooking(pend.id);
   }
   const hEl = $('extHours'); hEl.innerHTML = '';
-  E.options.forEach(o => { const c = document.createElement('div'); c.className = 'chip' + (o.hours === extHours ? ' on' : '') + (o.free ? '' : ' off');
-    c.innerHTML = '+' + o.hours + ' год<small>' + (o.free ? esc(o.prices[method] || o.price) : 'зайнято') + '</small>';
+  E.options.forEach(o => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (o.hours === extHours ? ' on' : '') + (o.free ? '' : ' off');
+    c.innerHTML = '<span>+' + o.hours + ' год, до ' + hm(E.end + o.hours * 3600) + '</span><span class="chip">' + (o.free ? esc(o.prices[method] || o.price) : 'зайнято') + '</span>';
     c.onclick = () => { if(!o.free){ toast('На стільки продовжити не вийде: далі час уже заброньований.'); return; } extHours = o.hours; haptic(); renderExtend(); }; hEl.appendChild(c); });
   $('extMethodsWrap').classList.toggle('hidden', E.methods.length < 2);
   const mEl = $('extMethods'); mEl.innerHTML = '';
-  E.methods.forEach(m => { const c = document.createElement('div'); c.className = 'chip' + (m.code === method ? ' on' : ''); c.textContent = m.label;
+  E.methods.forEach(m => { const c = document.createElement('button'); c.type = 'button'; c.className = 'opt' + (m.code === method ? ' on' : ''); c.innerHTML = '<span>' + esc(m.label) + '</span><i></i>';
     c.onclick = () => { method = m.code; haptic(); renderExtend(); }; mEl.appendChild(c); });
   const o = E.options.find(x => x.hours === extHours && x.free);
   if(E.closed || (pend && pend.status === 'pending_review')) hideBar();
   else if(!o) bar('Обери, на скільки продовжити', '', false, null);
-  else bar('Продовжити на ' + o.hours + ' ' + hoursWord(o.hours) + ' за ' + (o.prices[method] || o.price), 'Гратимеш до ' + hm(E.end + o.hours * 3600) + '.', !busy, extend);
+  else bar('Продовжити на ' + o.hours + ' ' + hoursAcc(o.hours) + ' за ' + (o.prices[method] || o.price), 'Гратимеш до ' + hm(E.end + o.hours * 3600) + '.', !busy, extend);
 }
 async function extend(){
   if(busy) return; busy = true; renderExtend();
@@ -399,41 +832,45 @@ async function extend(){
 }
 
 // ── свій акаунт PSN ──
-let psnTimer = null, psnBusy = false;
+let psnTimer = null, psnBusy = false, psnKey = '';
 async function loadPsn(){
-  $('title').textContent = 'Мій акаунт PSN';
+  const tok = viewTok;
+  if(!psnKey) loadingView();
   const r = await api('GET', '/api/app/session');
-  if(r.status !== 200 || !r.json.ok){ $('loading').innerHTML = '<section><div class="note">' + esc(errText(r)) + '</div></section>'; return; }
-  show('vPsn'); renderPsn(r.json);
-  clearInterval(psnTimer); psnTimer = setInterval(async () => { if(psnBusy) return; const x = await api('GET', '/api/app/session'); if(x.json.ok) renderPsn(x.json); }, 5000);
+  if(tok !== viewTok) return;
+  if(r.status !== 200 || !r.json.ok){ failView(r, loadPsn); return; }
+  show('psn'); renderPsn(r.json);
+  clearInterval(psnTimer); psnTimer = setInterval(async () => { if(psnBusy || view !== 'psn') return; const x = await api('GET', '/api/app/session'); if(x.json.ok && view === 'psn') renderPsn(x.json); }, 5000);
 }
-window.__anyplayEvent = name => { if(name === 'psn'){ psnBusy = false; loadPsn(); } };
-let psnKey = '';
+window.__anyplayEvent = name => { if(name === 'psn'){ psnBusy = false; act('refresh'); if(view === 'psn'){ psnKey = ''; loadPsn(); } } };
+const steps = list => list.map((t, i) => '<div class="row"><span class="t"><span class="n">' + (i + 1) + '</span>' + t + '</span><span></span></div>').join('');
 function renderPsn(s){
   const st = s.myPsnStatus || '', key = [st, s.myPsn, s.myPsnCode, s.myPsnLink, s.myPsnLinked].join('|');
   if(key === psnKey) return; psnKey = key;
   const el = $('psn'); let h = '';
-  const again = '<div class="btns"><button class="b" id="psnOther">Увійти в інший акаунт PSN</button></div>';
+  const again = '<div class="actions"><button type="button" class="btn ghost" id="psnOther">Увійти в інший акаунт PSN</button></div>';
   if(!s.myPsn){
-    h = '<div class="note"><b>Грай на своєму акаунті PlayStation</b><br>Свої збереження, свій персонаж у GTA Online, свої друзі й трофеї. Без цього ти граєш на спільному акаунті AnyPlay.</div>'
-      + '<div class="card" style="margin-top:12px"><b class="t">Як це працює</b><ol><li>Входиш у свій PSN тут, на сайті Sony. Пароль бачить лише Sony.</li><li>Адміністратор додає твій профіль на приставку (кілька хвилин).</li><li>Ти підтверджуєш вхід на приставці за посиланням, яке з\'явиться тут.</li></ol>'
-      + '<div class="btns"><button class="b ok" id="psnIn">У мене є акаунт PSN: увійти</button></div><div class="btns"><button class="b" id="psnNew">Створити акаунт PSN (безкоштовно)</button></div></div>';
+    h = '<div class="grid2"><div class="hero"><p class="lead"><b>Грай на своєму акаунті PlayStation</b><br>Свої збереження, свій персонаж у GTA Online, свої друзі й трофеї. Без цього ти граєш на спільному акаунті AnyPlay.</p>'
+      + '<div class="actions"><button type="button" class="btn" id="psnIn">У мене є акаунт PSN: увійти</button><button type="button" class="btn ghost" id="psnNew">Створити акаунт PSN (безкоштовно)</button></div></div>'
+      + '<div><p class="cap">Як це працює</p>' + steps(['Входиш у свій PSN тут, на сайті Sony. Пароль бачить лише Sony.', 'Адміністратор додає твій профіль на приставку (кілька хвилин).',
+        'Ти підтверджуєш вхід на приставці за посиланням, яке з\'явиться тут.']) + '</div></div>';
   } else if(st === 'ready'){
-    h = '<div class="note"><div class="okline">' + icon('check') + '<b>Твій акаунт PSN ' + esc(s.myPsn) + ' підключено.</b></div>У час броні ти граєш на ньому: зі своїми збереженнями і друзями. Нічого налаштовувати більше не треба.</div>' + again;
+    h = '<div class="hero"><span class="eyebrow">Готово</span><p class="lead"><b>Твій акаунт PSN ' + esc(s.myPsn) + ' підключено.</b><br>У час броні ти граєш на ньому: зі своїми збереженнями і друзями. Нічого налаштовувати більше не треба.</p>' + again + '</div>';
   } else if(st === 'qr_sent' && (s.myPsnLink || s.myPsnCode)){
-    h = '<div class="note"><b>Останній крок: увійди у свій PSN на приставці</b><br>Акаунт: ' + esc(s.myPsn) + '</div><div class="card" style="margin-top:12px"><ol>'
-      + (s.myPsnLink ? '<li>Натисни кнопку нижче: відкриється сторінка Sony.</li><li>Увійди там у той самий акаунт PSN.</li>' : '<li>Адміністратор надіслав код для входу.</li>')
-      + (s.myPsnCode ? '<li>Якщо Sony спитає код, він має збігатися з цим:</li>' : '') + '</ol>'
+    const list = (s.myPsnLink ? ['Натисни кнопку нижче: відкриється сторінка Sony.', 'Увійди там у той самий акаунт PSN.'] : ['Адміністратор надіслав код для входу.'])
+      .concat(s.myPsnCode ? ['Якщо Sony спитає код, він має збігатися з цим:'] : []);
+    h = '<div class="grid2"><div class="hero"><span class="eyebrow">Останній крок</span><p class="lead"><b>Увійди у свій PSN на приставці</b><br>Акаунт: ' + esc(s.myPsn) + '</p>'
       + (s.myPsnCode ? '<div class="code">' + esc(s.myPsnCode) + '</div>' : '')
-      + (s.myPsnLink ? '<div class="btns"><button class="b ok" id="psnLink">Відкрити сторінку входу Sony</button></div>' : '')
-      + '<div class="btns"><button class="b" id="psnDone">Вхід на приставці підтвердив</button></div></div>';
+      + '<div class="actions">' + (s.myPsnLink ? '<button type="button" class="btn" id="psnLink">Відкрити сторінку входу Sony</button>' : '')
+      + '<button type="button" class="btn ghost" id="psnDone">Вхід на приставці підтвердив</button></div></div>'
+      + '<div><p class="cap">Що зробити</p>' + steps(list) + '</div></div>';
   } else if(st === 'signed_in'){
-    h = '<div class="note"><b>Майже готово</b><br>Ти підтвердив вхід на приставці (акаунт ' + esc(s.myPsn) + '). Адміністратор завершує підключення, зазвичай це 1–2 хвилини. Ми напишемо в бот, а тут статус оновиться сам.</div><div class="spin"></div>';
+    h = '<div class="hero"><span class="eyebrow">Майже готово</span><p class="lead">Ти підтвердив вхід на приставці (акаунт ' + esc(s.myPsn) + '). Адміністратор завершує підключення, зазвичай це 1–2 хвилини. Ми напишемо в бот, а тут статус оновиться сам.</p><div class="spin"></div></div>';
   } else {
-    h = '<div class="note"><b>' + (s.myPsnLinked ? 'Вхід у PSN виконано' : 'Заявку прийнято') + '</b><br>Акаунт: ' + esc(s.myPsn) + '. '
+    h = '<div class="hero"><span class="eyebrow">' + (s.myPsnLinked ? 'Вхід у PSN виконано' : 'Заявку прийнято') + '</span><p class="lead">Акаунт: <b>' + esc(s.myPsn) + '</b>. '
       + (s.myPsnLinked ? 'Адміністратор додає твій профіль на приставку, зазвичай це кілька хвилин. Щойно буде готово, тут з\'явиться останній крок, а ми напишемо в бот.'
-        : 'Лишилось увійти у свій PSN, щоб програма могла підключатися під твоїм акаунтом.') + '</div>'
-      + (s.myPsnLinked ? '<div class="spin"></div>' + again : '<div class="btns"><button class="b ok" id="psnIn">Увійти в PSN</button></div>');
+        : 'Лишилось увійти у свій PSN, щоб програма могла підключатися під твоїм акаунтом.') + '</p>'
+      + (s.myPsnLinked ? '<div class="spin"></div>' + again : '<div class="actions"><button type="button" class="btn" id="psnIn">Увійти в PSN</button></div>') + '</div>';
   }
   el.innerHTML = h;
   const login = create => { if(native){ psnBusy = true; native.psnLogin(!!create); } else toast('Вхід у PSN працює лише в програмі'); };
@@ -445,34 +882,188 @@ function renderPsn(s){
     toast(r.json.ok ? 'Дякуємо! Адміністратор завершує підключення, ще 1–2 хвилини.' : errText(r)); psnKey = ''; loadPsn(); };
 }
 
-const ICON = {"home": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><defs><linearGradient id=\"g_home\" gradientUnits=\"userSpaceOnUse\" x1=\"6\" y1=\"6\" x2=\"42\" y2=\"42\"><stop offset=\"0\" stop-color=\"#ffb347\"/><stop offset=\"0.5\" stop-color=\"#ff2e9a\"/><stop offset=\"1\" stop-color=\"#8a4dff\"/></linearGradient></defs><g fill=\"none\" stroke=\"url(#g_home)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M7 23 L24 8 L41 23\"/><path d=\"M12 19.5 V38 a2 2 0 0 0 2 2 H34 a2 2 0 0 0 2 -2 V19.5\"/><path d=\"M20 40 V30 h8 v10\"/></g></svg>", "bolt": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><defs><linearGradient id=\"g_bolt\" gradientUnits=\"userSpaceOnUse\" x1=\"6\" y1=\"6\" x2=\"42\" y2=\"42\"><stop offset=\"0\" stop-color=\"#ffb347\"/><stop offset=\"0.5\" stop-color=\"#ff2e9a\"/><stop offset=\"1\" stop-color=\"#8a4dff\"/></linearGradient></defs><g fill=\"none\" stroke=\"url(#g_bolt)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M27 5 L11 27 H22.5 L20.5 43 L37 21 H25.5 Z\"/></g></svg>", "close": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><defs><linearGradient id=\"g_close\" gradientUnits=\"userSpaceOnUse\" x1=\"6\" y1=\"6\" x2=\"42\" y2=\"42\"><stop offset=\"0\" stop-color=\"#ffb347\"/><stop offset=\"0.5\" stop-color=\"#ff2e9a\"/><stop offset=\"1\" stop-color=\"#8a4dff\"/></linearGradient></defs><g fill=\"none\" stroke=\"url(#g_close)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"8\" y=\"8\" width=\"32\" height=\"32\" rx=\"8\"/><path d=\"M18.5 18.5 L29.5 29.5 M29.5 18.5 L18.5 29.5\"/></g></svg>", "gamepad": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><defs><linearGradient id=\"g_gamepad\" gradientUnits=\"userSpaceOnUse\" x1=\"6\" y1=\"6\" x2=\"42\" y2=\"42\"><stop offset=\"0\" stop-color=\"#ffb347\"/><stop offset=\"0.5\" stop-color=\"#ff2e9a\"/><stop offset=\"1\" stop-color=\"#8a4dff\"/></linearGradient></defs><g fill=\"none\" stroke=\"url(#g_gamepad)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 15 H33 a10.5 10.5 0 0 1 10.5 10.5 v3 a5.6 5.6 0 0 1 -10.4 2.9 L31.5 29 H16.5 l-1.6 2.4 A5.6 5.6 0 0 1 4.5 28.5 v-3 A10.5 10.5 0 0 1 15 15 Z\"/><path d=\"M15 19.5 v6 M12 22.5 h6\"/><circle cx=\"31\" cy=\"20.5\" r=\"1.7\" fill=\"url(#g_gamepad)\" stroke=\"none\"/><circle cx=\"35.5\" cy=\"24.5\" r=\"1.7\" fill=\"url(#g_gamepad)\" stroke=\"none\"/></g></svg>", "compass": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><defs><linearGradient id=\"g_compass\" gradientUnits=\"userSpaceOnUse\" x1=\"6\" y1=\"6\" x2=\"42\" y2=\"42\"><stop offset=\"0\" stop-color=\"#ffb347\"/><stop offset=\"0.5\" stop-color=\"#ff2e9a\"/><stop offset=\"1\" stop-color=\"#8a4dff\"/></linearGradient></defs><g fill=\"none\" stroke=\"url(#g_compass)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"24\" cy=\"24\" r=\"17\"/><path d=\"M31.5 16.5 L27 27 L16.5 31.5 L21 21 Z\"/></g></svg>", "touch": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><defs><linearGradient id=\"g_touch\" gradientUnits=\"userSpaceOnUse\" x1=\"6\" y1=\"6\" x2=\"42\" y2=\"42\"><stop offset=\"0\" stop-color=\"#ffb347\"/><stop offset=\"0.5\" stop-color=\"#ff2e9a\"/><stop offset=\"1\" stop-color=\"#8a4dff\"/></linearGradient></defs><g fill=\"none\" stroke=\"url(#g_touch)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M13.5 17 a9.5 9.5 0 0 1 19 0\"/><path d=\"M23 17 V32.500 l-4.200 -3.200 a2.6 2.6 0 0 0 -3.600 3.700 L22.500 42.500 H34 a4.500 4.500 0 0 0 4.500 -4.500 V28.500 a3 3 0 0 0 -3 -3 H27 V17 a2 2 0 0 0 -4 0 Z\"/></g></svg>", "warning": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><defs><linearGradient id=\"g_warning\" gradientUnits=\"userSpaceOnUse\" x1=\"6\" y1=\"6\" x2=\"42\" y2=\"42\"><stop offset=\"0\" stop-color=\"#ffb347\"/><stop offset=\"0.5\" stop-color=\"#ff2e9a\"/><stop offset=\"1\" stop-color=\"#8a4dff\"/></linearGradient></defs><g fill=\"none\" stroke=\"url(#g_warning)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M24 7 L43.5 40 H4.5 Z\"/><path d=\"M24 19 v10\"/><circle cx=\"24\" cy=\"34.5\" r=\"1.8\" fill=\"url(#g_warning)\" stroke=\"none\"/></g></svg>", "check": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><defs><linearGradient id=\"g_check\" gradientUnits=\"userSpaceOnUse\" x1=\"6\" y1=\"6\" x2=\"42\" y2=\"42\"><stop offset=\"0\" stop-color=\"#ffb347\"/><stop offset=\"0.5\" stop-color=\"#ff2e9a\"/><stop offset=\"1\" stop-color=\"#8a4dff\"/></linearGradient></defs><g fill=\"none\" stroke=\"url(#g_check)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 25 L19.5 36.5 L40 12.500\"/></g></svg>"};
-function icon(n){ return '<span class="ic">' + ICON[n] + '</span>'; }
 // ── як керувати самою приставкою ──
 const HELP = [
-  ['home', 'Головний екран приставки', 'Натисни й утримуй кнопку <b>PS</b> (кругла, внизу по центру) близько секунди. Відкриється головний екран PS5 зі списком ігор.'],
-  ['bolt', 'Швидке меню', 'Коротко натисни <b>PS</b>. Знизу з\'явиться панель: звук, друзі, перемикання між грою і меню.'],
-  ['close', 'Закрити гру', 'Відкрий головний екран, хрестовиною наведи на гру, натисни <b>OPTIONS</b> (овальна кнопка з трьома рисками, праворуч від PS) і обери «Закрити гру».'],
-  ['gamepad', 'Запустити іншу гру', 'На головному екрані обери гру хрестовиною ← → і натисни <b>✕</b>. Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься.'],
-  ['compass', 'Рух по меню', 'Хрестовина або лівий стік рухають вибір, <b>✕</b> підтверджує, <b>○</b> повертає назад. У самій грі <b>OPTIONS</b> відкриває паузу.'],
-  ['touch', 'Кнопки на екрані', 'Тачпад: прямокутник між L і R, короткий дотик дорівнює натисканню. <b>L3</b> і <b>R3</b>: двічі швидко торкнись стіка й тримай. Овальна кнопка ліворуч від PS: Create (знімки екрана). Меню AnyPlay: кнопка з трьома крапками або «Назад» на телефоні.'],
-  ['gamepad', 'Свій геймпад', 'Можна підключити до телефона геймпад через Bluetooth чи кабель і сховати кнопки на екрані: меню AnyPlay, «Сховати кнопки на екрані».'],
-  ['warning', 'Чого не робити', 'Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, обери «Вийти з гри» в меню AnyPlay.']
+  ['Головний екран приставки', 'Натисни й утримуй кнопку <b>PS</b> (кругла, внизу по центру) близько секунди. Відкриється головний екран PS5 зі списком ігор.', ['PS', 'утримати']],
+  ['Швидке меню', 'Коротко натисни <b>PS</b>. Знизу з\'явиться панель: звук, друзі, перемикання між грою і меню.', ['PS']],
+  ['Закрити гру', 'Відкрий головний екран, хрестовиною наведи на гру, натисни <b>OPTIONS</b> (овальна кнопка з трьома рисками, праворуч від PS) і обери «Закрити гру».', ['OPTIONS']],
+  ['Запустити іншу гру', 'На головному екрані обери гру хрестовиною ← → і натисни <b>✕</b>. Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься.', ['← →', '✕']],
+  ['Рух по меню', 'Хрестовина або лівий стік рухають вибір, <b>✕</b> підтверджує, <b>○</b> повертає назад. У самій грі <b>OPTIONS</b> відкриває паузу.', ['✕', '○']],
+  ['Кнопки на екрані', 'Тачпад: прямокутник між L і R, короткий дотик дорівнює натисканню. <b>L3</b> і <b>R3</b>: двічі швидко торкнись стіка й тримай. Овальна кнопка ліворуч від PS: Create (знімки екрана). Меню AnyPlay: кнопка з трьома крапками або «Назад» на телефоні.', ['L3', 'R3']],
+  ['Свій геймпад', 'Можна підключити до телефона геймпад через Bluetooth чи кабель і сховати кнопки на екрані: меню AnyPlay, «Кнопки на екрані».', []],
+  ['Чого не робити', 'Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, обери «Вийти з гри» в меню AnyPlay.', []]
 ];
 function loadHelp(){
-  $('title').textContent = 'Як керувати приставкою';
-  $('help').innerHTML = '<div class="note">Це працює в будь-якій грі й у меню PS5.</div>' + HELP.map(h =>
-    '<div class="card hrow" style="margin-top:10px">' + icon(h[0]) + '<div><b class="t">' + h[1] + '</b><div class="meta">' + h[2] + '</div></div></div>').join('');
-  show('vHelp');
+  $('help').innerHTML = HELP.map(h => '<div class="row"><span><span class="t">' + h[0] + '</span><span class="s">' + h[1] + '</span></span><span class="keys">'
+    + h[2].map(k => '<span class="key">' + k + '</span>').join('') + '</span></div>').join('');
+  show('help');
+}
+
+// ── якість картинки ──
+const QDEF = {auto: true, level: 1, name: 'Авто: Оптимальна', levels: [{title: 'Економна', hint: '540p, 30 кадрів: для слабкого або мобільного інтернету'},
+  {title: 'Оптимальна', hint: '720p, 60 кадрів: підходить більшості'}, {title: 'Максимальна', hint: '1080p, 60 кадрів: потрібен швидкий Wi-Fi'}]};
+let Q = null;
+function qInfo(){ const x = nativeJson('quality'); return x && x.levels ? x : (Q || QDEF); }
+function loadQuality(){ renderQuality(); show('quality'); }
+function renderQuality(){
+  Q = qInfo();
+  const items = [{c: -1, t: 'Авто (радимо)', s: 'програма сама підбирає якість під твій інтернет' + (Q.auto ? ', зараз: ' + Q.levels[Q.level].title : '')}]
+    .concat(Q.levels.map((l, i) => ({c: i, t: l.title, s: l.hint})));
+  const cur = Q.auto ? -1 : Q.level;
+  $('qList').innerHTML = items.map(x => '<button type="button" class="opt' + (x.c === cur ? ' on' : '') + '" data-q="' + x.c + '"><span><span class="ot">' + esc(x.t)
+    + '</span><span class="small">' + esc(x.s) + '</span></span><i></i></button>').join('');
+  $('qList').querySelectorAll('[data-q]').forEach(b => b.onclick = () => setQuality(+b.dataset.q));
+}
+function setQuality(c, force){
+  const cur = Q.auto ? -1 : Q.level; if(c === cur && !force) return;
+  haptic();
+  const x = nativeJson('setQuality', c);
+  Q = x && x.levels ? x : Object.assign({}, Q, {auto: c < 0, level: c < 0 ? Q.level : c, name: c < 0 ? 'Авто: ' + Q.levels[Q.level].title : Q.levels[c].title});
+  renderQuality();
+  if(MODE !== 'menu') toast('Якість: ' + Q.name);
+}
+
+// ── перевірка інтернету (необов'язкова): затримка, завантаження, віддача ──
+const SPEED = 'https://speed.cloudflare.com';
+let net = null, netRec = -1;
+function netRows(r){
+  const v = (x, unit, d) => x == null ? '<span class="chip">…</span>' : x < 0 ? '<span class="chip">не вдалось</span>' : '<span class="chip">' + num(x, d) + ' ' + unit + '</span>';
+  $('netRows').innerHTML = '<div class="row"><span class="t">Затримка</span>' + v(r.ping, 'мс', 0) + '</div>'
+    + '<div class="row"><span class="t">Завантаження</span>' + v(r.down, 'Мбіт/с', r.down != null && r.down < 10 ? 1 : 0) + '</div>'
+    + '<div class="row"><span class="t">Віддача</span>' + v(r.up, 'Мбіт/с', r.up != null && r.up < 10 ? 1 : 0) + '</div>';
+}
+function netStop(){ if(net){ net.stop = true; if(net.ctl) try { net.ctl.abort(); } catch(e) {} } }
+async function netTest(){
+  if(net){ netStop(); return; }
+  const me = net = {stop: false, ctl: null}, res = {ping: null, down: null, up: null};
+  $('netBtn').textContent = 'Зупинити'; $('netApply').classList.add('hidden'); $('netRes').innerHTML = ''; netRows(res);
+  const sig = () => { me.ctl = new AbortController(); return me.ctl.signal; };
+  try {
+    // затримка: медіана п'яти маленьких запитів (перший лише відкриває з'єднання)
+    const pings = [];
+    for(let i = 0; i < 6 && !me.stop; i++){
+      const t0 = performance.now();
+      const r = await fetch(SPEED + '/__down?bytes=0&n=' + Math.random(), {cache: 'no-store', signal: sig()}); await r.arrayBuffer();
+      if(i) pings.push(performance.now() - t0);
+    }
+    pings.sort((a, b) => a - b); res.ping = pings.length ? pings[Math.floor(pings.length / 2)] : -1; netRows(res);
+    // завантаження: до 8 с, менше, якщо файл прийшов раніше
+    if(!me.stop) res.down = await netDown(me, sig(), x => { res.down = x; netRows(res); res.down = null; });
+    netRows(res);
+    // віддача: 5 МБ
+    if(!me.stop) res.up = await netUp(sig());
+    netRows(res);
+  } catch(e) {
+    if(!me.stop) toast('Перевірка не вдалась. Перевір інтернет і спробуй ще раз.');
+  }
+  if(net === me) net = null;
+  $('netBtn').textContent = 'Перевірити інтернет';
+  if(me.stop || !(res.down > 0)){ if(me.stop) netRows(res); return; }
+  netRec = res.down >= 30 ? 2 : res.down >= 15 ? 1 : 0;
+  const name = Q && Q.levels ? Q.levels[netRec].title : QDEF.levels[netRec].title;
+  $('netRes').innerHTML = '<p class="lead">Швидкість ' + num(res.down, res.down < 10 ? 1 : 0) + ' Мбіт/с, затримка ' + (res.ping > 0 ? num(res.ping, 0) : '?') + ' мс.</p>'
+    + '<div class="row"><span><span class="t">Підійде</span><span class="s">за швидкістю завантаження</span></span><span class="chip ok">' + esc(name) + '</span></div>';
+  $('netApply').classList.remove('hidden');
+}
+async function netDown(me, signal, live){
+  const t0 = performance.now(); let got = 0, tFirst = 0, bFirst = 0, last = 0;
+  const r = await fetch(SPEED + '/__down?bytes=25000000&n=' + Math.random(), {cache: 'no-store', signal});
+  const stop = setTimeout(() => { try { me.ctl.abort(); } catch(e) {} }, 8000);
+  const speed = t => tFirst && t - tFirst > 150 ? (got - bFirst) * 8 / ((t - tFirst) / 1000) / 1e6 : got * 8 / (Math.max(1, t - t0) / 1000) / 1e6;
+  try {
+    const rd = r.body.getReader();
+    for(;;){
+      let x; try { x = await rd.read(); } catch(e) { break; }
+      if(x.done) break;
+      got += x.value.length; const t = performance.now();
+      if(!tFirst){ tFirst = t; bFirst = got; }
+      if(t - last > 300){ last = t; live(speed(t)); }
+      if(me.stop) break;
+    }
+  } finally { clearTimeout(stop); }
+  if(me.stop) return null;
+  return got > 0 ? speed(performance.now()) : -1;
+}
+async function netUp(signal){
+  const size = 5000000, data = new Uint8Array(size);
+  for(let i = 0; i < size; i += 4096) data[i] = (Math.random() * 256) | 0;
+  const stop = setTimeout(() => { try { net && net.ctl && net.ctl.abort(); } catch(e) {} }, 12000);
+  const t0 = performance.now();
+  try { const r = await fetch(SPEED + '/__up', {method: 'POST', body: data, cache: 'no-store', signal}); await r.text(); }
+  catch(e) { return -1; } finally { clearTimeout(stop); }
+  return size * 8 / ((performance.now() - t0) / 1000) / 1e6;
+}
+$('netBtn').onclick = netTest;
+$('netApply').onclick = () => { if(netRec >= 0){ setQuality(netRec, true); $('netApply').classList.add('hidden'); } };
+
+// ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
+const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити гру'], ['quality', 'Якість'], ['console', 'Керування приставкою'], ['controls', 'Кнопки на екрані'], ['exit', 'Вийти з гри']];
+let pmSel = 'back', pmDetail = false, G = {};
+function pmInit(){
+  $('pm').classList.remove('hidden');
+  ['loading', 'vExtend', 'vQuality', 'vHelp', 'bar'].forEach(id => $('pmSlot').appendChild($(id)));
+  $('pmNav').innerHTML = PM.map(p => '<button type="button" data-p="' + p[0] + '"' + (p[0] === 'exit' ? ' class="exit"' : '') + '>' + p[1] + '</button>').join('');
+  $('pmNav').querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
+    if(b.dataset.p === 'back'){ closeApp(); return; }
+    pmSel = b.dataset.p; pmDetail = true; haptic(); pmRender();
+  });
+  $('pmBack').onclick = () => { pmDetail = false; pmRender(); };
+  pmSel = PM.some(p => p[0] === ARG) ? ARG : 'back'; pmDetail = !!ARG;
+  pmTick(); pmRender();
+}
+function pmRender(){
+  $('pmNav').querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === pmSel));
+  $('pm').classList.toggle('detail', pmDetail);
+  ['loading', 'vExtend', 'vQuality', 'vHelp', 'bar'].forEach(id => $(id).classList.add('hidden'));
+  view = null; viewTok++; netStop();
+  const until = G.left >= 0 ? hm(Math.floor(Date.now() / 1000) + G.left) : '';
+  let h = '';
+  if(pmSel === 'back') h = '<p class="cap">Гра на паузі не стоїть</p><p class="lead">Поки відкрите це меню, гра на приставці йде далі. Повернись кнопкою ліворуч або кнопкою «Назад».</p>';
+  else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити гру</p>'; view = 'extend'; loadExtend(); }
+  else if(pmSel === 'quality'){ h = '<p class="cap">Якість картинки</p><p class="lead">Нова якість діє з нового підключення: картинка зникне на кілька секунд.</p>'; view = 'quality'; loadQuality(); }
+  else if(pmSel === 'console'){ h = '<p class="cap">Керування приставкою</p><p class="small">Це працює в будь-якій грі й у меню PS5.</p>'; view = 'help'; loadHelp(); }
+  else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="lead">' + (G.controls === false
+      ? 'Зараз кнопки на екрані сховано. Якщо граєш без геймпада, покажи їх знову.' : 'Зараз кнопки на екрані показано. Якщо граєш з геймпадом (Bluetooth чи кабель), їх можна сховати.')
+    + '</p><div class="actions"><button type="button" class="btn" data-act="controls">' + (G.controls === false ? 'Показати кнопки на екрані' : 'Сховати кнопки на екрані') + '</button></div>';
+  else if(pmSel === 'exit') h = '<p class="cap bad">Вийти з гри</p><p class="lead">Трансляція закриється, але час гри йде далі.'
+    + (until ? ' Повернутись можна з головного екрана кнопкою «Грати» до <b>' + until + '</b>.' : ' Повернутись можна з головного екрана кнопкою «Грати».')
+    + '</p><div class="actions"><button type="button" class="btn" data-act="exit">Вийти з гри</button><button type="button" class="btn ghost" id="pmStay">Залишитись</button></div>';
+  $('pmText').innerHTML = h;
+  if($('pmStay')) $('pmStay').onclick = () => { pmSel = 'back'; pmDetail = false; pmRender(); };
+  $('pmRight').scrollTop = 0;
+}
+function pmTick(){
+  const g = nativeJson('info'); if(g) G = g;
+  $('pmLeft').textContent = G.left >= 0 ? 'Лишилось ' + dur(G.left) + ', гра до ' + hm(Math.floor(Date.now() / 1000) + G.left) : '';
+  const parts = [];
+  if(typeof G.loss === 'number') parts.push('Втрати ' + num(G.loss * 100, 1) + '%');
+  if(G.quality) parts.push('якість ' + G.quality);
+  $('pmNet').textContent = parts.join(', ');
 }
 
 // ── запуск ──
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act],[data-tab]'); if(!t) return;
+  if(t.dataset.act){ haptic(); act(t.dataset.act, t.dataset.arg); }
+  else if(t.dataset.tab){ haptic(); goTab(t.dataset.tab, t.dataset.sub); }
+});
+$('nav').addEventListener('scroll', navFade, {passive: true});
+window.addEventListener('resize', () => { navFade(); if(view === 'home') renderSide(); });
 $('back').onclick = closeApp;
 $('sheetBack').onclick = closePay; $('payClose').onclick = closePay;
 $('payDone').onclick = payDone; $('payCancel').onclick = payCancel;
-$('tabNew').onclick = () => { tab = 'new'; renderBook(); };
-$('tabMine').onclick = () => { tab = 'mine'; confirmId = 0; loadBook(true); };
-window.__anyplayBack = () => { if(!$('sheet').classList.contains('hidden')){ closePay(); return true; } return false; };
-if(MODE === 'extend') loadExtend(); else if(MODE === 'psn') loadPsn(); else if(MODE === 'help') loadHelp(); else { if(location.hash === '#mine') tab = 'mine'; loadBook(false); }
+$('tabNew').onclick = () => { bookTab = 'new'; renderBook(); };
+$('tabMine').onclick = () => { bookTab = 'mine'; confirmId = 0; loadBook(true); };
+// кнопка «Назад» на телефоні: true — сторінка обробила сама
+window.__anyplayBack = () => {
+  if(!$('sheet').classList.contains('hidden')){ closePay(); return true; }
+  if(MODE === 'menu'){ if(pmDetail && getComputedStyle($('pmBack')).display !== 'none'){ pmDetail = false; pmRender(); return true; } return false; }
+  if(MODE === 'home' && view && view !== 'home' && view !== 'gate'){ go('home'); return true; }
+  return false;
+};
+if(MODE === 'menu') pmInit();
+else if(MODE === 'single'){ if(ROUTE === 'mine') bookTab = 'mine'; go(ROUTE === 'mine' ? 'book' : ROUTE); }
+else { const h = nativeJson('info'); if(h && h.state) H = h; homeChanged(); }
 </script>
 </body>
 </html>

@@ -2180,9 +2180,9 @@ QVariantList QmlSettings::anyplayProfiles() const
     return AnyPlayInput::ProfilesForEditor();
 }
 
-QString QmlSettings::anyplayKeyName(int key, int modifiers, const QString &text) const
+QString QmlSettings::anyplayKeyName(int key, int modifiers, const QString &text, int scanCode) const
 {
-    return AnyPlayInput::KeyNameFromQml(key, modifiers, text);
+    return AnyPlayInput::KeyNameFromQml(key, modifiers, text, scanCode);
 }
 
 QString QmlSettings::anyplayMouseName(int button) const
@@ -2227,11 +2227,14 @@ void QmlSettings::setAnyplayKey(const QString &profile, const QString &id, const
         }
     }
     AnyPlayInput::SetKeyOverride(profile, id, key);
+    AnyPlayInput::NotifyConfigChanged();
+    emit anyplayControlsChanged();
 }
 
 void QmlSettings::resetAnyplayKeys()
 {
     AnyPlayInput::ResetKeyOverrides();
+    emit anyplayControlsChanged();
 }
 
 QVariantList QmlSettings::anyplayLayouts() const
@@ -2246,7 +2249,10 @@ QString QmlSettings::anyplayLayout() const
 
 void QmlSettings::setAnyplayLayout(const QString &id)
 {
+    if (id == AnyPlayInput::Layout())
+        return;
     AnyPlayInput::SetLayout(id);
+    emit anyplayControlsChanged();
 }
 
 bool QmlSettings::anyplayAutoVehicle() const
@@ -2257,4 +2263,102 @@ bool QmlSettings::anyplayAutoVehicle() const
 void QmlSettings::setAnyplayAutoVehicle(bool enabled)
 {
     AnyPlayInput::SetAutoVehicle(enabled);
+    AnyPlayInput::NotifyConfigChanged();
+}
+
+// ── AnyPlay: екран клавіш з геймпадом ──
+QVariantMap QmlSettings::anyplayControls() const
+{
+    // з цієї миті екран клавіш розпізнає клавіші за фізичним місцем (будь-яка мова клавіатури)
+    AnyPlayInput::InstallKeyWatcher();
+    return AnyPlayInput::EditorData();
+}
+
+QVariantMap QmlSettings::anyplayRebind(const QString &profile, const QString &id, const QString &key)
+{
+    const QVariantMap result = AnyPlayInput::Rebind(profile, id, key);
+    if (result.value("ok").toBool() && result.value("reason").toString().isEmpty())
+        emit anyplayControlsChanged();
+    return result;
+}
+
+QVariantMap QmlSettings::anyplayPadData() const
+{
+    return AnyPlayInput::PadData();
+}
+
+AnyPlayInput *QmlSettings::anyplayPreview()
+{
+    if (!anyplay_preview) {
+        anyplay_preview = new AnyPlayInput(this);
+        anyplay_preview->SetPreview(true);
+        anyplay_preview->Load();
+        connect(anyplay_preview, &AnyPlayInput::Changed, this, &QmlSettings::anyplayPreviewChanged);
+        connect(anyplay_preview, &AnyPlayInput::ProfileChanged, this, &QmlSettings::anyplayPreviewChanged);
+    }
+    return anyplay_preview;
+}
+
+bool QmlSettings::anyplayPreviewInput(const QString &name, bool pressed)
+{
+    return anyplayPreview()->HandleInput(name, pressed);
+}
+
+bool QmlSettings::anyplayPreviewTap(const QString &name)
+{
+    return anyplayPreview()->Tap(name);
+}
+
+void QmlSettings::anyplayPreviewRelease()
+{
+    anyplayPreview()->ReleaseAll();
+}
+
+void QmlSettings::anyplayPreviewSetProfile(const QString &id)
+{
+    anyplayPreview()->SetCurrentProfile(id);
+}
+
+QVariantMap QmlSettings::anyplayPreviewState()
+{
+    return anyplayPreview()->PreviewState();
+}
+
+bool QmlSettings::anyplayAskGame() const
+{
+    return AnyPlayInput::AskGame();
+}
+
+void QmlSettings::setAnyplayAskGame(bool ask)
+{
+    if (ask == AnyPlayInput::AskGame())
+        return;
+    AnyPlayInput::SetAskGame(ask);
+    emit anyplayAskGameChanged();
+}
+
+qreal QmlSettings::anyplayMouseSensitivity() const
+{
+    return AnyPlayInput::MouseSensitivity();
+}
+
+void QmlSettings::setAnyplayMouseSensitivity(qreal value)
+{
+    const float old = AnyPlayInput::MouseSensitivity();
+    AnyPlayInput::SetMouseSensitivity(static_cast<float>(value));
+    if (!qFuzzyCompare(old, AnyPlayInput::MouseSensitivity()))
+        emit anyplayMouseSensitivityChanged();
+}
+
+bool QmlSettings::anyplayInvertY() const
+{
+    return AnyPlayInput::InvertY();
+}
+
+void QmlSettings::setAnyplayInvertY(bool invert)
+{
+    if (invert == AnyPlayInput::InvertY())
+        return;
+    AnyPlayInput::SetInvertY(invert);
+    emit anyplayInvertYChanged();
 }

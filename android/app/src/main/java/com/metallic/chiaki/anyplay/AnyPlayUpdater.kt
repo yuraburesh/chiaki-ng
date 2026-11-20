@@ -336,7 +336,7 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	/** Показує вікно й пам'ятає його, поки його не закриють */
 	private fun present(b: MaterialAlertDialogBuilder): AlertDialog
 	{
-		val d = b.show()
+		val d = AnyPlayStyle.show(b)   // вікна оновлення в стилі нового дизайну
 		dialog = d
 		d.setOnDismissListener {
 			if(dialog === d)
@@ -427,14 +427,16 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 		val dp = activity.resources.displayMetrics.density
 		val text = TextView(activity).apply {
 			textSize = 15f
-			setTextColor(0xFFD8CDEA.toInt())
+			typeface = AnyPlayStyle.body(activity)
+			setTextColor(0xD9FFFFFF.toInt())
 			text = "Завантаження…"
 		}
 		val bar = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
 			max = 1000
 			isIndeterminate = true
-			progressTintList = ColorStateList.valueOf(0xFFFF2E9A.toInt())
-			indeterminateTintList = ColorStateList.valueOf(0xFFFF2E9A.toInt())
+			progressTintList = ColorStateList.valueOf(AnyPlayStyle.INK)
+			progressBackgroundTintList = ColorStateList.valueOf(0x33FFFFFF)
+			indeterminateTintList = ColorStateList.valueOf(AnyPlayStyle.INK)
 		}
 		val box = LinearLayout(activity).apply {
 			orientation = LinearLayout.VERTICAL

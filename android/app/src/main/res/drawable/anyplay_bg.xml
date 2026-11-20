@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- AnyPlay: тло екранів, вечірній градієнт згори вниз (як у app.html) -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient android:angle="270" android:startColor="#2B0A4F" android:centerColor="#1A0B33" android:endColor="#0B0618" android:centerY="0.55"/>
+    <gradient android:angle="270" android:startColor="#2B2740" android:centerColor="#4A3558" android:endColor="#7A4A63" android:centerY="0.45"/>
 </shape>

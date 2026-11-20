@@ -1,28 +1,54 @@
-// AnyPlay: просте меню гри для клієнта (відкривається під час трансляції).
-// Три сторінки: головна (повернутись / продовжити / клавіші / гучність / вийти), продовження гри, клавіші.
+// AnyPlay: меню під час гри для клієнта, у стилі паузи GTA.
+// Ліворуч пункти великими літерами, праворуч вміст обраного пункту; угорі скільки лишилось, унизу зв'язок.
+// Пункти: повернутись у гру, продовжити гру, клавіші, якість, керування приставкою, вийти з гри.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
-import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
 
-Rectangle {
+Item {
     id: panel
-    property string page: "main"   // main | extend | keys
+    property string page: "back"     // back | extend | keys | quality | console | exit
+    property string openPage: ""     // з якої сторінки відкрити меню (нагадування про кінець гри відкриває «Продовжити гру»)
     property int tick: 0
-    readonly property string menuKey: Chiaki.controllers.length ? Chiaki.settings.stringForStreamMenuShortcut() : (Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O")
+    // меню відкривається клавішею ` (під Esc); Ctrl+O / Cmd+O теж працює, але не показуємо: Ctrl у GTA — «присісти»
+    readonly property string menuKey: Chiaki.controllers.length
+        ? qsTr("клавіша ` (під Esc) або %1 на геймпаді").arg(Chiaki.settings.stringForStreamMenuShortcut())
+        : qsTr("клавіша ` (під Esc)")
     signal resume()   // закрити меню й повернутись у гру
     signal exit()     // завершити трансляцію
-    readonly property Item firstItem: resumeBtn
+    // з чого почати фокус, коли меню відкрилось (з нагадування про кінець гри — одразу «Продовжити гру»)
+    readonly property Item firstItem: openPage === "extend" ? extendBtn : resumeBtn
+    AnyPlayStyle { id: ap }
 
-    function focusFirst() { (page === "main" ? resumeBtn : backBtn).forceActiveFocus(Qt.TabFocusReason); }
-    function goMain() { page = "main"; resumeBtn.forceActiveFocus(); }
-    onVisibleChanged: if (!visible) page = "main"
-
-    radius: 22
-    color: "#f5120a24"
-    border.color: "#55ffffff"
+    readonly property var items: [resumeBtn, extendBtn, keysBtn, qualityBtn, consoleBtn, exitBtn]
+    function itemFor(p) {
+        for (let i = 0; i < items.length; i++)
+            if (items[i].pageId === p)
+                return items[i];
+        return resumeBtn;
+    }
+    function focusFirst() { itemFor(page).forceActiveFocus(Qt.TabFocusReason); }
+    function goMain() { page = "back"; resumeBtn.forceActiveFocus(); }
+    // перейти з лівого стовпця у вміст праворуч (Enter або →)
+    function enterContent() {
+        const target = page === "exit" ? exitConfirm : (page === "quality" ? qualityList.firstOpt : (page === "extend" ? extendPanel.firstOption : null));
+        if (target && target.visible && target.enabled)
+            target.forceActiveFocus(Qt.TabFocusReason);
+        else {
+            const next = itemFor(page).nextItemInFocusChain(true);
+            if (next && next !== itemFor(page))
+                next.forceActiveFocus(Qt.TabFocusReason);
+        }
+    }
+    onVisibleChanged: {
+        if (visible)
+            page = openPage !== "" ? openPage : "back";
+        else
+            page = "back";
+    }
+    Keys.onEscapePressed: panel.resume()
 
     Timer { interval: 1000; repeat: true; running: panel.visible; onTriggered: panel.tick++ }
 
@@ -35,23 +61,22 @@ Rectangle {
         return qsTr("Лишилось %1, гра до %2").arg((h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(x).padStart(2, "0")).arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs));
     }
     // головні клавіші: беремо справжні призначення (з урахуванням змін клієнта)
-    // розкладка під гру: змінюється одразу, без виходу з гри
-    property string layoutId: Chiaki.settings.anyplayLayout()
     property int layoutRev: 0
-    function setLayout(id) {
-        if (id === layoutId)
-            return;
-        Chiaki.settings.setAnyplayLayout(id);
-        layoutId = id;
-        layoutRev++;
-        if (Chiaki.session)
-            Chiaki.session.reloadControls();
+    // чи є клавіші режимів (пішки, транспорт, літак) — для підказки про Fn на MacBook
+    readonly property bool hasModes: {
+        layoutRev;
+        const profiles = Chiaki.settings.anyplayProfiles();
+        for (let i = 0; i < profiles.length; i++)
+            if (profiles[i].id === "global")
+                for (let j = 0; j < profiles[i].bindings.length; j++)
+                    if (profiles[i].bindings[j].id.indexOf("mode_") === 0)
+                        return true;
+        return false;
     }
     function keyRows() {
         layoutRev;
-        const labels = { pause: qsTr("кнопка OPTIONS — пауза й меню в самій грі"), ps: qsTr("кнопка PS — головне меню приставки"), map: qsTr("тачпад — карта"),
-                         select: qsTr("✕ — вибрати / підтвердити"), back: qsTr("○ — назад / закрити") };
-        let rows = [{ name: qsTr("це меню: клавіші, продовження, вихід"), key: menuKey }];
+        const labels = { pause: qsTr("OPTIONS: пауза й меню в самій грі"), ps: qsTr("кнопка PS: меню приставки"), map: qsTr("тачпад: карта") };
+        let rows = [{ name: qsTr("меню AnyPlay"), key: "`" }];
         const profiles = Chiaki.settings.anyplayProfiles();
         let modes = [];
         for (let i = 0; i < profiles.length; i++) {
@@ -66,21 +91,20 @@ Rectangle {
                 else if (p.id === "global" && b.id.indexOf("mode_") === 0)
                     modes.push({ name: b.name, key: key });
                 else if (p.id === "foot" && b.id === "vehicle")
-                    rows.push({ name: qsTr("сісти в транспорт / вийти з нього"), key: key });
+                    rows.push({ name: qsTr("сісти в транспорт чи вийти"), key: key });
             }
         }
-        rows.push({ name: qsTr("навігація в меню приставки"), key: "↑ ↓ ← →" });
         return rows.concat(modes);
     }
 
-    // Ті самі чотири рівні якості, що й на головному екрані
+    // Ті самі рівні якості, що й на головному екрані
     readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна"), qsTr("Ультра")]
     readonly property var qualities: [
         { level: -1, name: qsTr("Авто"), info: qsTr("сама підбирає, зараз: %1").arg(levelNames[Chiaki.cloud.qualityLevel] || "") },
         { level: 0, name: levelNames[0], info: qsTr("540p, 30 кадр/с") },
         { level: 1, name: levelNames[1], info: qsTr("720p, 60 кадр/с") },
         { level: 2, name: levelNames[2], info: qsTr("1080p, 60 кадр/с") },
-        { level: 3, name: levelNames[3], info: qsTr("1080p, 60 кадр/с, ШІ-чіткість") }
+        { level: 3, name: levelNames[3], info: qsTr("1080p, 60 кадр/с і ШІ-чіткість на великому екрані") }
     ]
     function qualityOn(q) { return q.level < 0 ? Chiaki.cloud.autoQuality : (!Chiaki.cloud.autoQuality && Chiaki.cloud.qualityLevel === q.level); }
     function setQuality(q) {
@@ -92,295 +116,358 @@ Rectangle {
         if (Chiaki.cloud.qualityLevel >= 2 && q.level >= 2) { Chiaki.cloud.setQualityLevel(q.level); goMain(); return; }
         Chiaki.cloud.setQualityLevel(q.level);
         Chiaki.cloud.reconnectOnce = true;   // головний екран сам натисне «Грати» з новою якістю
-        panel.page = "main";
+        panel.page = "back";
         panel.exit();
     }
 
-    ColumnLayout {
-        anchors { fill: parent; leftMargin: 22; rightMargin: 22; topMargin: 14; bottomMargin: 14 }
-        spacing: 10
-
-        // ── шапка: назва сторінки, скільки лишилось, зв'язок ──
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 14
-            MenuBtn {
-                id: backBtn
-                visible: panel.page !== "main"
-                Layout.preferredHeight: 40
-                font.pixelSize: 15
-                text: qsTr("← Назад")
-                onClicked: panel.goMain()
-                Keys.onEscapePressed: panel.goMain()
-            }
-            Label {
-                text: panel.page === "extend" ? qsTr("ПРОДОВЖИТИ ГРУ") : panel.page === "keys" ? qsTr("КЛАВІШІ")
-                    : panel.page === "console" ? qsTr("КЕРУВАННЯ ПРИСТАВКОЮ")
-                    : panel.page === "quality" ? qsTr("ЯКІСТЬ КАРТИНКИ") : qsTr("МЕНЮ ГРИ")
-                color: "#22e4ff"; font.pixelSize: 15; font.bold: true; font.letterSpacing: 3
-            }
-            Label {
-                text: panel.leftText()
-                color: "#ffd23f"; font.pixelSize: 17; font.bold: true
-            }
-            Item { Layout.fillWidth: true }
-            Label {
-                visible: !!Chiaki.session
-                color: "#bfaed8"; font.pixelSize: 13
-                text: Chiaki.session ? qsTr("Зв'язок: %1 Мбіт/с, втрати %2%").arg(Chiaki.session.measuredBitrate.toFixed(1))
-                    .arg((((isFinite(Chiaki.session.averagePacketLoss)) ? Chiaki.session.averagePacketLoss : 0) * 100).toFixed(1)) : ""
-            }
-        }
-
-        // ── головна сторінка ──
-        RowLayout {
-            visible: panel.page === "main"
-            Layout.fillWidth: true
-            spacing: 12
-            MenuBtn {
-                id: resumeBtn
-                primary: true
-                iconName: "play"
-                text: qsTr("Повернутись у гру")
-                onClicked: panel.resume()
-                KeyNavigation.right: extendBtn
-            }
-            MenuBtn {
-                id: extendBtn
-                iconName: "clock"
-                text: qsTr("Продовжити гру")
-                onClicked: { panel.page = "extend"; backBtn.forceActiveFocus(); }
-                KeyNavigation.left: resumeBtn
-                KeyNavigation.right: keysBtn
-            }
-            MenuBtn {
-                id: keysBtn
-                iconName: "keyboard"
-                text: qsTr("Клавіші")
-                onClicked: { panel.page = "keys"; backBtn.forceActiveFocus(); }
-                KeyNavigation.left: extendBtn
-                KeyNavigation.right: qualityBtn
-            }
-            MenuBtn {
-                id: qualityBtn
-                iconName: "quality"
-                text: qsTr("Якість")
-                onClicked: { panel.page = "quality"; backBtn.forceActiveFocus(); }
-                KeyNavigation.left: keysBtn
-                KeyNavigation.right: volume
-            }
-            ColumnLayout {
-                Layout.leftMargin: 10
-                spacing: 0
-                Label { text: qsTr("Гучність: %1%").arg(((volume.value / 128.0) * 100).toFixed(0)); color: "white"; font.pixelSize: 14 }
-                Slider {
-                    id: volume
-                    Layout.preferredWidth: 190
-                    from: 0; to: 128; stepSize: 1
-                    value: Chiaki.settings.audioVolume
-                    onMoved: Chiaki.settings.audioVolume = value
-                    KeyNavigation.left: qualityBtn
-                    KeyNavigation.right: exitBtn
-                    Keys.onEscapePressed: panel.resume()
-                }
-            }
-            Item { Layout.fillWidth: true }
-            MenuBtn {
-                id: exitBtn
-                danger: true
-                iconName: "exit"
-                text: qsTr("Вийти з гри")
-                onClicked: panel.exit()
-                KeyNavigation.left: volume
-            }
-        }
-        Label {
-            visible: panel.page === "main"
-            Layout.fillWidth: true; wrapMode: Text.WordWrap
-            color: "#d8cdea"; font.pixelSize: 14
-            text: qsTr("Закрити це меню — Esc або %1.  «Вийти з гри» закриває трансляцію: повернутись можна будь-коли до кінця броні (час броні при цьому йде).  Як відкрити меню приставки, закрити гру чи запустити іншу: кнопка «Клавіші».").arg(panel.menuKey)
-        }
-        Flow {   // найпотрібніші клавіші одразу на головній сторінці
-            visible: panel.page === "main"
-            Layout.fillWidth: true
-            spacing: 8
-            Repeater {
-                model: panel.visible && panel.page === "main" ? panel.keyRows().slice(1, 6) : []
-                KeyChip { required property var modelData; keyText: modelData.key; name: modelData.name }
-            }
-        }
-
-        // ── продовження гри ──
-        ExtendPanel {
-            visible: panel.visible && panel.page === "extend"
-            Layout.fillWidth: true
-            compact: true
-        }
-
-        // ── якість картинки: змінюється з перепідключенням на кілька секунд ──
-        Label {
-            visible: panel.page === "quality"
-            Layout.fillWidth: true; wrapMode: Text.WordWrap
-            color: "#d8cdea"; font.pixelSize: 14
-            text: qsTr("«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш рівень сам, гра перепідключиться за кілька секунд, прогрес у грі не зникає.")
-        }
-        RowLayout {
-            visible: panel.page === "quality"
-            Layout.fillWidth: true
-            spacing: 10
-            Repeater {
-                model: panel.qualities
-                MenuBtn {
-                    required property var modelData
-                    readonly property bool on: panel.qualityOn(modelData)
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 62
-                    primary: on
-                    text: (on ? "✓ " : "") + modelData.name + "\n" + modelData.info
-                    font.pixelSize: 14
-                    onClicked: panel.setQuality(modelData)
-                }
-            }
-        }
-
-        // ── клавіші ──
-        Label {
-            visible: panel.page === "keys" && Chiaki.controllers.length > 0
-            Layout.fillWidth: true; wrapMode: Text.WordWrap
-            color: "#ffd23f"; font.pixelSize: 14; font.bold: true
-            text: qsTr("Підключено геймпад: грай ним, як на приставці. Клавіатура й мишка теж працюють: програма сама перемикається на те, чим ти щойно натиснув.")
-        }
-        Label {
-            visible: panel.page === "keys"
-            Layout.fillWidth: true; wrapMode: Text.WordWrap
-            color: "#d8cdea"; font.pixelSize: 14
-            text: qsTr("Розкладка клавіатури й мишки під гру. Змінюється одразу, виходити з гри не треба.")
-        }
-        RowLayout {
-            visible: panel.page === "keys"
-            Layout.fillWidth: true
-            spacing: 10
-            Repeater {
-                model: panel.visible && panel.page === "keys" ? Chiaki.settings.anyplayLayouts() : []
-                MenuBtn {
-                    required property var modelData
-                    readonly property bool on: panel.layoutId === modelData.id
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 58
-                    primary: on
-                    text: (on ? "✓ " : "") + modelData.name + "\n" + modelData.info
-                    font.pixelSize: 14
-                    onClicked: panel.setLayout(modelData.id)
-                }
-            }
-        }
-        Flow {
-            visible: panel.page === "keys"
-            Layout.fillWidth: true
-            spacing: 8
-            Repeater {
-                model: panel.visible && panel.page === "keys" ? panel.keyRows() : []
-                KeyChip { required property var modelData; keyText: modelData.key; name: modelData.name }
-            }
-        }
-        Label {
-            visible: panel.page === "keys"
-            Layout.fillWidth: true; wrapMode: Text.WordWrap
-            color: "#d8cdea"; font.pixelSize: 14
-            text: qsTr("Рух — W A S D, камера — мишка, стрільба — ліва кнопка миші. Усі клавіші та їх зміна: головний екран програми → «Клавіші».")
-        }
-        MenuBtn {
-            visible: panel.page === "keys"
-            Layout.preferredHeight: 46
-            font.pixelSize: 15
-            iconName: "gamepad"
-            text: qsTr("Керування приставкою: меню PS, закрити гру, запустити іншу  →")
-            onClicked: { panel.page = "console"; backBtn.forceActiveFocus(); }
-        }
-
-        // ── керування самою приставкою ──
-        Flickable {   // якщо вікно вузьке й текст не влазить — прокручується колесом миші
-            visible: panel.page === "console"
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            contentHeight: consoleGuide.implicitHeight
-            boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar { }
-            AnyPlayGuide {
-                id: consoleGuide
-                width: parent.width
-                compact: true
-                menuKey: panel.menuKey
-            }
-        }
-        Item { visible: panel.page !== "console"; Layout.fillHeight: true }
-    }
-
-    component KeyChip: Rectangle {
-        property string keyText
-        property string name
-        radius: 10; color: "#1f1240"; border.color: "#22ffffff"
-        implicitWidth: chipRow.implicitWidth + 20; implicitHeight: 34
-        RowLayout {
-            id: chipRow
-            anchors.centerIn: parent
-            spacing: 8
-            Rectangle {
-                radius: 6; color: "#3a1a6e"; border.color: "#22e4ff"
-                implicitWidth: cap.implicitWidth + 14; implicitHeight: 24
-                Label { id: cap; anchors.centerIn: parent; text: keyText; color: "white"; font.pixelSize: 13; font.bold: true }
-            }
-            Label { text: name; color: "white"; font.pixelSize: 13 }
+    // ── фон: гра видно праворуч, ліворуч темніше ──
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "#f20d0a16" }
+            GradientStop { position: 0.46; color: "#d90d0a16" }
+            GradientStop { position: 1.0; color: "#990d0a16" }
         }
     }
+    MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: (wheel) => wheel.accepted = true }
 
-    component MenuBtn: Button {
-        id: mb
-        property bool primary: false
+    Item {
+        id: zoom
+        readonly property real k: Math.max(1, Math.min(2.2, Math.min(panel.width / 1600, panel.height / 1000)))
+        width: panel.width / k
+        height: panel.height / k
+        scale: k
+        transformOrigin: Item.TopLeft
+
+        ColumnLayout {
+            anchors { fill: parent; leftMargin: zoom.width < 900 ? 20 : 32; rightMargin: anchors.leftMargin; topMargin: zoom.height < 640 ? 16 : 28; bottomMargin: zoom.height < 640 ? 12 : 22 }
+            spacing: 0
+
+            // ── шапка ──
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.bottomMargin: 12
+                spacing: 20
+                Text {
+                    text: qsTr("Пауза AnyPlay")
+                    font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: zoom.height < 640 ? 24 : 30
+                    font.letterSpacing: 2; font.capitalization: Font.AllUppercase
+                    color: ap.ink
+                }
+                Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
+                ApText { role: "eyebrow"; text: panel.leftText() }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: ap.hair }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.topMargin: zoom.height < 640 ? 12 : 22
+                Layout.bottomMargin: 12
+                spacing: zoom.width < 1000 ? 32 : 56
+
+                // ── ліворуч: пункти меню ──
+                ColumnLayout {
+                    readonly property real w: Math.max(220, Math.min(300, zoom.width * 0.26))
+                    Layout.fillWidth: false
+                    Layout.preferredWidth: w
+                    Layout.maximumWidth: w
+                    Layout.alignment: Qt.AlignTop
+                    spacing: 0
+                    PauseItem { id: resumeBtn; pageId: "back"; text: qsTr("Повернутись у гру"); KeyNavigation.down: extendBtn }
+                    PauseItem { id: extendBtn; pageId: "extend"; text: qsTr("Продовжити гру"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
+                    PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: qualityBtn }
+                    PauseItem { id: qualityBtn; pageId: "quality"; text: qsTr("Якість"); KeyNavigation.up: keysBtn; KeyNavigation.down: consoleBtn }
+                    PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: qualityBtn; KeyNavigation.down: exitBtn }
+                    PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: consoleBtn }
+                }
+
+                // ── праворуч: вміст обраного пункту ──
+                Item {
+                    id: content
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    // повернутись у гру: гра не на паузі, гучність, головні клавіші
+                    PageFlick {
+                        visible: panel.page === "back"
+                        ColumnLayout {
+                            width: content.width
+                            spacing: 12
+                            ApText { role: "cap"; text: qsTr("Гра на паузі не стоїть") }
+                            ApText {
+                                Layout.fillWidth: true; Layout.maximumWidth: 620
+                                role: "lead"
+                                text: qsTr("Поки відкрите це меню, гра на приставці йде далі. Повернись пунктом ліворуч або клавішею Esc. Меню AnyPlay: %1.").arg(panel.menuKey)
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: 620
+                                Layout.topMargin: 4
+                                spacing: 14
+                                ApText { role: "cap"; text: qsTr("Гучність") }
+                                Slider {
+                                    id: volume
+                                    Layout.fillWidth: true
+                                    from: 0; to: 128; stepSize: 1
+                                    value: Chiaki.settings.audioVolume
+                                    onMoved: Chiaki.settings.audioVolume = value
+                                    KeyNavigation.left: resumeBtn
+                                    background: Rectangle {
+                                        x: volume.leftPadding
+                                        y: volume.topPadding + volume.availableHeight / 2 - height / 2
+                                        width: volume.availableWidth
+                                        height: 2
+                                        color: "#40ffffff"
+                                        Rectangle { width: volume.visualPosition * parent.width; height: parent.height; color: ap.ink }
+                                    }
+                                    handle: Rectangle {
+                                        x: volume.leftPadding + volume.visualPosition * (volume.availableWidth - width)
+                                        y: volume.topPadding + volume.availableHeight / 2 - height / 2
+                                        width: 14; height: 14; radius: 7
+                                        color: ap.ink
+                                        border.width: volume.visualFocus ? 2 : 0
+                                        border.color: ap.cyan
+                                    }
+                                }
+                                ApChip { text: ((volume.value / 128.0) * 100).toFixed(0) + "%" }
+                            }
+                            ApText { role: "cap"; text: qsTr("Головні клавіші"); Layout.topMargin: 10 }
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Repeater {
+                                    model: panel.visible && panel.page === "back" ? panel.keyRows() : []
+                                    Row {
+                                        required property var modelData
+                                        spacing: 6
+                                        height: 24
+                                        rightPadding: 10
+                                        ApChip { anchors.verticalCenter: parent.verticalCenter; key: true; text: modelData.key }
+                                        ApText { anchors.verticalCenter: parent.verticalCenter; role: "small"; color: ap.mute; wrapMode: Text.NoWrap; text: modelData.name }
+                                    }
+                                }
+                            }
+                            ApText {
+                                visible: Qt.platform.os === "osx" && panel.hasModes
+                                Layout.fillWidth: true
+                                role: "small"
+                                text: qsTr("На MacBook клавіші F1, F2, F3 натискай разом з Fn: Fn + F1.")
+                            }
+                        }
+                    }
+
+                    // продовжити гру
+                    PageFlick {
+                        visible: panel.page === "extend"
+                        ColumnLayout {
+                            width: content.width
+                            spacing: 12
+                            ApText { role: "cap"; text: qsTr("Продовжити гру") }
+                            ExtendPanel {
+                                id: extendPanel
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: 720
+                                compact: true
+                                visible: panel.visible && panel.page === "extend"
+                            }
+                        }
+                    }
+
+                    // клавіші: екран керування з геймпадом (компактний варіант для гри)
+                    Loader {
+                        anchors.fill: parent
+                        active: panel.visible && panel.page === "keys"
+                        visible: active
+                        sourceComponent: Component {
+                            AnyPlayControls {
+                                inGame: true
+                                onCloseRequested: panel.goMain()
+                            }
+                        }
+                    }
+
+                    // якість картинки: змінюється з перепідключенням на кілька секунд
+                    PageFlick {
+                        visible: panel.page === "quality"
+                        ColumnLayout {
+                            id: qualityList
+                            readonly property Item firstOpt: qualityRepeater.count > 0 ? qualityRepeater.itemAt(0) : null
+                            width: content.width
+                            spacing: 0
+                            ApText { role: "cap"; text: qsTr("Якість картинки"); Layout.bottomMargin: 6 }
+                            ApText {
+                                Layout.fillWidth: true; Layout.maximumWidth: 620
+                                Layout.bottomMargin: 8
+                                role: "hint"
+                                text: qsTr("«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш рівень сам, гра перепідключиться за кілька секунд, прогрес у грі не зникає.")
+                            }
+                            Repeater {
+                                id: qualityRepeater
+                                model: panel.qualities
+                                ApOpt {
+                                    required property var modelData
+                                    Layout.maximumWidth: 620
+                                    text: modelData.name
+                                    sub: modelData.info
+                                    checked: panel.qualityOn(modelData)
+                                    onClicked: panel.setQuality(modelData)
+                                    KeyNavigation.left: qualityBtn
+                                }
+                            }
+                        }
+                    }
+
+                    // керування самою приставкою
+                    PageFlick {
+                        visible: panel.page === "console"
+                        ColumnLayout {
+                            width: content.width
+                            spacing: 6
+                            ApText { role: "cap"; text: qsTr("Керування приставкою") }
+                            AnyPlayGuide {
+                                Layout.fillWidth: true
+                                columns: content.width >= 900 ? 2 : 1
+                                columnSpacing: 40
+                                compact: true
+                                menuKey: panel.menuKey
+                            }
+                        }
+                    }
+
+                    // вийти з гри
+                    PageFlick {
+                        visible: panel.page === "exit"
+                        ColumnLayout {
+                            width: content.width
+                            spacing: 12
+                            ApText { role: "cap"; color: ap.bad; text: qsTr("Вийти з гри") }
+                            ApText {
+                                Layout.fillWidth: true; Layout.maximumWidth: 620
+                                role: "lead"; rich: true
+                                text: Chiaki.cloud.endTs > 0
+                                    ? qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до <b>%1</b>.").arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs))
+                                    : qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до кінця броні.")
+                            }
+                            Flow {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                spacing: 10
+                                ApButton {
+                                    id: exitConfirm
+                                    focusPolicy: Qt.StrongFocus
+                                    text: qsTr("Вийти з гри")
+                                    onClicked: panel.exit()
+                                    KeyNavigation.left: exitBtn
+                                    KeyNavigation.right: stayBtn
+                                }
+                                ApButton {
+                                    id: stayBtn
+                                    focusPolicy: Qt.StrongFocus
+                                    ghost: true
+                                    height: exitConfirm.height
+                                    text: qsTr("Залишитись")
+                                    onClicked: panel.goMain()
+                                    KeyNavigation.left: exitConfirm
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── підвал: зв'язок і як закрити меню ──
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: ap.hair }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 10
+                spacing: 20
+                FootText {
+                    text: Chiaki.session ? qsTr("Зв'язок %1 Мбіт/с, втрати %2%").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ","))
+                        .arg(((isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss : 0) * 100).toFixed(1).replace(".", ",")) : ""
+                }
+                Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
+                FootText { text: qsTr("Закрити меню: Esc або `") }
+            }
+        }
+    }
+
+    component FootText: Text {
+        font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 12
+        font.letterSpacing: 1.2; font.capitalization: Font.AllUppercase
+        color: ap.faint
+    }
+
+    // сторінка праворуч: прокручується, якщо вікно низьке
+    component PageFlick: Flickable {
+        id: pf
+        default property alias body: pfInner.data
+        anchors.fill: parent
+        clip: true
+        contentWidth: width
+        contentHeight: pfInner.childrenRect.height + 8
+        boundsBehavior: Flickable.StopAtBounds
+        interactive: contentHeight > height
+        ScrollBar.vertical: ScrollBar {
+            policy: pf.interactive ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+            contentItem: Rectangle { implicitWidth: 4; radius: 2; color: "#55ffffff" }
+        }
+        Item { id: pfInner; width: pf.width; height: childrenRect.height }
+    }
+
+    // пункт ліворуч: великі літери, обраний — з підсвіткою і відступом
+    component PauseItem: Item {
+        id: pi
+        property string pageId
+        property string text
         property bool danger: false
-        property string iconName: ""
-        Layout.preferredHeight: 58
-        font.pixelSize: 17
-        font.bold: true
-        leftPadding: 22; rightPadding: 22
-        Keys.onReturnPressed: clicked()
-        Keys.onEnterPressed: clicked()
-        Keys.onEscapePressed: panel.resume()
-        contentItem: Item {
-            implicitWidth: mbRow.implicitWidth
-            implicitHeight: mbRow.implicitHeight
-            Row {
-                id: mbRow
-                anchors.centerIn: parent
-                spacing: 10
-                Image {
-                    visible: mb.iconName !== ""
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: mb.primary ? 0 : 24; height: 24
-                    source: mb.iconName !== "" && !mb.primary ? "qrc:/icons/ap-" + mb.iconName + ".svg" : ""
-                    sourceSize: Qt.size(48, 48)
-                }
-                Label {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: (mb.primary && mb.iconName === "play" ? "▶  " : "") + mb.text; font: mb.font; color: "white"
-                    horizontalAlignment: Text.AlignHCenter
-                }
+        readonly property bool current: panel.page === pageId
+        Layout.fillWidth: true
+        implicitHeight: piText.implicitHeight + (zoom.height < 640 ? 18 : 26)
+        activeFocusOnTab: true
+        onActiveFocusChanged: if (activeFocus) panel.page = pageId
+        function activate() {
+            if (pageId === "back") panel.resume();
+            else { panel.page = pageId; panel.enterContent(); }
+        }
+        Keys.onReturnPressed: activate()
+        Keys.onEnterPressed: activate()
+        Keys.onSpacePressed: activate()
+        Keys.onRightPressed: if (pageId !== "back") activate()
+        Rectangle {
+            anchors.fill: parent
+            visible: pi.current
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "#1fffffff" }
+                GradientStop { position: 1.0; color: "#00ffffff" }
             }
         }
-        background: Rectangle {
-            radius: 16
-            color: mb.danger ? (mb.hovered ? "#66ff4d6d" : "#33ff4d6d") : (mb.hovered ? "#44ffffff" : "#26ffffff")
-            border.color: mb.activeFocus ? "#22e4ff" : (mb.danger ? "#ff4d6d" : "#33ffffff")
-            border.width: mb.activeFocus ? 2 : 1
-            gradient: mb.primary ? mbGradient : null
-            Gradient {
-                id: mbGradient
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: "#ff9a3c" }
-                GradientStop { position: 0.5; color: "#ff2e9a" }
-                GradientStop { position: 1.0; color: "#7b2cff" }
-            }
+        Rectangle {   // фокус з клавіатури чи геймпада
+            visible: pi.activeFocus
+            anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+            width: 2
+            color: ap.cyan
+        }
+        Text {
+            id: piText
+            anchors { left: parent.left; leftMargin: pi.current ? 12 : 4; right: parent.right; verticalCenter: parent.verticalCenter }
+            text: pi.text
+            elide: Text.ElideRight
+            font.family: ap.display; font.weight: Font.Medium; font.pixelSize: zoom.height < 640 ? 15 : 17
+            font.letterSpacing: 1.8; font.capitalization: Font.AllUppercase
+            color: pi.danger ? ap.bad : ap.ink
+            opacity: pi.current || piMouse.containsMouse || pi.activeFocus ? 1 : 0.6
+            Behavior on anchors.leftMargin { NumberAnimation { duration: 120 } }
+        }
+        Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: 1; color: ap.hair }
+        MouseArea {
+            id: piMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: { pi.forceActiveFocus(); if (pi.pageId === "back") panel.resume(); else panel.page = pi.pageId; }
         }
     }
 }

@@ -89,8 +89,9 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	private val path = Path()
 	private val tmp = RectF()
 
-	private val idleFill get() = if(landscape) Color.argb(70, 10, 6, 24) else Color.argb(255, 26, 16, 48)
-	private val pressedFill = Color.argb(150, 255, 46, 154)
+	// кольори нового дизайну AnyPlay: темно-фіолетове тло, натиснуте підсвічується блакитним (#8fe3ff), без неону
+	private val idleFill get() = if(landscape) Color.argb(70, 13, 10, 22) else Color.argb(255, 43, 39, 64)
+	private val pressedFill = Color.argb(150, 143, 227, 255)
 
 	override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = relayout()
 
@@ -186,7 +187,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		if(!landscape)
 		{
 			// під картинкою — темне тло в кольорах AnyPlay
-			fill.color = Color.rgb(11, 6, 24)
+			fill.color = Color.rgb(29, 26, 43)
 			canvas.drawRect(0f, videoBottom.toFloat(), width.toFloat(), height.toFloat(), fill)
 		}
 		drawShoulder(canvas, buttons[Kind.L2]!!, "L2")
@@ -338,7 +339,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	private fun drawStick(canvas: Canvas, s: Stick)
 	{
 		val active = s.pointer >= 0
-		fill.color = if(landscape) Color.argb(if(active) 60 else 35, 255, 255, 255) else Color.argb(255, 20, 12, 38)
+		fill.color = if(landscape) Color.argb(if(active) 60 else 35, 255, 255, 255) else Color.argb(255, 36, 32, 54)
 		canvas.drawCircle(s.cx, s.cy, stickR * 1.55f, fill)
 		val a = stroke.alpha
 		stroke.alpha = if(active) 200 else 110

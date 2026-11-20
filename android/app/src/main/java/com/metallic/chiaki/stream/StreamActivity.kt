@@ -6,11 +6,16 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.app.AlertDialog
 import android.graphics.Matrix
+import android.graphics.drawable.GradientDrawable
 import android.os.*
 import android.view.*
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
+import com.metallic.chiaki.anyplay.AnyPlayHost
+import com.metallic.chiaki.anyplay.AnyPlayStyle
 import com.metallic.chiaki.anyplay.AnyPlayWebDialog
 import com.metallic.chiaki.anyplay.GamepadView
 import androidx.appcompat.app.AppCompatActivity
@@ -47,6 +52,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import org.json.JSONObject
 import kotlin.math.min
 
 private sealed class DialogContents
@@ -62,7 +68,9 @@ class StreamActivity : AppCompatActivity()
 	{
 		const val EXTRA_CONNECT_INFO = "connect_info"
 		const val EXTRA_ANYPLAY = "anyplay"   // гра через сервер AnyPlay: час броні контролює сервер
+		const val EXTRA_ANYPLAY_ADMIN = "anyplay_admin"   // грає адмін: без нагадувань про кінець гри
 		private const val ANYPLAY_BEAT_MS = 20000L
+		private const val ANYPLAY_BANNER_MS = 20000L
 		private const val HIDE_UI_TIMEOUT_MS = 2000L
 	}
 
@@ -137,7 +145,10 @@ class StreamActivity : AppCompatActivity()
 			// AnyPlay: своє меню (кнопка «⋯» на джойстику або «Назад»), стара нижня панель не потрібна
 			binding.overlay.isGone = true
 			binding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> arrangeForOrientation() }
-			viewModel.onScreenControlsEnabled.observe(this, Observer { binding.root.post { arrangeForOrientation() } })
+			viewModel.onScreenControlsEnabled.observe(this, Observer {
+				anyplayControls = it != false
+				binding.root.post { arrangeForOrientation() }
+			})
 			binding.root.post {
 				findViewById<GamepadView>(R.id.gamepadView)?.menuCallback = { showAnyPlayMenu() }
 				arrangeForOrientation()
@@ -187,6 +198,16 @@ class StreamActivity : AppCompatActivity()
 	private var anyplayBeatJob: Job? = null
 	private var anyplayResumeJob: Job? = null
 	private var anyplayQualityJob: Job? = null
+	private var anyplayRemindJob: Job? = null
+	private val anyplayAdmin get() = intent.getBooleanExtra(EXTRA_ANYPLAY_ADMIN, false)
+	// кінець гри (усієї, разом із бронями впритул) за SystemClock.elapsedRealtime(), 0 — ще не знаємо
+	@Volatile private var anyplayEndAt = 0L
+	@Volatile private var anyplayContinues = false   // після цієї броні одразу йде наступна: гра не закінчується
+	@Volatile private var anyplayLoss = 0.0
+	@Volatile private var anyplayControls = true
+	private var anyplayReminded = 0                  // за скільки хвилин до кінця вже нагадали (15 чи 5), 0 — ще ні
+	private var anyplayBanner: View? = null
+	private var anyplayMenu: AnyPlayWebDialog? = null
 
 	override fun onResume()
 	{
@@ -211,6 +232,11 @@ class StreamActivity : AppCompatActivity()
 			while(isActive)
 			{
 				val r = withContext(Dispatchers.IO) { AnyPlayCloud.heartbeat(this@StreamActivity, true) }
+				if(r.status == 200 && r.json.has("left"))
+				{
+					anyplayEndAt = SystemClock.elapsedRealtime() + r.json.optLong("left") * 1000
+					anyplayContinues = r.json.optBoolean("continues")
+				}
 				if(r.status == 401)
 					anyplayEnd("Доступ скасовано адміністратором.")
 				else if(r.status == 200 && !r.json.optBoolean("continue", true))
@@ -219,6 +245,116 @@ class StreamActivity : AppCompatActivity()
 				delay(ANYPLAY_BEAT_MS)
 			}
 		}
+		anyplayRemindJob?.cancel()
+		anyplayRemindJob = lifecycleScope.launch {
+			while(isActive)
+			{
+				anyplayCheckReminder()
+				delay(2000)
+			}
+		}
+	}
+
+	/** Скільки секунд лишилось до кінця гри, -1 — ще не знаємо */
+	private fun anyplayLeft(): Long = if(anyplayEndAt > 0) maxOf(0L, (anyplayEndAt - SystemClock.elapsedRealtime()) / 1000) else -1L
+
+	/** За 15 і за 5 хвилин до кінця гри — банер угорі з кнопкою «Продовжити» (не для адміна і не коли далі ще бронь) */
+	private fun anyplayCheckReminder()
+	{
+		val left = anyplayLeft()
+		if(left < 0)
+			return
+		if(left > 16 * 60)
+		{
+			anyplayReminded = 0   // гру продовжили: нагадаємо знову перед новим кінцем
+			return
+		}
+		if(anyplayAdmin || anyplayContinues || left <= 0)
+			return
+		val step = if(left <= 5 * 60) 5 else if(left <= 15 * 60) 15 else return
+		if(anyplayReminded != 0 && anyplayReminded <= step)
+			return
+		// вікно з помилкою або картинка ще підключається — спробуємо за кілька секунд
+		if(dialogContents != null || viewModel.session.state.value != StreamStateConnected)
+			return
+		anyplayReminded = step
+		// у відкритому меню час і так видно вгорі
+		if(anyplayMenu == null)
+			anyplayShowBanner((left + 59) / 60)
+	}
+
+	private val anyplayHideBannerRunnable = Runnable { anyplayHideBanner() }
+
+	private fun anyplayShowBanner(minutes: Long)
+	{
+		anyplayHideBanner()
+		val c = this
+		val dp = resources.displayMetrics.density
+		fun px(v: Int) = (v * dp).toInt()
+		val box = LinearLayout(c).apply {
+			orientation = LinearLayout.HORIZONTAL
+			gravity = Gravity.CENTER_VERTICAL
+			background = GradientDrawable().apply {
+				setColor(AnyPlayStyle.DIALOG)
+				cornerRadius = 3 * dp
+				setStroke(px(1), AnyPlayStyle.EDGE)
+			}
+			setPadding(px(16), px(10), px(6), px(10))
+			elevation = 8 * dp
+			isClickable = true   // дотики по банеру не йдуть у гру
+		}
+		val texts = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }
+		texts.addView(TextView(c).apply {
+			text = "Лишилось $minutes хв. Продовжити гру?"
+			typeface = AnyPlayStyle.display(c)
+			isAllCaps = true
+			letterSpacing = 0.08f
+			textSize = 16f
+			setTextColor(AnyPlayStyle.GOLD)
+		})
+		texts.addView(TextView(c).apply {
+			text = "Меню AnyPlay: кнопка ⋯ на екрані або «Назад» на телефоні"
+			typeface = AnyPlayStyle.body(c)
+			textSize = 12f
+			setTextColor(AnyPlayStyle.MUTE)
+		})
+		box.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+		box.addView(TextView(c).apply {
+			text = "Продовжити"
+			gravity = Gravity.CENTER
+			minHeight = px(40)
+			AnyPlayStyle.button(this, true)
+			setOnClickListener {
+				anyplayHideBanner()
+				showAnyPlayMenu("menu:extend")
+			}
+		}, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { it.marginStart = px(12) })
+		box.addView(TextView(c).apply {
+			text = "✕"
+			contentDescription = "Закрити"
+			textSize = 18f
+			setTextColor(AnyPlayStyle.MUTE)
+			setPadding(px(12), px(6), px(8), px(6))
+			setOnClickListener { anyplayHideBanner() }
+		})
+		val cut = ViewCompat.getRootWindowInsets(binding.root)?.getInsets(WindowInsetsCompat.Type.displayCutout())
+		val side = px(12) + maxOf(cut?.left ?: 0, cut?.right ?: 0)
+		val lp = FrameLayout.LayoutParams(minOf(binding.root.width - 2 * side, px(560)), ViewGroup.LayoutParams.WRAP_CONTENT,
+			Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+		lp.topMargin = (cut?.top ?: 0) + px(12)
+		binding.root.addView(box, lp)
+		box.alpha = 0f
+		box.animate().alpha(1f).setDuration(200).start()
+		anyplayBanner = box
+		uiVisibilityHandler.removeCallbacks(anyplayHideBannerRunnable)
+		uiVisibilityHandler.postDelayed(anyplayHideBannerRunnable, ANYPLAY_BANNER_MS)
+	}
+
+	private fun anyplayHideBanner()
+	{
+		uiVisibilityHandler.removeCallbacks(anyplayHideBannerRunnable)
+		anyplayBanner?.let { binding.root.removeView(it) }
+		anyplayBanner = null
 	}
 
 	/** Нове підключення: свіжий ключ від сервера й поточна якість з налаштувань */
@@ -231,6 +367,13 @@ class StreamActivity : AppCompatActivity()
 				delay(waitMs)   // приставці треба мить, щоб закрити попередню трансляцію
 			val target = withContext(Dispatchers.IO) {
 				val r = AnyPlayCloud.session(this@StreamActivity)
+				r.json.optJSONObject("booking")?.let { b ->
+					if(b.optLong("end") > 0 && r.json.optLong("now") > 0)
+					{
+						anyplayEndAt = SystemClock.elapsedRealtime() + (b.optLong("end") - r.json.optLong("now")) * 1000
+						anyplayContinues = b.optBoolean("continues")
+					}
+				}
 				if(r.ok && r.json.optString("state") == "play")
 					AnyPlayCloud.playTarget(this@StreamActivity, r.json)
 				else if(r.ok)
@@ -267,6 +410,7 @@ class StreamActivity : AppCompatActivity()
 				delay(500)
 				loss += (viewModel.session.session?.packetLoss() ?: 0.0) / 4
 			}
+			anyplayLoss = if(loss.isNaN()) 0.0 else loss
 			if(viewModel.session.state.value != StreamStateConnected || !AnyPlayQuality.auto(this))
 			{
 				ticks = 0
@@ -308,6 +452,9 @@ class StreamActivity : AppCompatActivity()
 		anyplayBeatJob?.cancel()
 		anyplayQualityJob?.cancel()
 		anyplayResumeJob?.cancel()
+		anyplayRemindJob?.cancel()
+		anyplayHideBanner()
+		anyplayMenu?.dismiss()
 		viewModel.session.shutdown()
 		dialog?.dismiss()
 		val d = MaterialAlertDialogBuilder(this)
@@ -320,6 +467,7 @@ class StreamActivity : AppCompatActivity()
 			.create()
 		dialogContents = AnyPlayEndDialog
 		d.show()
+		AnyPlayStyle.style(d)
 	}
 
 	override fun onPause()
@@ -328,6 +476,7 @@ class StreamActivity : AppCompatActivity()
 		anyplayBeatJob?.cancel()
 		anyplayResumeJob?.cancel()
 		anyplayQualityJob?.cancel()
+		anyplayRemindJob?.cancel()
 		viewModel.session.pause()
 	}
 
@@ -389,36 +538,65 @@ class StreamActivity : AppCompatActivity()
 		}
 	}
 
-	private fun showAnyPlayMenu()
+	/** Меню AnyPlay під час гри (кнопка «⋯» на джойстику, «Назад», банер «Продовжити»): сторінка в стилі паузи GTA */
+	private fun showAnyPlayMenu(page: String = "menu")
 	{
-		if(dialogContents != null)
+		if(dialogContents != null || anyplayMenu != null)
 			return
-		val controls = viewModel.onScreenControlsEnabled.value != false
-		MaterialAlertDialogBuilder(this)
-			.setTitle("Меню гри")
-			.setItems(arrayOf(
-				"Продовжити гру",
-				"Як керувати приставкою: меню PS, закрити гру, запустити іншу",
-				"Якість картинки: ${AnyPlayQuality.name(this)}",
-				if(controls) "Сховати кнопки на екрані (граю з геймпадом)" else "Показати кнопки на екрані",
-				"Вийти з гри")) { _, which ->
-				when(which)
+		anyplayHideBanner()
+		val d = AnyPlayWebDialog(this, page, anyplayHost, overGame = true) {
+			anyplayMenu = null
+			hideSystemUI()
+		}
+		anyplayMenu = d
+		d.show()
+	}
+
+	/** Дані й команди для меню під час гри */
+	private val anyplayHost = object: AnyPlayHost
+	{
+		override fun info(): String = JSONObject()
+			.put("left", anyplayLeft())
+			.put("loss", anyplayLoss)
+			.put("controls", anyplayControls)
+			.put("admin", anyplayAdmin)
+			.put("quality", AnyPlayQuality.name(this@StreamActivity))
+			.toString()
+
+		override fun action(name: String, arg: String)
+		{
+			when(name)
+			{
+				"controls" ->
 				{
-					0 -> AnyPlayWebDialog(this, "extend") { hideSystemUI() }.show()
-					1 -> AnyPlayWebDialog(this, "help") { hideSystemUI() }.show()
-					2 -> AnyPlayQuality.choose(this) {
-						// нова якість діє з нового підключення
-						Toast.makeText(this, "Якість: ${AnyPlayQuality.name(this)}. Підключаюсь заново…", Toast.LENGTH_LONG).show()
-						viewModel.session.shutdown()
-						anyplayFreshConnect(2500)
-					}.setOnDismissListener { hideSystemUI() }
-					3 -> viewModel.setOnScreenControlsEnabled(!controls)
-					4 -> finish()
+					viewModel.setOnScreenControlsEnabled(!anyplayControls)
+					anyplayMenu?.dismiss()
+				}
+				"exit" ->
+				{
+					anyplayMenu?.dismiss()
+					finish()
+				}
+				// гру продовжили й оплатили: новий кінець гри — одразу, не чекаючи наступного сигналу серверу
+				"refresh" -> lifecycleScope.launch {
+					val r = withContext(Dispatchers.IO) { AnyPlayCloud.heartbeat(this@StreamActivity, true) }
+					if(r.status == 200 && r.json.has("left"))
+					{
+						anyplayEndAt = SystemClock.elapsedRealtime() + r.json.optLong("left") * 1000
+						anyplayContinues = r.json.optBoolean("continues")
+					}
 				}
 			}
-			.setNegativeButton("Закрити", null)
-			.setOnDismissListener { hideSystemUI() }
-			.show()
+		}
+
+		override fun qualityChanged()
+		{
+			// нова якість діє з нового підключення
+			Toast.makeText(this@StreamActivity, "Якість: ${AnyPlayQuality.name(this@StreamActivity)}. Підключаюсь заново…", Toast.LENGTH_LONG).show()
+			anyplayMenu?.dismiss()
+			viewModel.session.shutdown()
+			anyplayFreshConnect(2500)
+		}
 	}
 
 	@Deprecated("Deprecated in Java")
@@ -514,6 +692,7 @@ class StreamActivity : AppCompatActivity()
 							.create()
 						dialogContents = StreamQuitDialog
 						dialog.show()
+						AnyPlayStyle.style(dialog)
 					}
 					else
 						finish()
@@ -543,6 +722,7 @@ class StreamActivity : AppCompatActivity()
 						.create()
 					dialogContents = PsnFailedDialog
 					dialog.show()
+					AnyPlayStyle.style(dialog)
 				}
 			}
 

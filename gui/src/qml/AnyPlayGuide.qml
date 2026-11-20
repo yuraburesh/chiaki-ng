@@ -1,18 +1,17 @@
 // AnyPlay: як керувати самою приставкою — меню PS, вихід з гри, запуск іншої гри.
-// Клавіші показуємо справжні (з урахуванням того, що клієнт міг їх змінити).
+// Рядки з тонкими лініями, клавіші праворуч фішками. Клавіші справжні (з урахуванням того, що клієнт міг їх змінити).
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls
 
 import org.streetpea.chiaking
 
 GridLayout {
     id: guide
-    property bool compact: false      // у меню гри — щільніше, у два стовпці
-    property string menuKey: Qt.platform.os === "osx" ? "Cmd+O" : "Ctrl+O"
-    columns: compact ? 2 : 1
-    columnSpacing: 10
-    rowSpacing: compact ? 8 : 10
+    property bool compact: false      // у меню гри — без рядка «Чого не робити» внизу сітки, щільніше
+    property string menuKey: qsTr("клавіша ` (під Esc)")
+    columns: 1
+    columnSpacing: 64
+    rowSpacing: 0
 
     function keyOf(id, fallback) {
         const profiles = Chiaki.settings.anyplayProfiles();
@@ -36,70 +35,46 @@ GridLayout {
     readonly property string opt: keyOf("pause", "Esc")
     readonly property string cross: keyOf("select", "Enter")
     readonly property string moon: keyOf("back", "Backspace")
+    readonly property string dontText: qsTr("Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, обери «Вийти з гри» в меню AnyPlay: %1.").arg(menuKey)
     readonly property var padRows: [
-        { icon: "home", title: qsTr("Головний екран приставки"),
-          text: qsTr("Натисни й утримуй кнопку PS на геймпаді близько секунди. Відкриється головний екран PS5 зі списком ігор.") },
-        { icon: "bolt", title: qsTr("Швидке меню"),
-          text: qsTr("Коротко натисни кнопку PS. Знизу з'явиться панель: звук, друзі, перемикання між грою і меню.") },
-        { icon: "close", title: qsTr("Закрити гру"),
-          text: qsTr("Відкрий головний екран, хрестовиною наведи на гру, натисни OPTIONS (на геймпадах Xbox це Menu) і обери «Закрити гру».") },
-        { icon: "gamepad", title: qsTr("Запустити іншу гру"),
-          text: qsTr("На головному екрані обери гру хрестовиною і натисни ✕ (на Xbox це A). Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься.") },
-        { icon: "compass", title: qsTr("Рух по меню"),
-          text: qsTr("Хрестовина або лівий стік рухають вибір, ✕ підтверджує, ○ повертає назад (на Xbox це A і B). У самій грі OPTIONS відкриває паузу.") },
-        { icon: "warning", title: qsTr("Чого не робити"),
-          text: qsTr("Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, натисни «Вийти з гри» в меню AnyPlay (%1).").arg(menuKey) }
+        { title: qsTr("Головний екран приставки"), text: qsTr("Утримуй кнопку PS на геймпаді близько секунди: відкриється список ігор."), keys: ["PS", qsTr("утримати")] },
+        { title: qsTr("Швидке меню"), text: qsTr("Коротко натисни кнопку PS: звук, друзі, перемикання між грою і меню."), keys: ["PS"] },
+        { title: qsTr("Закрити гру"), text: qsTr("На головному екрані наведи на гру, натисни OPTIONS (на Xbox це Menu) і обери «Закрити гру»."), keys: ["OPTIONS"] },
+        { title: qsTr("Запустити іншу гру"), text: qsTr("На головному екрані обери гру хрестовиною і натисни ✕ (на Xbox це A). Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься."), keys: ["✕"] },
+        { title: qsTr("Рух по меню"), text: qsTr("Хрестовина або лівий стік рухають вибір, ✕ підтверджує, ○ повертає назад (на Xbox це A і B)."), keys: ["✕", "○"] },
+        { title: qsTr("Чого не робити"), text: dontText, keys: [] }
     ]
     readonly property var keyRows: [
-        { icon: "home", title: qsTr("Головний екран приставки"),
-          text: qsTr("Натисни й утримуй %1 (кнопка PS) близько секунди. Відкриється головний екран PS5 зі списком ігор.").arg(ps) },
-        { icon: "bolt", title: qsTr("Швидке меню"),
-          text: qsTr("Коротко натисни %1 (кнопка PS). Знизу з'явиться панель: звук, друзі, перемикання між грою і меню.").arg(ps) },
-        { icon: "close", title: qsTr("Закрити гру"),
-          text: qsTr("Відкрий головний екран, стрілками наведи на гру, натисни %1 (кнопка OPTIONS) і обери «Закрити гру».").arg(opt) },
-        { icon: "gamepad", title: qsTr("Запустити іншу гру"),
-          text: qsTr("На головному екрані обери гру стрілками ← → і натисни %1 (✕). Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься.").arg(cross) },
-        { icon: "compass", title: qsTr("Рух по меню"),
-          text: qsTr("Стрілки ↑ ↓ ← → рухають вибір, %1 (✕) підтверджує, %2 (○) повертає назад. У самій грі %3 відкриває паузу.").arg(cross).arg(moon).arg(opt) },
-        { icon: "warning", title: qsTr("Чого не робити"),
-          text: qsTr("Не вимикай приставку, не вмикай режим спокою і не виходь з акаунта PSN: після цього підключитись не вийде. Щоб закінчити, натисни «Вийти з гри» в меню AnyPlay (%1).").arg(menuKey) }
+        { title: qsTr("Головний екран приставки"), text: qsTr("Утримуй кнопку PS близько секунди: відкриється список ігор."), keys: [ps, qsTr("утримати")] },
+        { title: qsTr("Швидке меню"), text: qsTr("Коротко натисни кнопку PS: звук, друзі, перемикання між іграми."), keys: [ps] },
+        { title: qsTr("Закрити гру"), text: qsTr("На головному екрані наведи на гру, натисни OPTIONS і обери «Закрити гру»."), keys: [opt] },
+        { title: qsTr("Запустити іншу гру"), text: qsTr("На головному екрані обери гру стрілками і натисни ✕. Якщо попередня гра ще відкрита, приставка запропонує її закрити: погодься."), keys: ["← →", cross] },
+        { title: qsTr("Рух по меню"), text: qsTr("Стрілки рухають вибір, ✕ підтверджує, ○ повертає назад. У самій грі OPTIONS відкриває паузу."), keys: ["↑ ↓ ← →", cross, moon] },
+        { title: qsTr("Чого не робити"), text: dontText, keys: [] }
     ]
-
     readonly property var rows: pad ? padRows : keyRows
 
     Repeater {
         model: guide.rows
-        Rectangle {
+        ApRow {
+            id: gRow
             required property var modelData
             Layout.fillWidth: true
+            Layout.fillHeight: true      // у двох стовпцях лінії під рядками на одній висоті
             Layout.preferredWidth: 1
-            Layout.alignment: Qt.AlignTop
-            implicitHeight: rowBox.implicitHeight + (guide.compact ? 16 : 24)
-            radius: 14
-            color: "#1f1240"
-            border.color: "#22ffffff"
-            RowLayout {
-                id: rowBox
-                anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: guide.compact ? 10 : 14 }
-                spacing: 10
-                Image {
-                    Layout.alignment: Qt.AlignTop
-                    Layout.preferredWidth: guide.compact ? 24 : 30
-                    Layout.preferredHeight: guide.compact ? 24 : 30
-                    Layout.topMargin: 1
-                    source: "qrc:/icons/ap-" + modelData.icon + ".svg"
-                    sourceSize: Qt.size(60, 60)
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    Label { text: modelData.title; color: "white"; font.pixelSize: guide.compact ? 14 : 17; font.bold: true }
-                    Label {
-                        Layout.fillWidth: true; wrapMode: Text.WordWrap
-                        text: modelData.text; color: "#d8cdea"; font.pixelSize: guide.compact ? 12.5 : 14
-                    }
+            title: modelData.title
+            subtitle: modelData.text
+            titleColor: modelData.keys.length ? ap.ink : ap.gold
+            Repeater {
+                model: gRow.modelData.keys
+                ApChip {
+                    required property string modelData
+                    anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                    key: true
+                    text: modelData
                 }
             }
         }
     }
+    AnyPlayStyle { id: ap }
 }

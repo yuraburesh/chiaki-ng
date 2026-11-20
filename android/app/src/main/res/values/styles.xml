@@ -111,60 +111,42 @@
         <item name="android:windowBackground">@color/stream_background</item>
     </style>
 
+    <!-- AnyPlay: новий дизайн — вечірній градієнт, білі кнопки, без яскравих рамок (кольори як у app.html і AnyPlayStyle.qml) -->
     <style name="AnyPlayTheme" parent="Theme.MaterialComponents.NoActionBar">
-        <item name="colorPrimary">#1A0B33</item>
-        <item name="colorPrimaryDark">#0B0618</item>
-        <item name="colorAccent">#FF2E9A</item>
-        <item name="colorOnPrimary">#ffffff</item>
-        <item name="colorSecondary">#FF2E9A</item>
-        <item name="colorOnSecondary">#ffffff</item>
+        <item name="colorPrimary">#2B2740</item>
+        <item name="colorPrimaryDark">#2B2740</item>
+        <item name="colorAccent">#F5F3F7</item>
+        <item name="colorOnPrimary">#F5F3F7</item>
+        <item name="colorSecondary">#F5F3F7</item>
+        <item name="colorOnSecondary">#221D2E</item>
         <item name="android:windowBackground">@drawable/anyplay_bg</item>
-        <item name="android:statusBarColor">#2B0A4F</item>
-        <item name="android:navigationBarColor">#0B0618</item>
+        <item name="android:statusBarColor">#2B2740</item>
+        <item name="android:navigationBarColor">#7A4A63</item>
         <item name="materialAlertDialogTheme">@style/AnyPlayDialog</item>
         <item name="alertDialogTheme">@style/AppTheme.AlertDialog.NonMaterial</item>
     </style>
 
-    <style name="AnyPlayTile">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">96dp</item>
-        <item name="android:drawablePadding">4dp</item>
-        <item name="android:paddingTop">12dp</item>
-        <item name="android:paddingBottom">8dp</item>
-        <item name="android:layout_weight">1</item>
-        <item name="android:background">@drawable/anyplay_btn_secondary</item>
-        <item name="android:gravity">center_horizontal</item>
-        <item name="android:textColor">#FFFFFF</item>
-        <item name="android:textSize">13sp</item>
-        <item name="android:textStyle">bold</item>
-        <item name="android:lineSpacingExtra">2dp</item>
-        <item name="android:clickable">true</item>
-        <item name="android:focusable">true</item>
-    </style>
-
-    <!-- плитка для горизонтального екрана: висоту задає рядок, менші відступи -->
-    <style name="AnyPlayTile.Land">
-        <item name="android:layout_height">match_parent</item>
-        <item name="android:paddingTop">8dp</item>
-        <item name="android:paddingBottom">4dp</item>
-        <item name="android:textSize">12sp</item>
-        <item name="android:lineSpacingExtra">0dp</item>
-    </style>
-
-    <!-- вікна вибору в кольорах AnyPlay -->
+    <!-- вікна-повідомлення AnyPlay: темна підкладка, кути 2dp; шрифти й кнопки доводить AnyPlayStyle.style() -->
     <style name="AnyPlayDialog" parent="Theme.MaterialComponents.Dialog.Alert">
-        <item name="colorSurface">#24133F</item>
-        <item name="colorOnSurface">#FFFFFF</item>
-        <item name="colorPrimary">#FF5FB8</item>
-        <item name="colorSecondary">#FF5FB8</item>
-        <item name="colorControlActivated">#FF5FB8</item>
-        <item name="android:textColorPrimary">#FFFFFF</item>
-        <item name="android:textColorSecondary">#D8CDEA</item>
+        <item name="colorSurface">#2A2639</item>
+        <item name="colorOnSurface">#F5F3F7</item>
+        <item name="colorPrimary">#F5F3F7</item>
+        <item name="colorSecondary">#F5F3F7</item>
+        <item name="colorControlActivated">#F5F3F7</item>
+        <item name="android:textColorPrimary">#F5F3F7</item>
+        <item name="android:textColorSecondary">#D9FFFFFF</item>
+        <item name="android:backgroundDimAmount">0.6</item>
         <item name="elevationOverlayEnabled">false</item>
+        <item name="shapeAppearanceMediumComponent">@style/AnyPlayDialog.Shape</item>
         <item name="materialButtonStyle">@style/AnyPlayDialog.Button</item>
     </style>
 
+    <style name="AnyPlayDialog.Shape" parent="ShapeAppearance.MaterialComponents.MediumComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">2dp</item>
+    </style>
+
     <style name="AnyPlayDialog.Button" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
-        <item name="android:textColor">#FF8AD0</item>
+        <item name="android:textColor">#F5F3F7</item>
     </style>
 </resources>

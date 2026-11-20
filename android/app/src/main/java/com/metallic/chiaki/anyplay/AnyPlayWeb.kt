@@ -1,5 +1,6 @@
-// AnyPlay: екрани бронювання, продовження і «Мій PSN» — вбудована сторінка (assets/anyplay/app.html),
-// яка ходить на сервер через цю програму; і вікно входу в PSN на сайті Sony.
+// AnyPlay: сторінка програми (assets/anyplay/app.html) — головний екран з вкладками, бронювання, продовження,
+// «Мій PSN», якість, довідка й меню під час гри. Сторінка ходить на сервер через цю програму (міст AnyPlay);
+// тут же вікно входу в PSN на сайті Sony.
 package com.metallic.chiaki.anyplay
 
 import android.annotation.SuppressLint
@@ -11,12 +12,17 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
@@ -27,12 +33,18 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.metallic.chiaki.R
 import com.metallic.chiaki.touchcontrols.ButtonHaptics
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
 private val anyplayIo = Executors.newCachedThreadPool()
+
+const val ANYPLAY_PAGE = "file:///android_asset/anyplay/app.html"
 
 private fun openExternal(context: Context, url: String)
 {
@@ -46,38 +58,177 @@ private fun openExternal(context: Context, url: String)
 	}
 }
 
-/** Повноекранне вікно з вбудованою сторінкою AnyPlay. page: book | mine | extend | psn */
-class AnyPlayWebDialog(private val activity: Activity, private val page: String, private val onClosed: () -> Unit = {}):
+/** Хто показує сторінку (головний екран чи гра): дає їй дані й виконує її команди */
+interface AnyPlayHost
+{
+	/** JSON зі станом для сторінки. Викликається не з головного потоку. */
+	fun info(): String
+
+	/** Команда сторінки (вхід, гра, вихід тощо). Уже в головному потоці. */
+	fun action(name: String, arg: String)
+
+	/** На сторінці змінили якість картинки. Уже в головному потоці. */
+	fun qualityChanged() {}
+}
+
+/** WebView для сторінки AnyPlay; будь-яке стороннє посилання відкривається в браузері */
+@SuppressLint("SetJavaScriptEnabled")
+fun anyplayWebView(activity: Activity, transparent: Boolean): WebView
+{
+	val web = WebView(activity)
+	web.setBackgroundColor(if(transparent) Color.TRANSPARENT else AnyPlayStyle.BG1)
+	web.settings.javaScriptEnabled = true
+	web.settings.domStorageEnabled = true
+	web.overScrollMode = View.OVER_SCROLL_NEVER
+	web.isVerticalScrollBarEnabled = false
+	web.isHorizontalScrollBarEnabled = false
+	web.webViewClient = object: WebViewClient()
+	{
+		// сторінка лише наша, з програми: будь-яке інше посилання відкриваємо в браузері
+		override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean
+		{
+			val url = request.url.toString()
+			if(url.startsWith("file:///android_asset/anyplay/"))
+				return false
+			openExternal(activity, url)
+			return true
+		}
+	}
+	return web
+}
+
+/** Обгортка для сторінки: відступи від системних панелей, вирізу екрана й клавіатури; під панелями видно тло */
+fun anyplayFrame(activity: Activity, web: WebView, background: Drawable?): FrameLayout
+{
+	val frame = FrameLayout(activity)
+	frame.background = background
+	frame.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+	ViewCompat.setOnApplyWindowInsetsListener(frame) { v, insets ->
+		val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+		val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+		v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+		WindowInsetsCompat.CONSUMED
+	}
+	return frame
+}
+
+/**
+ * Міст сторінка ↔ програма (у сторінці це window.AnyPlay).
+ * alive — чи сторінка ще на екрані; host — головний екран або гра (без нього сторінка лише бронює й показує довідку).
+ */
+class AnyPlayBridge(private val activity: Activity, private val web: WebView, private val alive: () -> Boolean,
+	private val host: AnyPlayHost?, private val onClose: () -> Unit)
+{
+	private val haptics = ButtonHaptics(activity)
+
+	@JavascriptInterface
+	fun req(id: Int, method: String, path: String, body: String)
+	{
+		if(!path.startsWith("/api/app/"))
+			return
+		anyplayIo.execute {
+			val json = if(body.isEmpty()) null else try { JSONObject(body) } catch(e: Exception) { null }
+			val r = AnyPlayCloud.request(activity, if(method == "POST") "POST" else "GET", path, json)
+			val text = JSONObject.quote(r.json.toString())
+			activity.runOnUiThread {
+				if(alive())
+					web.evaluateJavascript("window.__anyplayResp($id, ${r.status}, $text)", null)
+			}
+		}
+	}
+
+	@JavascriptInterface
+	fun copy(text: String)
+	{
+		val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+		cm.setPrimaryClip(ClipData.newPlainText("AnyPlay", text))
+	}
+
+	@JavascriptInterface
+	fun open(url: String)
+	{
+		if(url.startsWith("https://"))
+			activity.runOnUiThread { openExternal(activity, url) }
+	}
+
+	@JavascriptInterface
+	fun close() = activity.runOnUiThread { if(alive()) onClose() }
+
+	@JavascriptInterface
+	fun haptic() = activity.runOnUiThread { haptics.trigger() }
+
+	@JavascriptInterface
+	fun psnLogin(create: Boolean) = activity.runOnUiThread {
+		PsnLoginDialog(activity, create) { error ->
+			if(error != null)
+				Toast.makeText(activity, error, Toast.LENGTH_LONG).show()
+			else
+				Toast.makeText(activity, "Вхід у PSN виконано. Адміністратор додасть твій профіль на приставку: це кілька хвилин.", Toast.LENGTH_LONG).show()
+			if(alive())
+				web.evaluateJavascript("window.__anyplayEvent && window.__anyplayEvent('psn')", null)
+		}.show()
+	}
+
+	/** Стан для сторінки від головного екрана чи гри */
+	@JavascriptInterface
+	fun info(): String = host?.info() ?: "{}"
+
+	@JavascriptInterface
+	fun action(name: String, arg: String) = activity.runOnUiThread { if(alive()) host?.action(name, arg) }
+
+	/** Якість картинки: {auto, level, name, levels} */
+	@JavascriptInterface
+	fun quality(): String = AnyPlayQuality.json(activity).toString()
+
+	/** choice: -1 — «Авто», 0..2 — сталий рівень. Повертає нову якість. */
+	@JavascriptInterface
+	fun setQuality(choice: Int): String
+	{
+		if(AnyPlayQuality.select(activity, choice))
+			activity.runOnUiThread { if(alive()) host?.qualityChanged() }
+		return quality()
+	}
+}
+
+/**
+ * Повноекранне вікно зі сторінкою AnyPlay. page: book | mine | extend | psn | help | quality | menu | menu:extend.
+ * overGame — меню під час гри: напівпрозоре (видно гру), системні панелі сховані.
+ */
+class AnyPlayWebDialog(private val activity: Activity, private val page: String, private val host: AnyPlayHost? = null,
+	private val overGame: Boolean = false, private val onClosed: () -> Unit = {}):
 	Dialog(activity, R.style.AnyPlayTheme)
 {
 	private lateinit var web: WebView
-	private val haptics = ButtonHaptics(activity)
 
-	@SuppressLint("SetJavaScriptEnabled")
 	override fun onCreate(savedInstanceState: Bundle?)
 	{
 		super.onCreate(savedInstanceState)
-		web = WebView(activity)
-		web.setBackgroundColor(Color.rgb(11, 6, 24))
-		web.settings.javaScriptEnabled = true
-		web.settings.domStorageEnabled = true
-		web.overScrollMode = View.OVER_SCROLL_NEVER
-		web.webViewClient = object: WebViewClient()
-		{
-			// сторінка лише наша, з програми: будь-яке інше посилання відкриваємо в браузері
-			override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean
+		web = anyplayWebView(activity, overGame)
+		web.addJavascriptInterface(AnyPlayBridge(activity, web, { isShowing }, host) { dismiss() }, "AnyPlay")
+		setContentView(anyplayFrame(activity, web, if(overGame) null else AnyPlayStyle.background()),
+			ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+		window?.let { w ->
+			w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+			WindowCompat.setDecorFitsSystemWindows(w, false)
+			if(overGame)
 			{
-				val url = request.url.toString()
-				if(url.startsWith("file:///android_asset/anyplay/"))
-					return false
-				openExternal(activity, url)
-				return true
+				w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+				w.setFormat(PixelFormat.TRANSLUCENT)
+				w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+				if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+					w.attributes = w.attributes.also { it.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES }
+				WindowCompat.getInsetsController(w, w.decorView).let {
+					it.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+					it.hide(WindowInsetsCompat.Type.systemBars())
+				}
+			}
+			else
+			{
+				w.statusBarColor = Color.TRANSPARENT
+				w.navigationBarColor = Color.TRANSPARENT
 			}
 		}
-		web.addJavascriptInterface(Bridge(), "AnyPlay")
-		setContentView(web, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-		window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-		web.loadUrl("file:///android_asset/anyplay/app.html#$page")
+		web.loadUrl("$ANYPLAY_PAGE#$page")
 		setOnDismissListener {
 			web.removeJavascriptInterface("AnyPlay")
 			web.destroy()
@@ -97,57 +248,6 @@ class AnyPlayWebDialog(private val activity: Activity, private val page: String,
 		}
 		return super.onKeyDown(keyCode, event)
 	}
-
-	private inner class Bridge
-	{
-		@JavascriptInterface
-		fun req(id: Int, method: String, path: String, body: String)
-		{
-			if(!path.startsWith("/api/app/"))
-				return
-			anyplayIo.execute {
-				val json = if(body.isEmpty()) null else try { JSONObject(body) } catch(e: Exception) { null }
-				val r = AnyPlayCloud.request(activity, if(method == "POST") "POST" else "GET", path, json)
-				val text = JSONObject.quote(r.json.toString())
-				activity.runOnUiThread {
-					if(isShowing)
-						web.evaluateJavascript("window.__anyplayResp($id, ${r.status}, $text)", null)
-				}
-			}
-		}
-
-		@JavascriptInterface
-		fun copy(text: String)
-		{
-			val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-			cm.setPrimaryClip(ClipData.newPlainText("AnyPlay", text))
-		}
-
-		@JavascriptInterface
-		fun open(url: String)
-		{
-			if(url.startsWith("https://"))
-				activity.runOnUiThread { openExternal(activity, url) }
-		}
-
-		@JavascriptInterface
-		fun close() = activity.runOnUiThread { dismiss() }
-
-		@JavascriptInterface
-		fun haptic() = activity.runOnUiThread { haptics.trigger() }
-
-		@JavascriptInterface
-		fun psnLogin(create: Boolean) = activity.runOnUiThread {
-			PsnLoginDialog(activity, create) { error ->
-				if(error != null)
-					Toast.makeText(activity, error, Toast.LENGTH_LONG).show()
-				else
-					Toast.makeText(activity, "Вхід у PSN виконано. Адміністратор додасть твій профіль на приставку: це кілька хвилин.", Toast.LENGTH_LONG).show()
-				if(isShowing)
-					web.evaluateJavascript("window.__anyplayEvent && window.__anyplayEvent('psn')", null)
-			}.show()
-		}
-	}
 }
 
 /** Вхід у PSN на сторінці Sony. onDone(null) — вдалося; onDone(текст) — помилка; закрили самі — onDone не кличемо з помилкою */
@@ -162,7 +262,7 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 	override fun onCreate(savedInstanceState: Bundle?)
 	{
 		super.onCreate(savedInstanceState)
-		val root = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(26, 11, 51)) }
+		val root = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(AnyPlayStyle.BG1) }
 		val density = activity.resources.displayMetrics.density
 		val bar = LinearLayout(activity).apply {
 			orientation = LinearLayout.HORIZONTAL
@@ -172,14 +272,17 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 		bar.addView(TextView(activity).apply {
 			text = "✕"
 			textSize = 20f
-			setTextColor(Color.WHITE)
+			setTextColor(AnyPlayStyle.INK)
 			setPadding((8 * density).toInt(), (4 * density).toInt(), (16 * density).toInt(), (4 * density).toInt())
 			setOnClickListener { dismiss() }
 		})
 		bar.addView(TextView(activity).apply {
 			text = if(create) "Реєстрація й вхід у PSN" else "Вхід у PSN: пароль бачить лише Sony"
 			textSize = 15f
-			setTextColor(Color.WHITE)
+			typeface = AnyPlayStyle.display(activity)
+			isAllCaps = true
+			letterSpacing = 0.08f
+			setTextColor(AnyPlayStyle.INK)
 		})
 		root.addView(bar)
 		val frame = FrameLayout(activity)
@@ -203,20 +306,33 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 		progress = LinearLayout(activity).apply {
 			orientation = LinearLayout.VERTICAL
 			gravity = Gravity.CENTER
-			setBackgroundColor(Color.rgb(11, 6, 24))
+			background = AnyPlayStyle.background()
 			visibility = View.GONE
 			addView(ProgressBar(activity))
 			addView(TextView(activity).apply {
 				text = "Перевіряємо вхід у Sony…"
 				textSize = 16f
-				setTextColor(Color.WHITE)
+				typeface = AnyPlayStyle.body(activity)
+				setTextColor(AnyPlayStyle.INK)
 				setPadding(0, (16 * density).toInt(), 0, 0)
 			})
 		}
 		frame.addView(progress, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 		root.addView(frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 		setContentView(root)
-		window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+		window?.let { w ->
+			w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+			// відступи від системних панелей рахуємо самі (на Android 15 вікно все одно на весь екран)
+			WindowCompat.setDecorFitsSystemWindows(w, false)
+			w.statusBarColor = Color.TRANSPARENT
+			w.navigationBarColor = Color.TRANSPARENT
+		}
+		ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+			val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+			val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+			v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+			WindowInsetsCompat.CONSUMED
+		}
 		web.loadUrl(AnyPlayPsn.pageUrl(create))
 		setOnDismissListener { web.destroy() }
 	}

@@ -1,21 +1,29 @@
 #include "anyplayinput.h"
 #include "settings.h"
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QKeyEvent>
+#include <QMetaObject>
+#include <QPointer>
+#include <QRegularExpression>
+#include <QSet>
 #include <QSettings>
 #include <QStringList>
 #include <QVariantMap>
 
 namespace {
 
-constexpr int TurboIntervalMs = 55;  // sprint: the button is tapped ~9 times a second while the key is held
-constexpr int TapMs = 90;            // a short press: long enough for the game to register it
+constexpr int TurboIntervalMs = 55;  // старий формат «turbo»: кнопка натискається ~9 разів на секунду
+constexpr int TapMs = 90;            // коротке натискання (коліщатко): досить довге, щоб гра його помітила
 
 const QString OverrideGroupBase = QStringLiteral("anyplay_keys");
 const QString LayoutKey = QStringLiteral("anyplay/layout");
+const QString SensitivityKey = QStringLiteral("anyplay/mouse_sensitivity");
+const QString InvertYKey = QStringLiteral("anyplay/invert_y");
+const QString AskGameKey = QStringLiteral("anyplay/ask_game");
 const QStringList LayoutIds = {QStringLiteral("gta6"), QStringLiteral("gta5"), QStringLiteral("universal")};
 // змінені клієнтом клавіші зберігаються окремо для кожної розкладки (GTA 5 — на старому місці)
 QString OverrideGroupFor(const QString &layout)
@@ -24,13 +32,19 @@ QString OverrideGroupFor(const QString &layout)
 }
 // v2: миттєве перемикання знову типове (очікування підтвердження від приставки працювало ненадійно)
 const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle_v2");
-constexpr int PendingMs = 7000;      // how long after F we wait for the console's confirmation
-constexpr int PendingGraceMs = 250;  // ignore signals right at the key press
-constexpr int HapticHitsNeeded = 3;  // haptic frames (10 ms each) above the noise floor
+constexpr int PendingMs = 7000;      // скільки після F чекаємо підтвердження від приставки
+constexpr int PendingGraceMs = 250;  // сигнали одразу після натискання не рахуються
+constexpr int HapticHitsNeeded = 3;  // кадри вібрації (по 10 мс) понад шум
 
-uint32_t ButtonFromName(const QString &name)
+constexpr float MinSensitivity = 0.3f;
+constexpr float MaxSensitivity = 3.0f;
+std::atomic<float> cached_sensitivity{-1.0f}; // -1: ще не прочитано з налаштувань
+std::atomic<int> cached_invert{-1};
+
+// кнопки геймпада за назвами з файлів розкладок; порядок — для показу на екрані клавіш
+const QList<QPair<QString, uint32_t>> &ButtonList()
 {
-	static const QHash<QString, uint32_t> buttons = {
+	static const QList<QPair<QString, uint32_t>> buttons = {
 		{"CROSS", CHIAKI_CONTROLLER_BUTTON_CROSS}, {"MOON", CHIAKI_CONTROLLER_BUTTON_MOON},
 		{"BOX", CHIAKI_CONTROLLER_BUTTON_BOX}, {"PYRAMID", CHIAKI_CONTROLLER_BUTTON_PYRAMID},
 		{"DPAD_LEFT", CHIAKI_CONTROLLER_BUTTON_DPAD_LEFT}, {"DPAD_RIGHT", CHIAKI_CONTROLLER_BUTTON_DPAD_RIGHT},
@@ -41,7 +55,16 @@ uint32_t ButtonFromName(const QString &name)
 		{"TOUCHPAD", CHIAKI_CONTROLLER_BUTTON_TOUCHPAD}, {"PS", CHIAKI_CONTROLLER_BUTTON_PS},
 		{"L2", CHIAKI_CONTROLLER_ANALOG_BUTTON_L2}, {"R2", CHIAKI_CONTROLLER_ANALOG_BUTTON_R2},
 	};
-	return buttons.value(name.toUpper(), 0);
+	return buttons;
+}
+
+uint32_t ButtonFromName(const QString &name)
+{
+	const QString upper = name.toUpper();
+	for(const auto &b : ButtonList())
+		if(b.first == upper)
+			return b.second;
+	return 0;
 }
 
 APStep StepFromJson(const QJsonObject &o)
@@ -69,7 +92,7 @@ int16_t Axis(float v)
 	return static_cast<int16_t>(qBound(-1.0f, v, 1.0f) * 32767.0f);
 }
 
-// Cyrillic letter -> the Latin key at the same place (Ukrainian/Russian ЙЦУКЕН layout)
+// кирилична літера -> латинська клавіша на тому самому місці (українська/російська ЙЦУКЕН)
 QString LatinForCyrillic(QChar c)
 {
 	static const QHash<QChar, QString> map = {
@@ -93,7 +116,7 @@ QString NameForQtKey(int key, bool keypad)
 	{
 		case Qt::Key_Shift: return "Shift";
 #ifdef Q_OS_MACOS
-		// on a Mac Qt reports the Control key as Meta and Command as Control
+		// на Mac Qt називає Control клавішею Meta, а Command — Control
 		case Qt::Key_Meta: return "Ctrl";
 		case Qt::Key_Control: return "Cmd";
 #else
@@ -133,10 +156,60 @@ QString NameForQtKey(int key, bool keypad)
 	}
 }
 
+// клавіша меню AnyPlay за кодом Qt або (у QML, де є лише код сканування) за фізичним місцем
+bool IsMenuKeyCode(int key, quint32 scan_code)
+{
+	switch(key)
+	{
+		case Qt::Key_QuoteLeft: case Qt::Key_AsciiTilde: case Qt::Key_Dead_Grave:
+		case Qt::Key_section: case Qt::Key_plusminus:
+			return true;
+		default:
+			break;
+	}
+#if defined(Q_OS_WIN)
+	return scan_code == 0x29;
+#elif defined(Q_OS_MACOS)
+	Q_UNUSED(scan_code);
+	return false;
+#else
+	return scan_code == 49; // X11/Wayland: TLDE (evdev 41 + 8)
+#endif
+}
+
+// усі рушії клавіш у програмі: коли розкладку чи клавіші змінили, кожен перечитує їх
+QList<AnyPlayInput *> &Instances()
+{
+	static QList<AnyPlayInput *> list;
+	return list;
+}
+
+// останнє натискання клавіші в програмі: QML не бачить фізичних кодів, а рушій їх розпізнає
+class KeyWatcher : public QObject
+{
+	public:
+		using QObject::QObject;
+		int key = 0;
+		QString name;
+
+		bool eventFilter(QObject *obj, QEvent *event) override
+		{
+			if(event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease)
+			{
+				const auto *k = static_cast<const QKeyEvent *>(event);
+				key = k->key();
+				name = AnyPlayInput::KeyName(k);
+			}
+			return QObject::eventFilter(obj, event);
+		}
+};
+QPointer<KeyWatcher> key_watcher;
+
 } // namespace
 
 AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 {
+	Instances().append(this);
 	macro_timer.setSingleShot(true);
 	connect(&macro_timer, &QTimer::timeout, this, &AnyPlayInput::NextMacroStep);
 	turbo_timer.setInterval(TurboIntervalMs);
@@ -150,15 +223,19 @@ AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 		if(!VehiclePending())
 			return;
 		StopPending();
-		// no confirmation: stay on foot, but tell how to switch by hand if the player did get in
+		// підтвердження нема: лишаємось пішки, але підказуємо, як перемкнути вручну, якщо гравець таки сів
 		hint = QStringLiteral("%1. Якщо ти вже в транспорті, натисни F2").arg(ProfileName(current_profile));
 		emit ProfileChanged(StatusText());
 	});
 }
 
-QJsonObject AnyPlayInput::DefaultConfig()
+AnyPlayInput::~AnyPlayInput()
 {
-	const QString layout = Layout();
+	Instances().removeAll(this);
+}
+
+QJsonObject AnyPlayInput::DefaultConfig(const QString &layout)
+{
 	QFile file(layout == QLatin1String("gta5") ? QStringLiteral(":/anyplay/anyplay-controls.json")
 		: QStringLiteral(":/anyplay/anyplay-controls-%1.json").arg(layout));
 	if(!file.open(QIODevice::ReadOnly))
@@ -166,10 +243,39 @@ QJsonObject AnyPlayInput::DefaultConfig()
 	return QJsonDocument::fromJson(file.readAll()).object();
 }
 
-QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, bool apply_overrides)
+// Зміни клієнта для дій, яких у розкладці вже нема, прибираємо; клавішу меню (`) теж
+void AnyPlayInput::PruneOverrides(const QString &layout, const QJsonObject &config)
 {
+	static QSet<QString> done;
+	if(done.contains(layout) || config.isEmpty())
+		return;
+	done.insert(layout);
+	QSet<QString> ids;
+	for(const auto &p : config.value("profiles").toArray())
+	{
+		const QJsonObject po = p.toObject();
+		for(const auto &b : po.value("bindings").toArray())
+			ids.insert(po.value("id").toString() + QLatin1Char('/') + b.toObject().value("id").toString());
+	}
 	QSettings settings;
-	const QString OverrideGroup = OverrideGroupFor(Layout());
+	settings.beginGroup(OverrideGroupFor(layout));
+	for(const QString &profile : settings.childGroups())
+	{
+		settings.beginGroup(profile);
+		for(const QString &id : settings.childKeys())
+			if(!ids.contains(profile + QLatin1Char('/') + id) || settings.value(id).toString() == MenuKeyName())
+				settings.remove(id);
+		settings.endGroup();
+	}
+	settings.endGroup();
+}
+
+QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, const QString &layout, bool apply_overrides)
+{
+	if(apply_overrides)
+		PruneOverrides(layout, config);
+	QSettings settings;
+	const QString group = OverrideGroupFor(layout);
 	QList<APProfile> result;
 	for(const auto &p : config.value("profiles").toArray())
 	{
@@ -188,18 +294,24 @@ QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, bool app
 			binding.kind = kind == "tap" ? APBinding::Kind::Tap
 				: kind == "turbo" ? APBinding::Kind::Turbo
 				: kind == "macro" ? APBinding::Kind::Macro
+				: kind == "cycle" ? APBinding::Kind::Cycle
 				: kind == "none" ? APBinding::Kind::None
 				: APBinding::Kind::Hold;
 			binding.out = StepFromJson(bo);
 			for(const auto &s : bo.value("steps").toArray())
 				binding.steps.append(StepFromJson(s.toObject()));
+			binding.dir = bo.value("dir").toInt(1) < 0 ? -1 : 1;
+			binding.when = ButtonFromName(bo.value("when").toString());
 			binding.profile = bo.value("profile").toString();
+			binding.owner = profile.id;
 			if(apply_overrides)
 			{
-				const QString path = QStringLiteral("%1/%2/%3").arg(OverrideGroup, profile.id, binding.id);
+				const QString path = QStringLiteral("%1/%2/%3").arg(group, profile.id, binding.id);
 				if(settings.contains(path))
 					binding.key = settings.value(path).toString();
 			}
+			if(binding.key == MenuKeyName())
+				binding.key.clear();
 			profile.bindings.append(binding);
 		}
 		result.append(profile);
@@ -209,13 +321,32 @@ QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, bool app
 
 void AnyPlayInput::Load()
 {
-	const QJsonObject config = DefaultConfig();
-	profiles = ParseProfiles(config, true);
-	current_profile = config.value("start").toString("foot");
-	auto_vehicle = AutoVehicle();
+	const QString layout = Layout();
+	const QJsonObject config = DefaultConfig(layout);
+	const QString previous = current_profile;
+	profiles = ParseProfiles(config, layout, true);
+	// поточний режим лишається (розкладку можна змінити просто під час гри), якщо він є і в новій розкладці
+	bool keep = false;
+	for(const auto &p : profiles)
+		keep |= !current_profile.isEmpty() && p.id == current_profile;
+	if(!keep)
+		current_profile = config.value("start").toString("foot");
+	auto_vehicle = preview ? false : AutoVehicle();
 	StopPending();
 	hint.clear();
 	ReleaseAll();
+	if(!previous.isEmpty() && previous != current_profile)
+		emit ProfileChanged(StatusText());
+}
+
+void AnyPlayInput::NotifyConfigChanged()
+{
+	const auto list = Instances();
+	for(AnyPlayInput *input : list)
+	{
+		QPointer<AnyPlayInput> guard(input);
+		QMetaObject::invokeMethod(input, [guard]() { if(guard) guard->Load(); }, Qt::AutoConnection);
+	}
 }
 
 QString AnyPlayInput::ProfileName(const QString &id) const
@@ -233,7 +364,7 @@ QString AnyPlayInput::CurrentProfileName() const
 
 const APBinding *AnyPlayInput::Find(const QString &name) const
 {
-	if(name.isEmpty())
+	if(name.isEmpty() || name == MenuKeyName())
 		return nullptr;
 	const APBinding *global = nullptr;
 	for(const auto &p : profiles)
@@ -245,15 +376,24 @@ const APBinding *AnyPlayInput::Find(const QString &name) const
 			if(b.key.compare(name, Qt::CaseInsensitive) != 0)
 				continue;
 			if(p.id == current_profile)
-				return &b; // the current mode wins over the shared keys
-			global = &b;
+				return &b; // дія поточного режиму важливіша за спільні клавіші
+			if(!global)
+				global = &b;
 		}
 	}
 	return global;
 }
 
+// «лише в прицілі»: дія працює, тільки поки натиснута потрібна кнопка (наприклад L2)
+bool AnyPlayInput::Allowed(const APBinding &b) const
+{
+	return !b.when || (Output().buttons & b.when);
+}
+
 bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 {
+	if(name.isEmpty() || name == MenuKeyName())
+		return false; // ` відкриває меню AnyPlay і в гру не йде
 	if(!pressed)
 	{
 		auto it = active.find(name);
@@ -274,11 +414,13 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 	}
 
 	if(active.contains(name))
-		return true; // key repeat
+		return true; // автоповтор клавіші
 	const APBinding *binding = Find(name);
 	if(!binding)
 		return false;
-	const APBinding b = *binding; // copy: switching the profile below invalidates the pointer
+	const APBinding b = *binding; // копія: перемикання режиму нижче робить вказівник недійсним
+	if(!Allowed(b))
+		return true; // клавіша наша, але без прицілу нічого не робить
 	switch(b.kind)
 	{
 		case APBinding::Kind::Hold:
@@ -294,7 +436,11 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 			AddTap(b.out, TapMs);
 			break;
 		case APBinding::Kind::Macro:
+			NoteSlot(b);
 			StartMacro(b.steps);
+			break;
+		case APBinding::Kind::Cycle:
+			Cycle(b);
 			break;
 		case APBinding::Kind::None:
 			break;
@@ -311,14 +457,56 @@ bool AnyPlayInput::Tap(const QString &name)
 	if(!binding)
 		return false;
 	const APBinding b = *binding;
+	if(!Allowed(b))
+		return true;
 	if(b.kind == APBinding::Kind::Macro)
+	{
+		NoteSlot(b);
 		StartMacro(b.steps);
+	}
+	else if(b.kind == APBinding::Kind::Cycle)
+		Cycle(b);
 	else if(b.kind != APBinding::Kind::None)
 		AddTap(b.out, TapMs);
 	if(!b.profile.isEmpty())
 		SwitchProfile(b.profile);
 	emit Changed();
 	return true;
+}
+
+// комбінації slot1…slot9 того самого режиму: колесо зброї GTA V
+QList<const APBinding *> AnyPlayInput::Slots(const QString &owner) const
+{
+	static const QRegularExpression slot_id(QStringLiteral("^slot\\d"));
+	QList<const APBinding *> result;
+	for(const auto &p : profiles)
+	{
+		if(p.id != owner)
+			continue;
+		for(const auto &b : p.bindings)
+			if(b.kind == APBinding::Kind::Macro && slot_id.match(b.id).hasMatch())
+				result.append(&b);
+	}
+	return result;
+}
+
+// коліщатко: наступна або попередня зброя по колу, тією самою комбінацією, що й клавіші 1–9
+void AnyPlayInput::Cycle(const APBinding &b)
+{
+	const QList<const APBinding *> list = Slots(b.owner);
+	if(list.isEmpty())
+		return;
+	const int n = list.size();
+	slot = ((slot + b.dir) % n + n) % n;
+	StartMacro(list[slot]->steps);
+}
+
+void AnyPlayInput::NoteSlot(const APBinding &b)
+{
+	const QList<const APBinding *> list = Slots(b.owner);
+	for(int i = 0; i < list.size(); i++)
+		if(list[i]->id == b.id)
+			slot = i;
 }
 
 void AnyPlayInput::ReleaseAll()
@@ -377,8 +565,8 @@ void AnyPlayInput::SwitchProfile(const QString &target)
 		{
 			if(auto_vehicle)
 			{
-				// The player may be nowhere near a vehicle: keep "on foot" until the console
-				// confirms that he got in (vibration / trigger resistance when the engine starts).
+				// Гравець може бути далеко від транспорту: лишаємось «пішки», поки приставка
+				// не підтвердить посадку (вібрація / опір курків, коли заводиться двигун).
 				StartPending();
 				return;
 			}
@@ -401,6 +589,23 @@ void AnyPlayInput::SetProfile(const QString &id, const QString &hint_text)
 	current_profile = id;
 	hint = hint_text;
 	emit ProfileChanged(StatusText());
+}
+
+void AnyPlayInput::SetCurrentProfile(const QString &id)
+{
+	bool known = false;
+	for(const auto &p : profiles)
+		known |= p.id == id;
+	if(!known || (id == current_profile && hint.isEmpty() && !VehiclePending()))
+		return;
+	ReleaseAll();
+	SetProfile(id, QString());
+}
+
+void AnyPlayInput::SetPreview(bool enabled)
+{
+	preview = enabled;
+	auto_vehicle = preview ? false : AutoVehicle();
 }
 
 void AnyPlayInput::StartPending()
@@ -449,8 +654,8 @@ void AnyPlayInput::NoteTriggers(uint8_t type_left, uint8_t type_right)
 	trig_right = type_right;
 	if(!VehiclePending())
 		return;
-	// 0x00 and 0x05 mean "no effect"; a new effect that was not there when F was pressed
-	// is the vehicle's pedals getting their resistance
+	// 0x00 і 0x05 — «без ефекту»; новий ефект, якого не було в мить натискання F,
+	// означає, що педалі транспорту отримали опір
 	auto on = [](uint8_t t) { return t != 0x00 && t != 0x05; };
 	if((on(type_left) && type_left != base_left) || (on(type_right) && type_right != base_right))
 		ConfirmVehicle();
@@ -468,7 +673,52 @@ void AnyPlayInput::SetAutoVehicle(bool enabled)
 	settings.setValue(AutoVehicleKey, enabled);
 }
 
-void AnyPlayInput::ApplyTo(ChiakiControllerState *state) const
+float AnyPlayInput::MouseSensitivity()
+{
+	float v = cached_sensitivity.load(std::memory_order_relaxed);
+	if(v < 0)
+	{
+		v = qBound(MinSensitivity, QSettings().value(SensitivityKey, 1.0).toFloat(), MaxSensitivity);
+		cached_sensitivity.store(v, std::memory_order_relaxed);
+	}
+	return v;
+}
+
+void AnyPlayInput::SetMouseSensitivity(float value)
+{
+	value = qBound(MinSensitivity, value, MaxSensitivity);
+	cached_sensitivity.store(value, std::memory_order_relaxed);
+	QSettings().setValue(SensitivityKey, static_cast<double>(value));
+}
+
+bool AnyPlayInput::InvertY()
+{
+	int v = cached_invert.load(std::memory_order_relaxed);
+	if(v < 0)
+	{
+		v = QSettings().value(InvertYKey, false).toBool() ? 1 : 0;
+		cached_invert.store(v, std::memory_order_relaxed);
+	}
+	return v == 1;
+}
+
+void AnyPlayInput::SetInvertY(bool invert)
+{
+	cached_invert.store(invert ? 1 : 0, std::memory_order_relaxed);
+	QSettings().setValue(InvertYKey, invert);
+}
+
+bool AnyPlayInput::AskGame()
+{
+	return QSettings().value(AskGameKey, true).toBool();
+}
+
+void AnyPlayInput::SetAskGame(bool ask)
+{
+	QSettings().setValue(AskGameKey, ask);
+}
+
+APStep AnyPlayInput::Output() const
 {
 	APStep sum;
 	for(const auto &b : active)
@@ -481,7 +731,12 @@ void AnyPlayInput::ApplyTo(ChiakiControllerState *state) const
 		AddStep(&sum, t.step);
 	if(macro_index >= 0 && macro_index < macro.size())
 		AddStep(&sum, macro[macro_index]);
+	return sum;
+}
 
+void AnyPlayInput::ApplyTo(ChiakiControllerState *state) const
+{
+	const APStep sum = Output();
 	state->buttons = sum.buttons & ~(CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_R2);
 	state->l2_state = (sum.buttons & CHIAKI_CONTROLLER_ANALOG_BUTTON_L2) ? 0xff : 0;
 	state->r2_state = (sum.buttons & CHIAKI_CONTROLLER_ANALOG_BUTTON_R2) ? 0xff : 0;
@@ -491,10 +746,52 @@ void AnyPlayInput::ApplyTo(ChiakiControllerState *state) const
 	state->right_y = Axis(sum.ry);
 }
 
+QVariantMap AnyPlayInput::PreviewState() const
+{
+	const APStep sum = Output();
+	QStringList buttons;
+	for(const auto &b : ButtonList())
+		if(sum.buttons & b.second)
+			buttons.append(b.first);
+	QVariantMap state;
+	state["buttons"] = buttons;
+	state["lx"] = qBound(-1.0f, sum.lx, 1.0f);
+	state["ly"] = qBound(-1.0f, sum.ly, 1.0f);
+	state["rx"] = qBound(-1.0f, sum.rx, 1.0f);
+	state["ry"] = qBound(-1.0f, sum.ry, 1.0f);
+	state["profile"] = current_profile;
+	return state;
+}
+
+bool AnyPlayInput::IsMenuKey(const QKeyEvent *event)
+{
+	if(!event)
+		return false;
+	const quint32 scan = event->nativeScanCode();
+#if defined(Q_OS_WIN)
+	// фізичне місце (скан-код 0x29); VK_OEM_3 — лише коли скан-коду нема (на німецькій розкладці VK_OEM_3 — це Ö)
+	if(scan == 0x29 || (scan == 0 && event->nativeVirtualKey() == 0xC0))
+		return true;
+#elif defined(Q_OS_MACOS)
+	// kVK_ANSI_Grave і kVK_ISO_Section (§ під Esc на європейських MacBook)
+	const quint32 vk = event->nativeVirtualKey();
+	if(vk == 0x32 || vk == 0x0A)
+		return true;
+#else
+	if(scan == 49)
+		return true;
+#endif
+	Q_UNUSED(scan);
+	// і за символом: ` ~ § ± (якщо клавіша в іншому місці, вона однаково відкриває меню)
+	return IsMenuKeyCode(event->key(), 0);
+}
+
 QString AnyPlayInput::KeyName(const QKeyEvent *event)
 {
+	if(IsMenuKey(event))
+		return MenuKeyName();
 	const bool keypad = event->modifiers().testFlag(Qt::KeypadModifier);
-	// letters and digits by their physical position, so any keyboard layout works
+	// літери й цифри за фізичним місцем, щоб працювала будь-яка мова клавіатури
 	if(!keypad)
 	{
 		const Qt::Key physical = Settings::PhysicalKey(event);
@@ -509,8 +806,21 @@ QString AnyPlayInput::KeyName(const QKeyEvent *event)
 	return QString();
 }
 
-QString AnyPlayInput::KeyNameFromQml(int key, int modifiers, const QString &text)
+void AnyPlayInput::InstallKeyWatcher()
 {
+	if(key_watcher || !QCoreApplication::instance())
+		return;
+	key_watcher = new KeyWatcher(QCoreApplication::instance());
+	QCoreApplication::instance()->installEventFilter(key_watcher);
+}
+
+QString AnyPlayInput::KeyNameFromQml(int key, int modifiers, const QString &text, int scan_code)
+{
+	// та сама клавіша щойно пройшла через програму: її фізичне місце вже відоме
+	if(key_watcher && key_watcher->key == key && !key_watcher->name.isEmpty())
+		return key_watcher->name;
+	if(IsMenuKeyCode(key, static_cast<quint32>(scan_code)))
+		return MenuKeyName();
 	const bool keypad = modifiers & Qt::KeypadModifier;
 	const QString name = NameForQtKey(key, keypad);
 	if(!name.isEmpty())
@@ -536,10 +846,10 @@ QString AnyPlayInput::MouseButtonName(Qt::MouseButton button)
 QString AnyPlayInput::DisplayName(const QString &key)
 {
 	static const QHash<QString, QString> names = {
-		{"MouseLeft", "ЛКМ"}, {"MouseRight", "ПКМ"}, {"MouseMiddle", "Коліщатко (клік)"},
+		{"MouseLeft", "ЛКМ"}, {"MouseRight", "ПКМ"}, {"MouseMiddle", "СКМ"},
 		{"Mouse4", "Миша 4"}, {"Mouse5", "Миша 5"},
-		{"WheelUp", "Коліщатко ↑"}, {"WheelDown", "Коліщатко ↓"},
-		{"Space", "Пробіл"}, {"CapsLock", "Caps Lock"},
+		{"WheelUp", "Колесо↑"}, {"WheelDown", "Колесо↓"},
+		{"Space", "Пробіл"},
 		{"Up", "↑"}, {"Down", "↓"}, {"Left", "←"}, {"Right", "→"},
 	};
 	if(key.isEmpty())
@@ -553,31 +863,55 @@ QString AnyPlayInput::DisplayName(const QString &key)
 
 QVariantList AnyPlayInput::ProfilesForEditor()
 {
-	const QJsonObject config = DefaultConfig();
-	const QList<APProfile> defaults = ParseProfiles(config, false);
-	const QList<APProfile> current = ParseProfiles(config, true);
+	const QString layout = Layout();
+	const QJsonObject config = DefaultConfig(layout);
+	const QList<APProfile> defaults = ParseProfiles(config, layout, false);
+	const QList<APProfile> current = ParseProfiles(config, layout, true);
+	const QJsonArray json = config.value("profiles").toArray();
 	QVariantList result;
 	for(int p = 0; p < current.size(); p++)
 	{
+		const QJsonObject po = json.at(p).toObject();
+		const QJsonArray jb = po.value("bindings").toArray();
 		QVariantList bindings;
 		for(int i = 0; i < current[p].bindings.size(); i++)
 		{
 			const APBinding &b = current[p].bindings[i];
+			const QJsonObject bo = jb.at(i).toObject();
 			QVariantMap row;
 			row["id"] = b.id;
 			row["name"] = b.name;
 			row["key"] = b.key;
 			row["keyName"] = DisplayName(b.key);
 			row["changed"] = b.key != defaults[p].bindings[i].key;
+			// для малюнка геймпада: які кнопки натискає, стік, вид дії
+			row["btn"] = bo.value("btn").toVariant();
+			row["l"] = bo.value("l").toVariant();
+			row["do"] = bo.value("do").toString();
+			row["dir"] = b.dir;
+			row["when"] = bo.value("when").toString();
+			row["x"] = bo.value("x").toInt(0) != 0;
+			row["profile"] = b.profile;
+			row["steps"] = b.steps.size();
 			bindings.append(row);
 		}
 		QVariantMap profile;
 		profile["id"] = current[p].id;
 		profile["name"] = current[p].name;
+		profile["labels"] = po.value("labels").toObject().toVariantMap();
 		profile["bindings"] = bindings;
 		result.append(profile);
 	}
 	return result;
+}
+
+QVariantMap AnyPlayInput::EditorData()
+{
+	QVariantMap data;
+	data["layout"] = Layout();
+	data["start"] = DefaultConfig(Layout()).value("start").toString("foot");
+	data["profiles"] = ProfilesForEditor();
+	return data;
 }
 
 void AnyPlayInput::SetKeyOverride(const QString &profile, const QString &id, const QString &key)
@@ -590,19 +924,95 @@ void AnyPlayInput::ResetKeyOverrides()
 {
 	QSettings settings;
 	settings.remove(OverrideGroupFor(Layout()));
+	NotifyConfigChanged();
+}
+
+QVariantMap AnyPlayInput::Rebind(const QString &profile, const QString &id, const QString &key)
+{
+	QVariantMap result;
+	result["ok"] = false;
+	result["reason"] = QString();
+	result["cleared"] = QVariantList();
+	if(key == MenuKeyName())
+	{
+		result["reason"] = QStringLiteral("menu");
+		return result;
+	}
+	const QString layout = Layout();
+	const QList<APProfile> current = ParseProfiles(DefaultConfig(layout), layout, true);
+	const APBinding *target = nullptr;
+	for(const auto &p : current)
+		for(const auto &b : p.bindings)
+			if(p.id == profile && b.id == id)
+				target = &b;
+	if(!target)
+	{
+		result["reason"] = QStringLiteral("missing");
+		return result;
+	}
+	result["ok"] = true;
+	if(target->key == key)
+	{
+		result["reason"] = QStringLiteral("same");
+		return result;
+	}
+	// Одна клавіша — одна дія в режимі: в іншої дії цього режиму (і спільних клавіш) вона знімається.
+	// Спільні клавіші («Меню») діють у всіх режимах, тож для них перевіряються всі режими.
+	QVariantList cleared;
+	if(!key.isEmpty())
+	{
+		for(const auto &p : current)
+		{
+			const bool clashes = p.id == profile || p.id == QLatin1String("global") || profile == QLatin1String("global");
+			if(!clashes)
+				continue;
+			for(const auto &b : p.bindings)
+			{
+				if(b.key.compare(key, Qt::CaseInsensitive) != 0 || (p.id == profile && b.id == id))
+					continue;
+				SetKeyOverride(p.id, b.id, QString());
+				QVariantMap row;
+				row["profile"] = p.id;
+				row["id"] = b.id;
+				row["name"] = b.name;
+				cleared.append(row);
+			}
+		}
+	}
+	SetKeyOverride(profile, id, key);
+	result["cleared"] = cleared;
+	NotifyConfigChanged();
+	return result;
+}
+
+QVariantMap AnyPlayInput::PadData()
+{
+	static QVariantMap data;
+	if(data.isEmpty())
+	{
+		QFile file(QStringLiteral(":/anyplay-pad/pad.json"));
+		if(file.open(QIODevice::ReadOnly))
+			data = QJsonDocument::fromJson(file.readAll()).object().toVariantMap();
+	}
+	return data;
 }
 
 QVariantList AnyPlayInput::Layouts()
 {
 	static const QHash<QString, QString> names = {
-		{QStringLiteral("gta6"), QStringLiteral("GTA 6")},
-		{QStringLiteral("gta5"), QStringLiteral("GTA 5")},
-		{QStringLiteral("universal"), QStringLiteral("Універсальна")},
+		{QStringLiteral("gta6"), QStringLiteral("GTA VI")},
+		{QStringLiteral("gta5"), QStringLiteral("GTA V")},
+		{QStringLiteral("universal"), QStringLiteral("Інша гра")},
 	};
 	static const QHash<QString, QString> info = {
-		{QStringLiteral("gta6"), QStringLiteral("типове керування GTA 6")},
-		{QStringLiteral("gta5"), QStringLiteral("GTA 5 і GTA Online")},
-		{QStringLiteral("universal"), QStringLiteral("будь-яка інша гра")},
+		{QStringLiteral("gta6"), QStringLiteral("Клавіші під GTA VI")},
+		{QStringLiteral("gta5"), QStringLiteral("Клавіші під GTA V")},
+		{QStringLiteral("universal"), QStringLiteral("Кожна кнопка на клавіші")},
+	};
+	static const QHash<QString, QString> logos = {
+		{QStringLiteral("gta6"), QStringLiteral("qrc:/anyplay-games/gta6.png")},
+		{QStringLiteral("gta5"), QStringLiteral("qrc:/anyplay-games/gta5.png")},
+		{QStringLiteral("universal"), QStringLiteral("qrc:/anyplay-games/other.png")},
 	};
 	QVariantList result;
 	for(const QString &id : LayoutIds)
@@ -611,6 +1021,7 @@ QVariantList AnyPlayInput::Layouts()
 		row["id"] = id;
 		row["name"] = names.value(id);
 		row["info"] = info.value(id);
+		row["logo"] = logos.value(id);
 		result.append(row);
 	}
 	return result;
@@ -624,6 +1035,8 @@ QString AnyPlayInput::Layout()
 
 void AnyPlayInput::SetLayout(const QString &id)
 {
-	if(LayoutIds.contains(id))
-		QSettings().setValue(LayoutKey, id);
+	if(!LayoutIds.contains(id) || id == Layout())
+		return;
+	QSettings().setValue(LayoutKey, id);
+	NotifyConfigChanged();
 }

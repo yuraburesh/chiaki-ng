@@ -2,9 +2,9 @@
 package com.metallic.chiaki.anyplay
 
 import android.content.Context
-import androidx.appcompat.app.AlertDialog
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.metallic.chiaki.common.Preferences
+import org.json.JSONArray
+import org.json.JSONObject
 
 object AnyPlayQuality
 {
@@ -98,27 +98,28 @@ object AnyPlayQuality
 			prefs(context).edit().putBoolean(KEY_UP, true).apply()
 	}
 
-	/** Вікно вибору якості. onChanged викликається, якщо вибір справді змінився. */
-	fun choose(context: Context, onChanged: () -> Unit): AlertDialog
+	/** Для сторінки: {auto, level, name, levels: [{title, hint}]} */
+	fun json(context: Context): JSONObject
 	{
-		val items = arrayOf("Авто (радимо)\nпрограма сама підбирає якість під твій інтернет") +
-			levels.map { "${it.title}\n${it.hint}" }
-		val current = if(auto(context)) 0 else level(context) + 1
-		return MaterialAlertDialogBuilder(context)
-			.setTitle("Якість картинки")
-			.setSingleChoiceItems(items, current) { dialog, which ->
-				if(which == 0)
-					setAuto(context, true)
-				else
-				{
-					setAuto(context, false)
-					setLevel(context, which - 1)
-				}
-				dialog.dismiss()
-				if(which != current)
-					onChanged()
-			}
-			.setNegativeButton("Закрити", null)
-			.show()
+		val list = JSONArray()
+		for(l in levels)
+			list.put(JSONObject().put("title", l.title).put("hint", l.hint))
+		return JSONObject().put("auto", auto(context)).put("level", level(context)).put("name", name(context)).put("levels", list)
+	}
+
+	/** Вибір на сторінці: -1 — «Авто», 0..2 — сталий рівень. true, якщо вибір справді змінився. */
+	fun select(context: Context, choice: Int): Boolean
+	{
+		val current = if(auto(context)) -1 else level(context)
+		if(choice == current || choice < -1 || choice >= levels.size)
+			return false
+		if(choice < 0)
+			setAuto(context, true)
+		else
+		{
+			setAuto(context, false)
+			setLevel(context, choice)
+		}
+		return true
 	}
 }

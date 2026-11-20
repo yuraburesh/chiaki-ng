@@ -7787,8 +7787,42 @@ void QmlMainWindow::render()
 
 }
 
+// AnyPlay: меню гри відкривається клавішею ` — та, що під Esc, ліворуч від 1.
+// Шукаємо її за фізичним положенням, тож вона працює з українською чи будь-якою іншою розкладкою:
+// у них ця клавіша дає ', ё, ʼ чи ґ, а на європейських MacBook — § або ±.
+static bool isAnyPlayMenuKey(const QKeyEvent *event)
+{
+    switch (event->key()) {
+    case Qt::Key_QuoteLeft:
+    case Qt::Key_AsciiTilde:
+        return true;
+    default:
+        break;
+    }
+#if defined(Q_OS_MACOS)
+    if (event->key() == Qt::Key_section || event->key() == Qt::Key_plusminus)
+        return true;
+    // kVK_ISO_Section (0x0A) — клавіша § під Esc на ISO-клавіатурах, kVK_ANSI_Grave (0x32) — ` на ANSI
+    const quint32 vk = event->nativeVirtualKey();
+    return vk == 0x0A || vk == 0x32;
+#elif defined(Q_OS_WIN)
+    // скан-код 0x29 — саме ця клавіша на будь-якій розкладці (віртуальний код у різних мовах різний)
+    return event->nativeScanCode() == 0x29;
+#else
+    // X11 і Wayland: апаратний код evdev KEY_GRAVE (41) + 8
+    return event->nativeScanCode() == 49;
+#endif
+}
+
 bool QmlMainWindow::handleShortcut(QKeyEvent *event)
 {
+    // AnyPlay: клавіша ` під час гри відкриває й закриває меню AnyPlay; у гру вона не йде ніколи.
+    // Esc сюди не потрапляє: під час гри він іде в гру як OPTIONS.
+    if (session && isAnyPlayMenuKey(event)) {
+        if (!event->isAutoRepeat())
+            emit menuRequested();
+        return true;
+    }
     if (event->modifiers() == Qt::NoModifier) {
         switch (event->key()) {
         case Qt::Key_F11:
@@ -7892,6 +7926,9 @@ bool QmlMainWindow::event(QEvent *event)
         if (handleShortcut(static_cast<QKeyEvent*>(event)))
             return true;
     case QEvent::KeyRelease:
+        // AnyPlay: відпускання клавіші меню ` теж не передаємо в гру
+        if (event->type() == QEvent::KeyRelease && session && isAnyPlayMenuKey(static_cast<QKeyEvent*>(event)))
+            return true;
         if (session && !grab_input) {
             QKeyEvent *e = static_cast<QKeyEvent*>(event);
             if (!e->spontaneous()) {

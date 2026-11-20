@@ -38,6 +38,20 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 
 	poll_timer.setInterval(POLL_MS);
 	connect(&poll_timer, &QTimer::timeout, this, &AnyPlayCloud::refresh);
+	// доступ відкривається рівно в час початку гри: питаємо сервер саме тоді, а потім ще кілька разів по 5 с,
+	// поки не прийде «можна грати» (до 30 с), щоб кнопка «Грати» з'явилась одразу
+	start_timer.setSingleShot(true);
+	start_timer.setTimerType(Qt::PreciseTimer);
+	connect(&start_timer, &QTimer::timeout, this, [this]() {
+		refresh();
+		if(state_ != "play" && start_polls_ < 6)
+		{
+			start_polls_++;
+			start_timer.start(5000);
+		}
+		else
+			start_polls_ = 0;
+	});
 	beat_timer.setInterval(BEAT_MS);
 	connect(&beat_timer, &QTimer::timeout, this, &AnyPlayCloud::heartbeat);
 	psn_wait_timer.setInterval(1000);
@@ -189,6 +203,10 @@ void AnyPlayCloud::logout()
 	token_.clear();
 	QSettings().remove("anyplay/device_token");
 	poll_timer.stop();
+	start_timer.stop();
+	start_polls_ = 0;
+	continues_ = false;
+	own_end_ = 0;
 	admin_ = false;
 	user_.clear();
 	setState("login");
@@ -258,6 +276,11 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	next_end_ = next.value("end").toVariant().toLongLong();
 	QJsonObject booking = o.value("booking").toObject();
 	end_ = booking.value("end").toVariant().toLongLong();
+	// кінець саме цієї броні й «наступна йде без перерви» (старий сервер цього не надсилає — тоді 0 і false)
+	own_end_ = o.value("ownEnd").toVariant().toLongLong();
+	if(!own_end_)
+		own_end_ = booking.value("ownEnd").toVariant().toLongLong();
+	continues_ = o.value("continues").toBool() || booking.value("continues").toBool();
 	QString st = o.value("state").toString();
 
 	if(st == "play")
@@ -301,7 +324,26 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 			stopPlay(QString());
 		setState(st == "no_console" ? "no_console" : st == "update" ? "update" : "wait");
 	}
+	scheduleStartRefresh();
 	emit changed();
+}
+
+void AnyPlayCloud::scheduleStartRefresh()
+{
+	if(state_ == "play" || next_start_ <= 0 || !loggedIn())
+	{
+		start_timer.stop();
+		start_polls_ = 0;
+		return;
+	}
+	if(start_polls_ > 0)
+		return;   // гра вже мала початись: опитуємо кожні 5 с, розклад не чіпаємо
+	// next_start_ — час сервера, переводимо в годинник комп'ютера; +1 с, щоб сервер точно вже пускав
+	const qint64 ms = (next_start_ - skew_) * 1000 - QDateTime::currentMSecsSinceEpoch() + 1000;
+	if(ms > 0 && ms < 7LL * 24 * 3600 * 1000)
+		start_timer.start(static_cast<int>(ms));
+	else
+		start_timer.stop();
 }
 
 void AnyPlayCloud::heartbeat()

@@ -2214,6 +2214,24 @@ static void placebo_log_cb(void *user, pl_log_level level, const char *msg)
     }
 }
 
+// AnyPlay: звичайна (не HDR) картинка приставки показується так, як її показав би монітор, підключений
+// до приставки напряму: значення кольорів ідуть на екран без перерахунку гами. Без цього libplacebo вважає
+// відео кіношним BT.1886 (гама 2,4) і перераховує в sRGB (2,2): темні місця ставали вдвічі темнішими.
+static void anyplay_display_referred(struct pl_frame *frame)
+{
+    if (!frame || frame->num_planes <= 0)
+        return;
+    const pl_color_transfer t = frame->color.transfer;
+    if (t == PL_COLOR_TRC_PQ || t == PL_COLOR_TRC_HLG || t == PL_COLOR_TRC_V_LOG || t == PL_COLOR_TRC_S_LOG1
+        || t == PL_COLOR_TRC_S_LOG2 || t == PL_COLOR_TRC_LINEAR)
+        return;   // HDR і особливі криві — як є
+    if (frame->color.primaries == PL_COLOR_PRIM_BT_2020)
+        return;   // широке охоплення буває лише з HDR
+    if (frame->color.primaries == PL_COLOR_PRIM_UNKNOWN)
+        frame->color.primaries = PL_COLOR_PRIM_BT_709;
+    frame->color.transfer = PL_COLOR_TRC_SRGB;
+}
+
 static bool map_frame(pl_gpu gpu, pl_tex *tex,
                       const struct pl_source_frame *src,
                       struct pl_frame *out_frame)
@@ -2251,6 +2269,7 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex,
         av_frame_free(&frame);
         return false;
     }
+    anyplay_display_referred(out_frame);
     return true;
 }
 
@@ -5516,8 +5535,11 @@ renderer_backend_ready:
         const qint64 span_us = stream_fps_mark_us > 0 ? now_us - stream_fps_mark_us : 1000000;
         stream_fps_mark_us = now_us;
         const int fps_next = span_us > 0 ? static_cast<int>((static_cast<qint64>(frames) * 1000000 + span_us / 2) / span_us) : 0;
-        if (fps_next != stream_fps) {
+        const int shown = shown_frames_current.fetchAndStoreRelaxed(0);
+        const int shown_next = span_us > 0 ? static_cast<int>((static_cast<qint64>(shown) * 1000000 + span_us / 2) / span_us) : 0;
+        if (fps_next != stream_fps || shown_next != shown_fps) {
             stream_fps = fps_next;
+            shown_fps = shown_next;
             emit streamFpsChanged();
         }
     });
@@ -7010,6 +7032,9 @@ void QmlMainWindow::render()
                 direct_frame = {};
                 if (backend && backend->zeroCopy())
                     backend->disableZeroCopy();
+            } else {
+                anyplay_display_referred(&direct_frame);
+                shown_frames_current.fetchAndAddRelaxed(1);   // новий кадр піде на екран у цьому проході
             }
             av_frame_free(&incoming);
         }
@@ -7483,13 +7508,25 @@ void QmlMainWindow::render()
     };
 
     const struct pl_frame *hint_frame = nullptr;
+    int hint_index = -1;
     for (int i = 0; i < frame_mix.num_frames; i++) {
         if (frame_mix.timestamps[i] > 0.0f)
             break;
         hint_frame = frame_mix.frames[i];
+        hint_index = i;
     }
-    if (!hint_frame && frame_mix.num_frames)
+    if (!hint_frame && frame_mix.num_frames) {
         hint_frame = frame_mix.frames[0];
+        hint_index = 0;
+    }
+    // AnyPlay: скільки різних кадрів гри справді показано за секунду (через чергу; прямий показ рахується при отриманні кадру)
+    if (hint_index >= 0 && frame_mix.signatures) {
+        const uint64_t sig = frame_mix.signatures[hint_index];
+        if (sig != last_shown_signature) {
+            last_shown_signature = sig;
+            shown_frames_current.fetchAndAddRelaxed(1);
+        }
+    }
     struct pl_color_space hint = hint_frame ? hint_frame->color : pl_color_space{};
     // libplacebo API 361 and later read a hint with unknown primaries and transfer as a request for
     // VK_COLOR_SPACE_PASS_THROUGH_EXT, and switching MoltenVK's swapchain to it waits forever for the

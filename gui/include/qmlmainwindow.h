@@ -64,6 +64,7 @@ class QmlMainWindow : public QWindow
     Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
     Q_PROPERTY(int droppedFrames READ droppedFrames NOTIFY droppedFramesChanged)
     Q_PROPERTY(int streamFps READ streamFps NOTIFY streamFpsChanged)
+    Q_PROPERTY(int shownFps READ shownFps NOTIFY streamFpsChanged)
     Q_PROPERTY(bool keepVideo READ keepVideo WRITE setKeepVideo NOTIFY keepVideoChanged)
     Q_PROPERTY(bool loadingTransitionComplete READ loadingTransitionComplete NOTIFY loadingTransitionCompleteChanged)
     Q_PROPERTY(VideoMode videoMode READ videoMode WRITE setVideoMode NOTIFY videoModeChanged)
@@ -210,6 +211,7 @@ private:
     void updateStatsOverlayGeometry();
     bool statsOverlayActive() const { return stats_overlay_visible; }
     int streamFps() const { return stream_fps; }
+    int shownFps() const { return shown_fps; }
     void armQuickNeedSync(const char *reason);
     void scheduleRenderIfBacklog(UpdateRequestReason reason = UpdateRequestReason::PendingFrame);
     void handleBufferedPlaybackWake(qint64 timer_fire_us);
@@ -334,6 +336,9 @@ private:
     QAtomicInteger<int> stream_frames_current = 0;
     int stream_fps = 0;
     qint64 stream_fps_mark_us = 0;
+    QAtomicInteger<int> shown_frames_current = 0;   // різні кадри гри, що справді дійшли до екрана
+    int shown_fps = 0;
+    uint64_t last_shown_signature = 0;
     int dropped_frames = 0;
     bool is_window_adjustable = false;
     bool is_stream_window_adjustable = false;

@@ -467,7 +467,8 @@ Item {
         readonly property real k: Math.max(1, Math.min(2, view.height / 1000))
         readonly property int level: Chiaki.cloud.qualityLevel
         readonly property int target: level === 0 ? 30 : 60
-        readonly property int fps: Chiaki.window.streamFps
+        // кадри, що справді дійшли до екрана (якщо їх ще не порахували — ті, що прийшли з приставки)
+        readonly property int fps: Chiaki.window.shownFps > 0 ? Math.min(Chiaki.window.shownFps, Chiaki.window.streamFps || Chiaki.window.shownFps) : Chiaki.window.streamFps
         readonly property real loss: Chiaki.session && isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss * 100 : 0
         readonly property color good: "#c9f5d8"
         readonly property color warn: "#ffd9a0"
@@ -1630,7 +1631,11 @@ Item {
                 slow = 0;
                 return;
             }
-            const renderSlow = Chiaki.window.droppedFrames >= 8 && lost === 0 && Chiaki.session.averagePacketLoss < 0.01;
+            // повільна обробка = до екрана доходить помітно менше кадрів, ніж приходить з приставки.
+            // Кадри, які вертикальна синхронізація замінила свіжішими (нерівний інтервал), обробку не повільнять, тож на них не дивимось.
+            const got = Chiaki.window.streamFps, shown = Chiaki.window.shownFps;
+            const renderSlow = got >= 20 && shown > 0 && got - shown >= Math.max(8, got * 0.15)
+                && lost === 0 && Chiaki.session.averagePacketLoss < 0.01;
             if (check > 0) {
                 if (renderSlow) still++;
                 if (--check === 0 && still >= 3) {

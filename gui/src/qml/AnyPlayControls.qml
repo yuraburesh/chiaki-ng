@@ -74,7 +74,11 @@ Item {
     function howOf(b) {
         const d = b["do"] || "", pn = pnOf(b);
         if (d === "macro") return b.hold ? qsTr("натисни або тримай") : qsTr("комбінація");
-        if (d === "cycle") return aimPn(b) ? qsTr("по колу; у прицілі: %1").arg(aimPn(b)) : qsTr("по колу");
+        if (d === "cycle") {
+            const z = b.aim && b.aim.btn && b.aim.btn[0];
+            if (z === "DPAD_UP" || z === "DPAD_DOWN") return qsTr("по колу; у прицілі ближче й далі");
+            return aimPn(b) ? qsTr("по колу; у прицілі: %1").arg(aimPn(b)) : qsTr("по колу");
+        }
         if (b.when) return pn + qsTr(", у прицілі");
         if (b.profile && !b.btn) return qsTr("режим");
         return pn;
@@ -391,6 +395,7 @@ Item {
         for (const s of g.spans) a.fill(s[3], s[0] * w + s[1], s[0] * w + s[2] + 1);
         occ = { a: a, w: w, h: h, g: g.g, names: g.names };
         reload();
+        fitGuard.restart(); fitTimer.restart();
         mode = cfg.start || "foot";
         if (live) {
             Chiaki.settings.anyplayPreviewSetProfile(mode);
@@ -402,6 +407,7 @@ Item {
         if (visible && !inGame) root.forceActiveFocus();
     }
     onVisibleChanged: {
+        if (visible) { fitted = false; stableRuns = 0; fitGuard.restart(); }
         fitTimer.restart();
         if (visible && inGame) Chiaki.settings.anyplayPreviewSetProfile(mode);
         if (visible && !inGame) root.forceActiveFocus();
@@ -469,23 +475,34 @@ Item {
     readonly property real baseRow: tighter ? 23 : tight ? 26 : 31
     property real rowH: 31
     onBaseRowChanged: { rowH = baseRow; fitTimer.restart(); }
+    // поки сторінка підганяється під вікно, її не видно: людина одразу бачить готовий розмір, без «великий, а потім зменшується»
+    property bool fitted: false
     function refit() {
         if (!visible || flick.height < 200)
             return;
         const over = page.height - flick.height, gh = gp.height;
         const floorH = page.narrow ? 150 : Math.max(150, Math.max(colL.height, colR.height) - 10);   // нижче за стовпці підписів зменшувати нема сенсу
-        if (over > 1 && gh > floorH + 1)
+        if (over > 1 && gh > floorH + 1) {
             gpCap = Math.max(floorH, gh - over - 2) * padW / padH;
-        else if (over > 1 && rowH > 17) {
+            stableRuns = 0; fitTimer.restart();
+        } else if (over > 1 && rowH > 17) {
             rowH = Math.max(17, rowH - Math.max(1, Math.ceil(over / 24)));
-            fitTimer.restart();
+            stableRuns = 0; fitTimer.restart();
         } else if (over < -40 && rowH < baseRow) {
             rowH = Math.min(baseRow, rowH + 1);
-            fitTimer.restart();
-        } else if (over < -24 && gpCap < 540)
+            stableRuns = 0; fitTimer.restart();
+        } else if (over < -24 && gpCap < 540 && Math.abs(Math.min(540, (gh - over - 12) * padW / padH) - gpCap) > 2) {
             gpCap = Math.min(540, (gh - over - 12) * padW / padH);
+            stableRuns = 0; fitTimer.restart();
+        } else if (++stableRuns >= 4 && gp.height > 0 && page.height > 0)
+            fitted = true;   // кілька перевірок поспіль усе вміщується і розмітка вже не міняється
+        else
+            fitTimer.restart();
+        if (!fitted && fitTimer.running === false) fitTimer.restart();
     }
-    Timer { id: fitTimer; interval: 40; onTriggered: root.refit() }
+    property int stableRuns: 0
+    Timer { id: fitTimer; interval: 16; onTriggered: root.refit() }
+    Timer { id: fitGuard; interval: 700; onTriggered: root.fitted = true }   // запобіжник: навіть якщо підгонка не зійшлась
     Connections { target: page; function onHeightChanged() { fitTimer.restart(); } }
     Connections { target: flick; function onHeightChanged() { fitTimer.restart(); } }
 
@@ -525,6 +542,8 @@ Item {
 
         Column {
             id: page
+            opacity: root.fitted ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 120 } }
             readonly property real cw: Math.min(1440, root.width - 2 * root.sideInset)
             readonly property bool narrow: cw <= (root.inGame ? 600 : 900)   // у меню гри ліворуч список розділів, тож місця менше
             x: (root.width - cw) / 2

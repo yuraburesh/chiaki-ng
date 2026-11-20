@@ -1332,6 +1332,16 @@ void AnyPlayCloud::setQualityLevel(int level)
 
 void AnyPlayCloud::prepareAutoQuality()
 {
+	{
+		// до 108 вертикальна синхронізація хибно здавалась «ноутбук не встигає» і обробку спрощувало на 3 дні: знімаємо це обмеження один раз
+		QSettings s0;
+		if(s0.value(QStringLiteral("anyplay/render_cap_reset"), 0).toInt() < 108)
+		{
+			s0.remove(QStringLiteral("anyplay/render_cap"));
+			s0.remove(QStringLiteral("anyplay/render_cap_until"));
+			s0.setValue(QStringLiteral("anyplay/render_cap_reset"), 108);
+		}
+	}
 	QmlSettings *qs = backend->qmlSettings();
 	if(!qs)
 		return;

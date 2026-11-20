@@ -11,6 +11,9 @@ Item {
     property bool hairline: true
     property bool rich: false
     property color titleColor: ap.ink
+    property color subColor: ap.faint      // підпис під назвою; у довідках світліший, щоб читався
+    property real titleSize: 14
+    property real subSize: 12
     default property alias trailing: trail.data
     signal clicked()
     AnyPlayStyle { id: ap }
@@ -34,7 +37,7 @@ Item {
             wrapMode: Text.WordWrap
             font.family: ap.body
             font.weight: Font.Medium
-            font.pixelSize: 14
+            font.pixelSize: r.titleSize
             font.underline: r.clickable && (mouse.containsMouse || r.activeFocus)
             color: r.titleColor
         }
@@ -45,8 +48,8 @@ Item {
             textFormat: r.rich ? Text.StyledText : Text.PlainText
             wrapMode: Text.WordWrap
             font.family: ap.body
-            font.pixelSize: 12
-            color: ap.faint
+            font.pixelSize: r.subSize
+            color: r.subColor
         }
     }
     RowLayout {   // фішки й кнопки різної висоти стоять по центру рядка (у Row вони тулились би до верху)

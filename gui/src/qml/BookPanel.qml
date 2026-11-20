@@ -358,11 +358,20 @@ ColumnLayout {
                     font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 44; font.letterSpacing: 1
                     color: ap.ink
                 }
+                // коли гратимеш: великими цифрами, щоб одразу було видно, з якої по яку
+                Text {
+                    visible: panel.start > 0 && !!panel.tariff
+                    Layout.topMargin: 6
+                    text: visible ? panel.hhmm(panel.start) + "–" + panel.hhmm(panel.start + panel.tariff.hours * 3600) : ""
+                    font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 30; font.letterSpacing: 1
+                    color: ap.gold
+                }
                 ApText {
                     Layout.preferredWidth: panel.colW
-                    role: "small"
+                    role: panel.start > 0 && panel.tariff ? "lead" : "small"
+                    color: panel.start > 0 && panel.tariff ? ap.ink : ap.faint
                     text: panel.start > 0 && panel.tariff
-                        ? panel.rangeText(panel.start, panel.start + panel.tariff.hours * 3600) + ", " + String(panel.tariff.title).split(",")[0].toLowerCase()
+                        ? qsTr("Гратимеш: %1").arg(panel.rangeText(panel.start, panel.start + panel.tariff.hours * 3600) + ", " + String(panel.tariff.title).split(",")[0].toLowerCase())
                         : qsTr("Обери час початку")
                 }
             }
@@ -376,7 +385,8 @@ ColumnLayout {
                         required property var modelData
                         text: modelData.label
                         checked: panel.curMethod === modelData.code
-                        horizontalPadding: 10
+                        horizontalPadding: 14
+                        verticalPadding: 10
                         onClicked: panel.method = modelData.code
                     }
                 }

@@ -13,8 +13,8 @@
         {"id": "select", "name": "Вибрати (✕)", "key": "Enter", "btn": ["CROSS"]},
         {"id": "back", "name": "Назад / закрити (○)", "key": "Backspace", "btn": ["MOON"]},
         {"id": "pause", "name": "Пауза / меню", "key": "Esc", "btn": ["OPTIONS"]},
-        {"id": "map", "name": "Мапа", "key": "P", "btn": ["TOUCHPAD"]},
-        {"id": "ps", "name": "Кнопка PS", "key": "Home", "btn": ["PS"]},
+        {"id": "map", "name": "Мапа", "key": "N", "btn": ["TOUCHPAD"]},
+        {"id": "ps", "name": "Кнопка PS", "key": "P", "btn": ["PS"]},
         {"id": "mode_foot", "name": "Режим «Пішки»", "key": "F1", "do": "none", "profile": "foot"},
         {"id": "mode_vehicle", "name": "Режим «Транспорт»", "key": "F2", "do": "none", "profile": "vehicle"},
         {"id": "mode_air", "name": "Режим «Авіація»", "key": "F3", "do": "none", "profile": "air"}

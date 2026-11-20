@@ -1,7 +1,7 @@
 // AnyPlay: екран клавіш. Ліворуч угорі розкладка під гру і режими, посередині фото геймпада з підписами
 // й лініями до кнопок, нижче інші дії. Клацни на клавішу, щоб змінити її. Поза грою екран живий:
 // клавіші й миша одразу світять кнопки на геймпаді — тим самим рушієм, що й у грі (що бачиш, те й отримає приставка).
-// inGame: true — у меню під час гри: щільніше, без великого заголовка, без живого показу.
+// inGame: true — у меню під час гри: щільніше, без великого заголовка; живий показ лише з клавіатури й миші.
 import QtQuick
 import QtQuick.Controls
 import org.streetpea.chiaking
@@ -41,7 +41,7 @@ Item {
     readonly property alias wireData: wires.wd    // лінії (для перевірки)
 
     // ── живий показ: що натиснуто ──
-    readonly property bool live: !inGame && !Chiaki.session && visible
+    readonly property bool live: visible && (inGame || !Chiaki.session)   // у меню гри теж: клавіші підсвічують кнопки геймпада
     property var engine: ({ buttons: [], lx: 0, ly: 0, rx: 0, ry: 0, profile: "" })
     property string clickBtn: ""            // кнопка, яку тиснуть мишею просто на малюнку
     property var rsv: [0, 0]                // правий стік від руху миші (для показу)
@@ -378,13 +378,16 @@ Item {
         mode = cfg.start || "foot";
         if (live) {
             Chiaki.settings.anyplayPreviewSetProfile(mode);
-            Chiaki.settings.anyplayPadPreview(true);
+            if (!inGame)
+                Chiaki.settings.anyplayPadPreview(true);   // у грі геймпад лишається грі
         }
         // фокус беремо, лише коли екран справді показаний (інакше прихована вкладка забрала б клавіші в інших);
         // у меню гри — ні: там фокус лишається на пунктах ліворуч, доки не клацнеш тут чи не натиснеш Enter / →
         if (visible && !inGame) root.forceActiveFocus();
     }
     onVisibleChanged: {
+        fitTimer.restart();
+        if (visible && inGame) Chiaki.settings.anyplayPreviewSetProfile(mode);
         if (visible && !inGame) root.forceActiveFocus();
         else if (!visible) cancelWait();
     }
@@ -440,6 +443,22 @@ Item {
             last = p;
         }
     }
+
+    // ── усе на одній сторінці: якщо не вміщується, зменшуємо малюнок геймпада (прокрутка лишається тільки на крайній випадок) ──
+    property real gpCap: 540
+    function refit() {
+        if (!visible || flick.height < 200)
+            return;
+        const over = page.height - flick.height, gh = gp.height;
+        const floorH = page.narrow ? 150 : Math.max(150, Math.max(colL.height, colR.height) - 10);   // нижче за стовпці підписів зменшувати нема сенсу
+        if (over > 1 && gh > floorH)
+            gpCap = Math.max(floorH, gh - over - 2) * padW / padH;
+        else if (over < -24 && gpCap < 540)
+            gpCap = Math.min(540, (gh - over - 12) * padW / padH);
+    }
+    Timer { id: fitTimer; interval: 40; onTriggered: root.refit() }
+    Connections { target: page; function onHeightChanged() { fitTimer.restart(); } }
+    Connections { target: flick; function onHeightChanged() { fitTimer.restart(); } }
 
     // ── прокрутка ──
     Flickable {
@@ -771,8 +790,8 @@ Item {
                 readonly property real gap: Math.max(24, Math.min(110, page.cw * 0.07))
                 readonly property real leftMC: colL.maxRow
                 readonly property real rightMC: colR.maxRow
-                readonly property real gpW: page.narrow ? Math.min(440, page.cw)
-                                                        : Math.max(250, Math.min(540, page.cw - leftMC - rightMC - 2 * gap))
+                readonly property real gpW: page.narrow ? Math.min(440, root.gpCap, page.cw)
+                                                        : Math.max(200, Math.min(540, root.gpCap, page.cw - leftMC - rightMC - 2 * gap))
                 readonly property real rest: page.cw - 2 * gap - gpW
                 readonly property real leftW: page.narrow ? 0 : (leftMC > rest / 2 ? leftMC : rightMC > rest / 2 ? Math.max(leftMC, rest - rightMC) : rest / 2)
                 readonly property real rightW: page.narrow ? 0 : Math.max(rightMC, rest - leftW)
@@ -1059,15 +1078,15 @@ Item {
                 visible: root.view.extra.length > 0
                 width: page.cw
                 height: visible ? extraGrid.y + extraGrid.height : 0
-                readonly property int cols: Math.max(1, Math.floor((width + 32) / (270 + 32)))
-                readonly property real colW: (width - (cols - 1) * 32) / cols
+                readonly property int cols: Math.max(1, Math.floor((width + 24) / (230 + 24)))
+                readonly property real colW: (width - (cols - 1) * 24) / cols
                 Rectangle { width: parent.width; height: 1; color: "#2bffffff" }
                 Cap { id: extraCap; y: 11; text: qsTr("Інші дії") }
                 Grid {
                     id: extraGrid
                     y: extraCap.y + extraCap.height + 4
                     columns: extra.cols
-                    columnSpacing: 32
+                    columnSpacing: 24
                     Repeater {
                         id: extraRep
                         model: root.view.extra
@@ -1078,7 +1097,7 @@ Item {
                             width: extra.colW
                             // рядки однакової висоти в межах ряду сітки, як у прототипі
                             readonly property int rowIdx: Math.floor(index / extra.cols)
-                            readonly property real natural: Math.max(46, Math.max(liText.implicitHeight, liKeys.implicitHeight) + 10)
+                            readonly property real natural: Math.max(31, Math.max(liText.implicitHeight, liKeys.implicitHeight) + 8)
                             height: extra.rowHeight(rowIdx)
                             Column {
                                 id: liText
@@ -1087,19 +1106,13 @@ Item {
                                 spacing: 1
                                 Text {
                                     width: parent.width
-                                    text: li.modelData.name
-                                    wrapMode: Text.Wrap
+                                    // назва і сіра примітка («на джойстику: L1») в одному рядку: так усі дії вміщуються без прокрутки
+                                    text: li.modelData.name + (li.modelData.how ? '  <font color="#80ffffff">' + li.modelData.how + '</font>' : "")
+                                    textFormat: Text.StyledText
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
                                     color: ap.ink
                                     font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 13
-                                    lineHeight: 1.05
-                                }
-                                Text {
-                                    width: parent.width
-                                    visible: text !== ""
-                                    text: li.modelData.how
-                                    wrapMode: Text.Wrap
-                                    color: "#80ffffff"
-                                    font.family: ap.body; font.pixelSize: 11
                                 }
                             }
                             Flow {
@@ -1117,16 +1130,18 @@ Item {
                     }
                 }
                 function rowHeight(r) {
-                    let h = 46;
+                    let h = 31;
                     for (let i = r * cols; i < Math.min(extraRep.count, (r + 1) * cols); i++)
                         if (extraRep.itemAt(i)) h = Math.max(h, extraRep.itemAt(i).natural);
                     return h;
                 }
             }
 
-            Gap { height: 15 }
+            Gap { height: root.inGame ? 0 : 12 }
             // ── підказки внизу ──
             Flow {
+                visible: !root.inGame
+                height: visible ? implicitHeight : 0
                 width: page.cw
                 layoutDirection: Qt.RightToLeft
                 spacing: 16

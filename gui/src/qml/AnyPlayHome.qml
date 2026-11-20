@@ -25,6 +25,10 @@ Rectangle {
     // гра вже йде на іншому його пристрої) — замість вкладки «Гра»
     readonly property bool gameGate: !isAdmin && (st === "update" || st === "no_console" || st === "other_device")
     readonly property var mine: (cloud.bookInfo && cloud.bookInfo.mine) || []
+    // overGame: це вікно відкрите з меню гри поверх трансляції: гра йде далі, «Грати» повертає в неї
+    property bool overGame: false
+    signal backToGame()
+    signal backToMenu()
     property string view: "home"         // home | book | wallet | quality | psn | guide | keys | (адмін) shared | clients
     signal openKeys()                    // лишився для сумісності: клавіші тепер окрема вкладка
     color: ap.bg1
@@ -115,6 +119,7 @@ Rectangle {
     }
     // «Грати»: спершу питаємо, у що гратиме (розкладка клавіш під гру), якщо клієнт не просив запам'ятати
     function play() {
+        if (overGame) { backToGame(); return; }
         if (Chiaki.settings.anyplayAskGame === true && consoleIndex() >= 0) {
             home.pickerFromKeys = false;
             gamePicker.actionText = qsTr("▶ Грати");
@@ -161,6 +166,7 @@ Rectangle {
             home.forceActiveFocus();
     }
     function playNow() {
+        if (overGame) { backToGame(); return; }
         const i = consoleIndex();
         if (i < 0) { toast.show(qsTr("Шукаємо приставку… зачекай кілька секунд")); Chiaki.refreshPsnToken(); return; }
         const h = Chiaki.hosts[i];
@@ -241,6 +247,8 @@ Rectangle {
             closePopups();
         else if (home.view !== "home" && !home.gated)
             home.view = "home";
+        else if (home.overGame)
+            home.backToMenu();
         else
             root.showConfirmDialog(qsTr("Вийти"), qsTr("Закрити AnyPlay?"), () => Qt.quit());
     }
@@ -253,17 +261,23 @@ Rectangle {
     Timer {
         id: reconnectTimer
         property int tries: 0
-        interval: 1200; repeat: true
-        running: home.cloud.reconnectOnce && home.visible
-        onRunningChanged: if (running) tries = 0
+        property int idle: 0        // скільки разів поспіль бачили, що стара трансляція вже закрита
+        interval: 1000; repeat: true
+        running: home.cloud.reconnectOnce && !home.overGame
+        onRunningChanged: if (running) { tries = 0; idle = 0; home.view = "home"; toast.show(qsTr("Змінюємо якість: за кілька секунд гра відкриється знову сама.")); }
         onTriggered: {
-            if (Chiaki.session) { home.cloud.reconnectOnce = false; return; }
+            if (++tries > 40) {
+                home.cloud.reconnectOnce = false;
+                toast.show(qsTr("Не вдалося підключитись самому. Натисни «Грати»."));
+                return;
+            }
+            // стара трансляція ще закривається (це кілька секунд): чекаємо, а не скасовуємо повернення в гру
+            if (Chiaki.session) { idle = 0; return; }
+            if (++idle < 3)     // приставці треба мить, щоб відпустити попереднє підключення
+                return;
             if (home.cloud.state === "play" && home.consoleIndex() >= 0) {
                 home.cloud.reconnectOnce = false;
                 home.playNow();   // без питання «У що граєш?»: гра та сама
-            } else if (++tries > 25) {
-                home.cloud.reconnectOnce = false;
-                toast.show(qsTr("Не вдалося підключитись самому. Натисни «Грати»."));
             }
         }
     }
@@ -376,13 +390,13 @@ Rectangle {
                             elide: Text.ElideRight
                         }
                         LinkButton {
-                            visible: home.cloud.loggedIn
+                            visible: home.cloud.loggedIn && !home.overGame   // під час гри з акаунта не виходять
                             text: qsTr("Вийти")
                             onClicked: root.showConfirmDialog(qsTr("Вийти з акаунта"), qsTr("Вийти з AnyPlay на цьому комп'ютері?"), () => home.cloud.logout())
                         }
                         LinkButton {
-                            text: "✕"
-                            onClicked: root.showConfirmDialog(qsTr("Вийти"), qsTr("Закрити AnyPlay?"), () => Qt.quit())
+                            text: home.overGame ? qsTr("✕ До меню гри") : "✕"
+                            onClicked: home.overGame ? home.backToMenu() : root.showConfirmDialog(qsTr("Вийти"), qsTr("Закрити AnyPlay?"), () => Qt.quit())
                         }
                     }
                 }
@@ -551,7 +565,8 @@ Rectangle {
                             ApButton {
                                 id: primaryBtn
                                 minWidth: 260
-                                text: home.st === "play" ? (home.consoleIndex() >= 0 ? qsTr("▶ Грати") : qsTr("Підключаємо приставку…"))
+                                text: home.overGame ? qsTr("▶ Повернутись у гру")
+                                    : home.st === "play" ? (home.consoleIndex() >= 0 ? qsTr("▶ Грати") : qsTr("Підключаємо приставку…"))
                                     : (home.cloud.nextStart ? qsTr("Забронювати ще") : qsTr("Забронювати час"))
                                 onClicked: home.primaryAction()
                             }
@@ -1148,7 +1163,7 @@ Rectangle {
                             Layout.maximumWidth: 760
                             role: "hint"
                             text: (Chiaki.controllers.length ? qsTr("Підключено геймпад, тому нижче кнопки геймпада. Клавіатура й мишка теж працюють: програма сама перемикається на те, чим ти щойно натиснув. ")
-                                                             : qsTr("Меню PS, як закрити гру і запустити іншу. Клавіші на клавіатурі вказано праворуч. "))
+                                                             : qsTr("Тут усе про керування самою приставкою: меню PS5, запуск і закриття ігор, пауза. Праворуч у кожному рядку клавіша на клавіатурі. "))
                                 + qsTr("Це працює в будь-якій грі й у меню PS5. Під час гри ця довідка є в меню AnyPlay (відкривається клавішею ` під Esc), пункт «Керування приставкою».")
                         }
                     }
@@ -1172,7 +1187,7 @@ Rectangle {
                 visible: active
                 sourceComponent: Component {
                     AnyPlayControls {
-                        inGame: false
+                        inGame: home.overGame
                         sideInset: home.padX
                         onCloseRequested: home.view = "home"
                         onPickerRequested: home.openPickerFromKeys()

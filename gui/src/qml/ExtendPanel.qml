@@ -198,7 +198,7 @@ ColumnLayout {
         visible: panel.methods.length > 1 && !!panel.info.active && !panel.info.closed
                  && !(panel.pending && panel.pending.status === "pending_review")
         Layout.fillWidth: true
-        spacing: 5
+        spacing: 8
         Repeater {
             model: panel.methods
             ApButton {
@@ -209,6 +209,10 @@ ColumnLayout {
                 font.family: ap.body
                 font.capitalization: Font.MixedCase
                 font.letterSpacing: 0
+                font.pixelSize: 15           // валюту оплати має бути добре видно
+                font.weight: Font.Medium
+                topPadding: 11; bottomPadding: 11
+                leftPadding: 16; rightPadding: 16
                 text: modelData.label
                 onClicked: {
                     panel.method = modelData.code;

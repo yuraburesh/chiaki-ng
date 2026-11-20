@@ -126,9 +126,10 @@ Item {
         anchors.fill: parent
         gradient: Gradient {
             orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: "#f20d0a16" }
-            GradientStop { position: 0.46; color: "#d90d0a16" }
-            GradientStop { position: 1.0; color: "#990d0a16" }
+            // гра під меню лише ледь проглядає: інакше текст зливається з яскравою картинкою
+            GradientStop { position: 0.0; color: "#f70d0a16" }
+            GradientStop { position: 0.5; color: "#f00d0a16" }
+            GradientStop { position: 1.0; color: "#e00d0a16" }
         }
     }
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: (wheel) => wheel.accepted = true }
@@ -180,8 +181,9 @@ Item {
                     PauseItem { id: extendBtn; pageId: "extend"; text: qsTr("Продовжити гру"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
                     PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: qualityBtn }
                     PauseItem { id: qualityBtn; pageId: "quality"; text: qsTr("Якість"); KeyNavigation.up: keysBtn; KeyNavigation.down: consoleBtn }
-                    PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: qualityBtn; KeyNavigation.down: exitBtn }
-                    PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: consoleBtn }
+                    PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: qualityBtn; KeyNavigation.down: homeBtn }
+                    PauseItem { id: homeBtn; pageId: "home"; text: qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: exitBtn }
+                    PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: homeBtn }
                 }
 
                 // ── праворуч: вміст обраного пункту ──
@@ -407,6 +409,20 @@ Item {
     }
 
     // сторінка праворуч: прокручується, якщо вікно низьке
+    // ── головне вікно AnyPlay поверх гри: бронювання, баланс, PSN, не виходячи з гри (трансляція йде далі) ──
+    Loader {
+        id: homeOver
+        anchors.fill: parent
+        z: 50
+        active: panel.page === "home" && panel.visible
+        sourceComponent: AnyPlayHome {
+            overGame: true
+            onBackToGame: { panel.page = "back"; panel.resume(); }
+            onBackToMenu: panel.page = "back"
+        }
+        onLoaded: item.forceActiveFocus()
+    }
+
     component PageFlick: Flickable {
         id: pf
         default property alias body: pfInner.data

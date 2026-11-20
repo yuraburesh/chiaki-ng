@@ -105,6 +105,10 @@ Item {
             // колесо зброї: поки тримаєш його клавішу, сектор обирають ще й клавішами руху
             const wheel = foot ? tagged(foot).find((x) => x.btn && x.btn.length === 1 && x.btn[0] === "L1" && !x["do"]) : null;
             const up = foot ? tagged(foot).find((x) => x.aim && x.aim.when === "L1" && x.aim.r) : null;
+            v.hintShort = "";
+            if (wheel && wheel.key && up)
+                v.hintShort = qsTr("Колесо зброї: тримай %1 і обирай сектор клавішами %2 або мишею.")
+                    .arg(bold(kname(wheel.key))).arg(["up", "left", "down", "right"].map((id) => { const b = tagged(foot).find((x) => x.id === id); return b && b.key ? bold(kname(b.key)) : ""; }).filter((k) => k).join(" "));
             if (wheel && wheel.key && up)
                 v.hint += qsTr("<br>Колесо зброї: тримай %1 і обирай сектор клавішами %2 або мишею.")
                     .arg(bold(kname(wheel.key))).arg(["up", "left", "down", "right"].map((id) => { const b = tagged(foot).find((x) => x.id === id); return b && b.key ? bold(kname(b.key)) : ""; }).filter((k) => k).join(" "));
@@ -454,6 +458,9 @@ Item {
 
     // ── усе на одній сторінці: якщо не вміщується, зменшуємо малюнок геймпада (прокрутка лишається тільки на крайній випадок) ──
     property real gpCap: 540
+    // низьке вікно в меню гри (ноутбук 13"): щільніші рядки й без зайвого, щоб усе вмістилось без прокрутки
+    readonly property bool tight: inGame && flick.height > 0 && flick.height < 800
+    readonly property bool tighter: tight && flick.height < 670   // 1366×768 і менше
     function refit() {
         if (!visible || flick.height < 200)
             return;
@@ -505,11 +512,11 @@ Item {
         Column {
             id: page
             readonly property real cw: Math.min(1440, root.width - 2 * root.sideInset)
-            readonly property bool narrow: cw <= 900
+            readonly property bool narrow: cw <= (root.inGame ? 760 : 900)   // у меню гри ліворуч список розділів, тож місця менше
             x: (root.width - cw) / 2
             width: cw
             topPadding: 0
-            bottomPadding: root.inGame ? 12 : 28
+            bottomPadding: root.tighter ? 2 : root.inGame ? 12 : 28
             spacing: 0
             // відступи між частинами — як у прототипі (12 між заголовком і екраном, 10 поля екрана, 14 під верхом, 8 між частинами)
 
@@ -624,7 +631,7 @@ Item {
                     objectName: "apModes"
                     x: side.modesInline ? pickBlock.width + side.gapX : 0
                     y: side.modesInline ? 0 : pickBlock.height + 12
-                    width: Math.min(side.width, Math.max(modesRow.implicitWidth, 560))
+                    width: Math.min(side.width, Math.max(modesRow.implicitWidth, root.tight ? side.width - pickBlock.width - side.gapX : 560))
                     spacing: 5
                     Cap { text: qsTr("Режим") }
                     Row {
@@ -675,9 +682,11 @@ Item {
                         }
                     }
                     Text {
-                        width: Math.min(560, modesBlock.width)
+                        width: Math.min(root.tight ? 900 : 560, modesBlock.width)
                         topPadding: 1
-                        text: root.view.hint
+                        text: root.tighter ? (root.view.hintShort || "") : root.view.hint
+                        visible: text !== ""
+                        height: visible ? implicitHeight : 0
                         textFormat: Text.StyledText
                         wrapMode: Text.WordWrap
                         color: "#a6ffffff"
@@ -685,20 +694,23 @@ Item {
                     }
                 }
 
-                Column {
+                Grid {
                     id: actsBlock
                     x: side.width - width
-                    y: side.actsInline ? 22 : modesBlock.y + modesBlock.height + 12
-                    spacing: 7
+                    y: side.actsInline ? 22 : modesBlock.y + modesBlock.height + (root.tighter ? 6 : 12)
+                    columns: root.tighter ? 2 : 1          // у дуже низькому вікні кнопки й чутливість в один рядок
+                    layoutDirection: root.tighter ? Qt.RightToLeft : Qt.LeftToRight
+                    rowSpacing: 7
+                    columnSpacing: 22
+                    horizontalItemAlignment: Grid.AlignRight
+                    verticalItemAlignment: Grid.AlignVCenter
                     Row {
-                        anchors.right: parent.right
                         spacing: 6
                         LinkButton { text: qsTr("Скинути до стандартної"); onClicked: root.resetKeys() }
                         LinkButton { text: qsTr("Показати вибір перед грою"); onClicked: root.askBeforeGame() }
                     }
                     // нове: чутливість миші для камери та інверсія вертикалі (діють одразу, і в грі теж)
                     Row {
-                        anchors.right: parent.right
                         spacing: 8
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -772,10 +784,12 @@ Item {
                 }
             }
 
-            Gap { height: 14 }
+            Gap { height: root.tighter ? 4 : 14 }
             // ── назва режиму над геймпадом ──
             Column {
                 objectName: "apTitle"
+                visible: !root.tight
+                height: visible ? implicitHeight : 0
                 width: page.cw
                 spacing: 4
                 Text {
@@ -789,7 +803,7 @@ Item {
                 Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 1; height: 16; color: "#66ffffff" }
             }
 
-            Gap { height: 8 }
+            Gap { height: root.tight ? 0 : 8 }
             // ── геймпад з підписами ──
             Item {
                 id: rig
@@ -1086,7 +1100,7 @@ Item {
                 visible: root.view.extra.length > 0
                 width: page.cw
                 height: visible ? extraGrid.y + extraGrid.height : 0
-                readonly property int cols: Math.max(1, Math.floor((width + 24) / (230 + 24)))
+                readonly property int cols: Math.max(1, Math.floor((width + 24) / ((root.tighter ? 196 : 230) + 24)))
                 readonly property real colW: (width - (cols - 1) * 24) / cols
                 Rectangle { width: parent.width; height: 1; color: "#2bffffff" }
                 Cap { id: extraCap; y: 11; text: qsTr("Інші дії") }
@@ -1138,7 +1152,7 @@ Item {
                     }
                 }
                 function rowHeight(r) {
-                    let h = 31;
+                    let h = root.tighter ? 23 : root.tight ? 26 : 31;
                     for (let i = r * cols; i < Math.min(extraRep.count, (r + 1) * cols); i++)
                         if (extraRep.itemAt(i)) h = Math.max(h, extraRep.itemAt(i).natural);
                     return h;
@@ -1171,7 +1185,7 @@ Item {
             // ── перевірка: що щойно отримала б приставка ──
             Rectangle {
                 id: logBox
-                visible: root.live || (!root.inGame && !Chiaki.session)
+                visible: (root.live || (!root.inGame && !Chiaki.session)) && !root.tight
                 width: page.cw
                 height: Math.max(44, logRow.implicitHeight + 16)
                 radius: 4
@@ -1384,7 +1398,7 @@ Item {
         readonly property real naturalWidth: pillRect.width + 8 + content.width
         implicitWidth: naturalWidth
         width: colWidth
-        height: page.narrow ? 28 : 31
+        height: page.narrow ? 28 : (root.tighter ? 23 : root.tight ? 26 : 31)
         Rectangle {
             visible: page.narrow
             anchors.bottom: parent.bottom

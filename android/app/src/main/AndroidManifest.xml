@@ -39,9 +39,11 @@
                 />
         </provider>
 
+        <!-- AnyPlay: adjustResize — щоб на Android 7–10 клавіатура не закривала поле вводу на сторінці (відступ рахує anyplayFrame) -->
         <activity android:name=".anyplay.AnyPlayActivity"
             android:theme="@style/AnyPlayTheme"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

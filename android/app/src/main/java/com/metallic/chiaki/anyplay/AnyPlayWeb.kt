@@ -79,6 +79,10 @@ fun anyplayWebView(activity: Activity, transparent: Boolean): WebView
 	web.setBackgroundColor(if(transparent) Color.TRANSPARENT else AnyPlayStyle.BG1)
 	web.settings.javaScriptEnabled = true
 	web.settings.domStorageEnabled = true
+	// сторінці потрібні лише її файли з assets (вони доступні й так): жодних файлів телефона і content:// —
+	// на старих Android без оновленого WebView доступ до файлів інакше увімкнений
+	web.settings.allowFileAccess = false
+	web.settings.allowContentAccess = false
 	web.overScrollMode = View.OVER_SCROLL_NEVER
 	web.isVerticalScrollBarEnabled = false
 	web.isHorizontalScrollBarEnabled = false
@@ -210,6 +214,9 @@ class AnyPlayWebDialog(private val activity: Activity, private val page: String,
 		window?.let { w ->
 			w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
 			WindowCompat.setDecorFitsSystemWindows(w, false)
+			// без цього Android 7–10 не повідомляє висоту клавіатури, і вона закриває поле вводу (оплата)
+			@Suppress("DEPRECATION")
+			w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 			if(overGame)
 			{
 				w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -289,6 +296,8 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 		web = WebView(activity)
 		web.settings.javaScriptEnabled = true
 		web.settings.domStorageEnabled = true
+		web.settings.allowFileAccess = false   // сторінка Sony: файли телефона їй ні до чого
+		web.settings.allowContentAccess = false
 		// звичайний мобільний браузер: Sony інколи не пускає «вбудовані» вікна
 		web.settings.userAgentString = web.settings.userAgentString.replace("; wv", "")
 		// попередній вхід не підставляємо: клієнт має сам обрати акаунт
@@ -324,6 +333,9 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 			w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
 			// відступи від системних панелей рахуємо самі (на Android 15 вікно все одно на весь екран)
 			WindowCompat.setDecorFitsSystemWindows(w, false)
+			// без цього Android 7–10 не повідомляє висоту клавіатури, і вона закриває поля входу Sony
+			@Suppress("DEPRECATION")
+			w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 			w.statusBarColor = Color.TRANSPARENT
 			w.navigationBarColor = Color.TRANSPARENT
 		}

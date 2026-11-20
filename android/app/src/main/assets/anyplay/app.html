@@ -432,7 +432,8 @@ function dur(s){ s = Math.max(0, Math.floor(s)); return Math.floor(s / 3600) + '
 // час сервера за годинником телефона, як на головному екрані: «19:00», «завтра о 19:00», «24.11 о 19:00»
 function fmtTime(ts){
   if(!(ts > 0)) return '';
-  const d = new Date((ts - skew) * 1000), a = new Date(), b = new Date(Date.now() + 864e5);
+  // до найближчої хвилини: зсув годинника на секунду-дві не має перетворювати «19:00» на «18:59»
+  const d = new Date(Math.round((ts - skew) / 60) * 60000), a = new Date(), b = new Date(Date.now() + 864e5);
   const same = (x, y) => x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
   const t = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
   return same(d, a) ? t : same(d, b) ? 'завтра о ' + t : d.getDate() + '.' + pad2(d.getMonth() + 1) + ' о ' + t;
@@ -1016,7 +1017,7 @@ function pmRender(){
   $('pm').classList.toggle('detail', pmDetail);
   ['loading', 'vExtend', 'vQuality', 'vHelp', 'bar'].forEach(id => $(id).classList.add('hidden'));
   view = null; viewTok++; netStop();
-  const until = G.left >= 0 ? hm(Math.floor(Date.now() / 1000) + G.left) : '';
+  const until = G.left >= 0 ? hm(pmEnd()) : '';
   let h = '';
   if(pmSel === 'back') h = '<p class="cap">Гра на паузі не стоїть</p><p class="lead">Поки відкрите це меню, гра на приставці йде далі. Повернись кнопкою ліворуч або кнопкою «Назад».</p>';
   else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити гру</p>'; view = 'extend'; loadExtend(); }
@@ -1032,9 +1033,12 @@ function pmRender(){
   if($('pmStay')) $('pmStay').onclick = () => { pmSel = 'back'; pmDetail = false; pmRender(); };
   $('pmRight').scrollTop = 0;
 }
+// кінець гри за годинником телефона; програма дає «лишилось» цілими секундами (з обрізанням), тож округлюємо
+// до хвилини — броні закінчуються рівно на хвилині, інакше часто видно «гра до 00:44» замість «00:45»
+function pmEnd(){ return Math.round((Date.now() / 1000 + G.left) / 60) * 60; }
 function pmTick(){
   const g = nativeJson('info'); if(g) G = g;
-  $('pmLeft').textContent = G.left >= 0 ? 'Лишилось ' + dur(G.left) + ', гра до ' + hm(Math.floor(Date.now() / 1000) + G.left) : '';
+  $('pmLeft').textContent = G.left >= 0 ? 'Лишилось ' + dur(G.left) + ', гра до ' + hm(pmEnd()) : '';
   const parts = [];
   if(typeof G.loss === 'number') parts.push('Втрати ' + num(G.loss * 100, 1) + '%');
   if(G.quality) parts.push('якість ' + G.quality);

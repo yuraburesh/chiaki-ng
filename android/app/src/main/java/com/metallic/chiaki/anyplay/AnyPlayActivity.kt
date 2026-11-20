@@ -478,7 +478,8 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 	{
 		if(serverTs <= 0)
 			return ""
-		val date = Date((serverTs - skew) * 1000)
+		// до найближчої хвилини: зсув годинника на секунду-дві не має перетворювати «19:00» на «18:59»
+		val date = Date(Math.round((serverTs - skew) / 60.0) * 60_000L)
 		val cal = Calendar.getInstance().apply { time = date }
 		val today = Calendar.getInstance()
 		val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }

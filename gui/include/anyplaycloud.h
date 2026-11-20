@@ -14,7 +14,9 @@ class QmlBackend;
 class AnyPlayCloud : public QObject
 {
 	Q_OBJECT
-	Q_PROPERTY(QString state READ state NOTIFY changed)          // login | pairing | wait | play | no_console | offline | update
+	Q_PROPERTY(QString state READ state NOTIFY changed)          // login | pairing | wait | play | no_console | offline | update | other_device
+	Q_PROPERTY(QString otherDevice READ otherDevice NOTIFY changed)   // other_device: на якому пристрої клієнт зараз грає
+	Q_PROPERTY(bool paymentChecking READ paymentChecking NOTIFY changed)  // гра в кредит: оплату продовження ще перевіряють, endTs — кінець кредиту
 	Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY changed)
 	Q_PROPERTY(bool admin READ admin NOTIFY changed)
 	Q_PROPERTY(QString userName READ userName NOTIFY changed)
@@ -62,6 +64,8 @@ public:
 	qint64 nextEnd() const { return next_end_; }
 	qint64 ownEnd() const { return own_end_ > 0 ? own_end_ : end_; }
 	bool continues() const { return continues_; }
+	QString otherDevice() const { return other_device_; }
+	bool paymentChecking() const { return payment_checking_; }
 	qint64 clockSkew() const { return skew_; }
 	QString consoleName() const { return console_; }
 	QString notice() const { return notice_; }
@@ -157,6 +161,9 @@ private:
 	qint64 end_ = 0, next_start_ = 0, next_end_ = 0, skew_ = 0;
 	qint64 own_end_ = 0;
 	bool continues_ = false;
+	QString other_device_;          // стан other_device: назва пристрою, на якому йде гра
+	bool payment_checking_ = false; // гра в кредит, поки адмін перевіряє оплату продовження
+	QTimer other_timer;             // other_device: частіше питаємо сервер, щоб «Грати» з'явилось одразу, як там вийдуть з гри
 	QTimer start_timer;     // оновитись рівно в момент початку гри, а не чекати звичайного опитування раз на хвилину
 	int start_polls_ = 0;
 	void scheduleStartRefresh();

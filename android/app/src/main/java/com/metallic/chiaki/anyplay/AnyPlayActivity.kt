@@ -44,7 +44,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 
 	private lateinit var web: WebView
 	@Volatile private var homeJson = "{}"   // останній стан для сторінки (сторінка читає його не з головного потоку)
-	private var state = "login"          // login | pairing | wait | play | no_console | update | offline
+	private var state = "login"          // login | pairing | wait | play | no_console | update | offline | other_device
 	private var session = JSONObject()
 	private var skew = 0L                // час сервера мінус час телефона, секунди
 	private var pairJob: Job? = null
@@ -213,6 +213,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			"play" -> "play"
 			"no_console" -> "no_console"
 			"update" -> "update"
+			"other_device" -> "other_device"   // гра вже йде на іншому пристрої клієнта: приставка тримає одне підключення
 			else -> "wait"
 		}
 		render()
@@ -298,6 +299,9 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 				val r = AnyPlayCloud.session(this@AnyPlayActivity)
 				if(!r.ok)
 					PlayError("Немає зв'язку з сервером AnyPlay. Перевір інтернет.")
+				else if(r.json.optString("state") == "other_device")
+					PlayError("Зараз ти граєш на «${r.json.optString("otherDevice").ifEmpty { "іншому пристрої" }}». " +
+						"Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з'явиться кнопка «Грати».")
 				else if(r.json.optString("state") != "play")
 					PlayError("Зараз грати не можна: час броні ще не настав або вже минув.")
 				else
@@ -507,7 +511,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			.put("quality", AnyPlayQuality.json(this))
 		// зі стану сервера лише те, що показує сторінка: ключів доступу до PSN тут немає
 		val s = JSONObject()
-		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus"))
+		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice"))
 			session.opt(k)?.let { s.put(k, it) }
 		session.optJSONObject("console")?.let { s.put("console", JSONObject().put("psn", it.optString("psn")).put("own", it.optBoolean("own"))) }
 		o.put("session", s)

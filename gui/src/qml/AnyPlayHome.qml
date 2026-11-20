@@ -20,8 +20,9 @@ Rectangle {
     readonly property string st: cloud.state
     // без входу чи без зв'язку з сервером — лише екран входу / помилки, без вкладок
     readonly property bool gated: !cloud.loggedIn || st === "login" || st === "pairing" || st === "offline"
-    // клієнт увійшов, але грати зараз не можна (застаріла програма, приставка недоступна) — замість вкладки «Гра»
-    readonly property bool gameGate: !isAdmin && (st === "update" || st === "no_console")
+    // клієнт увійшов, але грати зараз не можна (застаріла програма, приставка недоступна,
+    // гра вже йде на іншому його пристрої) — замість вкладки «Гра»
+    readonly property bool gameGate: !isAdmin && (st === "update" || st === "no_console" || st === "other_device")
     readonly property var mine: (cloud.bookInfo && cloud.bookInfo.mine) || []
     property string view: "home"         // home | book | quality | psn | guide | keys | (адмін) shared | clients
     signal openKeys()                    // лишився для сумісності: клавіші тепер окрема вкладка
@@ -202,6 +203,7 @@ Rectangle {
             case "login": home.cloud.login(); break;
             case "pairing": home.cloud.cancelLogin(); break;
             case "offline": home.cloud.refresh(); break;
+            case "other_device": home.cloud.refresh(); toast.show(qsTr("Перевіряємо… «Грати» з'явиться, щойно на іншому пристрої вийдуть з гри")); break;
             case "no_console": home.cloud.openBot(); break;
             case "update":
                 if (home.updater && home.updater.available) home.updater.show(); else home.cloud.openBot();
@@ -411,6 +413,7 @@ Rectangle {
                             case "offline": return qsTr("Немає зв'язку");
                             case "no_console": return qsTr("Приставка недоступна");
                             case "update": return qsTr("Вийшла нова версія");
+                            case "other_device": return qsTr("Гра вже йде");
                             default: return home.cloud.loggedIn ? "" : qsTr("Ласкаво просимо");
                             }
                         }
@@ -425,6 +428,7 @@ Rectangle {
                             case "offline": return qsTr("Перевір інтернет");
                             case "no_console": return qsTr("Напиши нам у бот");
                             case "update": return qsTr("Онови програму");
+                            case "other_device": return qsTr("На іншому пристрої");
                             default: return qsTr("Увійди, щоб грати");
                             }
                         }
@@ -441,6 +445,8 @@ Rectangle {
                             case "update": return home.updater && home.updater.available
                                 ? qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Натисни «Оновити програму»: AnyPlay завантажить нову версію, ненадовго закриється і відкриється знову. Вхід і броні збережуться.")
                                 : qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Завантаж нову в боті: кнопка «Програма». Встановлюється поверх старої, вхід і броні зберігаються.");
+                            // приставка тримає одне підключення: другий пристрій вибив би перший
+                            case "other_device": return qsTr("Зараз ти граєш на «%1». Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з'явиться кнопка «Грати».").arg(home.cloud.otherDevice);
                             default: return qsTr("Вхід через Telegram, без паролів. Приставка відкриється сама в час твоєї оплаченої броні.");
                             }
                         }
@@ -449,12 +455,14 @@ Rectangle {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.topMargin: 10
                         minWidth: 260
+                        ghost: home.st === "other_device"   // тут нічого не треба робити: «Грати» з'явиться саме
                         text: {
                             switch (home.st) {
                             case "pairing": return qsTr("Скасувати");
                             case "offline": return qsTr("Спробувати ще");
                             case "no_console": return qsTr("Відкрити бота");
                             case "update": return home.updater && home.updater.available ? qsTr("Оновити програму") : qsTr("Завантажити нову версію");
+                            case "other_device": return qsTr("Перевірити ще раз");
                             default: return qsTr("Увійти через Telegram");
                             }
                         }
@@ -502,6 +510,8 @@ Rectangle {
                             role: "lead"; rich: true
                             text: {
                                 const c = home.cloud;
+                                if (home.st === "play" && c.paymentChecking)   // гра в кредит: час броні вийшов, оплату продовження ще перевіряють
+                                    return qsTr("Оплату продовження ще перевіряємо, тому гра не зупинилась. Поки що грати можна до <b>%1</b>; щойно оплату підтвердять, час додасться сам.").arg(c.formatTime(c.endTs));
                                 if (home.st === "play")
                                     return qsTr("Лишилось до кінця. Гра до <b>%1</b>, потім завершиться сама.").arg(c.formatTime(c.endTs))
                                         + (c.playPsn ? " " + (c.playOwn ? qsTr("Акаунт PSN: %1 (твій).") : qsTr("Акаунт PSN: %1 (спільний).")).arg(c.playPsn) : "");
@@ -522,7 +532,7 @@ Rectangle {
                                 onClicked: home.primaryAction()
                             }
                             ApButton {
-                                visible: home.st === "play"
+                                visible: home.st === "play" && !home.cloud.paymentChecking   // у кредит продовження вже оформлене й перевіряється
                                 ghost: true
                                 height: primaryBtn.height
                                 text: qsTr("Продовжити гру")

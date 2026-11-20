@@ -54,6 +54,15 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 	});
 	beat_timer.setInterval(BEAT_MS);
 	connect(&beat_timer, &QTimer::timeout, this, &AnyPlayCloud::heartbeat);
+	// трансляція почалась чи закінчилась — одразу кажемо серверу: приставка тримає одне підключення, і другий пристрій
+	// клієнта бачить «гра вже йде на іншому пристрої», доки тут стрім (і «Грати» одразу після виходу з гри тут)
+	connect(backend, &QmlBackend::sessionChanged, this, [this]() {
+		if(playing_)
+			QTimer::singleShot(0, this, &AnyPlayCloud::heartbeat);
+	});
+	other_timer.setSingleShot(true);
+	other_timer.setInterval(10000);
+	connect(&other_timer, &QTimer::timeout, this, &AnyPlayCloud::refresh);
 	psn_wait_timer.setInterval(1000);
 	connect(&psn_wait_timer, &QTimer::timeout, this, &AnyPlayCloud::sendMyPsnLogin);
 	// адмін: часто питаємо сервер — так програма швидко забирає код прив'язки, написаний у боті
@@ -281,7 +290,10 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	if(!own_end_)
 		own_end_ = booking.value("ownEnd").toVariant().toLongLong();
 	continues_ = o.value("continues").toBool() || booking.value("continues").toBool();
+	// гра в кредит: кінець броні вже минув, а оплату продовження ще перевіряють (endTs — кінець кредиту)
+	payment_checking_ = o.value("paymentChecking").toBool() || booking.value("paymentChecking").toBool();
 	QString st = o.value("state").toString();
+	other_device_ = st == "other_device" ? o.value("otherDevice").toString() : QString();
 
 	if(st == "play")
 	{
@@ -318,12 +330,22 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 		// трансляція вже йде — не обриваємо гру через оновлення: стан «update» покажемо, коли гра закінчиться
 		qInfo() << "AnyPlay: update requested during a stream, keeping the stream";
 	}
+	else if(st == "other_device" && backend->qmlSession())
+	{
+		// трансляція йде саме тут, тож грає цей пристрій: такого стану він отримувати не мав би. Гру не обриваємо
+		qInfo() << "AnyPlay: other_device reported during a local stream, keeping the stream";
+	}
 	else
 	{
 		if(playing_ || settings->HasAnyPlayEphemeral())
 			stopPlay(QString());
-		setState(st == "no_console" ? "no_console" : st == "update" ? "update" : "wait");
+		// other_device: гра вже йде на іншому пристрої клієнта, «Грати» тут з'явиться, щойно там вийдуть з гри
+		setState(st == "no_console" ? "no_console" : st == "update" ? "update" : st == "other_device" ? "other_device" : "wait");
 	}
+	if(state_ == "other_device")
+		other_timer.start();
+	else
+		other_timer.stop();
 	scheduleStartRefresh();
 	emit changed();
 }
@@ -371,13 +393,22 @@ void AnyPlayCloud::heartbeat()
 			return;
 		}
 		qint64 end = o.value("end").toVariant().toLongLong();
-		if(end_ > 0 && end > end_)
+		const bool checking = o.value("paymentChecking").toBool();
+		if(end_ > 0 && end > end_ && checking)
+		{
+			// час вийшов, але за продовження вже натиснули «Я оплатив»: граємо далі в кредит, доки адмін перевіряє оплату.
+			// Це ще не «оплату отримано»: якщо не підтвердять, гра зупиниться о новому endTs
+			if(!payment_checking_)
+				emit message(tr("Оплату продовження ще перевіряємо, тому гра не зупинилась: можна грати до %1.").arg(formatTime(end)));
+		}
+		else if(end_ > 0 && end > end_)
 		{
 			emit message(tr("✓ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
 			emit extendResult(true, tr("✓ Оплату отримано — гру продовжено до %1").arg(formatTime(end)));
 			pay_timer.stop();
 			loadExtend();
 		}
+		payment_checking_ = checking;
 		end_ = end;
 		emit changed();
 	});
@@ -401,6 +432,7 @@ void AnyPlayCloud::stopPlay(const QString &reason)
 		emit message(reason);
 	}
 	end_ = 0;
+	payment_checking_ = false;
 	emit changed();
 }
 

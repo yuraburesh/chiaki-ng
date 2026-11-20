@@ -457,18 +457,18 @@ Item {
         }
     }
 
-    // ── AnyPlay: нагадування про кінець гри — за 15 і за 5 хвилин, по 40 секунд, гру не перекриває ──
+    // ── AnyPlay: нагадування про кінець гри — один раз, за 10 хвилин, на 40 секунд, гру не перекриває ──
     // Мишка під час гри йде в гру, тож кнопки тут немає: клавіша меню відкриває меню одразу на «Продовжити гру».
     // Не показуємо адміну і коли наступна бронь клієнта йде одразу, без перерви (сервер каже «continues»).
     Rectangle {
         id: anyplayEndBanner
         property int tick: 0
-        property int mark: 0                 // за скільки хвилин до кінця вже нагадали (15 чи 5)
+        property int mark: 0                 // 10 — уже нагадали перед цим кінцем, 0 — ще ні
         property double hideAt: 0
         readonly property int secsLeft: { tick; return Chiaki.cloud.endTs - Math.floor(Date.now() / 1000) - Chiaki.cloud.clockSkew; }
         readonly property bool eligible: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin && Chiaki.cloud.state === "play"
                                          && Chiaki.cloud.endTs > 0 && Chiaki.cloud.continues !== true
-        readonly property bool shown: { tick; return eligible && mark > 0 && secsLeft > 0 && secsLeft <= 15 * 60 && Date.now() < hideAt; }
+        readonly property bool shown: { tick; return eligible && mark > 0 && secsLeft > 0 && secsLeft <= 10 * 60 && Date.now() < hideAt; }
         readonly property real k: Math.max(1, Math.min(2, view.height / 1000))
         visible: shown && !(menuController.open || menuController.closing)
         z: 50
@@ -488,7 +488,7 @@ Item {
                 const b = anyplayEndBanner;
                 b.tick++;
                 const left = b.secsLeft;
-                const m = left <= 5 * 60 ? 5 : (left <= 15 * 60 ? 15 : 0);
+                const m = left <= 10 * 60 ? 10 : 0;
                 if (m === 0)
                     b.mark = 0;            // гру продовжили — наступного разу нагадаємо знову
                 else if (m !== b.mark && left > 0) {

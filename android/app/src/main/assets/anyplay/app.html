@@ -534,13 +534,18 @@ function heroUser(){
     let h = '<span class="eyebrow">' + (end > 0 ? 'Можна грати!' : 'Твоя гра') + '</span>';
     if(H.busy) return h + '<p class="big">Шукаємо приставку…</p><p class="lead">' + (end > 0 ? 'Твій час до <b>' + esc(fmtTime(end)) + '</b>. ' : '') + 'Це займає до хвилини.</p><div class="spin"></div>';
     h += end > 0 ? '<div class="timer play" id="tick" data-to="' + end + '">' + dur(end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>';
-    const lines = [];
-    if(end > 0) lines.push('Лишилось до кінця гри. Твій час до <b>' + esc(fmtTime(end)) + '</b>.');
+    const lines = [], checking = !!(bk && bk.paymentChecking);   // гра в кредит: час вийшов, оплату продовження ще перевіряють
+    if(checking) lines.push('Оплату продовження ще перевіряємо, тому гра не зупинилась. Поки що грати можна до <b>' + esc(fmtTime(end)) + '</b>; щойно оплату підтвердять, час додасться сам.');
+    else if(end > 0) lines.push('Лишилось до кінця гри. Твій час до <b>' + esc(fmtTime(end)) + '</b>.');
     if(c.psn) lines.push('Акаунт PSN: ' + esc(c.psn) + ' (' + (c.own ? 'твій' : 'спільний') + ').');
     if(lines.length) h += '<p class="lead">' + lines.join(' ') + '</p>';
     return h + '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button>'
-      + (bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити гру</button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
+      + (checking ? '' : bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити гру</button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
   }
+  // приставка тримає одне підключення: поки клієнт грає на іншому своєму пристрої, тут «Грати» немає (інакше той вибило б)
+  if(st === 'other_device') return '<span class="eyebrow">Гра вже йде</span><p class="big">На іншому пристрої</p>'
+    + '<p class="lead">Зараз ти граєш на «' + esc(s.otherDevice || 'іншому пристрої') + '». Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з\'явиться кнопка «Грати».</p>'
+    + '<div class="actions"><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>';
   if(st === 'no_console') return '<span class="eyebrow bad">Приставка</span><p class="big">' + (s.closed ? 'Технічні роботи' : 'Приставка зараз недоступна') + '</p>'
     + '<p class="lead">Ми вже це лагодимо. Твоя бронь і оплата збережені. Якщо є питання, напиши в підтримку.</p>'
     + '<div class="actions"><button type="button" class="btn" data-act="bot">Відкрити бота</button></div>';
@@ -800,7 +805,9 @@ async function loadExtend(){
   renderExtend();
 }
 function renderExtend(){
-  $('extInfo').innerHTML = 'Зараз твій час до <b>' + hm(E.end) + '</b>. Продовження додається одразу після нього, без перерви.' + (E.closed ? '<br>Зараз технічні роботи, продовження тимчасово закрите.' : '');
+  $('extInfo').innerHTML = (E.paymentChecking   // гра в кредит: час броні вийшов, оплату продовження ще перевіряють
+      ? 'Твій час вийшов о <b>' + hm(E.end) + '</b>, але гра не зупинилась: поки перевіряємо оплату, грати можна до <b>' + hm(E.graceUntil) + '</b>. Щойно підтвердимо, час додасться сам.'
+      : 'Зараз твій час до <b>' + hm(E.end) + '</b>. Продовження додається одразу після нього, без перерви.') + (E.closed ? '<br>Зараз технічні роботи, продовження тимчасово закрите.' : '');
   const pend = E.pending;
   $('extPending').classList.toggle('hidden', !pend); $('extPick').classList.toggle('hidden', !!pend && pend.status === 'pending_review');
   if(pend){

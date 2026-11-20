@@ -205,7 +205,7 @@ class StreamActivity : AppCompatActivity()
 	@Volatile private var anyplayContinues = false   // після цієї броні одразу йде наступна: гра не закінчується
 	@Volatile private var anyplayLoss = 0.0
 	@Volatile private var anyplayControls = true
-	private var anyplayReminded = 0                  // за скільки хвилин до кінця вже нагадали (15 чи 5), 0 — ще ні
+	private var anyplayReminded = 0                  // 10 — уже нагадали перед цим кінцем (один раз, за 10 хв), 0 — ще ні
 	private var anyplayBanner: View? = null
 	private var anyplayMenu: AnyPlayWebDialog? = null
 
@@ -258,20 +258,20 @@ class StreamActivity : AppCompatActivity()
 	/** Скільки секунд лишилось до кінця гри, -1 — ще не знаємо */
 	private fun anyplayLeft(): Long = if(anyplayEndAt > 0) maxOf(0L, (anyplayEndAt - SystemClock.elapsedRealtime()) / 1000) else -1L
 
-	/** За 15 і за 5 хвилин до кінця гри — банер угорі з кнопкою «Продовжити» (не для адміна і не коли далі ще бронь) */
+	/** Один раз, за 10 хвилин до кінця гри — банер угорі з кнопкою «Продовжити» (не для адміна і не коли далі ще бронь) */
 	private fun anyplayCheckReminder()
 	{
 		val left = anyplayLeft()
 		if(left < 0)
 			return
-		if(left > 16 * 60)
+		if(left > 11 * 60)
 		{
 			anyplayReminded = 0   // гру продовжили: нагадаємо знову перед новим кінцем
 			return
 		}
 		if(anyplayAdmin || anyplayContinues || left <= 0)
 			return
-		val step = if(left <= 5 * 60) 5 else if(left <= 15 * 60) 15 else return
+		val step = if(left <= 10 * 60) 10 else return
 		if(anyplayReminded != 0 && anyplayReminded <= step)
 			return
 		// вікно з помилкою або картинка ще підключається — спробуємо за кілька секунд
@@ -478,6 +478,13 @@ class StreamActivity : AppCompatActivity()
 		anyplayQualityJob?.cancel()
 		anyplayRemindJob?.cancel()
 		viewModel.session.pause()
+		// вийшли з гри: одразу кажемо серверу, що стріму тут більше немає — тоді на іншому пристрої клієнта
+		// одразу з'явиться «Грати» (інакше він чекав би, доки застаріє останній сигнал, до 90 с)
+		if(anyplay && isFinishing)
+		{
+			val ctx = applicationContext
+			Thread { AnyPlayCloud.heartbeat(ctx, false) }.start()
+		}
 	}
 
 	override fun onDestroy()

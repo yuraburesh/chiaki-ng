@@ -107,16 +107,49 @@ Rectangle {
     // «Грати»: спершу питаємо, у що гратиме (розкладка клавіш під гру), якщо клієнт не просив запам'ятати
     function play() {
         if (Chiaki.settings.anyplayAskGame === true && consoleIndex() >= 0) {
+            home.pickerFromKeys = false;
+            gamePicker.actionText = qsTr("▶ Грати");
             gamePicker.open();
             return;
         }
         playNow();
     }
+    // «Показати вибір перед грою» на екрані клавіш: показуємо вибір одразу.
+    // Кнопка в ньому справді починає гру, лише якщо зараз уже можна грати; інакше це «Готово».
+    property bool pickerFromKeys: false
+    readonly property bool canPlayNow: !home.isAdmin && home.st === "play" && home.consoleIndex() >= 0
+    function openPickerFromKeys() {
+        home.pickerFromKeys = true;
+        gamePicker.actionText = home.canPlayNow ? qsTr("▶ Грати") : qsTr("Готово");
+        gamePicker.open();
+    }
     function pickedGame(layoutId) {
         if (layoutId && layoutId !== Chiaki.settings.anyplayLayout())
             Chiaki.settings.setAnyplayLayout(layoutId);
         home.layoutRev++;
+        if (home.pickerFromKeys && !home.canPlayNow) {
+            home.pickerFromKeys = false;
+            toast.show(Chiaki.settings.anyplayAskGame === true
+                ? qsTr("Розкладка: %1. Перед грою програма спитає знову").arg(home.layout.name)
+                : qsTr("Розкладка: %1. Більше не питатимемо, змінити можна тут").arg(home.layout.name));
+            home.restoreFocus();
+            return;
+        }
+        home.pickerFromKeys = false;
         playNow();
+    }
+    function pickerDismissed() {
+        if (home.pickerFromKeys)
+            toast.show(qsTr("Перед наступною грою програма спитає, у що граєш"));
+        home.pickerFromKeys = false;
+        home.restoreFocus();
+    }
+    // після вікна поверх екрана клавіші знову йдуть туди, де були (екран клавіш або головний екран)
+    function restoreFocus() {
+        if (home.view === "keys" && keysLoader.item)
+            keysLoader.item.forceActiveFocus();
+        else
+            home.forceActiveFocus();
     }
     function playNow() {
         const i = consoleIndex();
@@ -752,7 +785,7 @@ Rectangle {
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: home.twoCol ? 8 : 0
+                        Layout.topMargin: home.twoCol ? 4 : 0   // верх підпису праворуч — на рівні верху заголовка ліворуч
                         spacing: 10
                         function fmt(x) { return x >= 100 ? Math.round(x).toString() : x.toFixed(1).replace(".", ","); }
                         ApText { role: "cap"; text: qsTr("Перевірити інтернет") }
@@ -1002,7 +1035,7 @@ Rectangle {
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: home.twoCol ? 8 : 0
+                        Layout.topMargin: home.twoCol ? 4 : 0   // верх підпису праворуч — на рівні верху заголовка ліворуч
                         spacing: 0
                         ApText { role: "cap"; text: qsTr("Зараз"); Layout.bottomMargin: 6 }
                         ApRow {
@@ -1071,17 +1104,20 @@ Rectangle {
 
             // ═════════ КЛАВІШІ: екран керування з геймпадом (окремий компонент) ═════════
             Loader {
+                id: keysLoader
                 anchors.fill: parent
-                anchors.leftMargin: home.padX
-                anchors.rightMargin: home.padX
-                anchors.topMargin: 16
+                // на всю ширину: вміст з полями сторінки (рівно під краями верхньої смуги),
+                // смуга прокрутки біля краю вікна, як і на інших вкладках
+                anchors.topMargin: 22
                 anchors.bottomMargin: 16
                 active: !home.gated && home.view === "keys"
                 visible: active
                 sourceComponent: Component {
                     AnyPlayControls {
                         inGame: false
+                        sideInset: home.padX
                         onCloseRequested: home.view = "home"
+                        onPickerRequested: home.openPickerFromKeys()
                     }
                 }
             }
@@ -1136,7 +1172,7 @@ Rectangle {
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: home.twoCol ? 8 : 0
+                        Layout.topMargin: home.twoCol ? 4 : 0   // верх підпису праворуч — на рівні верху заголовка ліворуч
                         spacing: 0
                         ApText { role: "cap"; text: sharedPage.con ? qsTr("Замінити на інший") : qsTr("Додати акаунт"); Layout.bottomMargin: 6 }
                         ApText {
@@ -1170,6 +1206,7 @@ Rectangle {
                         ApButton {
                             Layout.topMargin: 16
                             Layout.fillWidth: true
+                            wrap: true
                             text: sharedPage.localPsn && sharedPage.localPsn !== qsTr("акаунт PSN")
                                 ? qsTr("3. Роздавати клієнтам «%1»").arg(sharedPage.localPsn) : qsTr("3. Передати PS5 на сервер")
                             enabled: sharedPage.registState === 1 && sharedPage.localPsn !== ""
@@ -1215,7 +1252,7 @@ Rectangle {
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: home.twoCol ? 8 : 0
+                        Layout.topMargin: home.twoCol ? 4 : 0   // верх підпису праворуч — на рівні верху заголовка ліворуч
                         spacing: 0
                         ApText { role: "cap"; text: qsTr("Заявки"); Layout.bottomMargin: 6 }
                         ApText {
@@ -1340,6 +1377,8 @@ Rectangle {
         AnyPlayUpdateDialog {
             id: updateDialog
             anchors.fill: parent
+            // клавіші (Esc — «Пізніше») ідуть у вікно, навіть якщо воно вискочило на екрані клавіш
+            onVisibleChanged: if (visible) home.forceActiveFocus(); else if (home.visible) home.restoreFocus()
         }
     }
 
@@ -1349,6 +1388,7 @@ Rectangle {
         anchors.fill: parent
         z: 700
         onPicked: (layoutId) => home.pickedGame(layoutId)
+        onDismissed: home.pickerDismissed()
     }
 
     // ── сторінка вкладки: прокручується, якщо вміст вищий за вікно; вміст по центру з полями ──

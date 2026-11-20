@@ -13,6 +13,7 @@ Item {
 
     property string selected: ""
     property bool remember: true
+    property string actionText: qsTr("▶ Грати")   // з екрана клавіш, коли грати ще не можна: «Готово»
     property var layouts: []
 
     AnyPlayStyle { id: ap }
@@ -70,9 +71,12 @@ Item {
 
     Rectangle {
         id: dlg
+        // на великих екранах (2K, 4K) вікно пропорційно більше, як і головний екран під ним
+        readonly property real k: Math.max(1, Math.min(2.2, Math.min(picker.width / 1600, picker.height / 1000)))
         readonly property bool compact: width < 520
-        width: Math.min(680, picker.width - 32)
+        width: Math.min(680, picker.width / k - 32)
         height: body.implicitHeight + 36
+        scale: k
         anchors.centerIn: parent
         radius: 6
         color: "#f52a2639"
@@ -213,7 +217,7 @@ Item {
                     Text {
                         id: playText
                         anchors.centerIn: parent
-                        text: qsTr("▶ Грати")
+                        text: picker.actionText
                         color: ap.dark
                         font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 18; font.letterSpacing: 2.4
                         font.capitalization: Font.AllUppercase
@@ -223,7 +227,7 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        Accessible.name: qsTr("Грати")
+                        Accessible.name: picker.actionText.replace("▶ ", "")
                         onClicked: picker.play()
                     }
                 }

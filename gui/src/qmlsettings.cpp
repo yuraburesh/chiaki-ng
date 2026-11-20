@@ -65,6 +65,8 @@ QmlSettings::QmlSettings(Settings *settings, QObject *parent)
 
     connect(settings, &Settings::RegisteredHostsUpdated, this, &QmlSettings::registeredHostsChanged);
     connect(settings, &Settings::ProfilesUpdated, this, &QmlSettings::profilesChanged);
+    // AnyPlay: клавіші в QML розпізнаються за фізичним місцем (меню `, літери на кирилиці) з першого натискання
+    AnyPlayInput::InstallKeyWatcher();
 }
 
 bool QmlSettings::remotePlayAsk() const
@@ -2197,7 +2199,7 @@ QString QmlSettings::anyplayDisplayName(const QString &key) const
 
 void QmlSettings::setAnyplayKey(const QString &profile, const QString &id, const QString &key)
 {
-    if (key.isEmpty())
+    if (key.isEmpty() || key == AnyPlayInput::MenuKeyName())   // ` відкриває меню AnyPlay і в гру не йде
         return;
     // A key does one thing per mode: whoever had it before gets this action's old key (a swap).
     // Shared keys ("global") clash with every mode, and every mode clashes with the shared keys.
@@ -2322,6 +2324,17 @@ void QmlSettings::anyplayPreviewSetProfile(const QString &id)
 QVariantMap QmlSettings::anyplayPreviewState()
 {
     return anyplayPreview()->PreviewState();
+}
+
+void QmlSettings::anyplayPadPreview(bool on)
+{
+    AnyPlayInput::SetPadPreview(on);
+}
+
+bool QmlSettings::anyplayIsMenuKey(int key, int scanCode) const
+{
+    // фізичне місце клавіші знає лише сама подія: її вже записав спостерігач клавіш (див. конструктор)
+    return AnyPlayInput::KeyNameFromQml(key, 0, QString(), scanCode) == AnyPlayInput::MenuKeyName();
 }
 
 bool QmlSettings::anyplayAskGame() const

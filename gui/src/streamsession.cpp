@@ -957,6 +957,15 @@ bool StreamSession::HandleMouseWheelEvent(QWheelEvent *event)
 	{
 		if(event->phase() == Qt::ScrollMomentum)
 			return true;
+		// AnyPlay: один крок колеса зброї на поділку (120). Тачпад MacBook і плавні колеса шлють десятки
+		// дрібних кроків за один рух — без цього зброя пролітала б кілька секторів за раз.
+		if((delta > 0) != (anyplay_wheel_accum > 0) || !anyplay_wheel_clock.isValid() || anyplay_wheel_clock.elapsed() > 400)
+			anyplay_wheel_accum = 0;
+		anyplay_wheel_clock.restart();
+		anyplay_wheel_accum += delta;
+		if(qAbs(anyplay_wheel_accum) < 120)
+			return true;
+		anyplay_wheel_accum = 0;
 		return anyplay->Tap(delta > 0 ? QStringLiteral("WheelUp") : QStringLiteral("WheelDown"));
 	}
 	if(!IsMouseInputMapped(mouse_key))

@@ -642,6 +642,10 @@ public:
     Q_INVOKABLE void anyplayPreviewRelease();
     Q_INVOKABLE void anyplayPreviewSetProfile(const QString &id);
     Q_INVOKABLE QVariantMap anyplayPreviewState();
+    // справжній геймпад на екрані клавіш: поки екран відкритий, кнопки геймпада не ходять по меню
+    Q_INVOKABLE void anyplayPadPreview(bool on);
+    // клавіша меню AnyPlay (` під Esc) за фізичним місцем, на будь-якій мові клавіатури
+    Q_INVOKABLE bool anyplayIsMenuKey(int key, int scanCode) const;
     bool anyplayAskGame() const;
     void setAnyplayAskGame(bool ask);
     qreal anyplayMouseSensitivity() const;

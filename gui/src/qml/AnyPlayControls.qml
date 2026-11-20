@@ -9,7 +9,11 @@ import org.streetpea.chiaking
 Item {
     id: root
     property bool inGame: false
+    // поля зліва й справа: вміст стоїть усередині, смуга прокрутки — у правому полі, біля краю
+    // (вкладка головного екрана дає поля сторінки, щоб усе стояло рівно під верхньою смугою)
+    property real sideInset: 6
     signal closeRequested()
+    signal pickerRequested()   // «Показати вибір перед грою» поза грою: показати «У що граєш?» одразу
 
     AnyPlayStyle { id: ap }
 
@@ -44,7 +48,7 @@ Item {
     property var held: ({})                 // утримувані клавіші і кнопки миші
     property string lastKey: ""
     property real wheelAt: 0
-    readonly property var onMap: computeOn(engine, clickBtn, rsv)
+    readonly property var onMap: computeOn(engine, clickBtn, rsv, pad)
     property var logLines: [qsTr("Просто тисни клавіші, кнопки миші, крути колесо над геймпадом і рухай мишею: джойстик покаже, що отримає приставка.")]
 
     // ── допоміжне ──
@@ -58,10 +62,13 @@ Item {
     function globalList(c) { return tagged(profOf(c, "global")); }
     function plain(b) { const d = b["do"] || ""; return b.btn && b.btn.length === 1 && !b.when && (d === "" || d === "tap" || d === "turbo" || d === "toggle"); }
     function pnOf(b) { return (b.btn || []).map((x) => padName[x]).join("+"); }
+    // у прицілі дія інша (колесо в GTA VI: △)
+    function aimPn(b) { return b.aim && b.aim.btn ? b.aim.btn.map((x) => padName[x]).join("+") : ""; }
+    function aimNow(b) { return !!(b.aim && b.aim.when) && (engine.buttons || []).indexOf(b.aim.when) >= 0; }
     function howOf(b) {
         const d = b["do"] || "", pn = pnOf(b);
         if (d === "macro") return qsTr("комбінація");
-        if (d === "cycle") return qsTr("по колу");
+        if (d === "cycle") return aimPn(b) ? qsTr("по колу; у прицілі: %1").arg(aimPn(b)) : qsTr("по колу");
         if (b.when) return pn + qsTr(", у прицілі");
         if (b.profile && !b.btn) return qsTr("режим");
         return pn;
@@ -131,16 +138,54 @@ Item {
     }
     function bold(t) { return "<font color=\"#ffffff\"><b>" + String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b></font>"; }
 
-    function computeOn(e, click, r) {
+    function computeOn(e, click, r, g) {
         const o = {};
         for (const b of e.buttons || []) o[b] = true;
+        for (const b of g.buttons || []) o[b] = true;
         if (click) o[click] = true;
-        if (e.lx || e.ly) o.LS = true;
-        if (r[0] || r[1] || e.rx || e.ry) o.RS = true;
+        if (e.lx || e.ly || g.lx || g.ly) o.LS = true;
+        if (r[0] || r[1] || e.rx || e.ry || g.rx || g.ry) o.RS = true;
         return o;
     }
-    readonly property var lsVec: [engine.lx || 0, engine.ly || 0]
-    readonly property var rsVec: [Math.max(-1, Math.min(1, (engine.rx || 0) + rsv[0])), Math.max(-1, Math.min(1, (engine.ry || 0) + rsv[1]))]
+    function clamp1(x) { return Math.max(-1, Math.min(1, x)); }
+    readonly property var lsVec: [clamp1((engine.lx || 0) + (pad.lx || 0)), clamp1((engine.ly || 0) + (pad.ly || 0))]
+    readonly property var rsVec: [clamp1((engine.rx || 0) + rsv[0] + (pad.rx || 0)), clamp1((engine.ry || 0) + rsv[1] + (pad.ry || 0))]
+
+    // ── справжній геймпад (поза грою): його кнопки, курки й стіки світяться так само, як від клавіш ──
+    property var pad: ({ buttons: [], lx: 0, ly: 0, rx: 0, ry: 0 })
+    readonly property var pads: live ? Chiaki.controllers : []
+    readonly property string padStatus: Chiaki.controllers.length
+        ? qsTr("Геймпад: %1 підключено").arg(String(Chiaki.controllers[0].name || qsTr("геймпад")).replace(/\s*\(.*$/, "").slice(0, 40))
+        : qsTr("Геймпад: підключи і натисни будь-яку кнопку")
+    function readPads() {
+        const o = { buttons: [], lx: 0, ly: 0, rx: 0, ry: 0 };
+        const big = (a, b) => Math.abs(b) > Math.abs(a) ? b : a;
+        for (let i = 0; i < pads.length; i++) {
+            const st = pads[i] ? pads[i].padState : null;
+            if (!st || !st.buttons)
+                continue;
+            for (const b of st.buttons)
+                if (o.buttons.indexOf(b) < 0) o.buttons.push(b);
+            o.lx = big(o.lx, st.lx || 0); o.ly = big(o.ly, st.ly || 0);
+            o.rx = big(o.rx, st.rx || 0); o.ry = big(o.ry, st.ry || 0);
+        }
+        const was = pad.buttons || [];
+        for (const b of o.buttons) {
+            if (was.indexOf(b) >= 0 || !padName[b])
+                continue;
+            const a = mainOf(cfg, mode, b);
+            log(qsTr("Геймпад %1").arg(padName[b]) + (a ? " → " + rowName(cfg, mode, b, a) : qsTr(": у цьому режимі нічого")));
+        }
+        pad = o;
+    }
+    onPadsChanged: readPads()
+    Repeater {
+        model: root.pads
+        Item {
+            required property var modelData
+            Connections { target: modelData; function onPadStateChanged() { root.readPads(); } }
+        }
+    }
 
     // ── дії ──
     function reload() {
@@ -211,7 +256,10 @@ Item {
     function askBeforeGame() {
         cancelWait();
         Chiaki.settings.anyplayAskGame = true;
-        toast(qsTr("Перед наступною грою програма спитає, у що граєш"));
+        if (inGame)
+            toast(qsTr("Перед наступною грою програма спитає, у що граєш"));
+        else
+            pickerRequested();   // головний екран одразу покаже «У що граєш?»
     }
 
     // ── живий показ ──
@@ -241,6 +289,7 @@ Item {
         const nm = clean(b.name), pn = pnOf(b), d = b["do"] || "";
         if (b.when && (engine.buttons || []).indexOf(b.when) < 0)
             log(qsTr("%1: «%2» працює лише в прицілі").arg(lab).arg(nm));
+        else if (aimNow(b)) log(lab + " → " + aimPn(b) + qsTr(", поки тримаєш (у прицілі): ") + nm);
         else if (d === "cycle") log(lab + " → " + nm + qsTr(" (по колу)"));
         else if (d === "macro") log(lab + " → " + nm + qsTr(" (комбінація)"));
         else if (b.l && b.l.length === 2) log(lab + " → " + qsTr("лівий стік: ") + nm);
@@ -256,6 +305,7 @@ Item {
         const lab = kname(k), nm = clean(b.name), d = b["do"] || "";
         lastKey = lab;
         if (b.when && (engine.buttons || []).indexOf(b.when) < 0) log(qsTr("%1: «%2» працює лише в прицілі").arg(lab).arg(nm));
+        else if (aimNow(b)) log(lab + " → " + aimPn(b) + qsTr(" коротко (у прицілі): ") + nm);
         else if (d === "cycle") log(lab + " → " + nm + qsTr(" (по колу)"));
         else if (d === "macro") log(lab + " → " + nm + qsTr(" (комбінація)"));
         else log(lab + " → " + pnOf(b) + qsTr(" коротко: ") + nm);
@@ -281,6 +331,9 @@ Item {
         }
     }
     onLiveChanged: {
+        Chiaki.settings.anyplayPadPreview(live);   // поки екран живий, геймпад не ходить по меню, а світить кнопки
+        if (live && Chiaki.controllers.length)
+            log(qsTr("Підключено геймпад. Натискай кнопки: на схемі засвітиться те саме"));
         releaseAll();
         engine = ({ buttons: [], lx: 0, ly: 0, rx: 0, ry: 0, profile: "" });
         rsv = [0, 0];
@@ -292,6 +345,13 @@ Item {
     Connections {
         target: Qt.application
         function onStateChanged() { if (Qt.application.state !== Qt.ApplicationActive) root.releaseAll(); }
+    }
+    Connections {
+        target: Chiaki
+        function onControllersChanged() {
+            if (root.live)
+                root.log(Chiaki.controllers.length ? qsTr("Підключено геймпад. Натискай кнопки: на схемі засвітиться те саме") : qsTr("Геймпад відключено"));
+        }
     }
     Connections {
         target: Chiaki.settings
@@ -316,15 +376,23 @@ Item {
         occ = { a: a, w: w, h: h, g: g.g, names: g.names };
         reload();
         mode = cfg.start || "foot";
-        if (live) Chiaki.settings.anyplayPreviewSetProfile(mode);
-        // фокус беремо, лише коли екран справді показаний (інакше прихована вкладка забрала б клавіші в інших)
-        if (visible) root.forceActiveFocus();
+        if (live) {
+            Chiaki.settings.anyplayPreviewSetProfile(mode);
+            Chiaki.settings.anyplayPadPreview(true);
+        }
+        // фокус беремо, лише коли екран справді показаний (інакше прихована вкладка забрала б клавіші в інших);
+        // у меню гри — ні: там фокус лишається на пунктах ліворуч, доки не клацнеш тут чи не натиснеш Enter / →
+        if (visible && !inGame) root.forceActiveFocus();
     }
     onVisibleChanged: {
-        if (visible) root.forceActiveFocus();
-        else cancelWait();
+        if (visible && !inGame) root.forceActiveFocus();
+        else if (!visible) cancelWait();
     }
-    Component.onDestruction: Chiaki.settings.anyplayPreviewRelease()
+    Component.onDestruction: {
+        Chiaki.settings.anyplayPreviewRelease();
+        if (!inGame)
+            Chiaki.settings.anyplayPadPreview(false);   // геймпад знову ходить по меню програми
+    }
 
     // ── клавіатура ──
     focus: true
@@ -409,8 +477,7 @@ Item {
 
         Column {
             id: page
-            readonly property real cw: Math.min(1440, root.width - 2 * gutter)
-            readonly property real gutter: 6   // поля дає той, хто показує екран (вкладка чи меню гри); 6 — місце для смуги прокрутки
+            readonly property real cw: Math.min(1440, root.width - 2 * root.sideInset)
             readonly property bool narrow: cw <= 900
             x: (root.width - cw) / 2
             width: cw
@@ -1064,10 +1131,11 @@ Item {
                 layoutDirection: Qt.RightToLeft
                 spacing: 16
                 Repeater {
-                    model: [[qsTr("Меню AnyPlay:"), qsTr("клавіша ` (під Esc)")], [qsTr("Прибрати клавішу:"), "Backspace"], [qsTr("Скасувати:"), "Esc"], [qsTr("Змінити клавішу:"), qsTr("клацни на неї")]]
+                    model: (root.live ? [[root.padStatus, ""]] : [])
+                        .concat([[qsTr("Меню AnyPlay:"), qsTr("клавіша ` (під Esc)")], [qsTr("Прибрати клавішу:"), "Backspace"], [qsTr("Скасувати:"), "Esc"], [qsTr("Змінити клавішу:"), qsTr("клацни на неї")]])
                     Text {
                         required property var modelData
-                        text: modelData[0] + " " + root.bold(modelData[1])
+                        text: modelData[1] ? modelData[0] + " " + root.bold(modelData[1]) : modelData[0]
                         textFormat: Text.StyledText
                         color: "#b3ffffff"
                         font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 13; font.letterSpacing: 1
@@ -1226,7 +1294,7 @@ Item {
         border.width: 1
         border.color: lbArea.containsMouse ? "#ffffff" : "#38ffffff"
         Text { id: lbText; anchors.centerIn: parent; color: ap.ink; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 13 }
-        MouseArea { id: lbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { lb.clicked(); root.forceActiveFocus(); } }
+        MouseArea { id: lbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.forceActiveFocus(); lb.clicked(); } }   // фокус спершу: кнопка може відкрити вікно, яке забере його собі
     }
 
     // фішка клавіші: клацни, щоб призначити іншу

@@ -69,7 +69,6 @@ GridLayout {
                 model: gRow.modelData.keys
                 ApChip {
                     required property string modelData
-                    anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                     key: true
                     text: modelData
                 }

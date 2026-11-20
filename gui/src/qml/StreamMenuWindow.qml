@@ -83,12 +83,9 @@ Window {
         Keys.onMenuPressed: streamMenuWindow.closeRequested()
         Keys.onEscapePressed: streamMenuWindow.closeRequested()
         // AnyPlay: клавіша ` (під Esc, за фізичним положенням) закриває меню так само, як відкрила
+        // (та сама перевірка, що й у головному вікні: AnyPlayInput::IsMenuKey)
         Keys.onPressed: (event) => {
-            const k = event.key;
-            const osx = Qt.platform.os === "osx";
-            if (k === Qt.Key_QuoteLeft || k === Qt.Key_AsciiTilde || (osx && (k === Qt.Key_section || k === Qt.Key_plusminus))
-                    || (Qt.platform.os === "windows" && event.nativeScanCode === 0x29)
-                    || (!osx && Qt.platform.os !== "windows" && event.nativeScanCode === 49)) {
+            if (Chiaki.settings.anyplayIsMenuKey(event.key, event.nativeScanCode)) {
                 event.accepted = true;
                 if (!event.isAutoRepeat)
                     streamMenuWindow.closeRequested();

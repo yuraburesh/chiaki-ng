@@ -404,6 +404,9 @@ class StreamSession : public QObject
 		qreal mouse_smooth_x = 0;
 		qreal mouse_smooth_y = 0;
 		QElapsedTimer mouse_tick_clock;
+		// AnyPlay: колесо — один крок на поділку (120); тачпад і плавні колеса шлють багато дрібних кроків
+		int anyplay_wheel_accum = 0;
+		QElapsedTimer anyplay_wheel_clock;
 		void UpdateMouseRightStick();
 #if CHIAKI_GUI_ENABLE_SPEEX
 		bool ProcessMicFrame(int16_t *echo_buf);

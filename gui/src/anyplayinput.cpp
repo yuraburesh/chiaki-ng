@@ -40,6 +40,7 @@ constexpr float MinSensitivity = 0.3f;
 constexpr float MaxSensitivity = 3.0f;
 std::atomic<float> cached_sensitivity{-1.0f}; // -1: ще не прочитано з налаштувань
 std::atomic<int> cached_invert{-1};
+std::atomic<bool> pad_preview{false};   // екран клавіш показує справжній геймпад
 
 // кнопки геймпада за назвами з файлів розкладок; порядок — для показу на екрані клавіш
 const QList<QPair<QString, uint32_t>> &ButtonList()
@@ -302,6 +303,9 @@ QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, const QS
 				binding.steps.append(StepFromJson(s.toObject()));
 			binding.dir = bo.value("dir").toInt(1) < 0 ? -1 : 1;
 			binding.when = ButtonFromName(bo.value("when").toString());
+			const QJsonObject aim = bo.value("aim").toObject();
+			binding.aim_when = ButtonFromName(aim.value("when").toString());
+			binding.aim_out = StepFromJson(aim);
 			binding.profile = bo.value("profile").toString();
 			binding.owner = profile.id;
 			if(apply_overrides)
@@ -390,6 +394,12 @@ bool AnyPlayInput::Allowed(const APBinding &b) const
 	return !b.when || (Output().buttons & b.when);
 }
 
+// у дії є окремий варіант «у прицілі», і зараз саме приціл (натиснута aim_when)
+bool AnyPlayInput::AimNow(const APBinding &b) const
+{
+	return b.aim_when && (Output().buttons & b.aim_when);
+}
+
 bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 {
 	if(name.isEmpty() || name == MenuKeyName())
@@ -418,9 +428,16 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 	const APBinding *binding = Find(name);
 	if(!binding)
 		return false;
-	const APBinding b = *binding; // копія: перемикання режиму нижче робить вказівник недійсним
+	APBinding b = *binding; // копія: перемикання режиму нижче робить вказівник недійсним
 	if(!Allowed(b))
 		return true; // клавіша наша, але без прицілу нічого не робить
+	if(AimNow(b))
+	{
+		// у прицілі інша дія (наприклад △), тримається, поки тримаєш клавішу
+		b.kind = APBinding::Kind::Hold;
+		b.out = b.aim_out;
+		b.profile.clear();
+	}
 	switch(b.kind)
 	{
 		case APBinding::Kind::Hold:
@@ -459,6 +476,12 @@ bool AnyPlayInput::Tap(const QString &name)
 	const APBinding b = *binding;
 	if(!Allowed(b))
 		return true;
+	if(AimNow(b))
+	{
+		AddTap(b.aim_out, TapMs);   // у прицілі: коротко інша кнопка (колесо в GTA VI: △)
+		emit Changed();
+		return true;
+	}
 	if(b.kind == APBinding::Kind::Macro)
 	{
 		NoteSlot(b);
@@ -718,6 +741,16 @@ void AnyPlayInput::SetAskGame(bool ask)
 	QSettings().setValue(AskGameKey, ask);
 }
 
+bool AnyPlayInput::PadPreview()
+{
+	return pad_preview.load(std::memory_order_relaxed);
+}
+
+void AnyPlayInput::SetPadPreview(bool on)
+{
+	pad_preview.store(on, std::memory_order_relaxed);
+}
+
 APStep AnyPlayInput::Output() const
 {
 	APStep sum;
@@ -761,6 +794,31 @@ QVariantMap AnyPlayInput::PreviewState() const
 	state["ry"] = qBound(-1.0f, sum.ry, 1.0f);
 	state["profile"] = current_profile;
 	return state;
+}
+
+QVariantMap AnyPlayInput::PadState(const ChiakiControllerState &state)
+{
+	QStringList buttons;
+	for(const auto &b : ButtonList())
+	{
+		const bool on = b.second == CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 ? state.l2_state > 0x33
+			: b.second == CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 ? state.r2_state > 0x33
+			: (state.buttons & b.second) != 0;
+		if(on)
+			buttons.append(b.first);
+	}
+	// мертва зона 0.14, як у прототипі; далі округлення до сотих
+	auto axis = [](int16_t v) {
+		const double x = qBound(-1.0, v / 32767.0, 1.0);
+		return qAbs(x) < 0.14 ? 0.0 : qRound(x * 100) / 100.0;
+	};
+	QVariantMap m;
+	m["buttons"] = buttons;
+	m["lx"] = axis(state.left_x);
+	m["ly"] = axis(state.left_y);
+	m["rx"] = axis(state.right_x);
+	m["ry"] = axis(state.right_y);
+	return m;
 }
 
 bool AnyPlayInput::IsMenuKey(const QKeyEvent *event)
@@ -890,6 +948,7 @@ QVariantList AnyPlayInput::ProfilesForEditor()
 			row["do"] = bo.value("do").toString();
 			row["dir"] = b.dir;
 			row["when"] = bo.value("when").toString();
+			row["aim"] = bo.value("aim").toObject().toVariantMap();   // {when, btn}: що робить у прицілі
 			row["x"] = bo.value("x").toInt(0) != 0;
 			row["profile"] = b.profile;
 			row["steps"] = b.steps.size();

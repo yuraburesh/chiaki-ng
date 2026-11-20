@@ -1,4 +1,5 @@
 #include "qmlcontroller.h"
+#include "anyplayinput.h"
 
 #include <QTimer>
 #include <QKeyEvent>
@@ -7,6 +8,7 @@
 #include <QStyleHints>
 #include <QGuiApplication>
 #include <QQuickWindow>
+#include <QMetaMethod>
 
 static QVector<QPair<uint32_t, Qt::Key>> key_map = {
     { CHIAKI_CONTROLLER_BUTTON_DPAD_UP, Qt::Key_Up },
@@ -41,6 +43,7 @@ QmlController::QmlController(Controller *c, uint32_t shortcut, QObject *t, QObje
 
     connect(controller, &Controller::StateChanged, this, [this]() {
         auto state = controller->GetState();
+        updatePadState(state);
         auto buttons = state.buttons;
 
         if (state.left_x > 30000)
@@ -114,8 +117,34 @@ QString QmlController::GetVIDPID() const
     return controller->GetVIDPIDString();
 }
 
+QString QmlController::name() const
+{
+    return controller->GetName();
+}
+
+// AnyPlay: стан для екрана клавіш. Сповіщаємо лише про справжні зміни (кнопки, стіки після мертвої зони),
+// а не про кожен кадр гіроскопа; і лише коли хтось слухає (поза екраном клавіш нічого не рахуємо)
+void QmlController::updatePadState(const ChiakiControllerState &state)
+{
+    static const QMetaMethod changed = QMetaMethod::fromSignal(&QmlController::padStateChanged);
+    if (!isSignalConnected(changed)) {
+        if (!pad_state.isEmpty())
+            pad_state.clear();
+        return;
+    }
+    const QVariantMap now = AnyPlayInput::PadState(state);
+    if (now == pad_state)
+        return;
+    pad_state = now;
+    emit padStateChanged();
+}
+
 void QmlController::sendKey(Qt::Key key, Qt::KeyboardModifiers modifiers)
 {
+    // AnyPlay: на екрані клавіш (поза грою) геймпад лише світить свої кнопки на малюнку,
+    // а не ходить по екрану (○ була б Esc, L3 і R3 — F1 і F2, що перемикали б режим)
+    if (modifiers == Qt::NoModifier && AnyPlayInput::PadPreview())
+        return;
     // SDL2-compat/SDL3 on macOS can expose a single physical controller as
     // two devices, creating two QmlController instances that both fire for
     // the same button press. Deduplicate by VID:PID + key as a workaround

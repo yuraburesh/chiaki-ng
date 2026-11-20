@@ -38,6 +38,9 @@ struct APBinding
 	QList<APStep> steps; // Macro
 	int dir = 1;         // Cycle: +1 наступна зброя, -1 попередня
 	uint32_t when = 0;   // працює лише поки натиснута ця кнопка (наприклад L2 — у прицілі)
+	// інша дія, поки натиснута aim_when (колесо в GTA VI: без прицілу — колесо зброї по колу, у прицілі — △)
+	uint32_t aim_when = 0;
+	APStep aim_out;
 	QString profile;     // режим, у який перемкнутись: id або "toggle" (пішки <-> транспорт)
 	QString owner;       // режим, якому належить дія
 };
@@ -79,6 +82,9 @@ class AnyPlayInput : public QObject
 		void SetPreview(bool preview);
 		// Що зараз натиснуто: {buttons: [назви кнопок], lx, ly, rx, ry, profile}
 		QVariantMap PreviewState() const;
+		// Справжній геймпад для екрана клавіш: {buttons: [назви кнопок, L2/R2 з половини ходу], lx, ly, rx, ry}
+		// з мертвою зоною 0.14 і округленням до сотих (щоб не смикати екран від шуму стіків)
+		static QVariantMap PadState(const ChiakiControllerState &state);
 
 		// «Сісти в транспорт» натиснуто пішки, чекаємо підтвердження від приставки
 		// (вібрація двигуна / опір курків). Можна читати з будь-якого потоку.
@@ -100,6 +106,10 @@ class AnyPlayInput : public QObject
 		// Показувати вибір гри («У що граєш?») перед грою
 		static bool AskGame();
 		static void SetAskGame(bool ask);
+		// Екран клавіш поза грою показує натискання справжнього геймпада: поки він відкритий,
+		// кнопки геймпада не перетворюються на клавіші навігації (інакше ○ була б Esc, L3 — F1 тощо)
+		static bool PadPreview();
+		static void SetPadPreview(bool on);
 
 		// Назви клавіш
 		static QString KeyName(const QKeyEvent *event);
@@ -144,6 +154,7 @@ class AnyPlayInput : public QObject
 		static void PruneOverrides(const QString &layout, const QJsonObject &config);
 		const APBinding *Find(const QString &name) const;
 		bool Allowed(const APBinding &b) const;
+		bool AimNow(const APBinding &b) const;
 		void Run(const APBinding &b, bool tap);
 		void Cycle(const APBinding &b);
 		void NoteSlot(const APBinding &b);

@@ -49,7 +49,7 @@ Item {
             color: ap.faint
         }
     }
-    Row {
+    RowLayout {   // фішки й кнопки різної висоти стоять по центру рядка (у Row вони тулились би до верху)
         id: trail
         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
         spacing: 6

@@ -33,7 +33,8 @@ Item {
     function goMain() { page = "back"; resumeBtn.forceActiveFocus(); }
     // перейти з лівого стовпця у вміст праворуч (Enter або →)
     function enterContent() {
-        const target = page === "exit" ? exitConfirm : (page === "quality" ? qualityList.firstOpt : (page === "extend" ? extendPanel.firstOption : null));
+        const target = page === "exit" ? exitConfirm : (page === "quality" ? qualityList.firstOpt : (page === "extend" ? extendPanel.firstOption
+                     : (page === "keys" ? keysLoader.item : null)));
         if (target && target.visible && target.enabled)
             target.forceActiveFocus(Qt.TabFocusReason);
         else {
@@ -276,14 +277,20 @@ Item {
                     }
 
                     // клавіші: екран керування з геймпадом (компактний варіант для гри)
+                    // (фокус лишається на пунктах ліворуч; у клавіші — клацом, Enter чи →; Esc там закриває меню, як і всюди)
                     Loader {
+                        id: keysLoader
                         anchors.fill: parent
+                        // вміст — рівно по краях інших сторінок, смуга прокрутки — праворуч за ним, з відступом
+                        anchors.leftMargin: -14
+                        anchors.rightMargin: -14
                         active: panel.visible && panel.page === "keys"
                         visible: active
                         sourceComponent: Component {
                             AnyPlayControls {
                                 inGame: true
-                                onCloseRequested: panel.goMain()
+                                sideInset: 14
+                                onCloseRequested: panel.resume()
                             }
                         }
                     }

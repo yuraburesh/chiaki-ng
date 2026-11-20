@@ -9,6 +9,7 @@ Button {
     property bool small: false
     property bool danger: false          // червоний текст (наприклад, «Вийти з гри»)
     property real minWidth: 0
+    property bool wrap: false            // довгий напис у вузькій колонці — у два рядки замість «…»
     AnyPlayStyle { id: ap }
 
     focusPolicy: Qt.TabFocus
@@ -35,6 +36,8 @@ Button {
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
+        wrapMode: b.wrap ? Text.Wrap : Text.NoWrap
+        maximumLineCount: b.wrap ? 2 : 1
     }
     background: Rectangle {
         radius: ap.radius

@@ -6,6 +6,7 @@
 #include <QNetworkAccessManager>
 #include <QJsonObject>
 #include <QVariantMap>
+#include <QHash>
 #include <functional>
 
 class Settings;
@@ -50,6 +51,9 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(QVariantMap bookInfo READ bookInfo NOTIFY bookChanged)     // бронювання в програмі: дні, тарифи, мої броні
 	Q_PROPERTY(QVariantList bookStarts READ bookStarts NOTIFY bookStartsChanged) // вільні старти для обраного дня й тарифу
 	Q_PROPERTY(bool bookStartsLoading READ bookStartsLoading NOTIFY bookStartsChanged)
+	// баланс (передоплата за гру): {balances: [{currency, amount, symbol}], primary} із сесії; після loadWallet() ще history, topup, pending
+	Q_PROPERTY(QVariantMap wallet READ wallet NOTIFY walletChanged)
+	Q_PROPERTY(bool hasWallet READ hasWallet NOTIFY walletChanged)    // сервер уміє баланс і це клієнт (в адмінів балансу немає)
 
 public:
 	AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent = nullptr);
@@ -94,7 +98,8 @@ public:
 	Q_INVOKABLE void setMyPsn(const QString &psn);   // клієнт: додати/прибрати свій акаунт PSN
 	Q_INVOKABLE QString formatTime(qint64 ts) const;
 	Q_INVOKABLE void loadExtend();
-	Q_INVOKABLE void extend(int hours, const QString &method = QString()); // клієнт: продовжити гру на N годин
+	// клієнт: продовжити гру на N годин; pay: wallet — з балансу, mix — баланс + доплата переказом, transfer — уся сума переказом
+	Q_INVOKABLE void extend(int hours, const QString &method = QString(), const QString &pay = QStringLiteral("transfer"));
 	Q_INVOKABLE void payExtend(qint64 bookingId, const QString &sender);    // клієнт: «Я оплатив»
 	Q_INVOKABLE bool beginMyPsnLogin();              // клієнт: перед входом у PSN (офіційна сторінка Sony)
 	Q_INVOKABLE void sendMyPsnLogin();               // клієнт: після входу — передати ID акаунта на сервер
@@ -121,9 +126,15 @@ public:
 	Q_INVOKABLE void openMyPsnLink();                // клієнт: відкрити сторінку Sony для входу на приставці
 	Q_INVOKABLE void loadBook();                                               // екран бронювання
 	Q_INVOKABLE void loadBookStarts(const QString &day, const QString &code);   // вільний час на день
-	Q_INVOKABLE void book(qint64 start, const QString &code, const QString &method);
+	Q_INVOKABLE void book(qint64 start, const QString &code, const QString &method, const QString &pay = QStringLiteral("transfer"));
 	Q_INVOKABLE void cancelBooking(qint64 bookingId);
 	Q_INVOKABLE void payBooking(qint64 bookingId, const QString &sender);       // «Я оплатив» для броні
+	Q_INVOKABLE void loadWallet();                                             // баланс, історія, суми поповнення, відкриті поповнення
+	Q_INVOKABLE void topUp(const QString &method, double amount);               // поповнити баланс переказом
+	Q_INVOKABLE void topUpPaid(qint64 topupId, const QString &sender);          // «Я оплатив» для поповнення
+	Q_INVOKABLE void topUpCancel(qint64 topupId);
+	QVariantMap wallet() const { return wallet_; }
+	bool hasWallet() const { return has_wallet_ && !admin_; }
 	QVariantMap bookInfo() const { return book_info_; }
 	QVariantList bookStarts() const { return book_starts_; }
 	bool bookStartsLoading() const { return book_starts_loading_; }
@@ -136,6 +147,8 @@ signals:
 	void bookChanged();
 	void bookStartsChanged();
 	void bookResult(bool ok, const QString &text);
+	void walletChanged();
+	void walletResult(bool ok, const QString &text);   // поповнення: створено, «Я оплатив», скасовано, зараховано
 	void busyChanged();
 	void linkResult(bool ok, const QString &text);
 	void message(const QString &text);       // коротке сповіщення для інтерфейсу
@@ -185,4 +198,17 @@ private:
 	struct { int preset = -1; QVariant cap, until; } render_undo_;   // що було до останнього спрощення обробки
 	qint64 link_job_user_ = 0;   // прив'язка за кодом, який адмін написав у боті: кому звітувати
 	void setBusy(bool b) { if(busy_ != b) { busy_ = b; emit busyChanged(); } }
+	// ── баланс ──
+	QVariantMap wallet_;
+	bool has_wallet_ = false;
+	QTimer wallet_timer;            // після «Я оплатив» за поповнення: перепитуємо, поки гроші не з'являться на балансі
+	int wallet_polls_ = 0;
+	QHash<QString, QString> request_ids_;   // дія клієнта → requestId: повтор тієї самої дії після збою зв'язку йде з тим самим ідентифікатором
+	QString requestId(const QString &action);
+	void requestDone(const QString &action, int status);
+	bool applyWalletBalances(const QJsonValue &w);   // balances + primary з відповіді сервера; true — щось змінилось
+	double walletBalance(const QString &currency) const;
+	QString walletMoney(double amount, const QString &currency, const QString &symbol = QString()) const;
+	QString walletLeftText(const QString &currency) const;
+	QString walletError(const QString &error, int status) const;
 };

@@ -1,4 +1,5 @@
 // AnyPlay: бронювання й оплата прямо в програмі — день, скільки грати, початок, оплата (чотири стовпці). Без Telegram.
+// Оплата: з балансу (одразу), баланс + картка (решту переказом) або вся сума переказом — клієнт обирає щоразу сам.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -37,6 +38,16 @@ ColumnLayout {
         return null;
     }
     readonly property bool showPay: !!payItem && !choosing
+    // «Баланс + картка»: скільки з балансу вже відкладено на цю бронь (переказати треба лише решту)
+    readonly property var payWalletPart: payItem ? (payItem.pending.walletPart || payItem.walletPart || null) : null
+    signal walletRequested()               // «поповни баланс»: відкрити вкладку «Баланс»
+    AnyPlayWallet { id: wallet }
+    property string pay: ""                // вибір клієнта: wallet (з балансу чи баланс + картка) | transfer; "" — з балансу, якщо там щось є
+    readonly property var quote: wallet.quote(tariff, tariff ? (tariff.prices[curMethod] || "") : "", curMethod)
+    readonly property string payChoice: !wallet.on || quote.balance <= 0 ? "transfer" : (pay !== "" ? pay : "wallet")
+    // що піде на сервер: wallet — уся сума з балансу, mix — баланс + доплата переказом, transfer — уся сума переказом
+    readonly property string payMode: payChoice === "wallet" ? (quote.ok ? "wallet" : "mix") : "transfer"
+    function money(x) { return wallet.money(x, quote.currency); }
     // стовпці: 4 на широкому вікні, 2 на середньому, 1 на вузькому
     readonly property int cols: width >= 960 ? 4 : (width >= 540 ? 2 : 1)
     readonly property real colGap: width >= 1100 ? 36 : 24
@@ -75,7 +86,7 @@ ColumnLayout {
         if (m.status === "hold") return { text: qsTr("чекає оплату"), kind: "wait" };
         if (m.status === "pending_review") return { text: qsTr("перевіряємо оплату"), kind: "wait" };
         if (m.status === "active" || (m.start <= now && now < m.end)) return { text: qsTr("йде гра"), kind: "live" };
-        return { text: qsTr("оплачено"), kind: "ok" };
+        return { text: (m.pay || m.payMode) === "wallet" ? qsTr("оплачено з балансу") : qsTr("оплачено"), kind: "ok" };
     }
 
     onVisibleChanged: if (visible) { choosing = false; confirmId = 0; reload(); }
@@ -162,6 +173,15 @@ ColumnLayout {
                 Layout.fillWidth: true
                 role: "hint"
                 text: qsTr("Переказуй точну суму до копійки: так оплата знайдеться автоматично.")
+            }
+            ApText {   // «Баланс + картка»: це лише доплата, решту відкладено з балансу
+                visible: !!panel.payWalletPart
+                Layout.fillWidth: true
+                color: ap.gold
+                text: panel.payWalletPart
+                    ? qsTr("Це доплата. Ще %1 спишемо з балансу, щойно вона надійде, і бронь підтвердиться.")
+                        .arg(wallet.money(panel.payWalletPart.amount, panel.payWalletPart.currency || wallet.currencyOf(panel.payItem.pending.method)))
+                    : ""
             }
             ApButton {
                 visible: !!panel.payItem && !!panel.payItem.pending.payUrl
@@ -357,21 +377,66 @@ ColumnLayout {
                     }
                 }
             }
+            GridLayout {   // з балансу (чи баланс + картка) або переказом
+                visible: wallet.on
+                Layout.fillWidth: true
+                Layout.fillHeight: false   // кнопки однакової висоти, але сітка не розтягується на висоту стовпця
+                columns: 2
+                columnSpacing: 6
+                rowSpacing: 6
+                ApMethod {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 1
+                    enabled: panel.quote.balance > 0
+                    checked: panel.payChoice === "wallet"
+                    text: panel.quote.ok || panel.quote.balance <= 0 ? qsTr("З балансу") : qsTr("Баланс + картка")
+                    sub: panel.quote.balance <= 0 ? qsTr("баланс порожній")
+                        : panel.quote.ok ? qsTr("є %1, спишеться одразу").arg(panel.money(panel.quote.balance))
+                        : qsTr("%1 з балансу, %2 %3").arg(panel.money(panel.quote.part)).arg(panel.money(panel.quote.rest)).arg(wallet.viaText(panel.curMethod))
+                    onClicked: panel.pay = "wallet"
+                }
+                ApMethod {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 1
+                    checked: panel.payChoice === "transfer"
+                    text: qsTr("Переказом")
+                    sub: wallet.transferText(panel.curMethod)
+                    onClicked: panel.pay = "transfer"
+                }
+            }
+            ApText {   // на балансі не вистачає: решту доплатить, або спершу поповнить
+                visible: wallet.on && panel.payMode === "mix"
+                Layout.preferredWidth: panel.colW
+                rich: true
+                color: ap.gold
+                font.pixelSize: 13
+                text: qsTr("На балансі %1, не вистачає %2: їх доплатиш %3. Або <a href=\"wallet\">поповни баланс</a>.")
+                    .arg(panel.money(panel.quote.balance)).arg(panel.money(panel.quote.rest)).arg(wallet.viaText(panel.curMethod))
+                onLinkActivated: panel.walletRequested()
+                HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            }
             ApButton {
                 Layout.fillWidth: true
                 font.pixelSize: 15
                 font.letterSpacing: 1.6
                 leftPadding: 14; rightPadding: 14
                 enabled: panel.start > 0 && !!panel.tariff && !panel.cloud.busy
-                text: panel.start > 0 && panel.tariff
-                    ? qsTr("Забронювати %1–%2").arg(panel.hhmm(panel.start)).arg(panel.hhmm(panel.start + panel.tariff.hours * 3600))
-                    : qsTr("Обери час початку")
-                onClicked: panel.cloud.book(panel.start, panel.code, panel.curMethod)
+                text: !(panel.start > 0 && panel.tariff) ? qsTr("Обери час початку")
+                    : panel.payMode === "wallet" ? qsTr("Оплатити з балансу %1").arg(panel.money(panel.quote.price))
+                    : panel.payMode === "mix" ? qsTr("Доплатити %1 %2").arg(panel.money(panel.quote.rest)).arg(wallet.viaText(panel.curMethod))
+                    : qsTr("Забронювати %1–%2").arg(panel.hhmm(panel.start)).arg(panel.hhmm(panel.start + panel.tariff.hours * 3600))
+                onClicked: panel.cloud.book(panel.start, panel.code, panel.curMethod, panel.payMode)
             }
             ApText {
                 Layout.preferredWidth: panel.colW
                 role: "small"
-                text: qsTr("Після бронювання відкриється оплата з уже вписаною сумою: карткою, Apple Pay чи Google Pay.")
+                text: panel.payMode === "wallet" ? qsTr("Бронь підтвердиться одразу, без переказу. Залишиться %1.").arg(panel.money(panel.quote.after))
+                    : panel.payMode === "mix" ? qsTr("Час закріплено за тобою. Як тільки надійде доплата %1, спишемо %2 з балансу, і бронь підтвердиться.")
+                        .arg(panel.money(panel.quote.rest)).arg(panel.money(panel.quote.part))
+                    : wallet.on ? qsTr("Відкриється сторінка оплати з уже вписаною сумою: карткою, Apple Pay чи Google Pay.")
+                    : qsTr("Після бронювання відкриється оплата з уже вписаною сумою: карткою, Apple Pay чи Google Pay.")
             }
             ApButton {
                 visible: !!panel.payItem
@@ -439,7 +504,8 @@ ColumnLayout {
                     Layout.fillWidth: true
                     visible: mineCard.asking
                     text: mineCard.modelData.cancelKind === "refund"
-                        ? qsTr("Скасувати цю бронь? Ти її оплатив, тому ми повернемо %1. Бот у Telegram запитає, куди повернути кошти.").arg(mineCard.modelData.price)
+                        ? (wallet.on ? qsTr("Скасувати цю бронь? Ти її оплатив, тому %1 одразу повернемо на баланс: їх можна витратити на наступну гру.").arg(mineCard.modelData.price)
+                                     : qsTr("Скасувати цю бронь? Ти її оплатив, тому ми повернемо %1. Бот у Telegram запитає, куди повернути кошти.").arg(mineCard.modelData.price))
                         : qsTr("Скасувати цю бронь? Оплати за неї не було, тож повертати нічого не треба.")
                 }
                 RowLayout {

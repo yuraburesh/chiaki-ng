@@ -1,5 +1,6 @@
 // AnyPlay: головний екран програми (новий дизайн: вечірній градієнт, вкладки, рядки з тонкими лініями).
-// Клієнт: «Гра» (таймер, мої броні, налаштування гри), «Бронювання», «Якість», «Мій PSN», «Як керувати», «Клавіші».
+// Клієнт: «Гра» (таймер, мої броні, налаштування гри), «Бронювання», «Баланс», «Якість», «Мій PSN», «Як керувати», «Клавіші».
+// «Баланс» є лише тоді, коли сервер його вміє (старий сервер — вкладки й фішки балансу немає); адмінам балансу немає.
 // Адмін: «Панель» (хто грає, завершити гру, закрити доступ), «Спільний PSN», «Свої PSN», а також «Якість», «Як керувати», «Клавіші».
 import QtQuick
 import QtQuick.Layouts
@@ -24,12 +25,15 @@ Rectangle {
     // гра вже йде на іншому його пристрої) — замість вкладки «Гра»
     readonly property bool gameGate: !isAdmin && (st === "update" || st === "no_console" || st === "other_device")
     readonly property var mine: (cloud.bookInfo && cloud.bookInfo.mine) || []
-    property string view: "home"         // home | book | quality | psn | guide | keys | (адмін) shared | clients
+    property string view: "home"         // home | book | wallet | quality | psn | guide | keys | (адмін) shared | clients
     signal openKeys()                    // лишився для сумісності: клавіші тепер окрема вкладка
     color: ap.bg1
     focus: visible
 
     AnyPlayStyle { id: ap }
+    AnyPlayWallet { id: wallet }
+    readonly property bool walletOn: wallet.on && !home.isAdmin
+    onWalletOnChanged: if (!walletOn && view === "wallet") view = "home"
 
     // ── розміри: до 1600 px як у макеті, на великих екранах (2K, 4K без масштабу системи) усе пропорційно більше ──
     readonly property real zoomK: Math.max(1, Math.min(2.2, Math.min(width / 1600, height / 1000)))
@@ -62,6 +66,10 @@ Rectangle {
     onStChanged: loadMine()
     onViewChanged: {
         if (view === "home") loadMine();
+        if (view === "wallet") {
+            if (!home.walletOn) { view = "home"; return; }   // старий сервер без балансу або адмін
+            home.cloud.loadWallet();
+        }
         if (view === "shared") { sharedPage.rev++; home.cloud.refreshAdmin(); }
         if (view === "clients") { clientsPage.result = ""; home.cloud.refreshAdmin(); }
     }
@@ -93,7 +101,7 @@ Rectangle {
         if (m.status === "hold") return { text: qsTr("чекає оплату"), kind: "wait" };
         if (m.status === "pending_review") return { text: qsTr("перевіряємо оплату"), kind: "wait" };
         if (m.status === "active" || (m.start <= now && now < m.end)) return { text: qsTr("йде гра"), kind: "live" };
-        return { text: qsTr("оплачено"), kind: "ok" };
+        return { text: (m.pay || m.payMode) === "wallet" ? qsTr("оплачено з балансу") : qsTr("оплачено"), kind: "ok" };
     }
     // приставка для гри: зареєстрована PS5 зі списку (з'являється з сервера на час броні)
     function consoleIndex() {
@@ -306,12 +314,20 @@ Rectangle {
             y: 16
             width: home.cw
             height: barCol.implicitHeight
-            readonly property bool oneLine: brand.implicitWidth + tabsInline.implicitWidth + who.implicitWidth + 84 <= width
+            // вкладки в один рядок з назвою: звичайні, а якщо не влазять (вкладка й фішка балансу) — трохи щільніші
+            readonly property bool wideFits: brand.implicitWidth + tabsWide.implicitWidth + who.implicitWidth + 84 <= width
+            readonly property bool oneLine: wideFits || brand.implicitWidth + tabsTight.implicitWidth + who.implicitWidth + 64 <= width
             readonly property var tabModel: home.isAdmin
                 ? [{ id: "home", text: qsTr("Панель") }, { id: "shared", text: qsTr("Спільний PSN") }, { id: "clients", text: qsTr("Свої PSN") },
                    { id: "quality", text: qsTr("Якість") }, { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }]
-                : [{ id: "home", text: qsTr("Гра") }, { id: "book", text: qsTr("Бронювання") }, { id: "quality", text: qsTr("Якість") },
-                   { id: "psn", text: qsTr("Мій PSN") }, { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }]
+                : clientTabs(home.walletOn)
+            // вкладки клієнта; «Баланс» — лише коли сервер його вміє
+            function clientTabs(withWallet) {
+                return [{ id: "home", text: qsTr("Гра") }, { id: "book", text: qsTr("Бронювання") },
+                        ...(withWallet ? [{ id: "wallet", text: qsTr("Баланс") }] : []),
+                        { id: "quality", text: qsTr("Якість") }, { id: "psn", text: qsTr("Мій PSN") },
+                        { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }];
+            }
             ColumnLayout {
                 id: barCol
                 width: parent.width
@@ -347,6 +363,10 @@ Rectangle {
                             text: qsTr("Оновлення %1").arg(home.updater ? home.updater.build : "")
                             onClicked: home.updater.show()
                         }
+                        BalanceChip {   // скільки на балансі; клік — вкладка «Баланс»
+                            visible: home.walletOn && !home.gated
+                            onClicked: home.view = "wallet"
+                        }
                         Text {
                             visible: home.cloud.loggedIn && home.cloud.userName !== ""
                             Layout.maximumWidth: 180
@@ -375,10 +395,14 @@ Rectangle {
                 }
                 Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: ap.hair }
             }
+            // ширина вкладок звичайних і щільних (лише для розрахунку, не показуються)
+            ApTabs { id: tabsWide; visible: false; model: topBar.tabModel }
+            ApTabs { id: tabsTight; visible: false; compact: true; model: topBar.tabModel }
             // вкладки в один рядок з назвою — поза розкладкою рядка, щоб їх поява не зсувала решту
             ApTabs {
                 id: tabsInline
-                x: brand.width + 28
+                compact: !topBar.wideFits
+                x: brand.width + (compact ? 18 : 28)
                 y: brand.y + brand.height + 10 - height
                 visible: topBar.oneLine && !home.gated
                 model: topBar.tabModel
@@ -572,6 +596,15 @@ Rectangle {
                             role: "small"; topPadding: 6
                             text: qsTr("Усі броні: вкладка «Бронювання».")
                         }
+                        ApRow {
+                            visible: home.walletOn
+                            Layout.topMargin: 10
+                            title: qsTr("Баланс")
+                            subtitle: qsTr("плати за гру одним натиском, без переказу щоразу")
+                            clickable: true
+                            onClicked: home.view = "wallet"
+                            ApChip { text: wallet.primaryText }
+                        }
                         ApText { role: "cap"; text: qsTr("Налаштування гри"); Layout.topMargin: 22; Layout.bottomMargin: 6 }
                         ApRow {
                             title: qsTr("Клавіші")
@@ -738,6 +771,21 @@ Rectangle {
                 BookPanel {
                     width: home.cw
                     visible: home.view === "book" && !home.gated && !home.isAdmin
+                    onWalletRequested: home.view = "wallet"
+                }
+            }
+
+            // ═════════ БАЛАНС ═════════
+            TabPage {
+                visible: !home.gated && home.walletOn && home.view === "wallet"
+                WalletPanel {
+                    width: home.cw
+                    visible: home.view === "wallet" && !home.gated && home.walletOn
+                    twoCol: home.twoCol
+                    columnSpacing: home.colGap
+                    leftW: home.leftW
+                    rightW: home.rightW
+                    amountSize: Math.max(56, Math.min(88, home.pageW * 0.08))
                 }
             }
 
@@ -1423,6 +1471,36 @@ Rectangle {
             width: home.cw
             height: childrenRect.height
         }
+    }
+
+    // ── фішка балансу у верхній смузі: «БАЛАНС 320 ₴» ──
+    component BalanceChip: Rectangle {
+        id: bc
+        signal clicked()
+        implicitWidth: bcRow.implicitWidth + 20
+        implicitHeight: bcRow.implicitHeight + 10
+        radius: ap.radius
+        color: bcMouse.containsMouse ? "#14ffffff" : "transparent"
+        border.color: bcMouse.containsMouse ? ap.ink : ap.edge
+        Row {
+            id: bcRow
+            anchors.centerIn: parent
+            spacing: 6
+            Text {
+                anchors.baseline: bcValue.baseline
+                text: qsTr("Баланс")
+                font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 11
+                font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
+                color: ap.mute
+            }
+            Text {
+                id: bcValue
+                text: wallet.primaryText
+                font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 13
+                color: ap.ink
+            }
+        }
+        MouseArea { id: bcMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: bc.clicked() }
     }
 
     // ── маленька кнопка-посилання у верхній смузі («Вийти», хрестик) ──

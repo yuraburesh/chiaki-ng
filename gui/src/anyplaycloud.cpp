@@ -17,6 +17,7 @@
 #include <QSysInfo>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QUuid>
 #include <QRegularExpression>
 #include <memory>
 
@@ -88,6 +89,16 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 			return;
 		}
 		loadExtend();
+	});
+	// «Я оплатив» за поповнення: перепитуємо баланс, поки гроші не зарахують (~5 хв, далі адмін підтвердить вручну)
+	wallet_timer.setInterval(5000);
+	connect(&wallet_timer, &QTimer::timeout, this, [this]() {
+		if(++wallet_polls_ > 60)
+		{
+			wallet_timer.stop();
+			return;
+		}
+		loadWallet();
 	});
 	book_timer.setInterval(5000);
 	connect(&book_timer, &QTimer::timeout, this, [this]() {
@@ -218,6 +229,11 @@ void AnyPlayCloud::logout()
 	own_end_ = 0;
 	admin_ = false;
 	user_.clear();
+	wallet_timer.stop();
+	wallet_.clear();
+	has_wallet_ = false;
+	request_ids_.clear();
+	emit walletChanged();
 	setState("login");
 	emit changed();
 }
@@ -252,7 +268,26 @@ void AnyPlayCloud::refresh()
 void AnyPlayCloud::applySession(const QJsonObject &o)
 {
 	skew_ = o.value("now").toVariant().toLongLong() - QDateTime::currentSecsSinceEpoch();
+	const bool wasAdmin = admin_;
 	admin_ = o.value("admin").toBool();
+	{
+		// баланс: старий сервер його не надсилає — тоді вкладку «Баланс» і все про баланс просто не показуємо
+		const bool had = has_wallet_;
+		bool walletNew = false;
+		if(o.value("wallet").isObject())
+		{
+			has_wallet_ = true;
+			walletNew = applyWalletBalances(o.value("wallet"));
+		}
+		else if(has_wallet_)
+		{
+			has_wallet_ = false;
+			wallet_.clear();
+			wallet_timer.stop();
+		}
+		if(walletNew || had != has_wallet_ || wasAdmin != admin_)
+			emit walletChanged();
+	}
 	user_ = o.value("user").toString();
 	my_psn_ = o.value("myPsn").toString();
 	my_psn_ready_ = o.value("myPsnReady").toBool();
@@ -653,28 +688,70 @@ void AnyPlayCloud::loadExtend()
 	});
 }
 
-void AnyPlayCloud::extend(int hours, const QString &method)
+void AnyPlayCloud::extend(int hours, const QString &method, const QString &pay)
 {
+	const QString how = pay.isEmpty() ? QStringLiteral("transfer") : pay;
+	const QString action = QStringLiteral("extend|%1|%2|%3").arg(hours).arg(method, how);
 	QJsonObject body;
 	body["hours"] = hours;
 	if(!method.isEmpty())
 		body["method"] = method;
-	request("POST", "/api/app/extend", body, [this, hours](int status, const QJsonObject &o) {
-		if(status == 200 && o.value("ok").toBool())
+	body["pay"] = how;                       // старий сервер це поле не читає і бере переказ
+	body["requestId"] = requestId(action);   // повтор після збою зв'язку не спише з балансу двічі
+	const qint64 oldEnd = extend_info_.value("end").toLongLong();
+	const QString cur = (method.isEmpty() ? extend_info_.value("method").toString() : method).toUpper();
+	request("POST", "/api/app/extend", body, [this, hours, action, oldEnd, cur](int status, const QJsonObject &o) {
+		requestDone(action, status);
+		if(status == 200 && o.value("ok").toBool() && o.value("paid").toBool())
+		{
+			// оплачено з балансу: гру вже продовжено, переказувати нічого не треба
+			if(applyWalletBalances(o.value("wallet")))
+				emit walletChanged();
+			const QJsonObject b = o.value("booking").toObject();
+			qint64 end = b.value("end").toVariant().toLongLong();
+			if(end <= 0 && oldEnd > 0)
+				end = oldEnd + hours * 3600;
+			const QString c = b.value("currency").toString().isEmpty() ? cur : b.value("currency").toString();
+			emit extendResult(true, (end > 0 ? tr("✓ Гру продовжено до %1, оплачено з балансу.").arg(formatTime(end)) : tr("✓ Гру продовжено, оплачено з балансу."))
+				+ walletLeftText(c));
+			refresh();
+			loadWallet();
+		}
+		else if(status == 200 && o.value("ok").toBool())
 		{
 			QJsonObject p = o.value("pending").toObject();
 			qint64 hold = p.value("holdUntil").toVariant().toLongLong() - (QDateTime::currentSecsSinceEpoch() + skew_);
-			emit extendResult(true, tr("Час %1–%2 закріплено за тобою на %3 хв. Оплати за реквізитами нижче й натисни «✓ Я оплатив» — гра продовжиться сама, без перезапуску.")
-				.arg(formatTime(p.value("start").toVariant().toLongLong())).arg(formatTime(p.value("end").toVariant().toLongLong()))
-				.arg(qMax<qint64>(1, hold / 60)));
+			const QJsonObject part = o.value("walletPart").toObject();
+			if(part.value("amount").toDouble() > 0)
+			{
+				// «Баланс + картка»: частину з балансу відкладено, переказати треба лише решту
+				emit extendResult(true, tr("Час %1–%2 закріплено за тобою на %3 хв. Доплати %4 і натисни «✓ Я оплатив»: ще %5 спишемо з балансу, і гра продовжиться сама, без перезапуску.")
+					.arg(formatTime(p.value("start").toVariant().toLongLong())).arg(formatTime(p.value("end").toVariant().toLongLong()))
+					.arg(qMax<qint64>(1, hold / 60))
+					.arg(walletMoney(p.value("amount").toVariant().toDouble(), p.value("currency").toString(), part.value("symbol").toString()))
+					.arg(walletMoney(part.value("amount").toDouble(), part.value("currency").toString(), part.value("symbol").toString())));
+				refresh();
+				loadWallet();
+			}
+			else
+				emit extendResult(true, tr("Час %1–%2 закріплено за тобою на %3 хв. Оплати за реквізитами нижче й натисни «✓ Я оплатив» — гра продовжиться сама, без перезапуску.")
+					.arg(formatTime(p.value("start").toVariant().toLongLong())).arg(formatTime(p.value("end").toVariant().toLongLong()))
+					.arg(qMax<qint64>(1, hold / 60)));
 		}
 		else
 		{
 			QString e = o.value("error").toString();
 			emit extendResult(false, e == "busy" ? tr("На жаль, наступні %1 год уже хтось забронював. Спробуй менше годин.").arg(hours)
+				: e == "funds" ? walletError(e, status)
 				: e == "no_session" ? tr("Продовжити можна лише під час своєї гри.")
 				: e == "pending" ? tr("Твою оплату продовження вже перевіряють — зачекай трохи.")
-				: tr("Не вдалося продовжити (помилка %1). Спробуй ще раз за хвилину.").arg(status));
+				: (status == 0 ? tr("Немає зв'язку з сервером. Перевір інтернет і натисни ще раз.")
+				               : tr("Не вдалося продовжити (помилка %1). Спробуй ще раз за хвилину.").arg(status)));
+			if(e == "funds")
+			{
+				refresh();
+				loadWallet();
+			}
 		}
 		loadExtend();
 	});
@@ -744,28 +821,57 @@ void AnyPlayCloud::loadBookStarts(const QString &day, const QString &code)
 	});
 }
 
-void AnyPlayCloud::book(qint64 start, const QString &code, const QString &method)
+void AnyPlayCloud::book(qint64 start, const QString &code, const QString &method, const QString &pay)
 {
+	const QString how = pay.isEmpty() ? QStringLiteral("transfer") : pay;
+	const QString action = QStringLiteral("book|%1|%2|%3|%4").arg(start).arg(code, method, how);
 	QJsonObject body;
 	body["start"] = start;
 	body["code"] = code;
 	body["method"] = method;
+	body["pay"] = how;                       // wallet | mix | transfer (старий сервер бере переказ)
+	body["requestId"] = requestId(action);   // повтор після збою зв'язку не спише з балансу двічі
 	setBusy(true);
-	request("POST", "/api/app/book", body, [this](int status, const QJsonObject &o) {
+	request("POST", "/api/app/book", body, [this, action, method](int status, const QJsonObject &o) {
 		setBusy(false);
-		if(status == 200 && o.value("ok").toBool())
+		requestDone(action, status);
+		if(status == 200 && o.value("ok").toBool() && o.value("paid").toBool())
+		{
+			// оплачено з балансу одразу: екрана оплати немає, бронь уже підтверджена
+			if(applyWalletBalances(o.value("wallet")))
+				emit walletChanged();
+			const QString c = o.value("booking").toObject().value("currency").toString();
+			emit bookResult(true, tr("✓ Бронь оплачено з балансу, час твій.") + walletLeftText(c.isEmpty() ? method.toUpper() : c));
+			loadWallet();
+		}
+		else if(status == 200 && o.value("ok").toBool())
 		{
 			QJsonObject p = o.value("pending").toObject();
 			qint64 hold = p.value("holdUntil").toVariant().toLongLong() - (QDateTime::currentSecsSinceEpoch() + skew_);
-			emit bookResult(true, tr("Час закріплено за тобою на %1 хв. Оплати й натисни «✓ Я оплатив».").arg(qMax<qint64>(1, hold / 60)));
+			const QJsonObject part = o.value("walletPart").toObject();
+			if(part.value("amount").toDouble() > 0)
+			{
+				// «Баланс + картка»: частину з балансу відкладено, переказати треба лише решту
+				emit bookResult(true, tr("Час закріплено за тобою на %1 хв. Доплати %2 і натисни «✓ Я оплатив»: ще %3 спишемо з балансу, і бронь підтвердиться.")
+					.arg(qMax<qint64>(1, hold / 60))
+					.arg(walletMoney(p.value("amount").toVariant().toDouble(), p.value("currency").toString(), part.value("symbol").toString()))
+					.arg(walletMoney(part.value("amount").toDouble(), part.value("currency").toString(), part.value("symbol").toString())));
+				loadWallet();
+			}
+			else
+				emit bookResult(true, tr("Час закріплено за тобою на %1 хв. Оплати й натисни «✓ Я оплатив».").arg(qMax<qint64>(1, hold / 60)));
 		}
 		else
 		{
 			const QString e = o.value("error").toString();
 			emit bookResult(false, e == "busy" ? tr("Цей час щойно зайняли — обери інший.")
+				: e == "funds" ? walletError(e, status)
 				: e == "limit" ? tr("У тебе вже максимум активних броней (%1). Оплати або скасуй одну з них.").arg(o.value("limit").toInt())
 				: e == "closed" ? tr("Зараз технічні роботи — бронювання тимчасово недоступне.")
-				: tr("Не вдалося забронювати (помилка %1). Спробуй ще раз.").arg(status));
+				: (status == 0 ? tr("Немає зв'язку з сервером. Перевір інтернет і натисни ще раз.")
+				               : tr("Не вдалося забронювати (помилка %1). Спробуй ще раз.").arg(status)));
+			if(e == "funds")
+				loadWallet();
 		}
 		loadBook();
 		refresh();
@@ -779,15 +885,22 @@ void AnyPlayCloud::cancelBooking(qint64 bookingId)
 	request("POST", "/api/app/book/cancel", body, [this](int status, const QJsonObject &o) {
 		bool ok = status == 200 && o.value("ok").toBool();
 		QString text = o.value("text").toString();   // сервер точно знає: була оплата чи ні, і куди повертати
+		// гроші за скасовану бронь повертаються на баланс одразу
+		const QJsonObject refund = o.value("refund").toObject();
+		if(ok && refund.value("to").toString() == QLatin1String("wallet") && refund.value("amount").toDouble() > 0)
+			text = tr("Бронь скасовано. %1 повернули на баланс: їх можна витратити на наступну гру.")
+				.arg(walletMoney(refund.value("amount").toDouble(), refund.value("currency").toString(), refund.value("symbol").toString()));
 		if(text.isEmpty())
 			text = ok ? tr("Бронь скасовано, час звільнено.")
 			          : tr("Цю бронь уже не можна скасувати: до початку лишилось надто мало часу.");
 		emit bookResult(ok, text);
 		if(o.value("refund").toString() == QLatin1String("bot"))
-			openBot();   // оплачена бронь: бот питає, куди повернути кошти
+			openBot();   // старий сервер без балансу: бот питає, куди повернути кошти
 		loadBook();
 		loadExtend();
 		refresh();
+		if(has_wallet_)
+			loadWallet();
 	});
 }
 
@@ -815,6 +928,266 @@ void AnyPlayCloud::payBooking(qint64 bookingId, const QString &sender)
 				? tr("На жаль, час на оплату минув і цей слот уже зайняли — обери інший.")
 				: tr("Не вдалося надіслати (помилка %1). Спробуй ще раз.").arg(status));
 		loadBook();
+	});
+}
+
+// ── Баланс: передоплата за гру. Поповнення переказом, оплата броней і продовжень одним натиском ──
+static QString walletIdOf(const QVariantMap &t) { return t.value("topupId", t.value("id")).toString(); }
+
+// поповнення в одному вигляді: сервер може віддати реквізити поруч з topupId або всередині «pending», як для броні
+static QVariantMap walletTopup(const QJsonObject &o)
+{
+	QVariantMap t = o.value("pending").isObject() ? o.value("pending").toObject().toVariantMap() : o.toVariantMap();
+	t.remove("ok");
+	if(o.contains("topupId"))
+		t["topupId"] = o.value("topupId").toVariant();
+	else if(!t.contains("topupId") && t.contains("id"))
+		t["topupId"] = t.value("id");
+	return t;
+}
+
+QString AnyPlayCloud::requestId(const QString &action)
+{
+	auto it = request_ids_.constFind(action);
+	if(it != request_ids_.constEnd())
+		return it.value();
+	const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+	request_ids_.insert(action, id);
+	return id;
+}
+
+void AnyPlayCloud::requestDone(const QString &action, int status)
+{
+	// відповідь не дійшла або сервер упав: дія могла виконатись, тож повтор тієї самої дії піде з тим самим requestId
+	if(status == 0 || status >= 500)
+		return;
+	request_ids_.remove(action);
+}
+
+bool AnyPlayCloud::applyWalletBalances(const QJsonValue &w)
+{
+	QVariantList balances;
+	QString primary = wallet_.value("primary").toString();
+	if(w.isArray())
+		balances = w.toArray().toVariantList();
+	else if(w.isObject() && w.toObject().value("balances").isArray())
+	{
+		balances = w.toObject().value("balances").toArray().toVariantList();
+		if(w.toObject().contains("primary"))
+			primary = w.toObject().value("primary").toString();
+	}
+	else
+		return false;
+	if(balances == wallet_.value("balances").toList() && primary == wallet_.value("primary").toString())
+		return false;
+	wallet_["balances"] = balances;
+	wallet_["primary"] = primary;
+	return true;
+}
+
+double AnyPlayCloud::walletBalance(const QString &currency) const
+{
+	for(const QVariant &v : wallet_.value("balances").toList())
+		if(v.toMap().value("currency").toString() == currency)
+			return v.toMap().value("amount").toDouble();
+	return 0;
+}
+
+QString AnyPlayCloud::walletMoney(double amount, const QString &currency, const QString &symbol) const
+{
+	QString sym = symbol;
+	for(const QVariant &v : wallet_.value("balances").toList())
+		if(sym.isEmpty() && v.toMap().value("currency").toString() == currency)
+			sym = v.toMap().value("symbol").toString();
+	if(sym.isEmpty())
+		sym = currency == "UAH" ? QStringLiteral("₴") : currency == "PLN" ? QStringLiteral("zł") : currency;
+	// «1 000 ₴», «500,37 ₴»: копійки лише якщо вони є
+	const qint64 cents = qRound64(qAbs(amount) * 100);
+	QString num = QString::number(cents / 100);
+	for(int i = num.size() - 3; i > 0; i -= 3)
+		num.insert(i, QChar(0x00A0));
+	if(cents % 100)
+		num += QLatin1Char(',') + QStringLiteral("%1").arg(cents % 100, 2, 10, QLatin1Char('0'));
+	return (amount < 0 ? QStringLiteral("−") : QString()) + num + QChar(0x00A0) + sym;
+}
+
+QString AnyPlayCloud::walletLeftText(const QString &currency) const
+{
+	for(const QVariant &v : wallet_.value("balances").toList())
+		if(v.toMap().value("currency").toString() == currency)
+			return tr(" На балансі залишилось %1.").arg(walletMoney(v.toMap().value("amount").toDouble(), currency));
+	return QString();
+}
+
+QString AnyPlayCloud::walletError(const QString &error, int status) const
+{
+	if(error == "funds")
+		return tr("Баланс змінився, і на цю оплату його вже не вистачає. Обери спосіб оплати ще раз.");
+	if(error == "closed")
+		return tr("Зараз технічні роботи, спробуй трохи згодом.");
+	if(error == "expired")
+		return tr("Час на оплату цього поповнення минув. Обери суму ще раз.");
+	if(status == 0)
+		return tr("Немає зв'язку з сервером. Перевір інтернет і натисни ще раз.");
+	return tr("Не вдалося (помилка %1). Спробуй ще раз.").arg(status);
+}
+
+void AnyPlayCloud::loadWallet()
+{
+	if(token_.isEmpty() || admin_)
+		return;
+	request("GET", "/api/app/wallet", QJsonObject(), [this](int status, const QJsonObject &o) {
+		if(status != 200 || !o.value("ok").toBool())
+			return;
+		// що було відкрито й скільки було на балансі до цього: поповнення зникло зі списку, а баланс виріс — гроші зараховано
+		QHash<QString, QString> before;
+		for(const QVariant &v : wallet_.value("pending").toList())
+			before.insert(walletIdOf(v.toMap()), v.toMap().value("currency").toString());
+		const QVariantList oldBalances = wallet_.value("seen").toList();
+		auto seen = [&oldBalances](const QString &currency) {
+			for(const QVariant &v : oldBalances)
+				if(v.toMap().value("currency").toString() == currency)
+					return v.toMap().value("amount").toDouble();
+			return -1.0;
+		};
+
+		QVariantMap w = o.toVariantMap();
+		w.remove("ok");
+		QVariantList pending;
+		bool review = false;
+		for(const QJsonValue &v : o.value("pending").toArray())
+		{
+			const QVariantMap t = walletTopup(v.toObject());
+			review |= t.value("status").toString() == "pending_review";
+			before.remove(walletIdOf(t));
+			pending << t;
+		}
+		w["pending"] = pending;
+		w["seen"] = w.value("balances");   // баланс з цього екрана (сесія його не чіпає)
+		has_wallet_ = true;
+		wallet_ = w;
+		if(!review)
+			wallet_timer.stop();
+		emit walletChanged();
+		for(auto it = before.constBegin(); it != before.constEnd(); ++it)
+		{
+			const double was = seen(it.value()), now = walletBalance(it.value());
+			if(was >= 0 && now > was + 0.001)
+			{
+				const QString text = tr("✓ Баланс поповнено: тепер %1.").arg(walletMoney(now, it.value()));
+				emit walletResult(true, text);
+				emit message(text);
+				break;
+			}
+		}
+	});
+}
+
+void AnyPlayCloud::topUp(const QString &method, double amount)
+{
+	// клієнт обрав іншу суму, а попереднє поповнення ще не оплачене: спершу прибираємо його
+	// (сервер обмежує кількість відкритих поповнень), а нове створюємо, коли сервер відповість
+	QVariantList pending = wallet_.value("pending").toList();
+	for(int i = 0; i < pending.size(); i++)
+	{
+		const QVariantMap t = pending.at(i).toMap();
+		const double base = t.contains("base") ? t.value("base").toDouble() : t.value("amount").toDouble();
+		if(t.value("status").toString() == "pending_review" || (t.value("method").toString() == method && qAbs(base - amount) < 1))
+			continue;
+		pending.removeAt(i);
+		wallet_["pending"] = pending;
+		emit walletChanged();
+		QJsonObject body;
+		body["topupId"] = t.value("topupId").toLongLong();
+		setBusy(true);
+		request("POST", "/api/app/wallet/topup/cancel", body, [this, method, amount](int, const QJsonObject &) {
+			setBusy(false);
+			topUp(method, amount);
+		});
+		return;
+	}
+	const QString action = QStringLiteral("topup|%1|%2").arg(method).arg(amount, 0, 'f', 2);
+	QJsonObject body;
+	body["method"] = method;
+	body["amount"] = amount;
+	body["requestId"] = requestId(action);
+	setBusy(true);
+	request("POST", "/api/app/wallet/topup", body, [this, action, method](int status, const QJsonObject &o) {
+		setBusy(false);
+		requestDone(action, status);
+		if(status == 200 && o.value("ok").toBool())
+		{
+			// показуємо реквізити одразу, не чекаючи повного списку
+			const QVariantMap t = walletTopup(o);
+			QVariantList pending { t };
+			for(const QVariant &v : wallet_.value("pending").toList())
+				if(walletIdOf(v.toMap()) != walletIdOf(t))
+					pending << v;
+			wallet_["pending"] = pending;
+			emit walletChanged();
+			emit walletResult(true, QString());
+		}
+		else
+		{
+			const QString e = o.value("error").toString();
+			const QString cur = method.toUpper();
+			const QVariantMap topup = wallet_.value("topup").toMap();
+			// межі суми: сервер присилає їх разом з помилкою, інакше беремо з даних балансу
+			const double lo = o.contains("min") ? o.value("min").toDouble() : topup.value("min").toMap().value(cur).toDouble();
+			const double hi = o.contains("max") ? o.value("max").toDouble() : topup.value("max").toMap().value(cur).toDouble();
+			if((e == "amount" || e == "min" || e == "max" || e == "bad") && lo > 0 && hi > 0)
+				emit walletResult(false, tr("Поповнити можна на суму від %1 до %2.").arg(walletMoney(lo, cur), walletMoney(hi, cur)));
+			else if(e == "limit")
+				emit walletResult(false, tr("Уже є відкриті поповнення. Оплати або скасуй їх, тоді можна створити нове."));
+			else
+				emit walletResult(false, walletError(e, status));
+		}
+		loadWallet();
+	});
+}
+
+void AnyPlayCloud::topUpPaid(qint64 topupId, const QString &sender)
+{
+	QJsonObject body;
+	body["topupId"] = topupId;
+	body["sender"] = sender.trimmed();
+	setBusy(true);
+	request("POST", "/api/app/wallet/topup/paid", body, [this](int status, const QJsonObject &o) {
+		setBusy(false);
+		if(status == 200 && o.value("ok").toBool())
+		{
+			if(o.value("paid").toBool())
+				emit walletResult(true, tr("✓ Оплату вже отримано, баланс поповнено."));
+			else if(o.value("auto").toBool())
+				emit walletResult(true, tr("Шукаємо твій платіж у виписці, зазвичай до хвилини. Баланс поповниться сам."));
+			else
+				emit walletResult(true, tr("Адміністратор перевіряє оплату, зазвичай кілька хвилин. Баланс поповниться сам."));
+			wallet_polls_ = 0;
+			wallet_timer.start();
+			if(o.value("paid").toBool())
+				refresh();
+		}
+		else
+			emit walletResult(false, walletError(o.value("error").toString(), status));
+		loadWallet();
+	});
+}
+
+void AnyPlayCloud::topUpCancel(qint64 topupId)
+{
+	QJsonObject body;
+	body["topupId"] = topupId;
+	// одразу ховаємо це поповнення, сервер підтвердить
+	QVariantList pending;
+	for(const QVariant &v : wallet_.value("pending").toList())
+		if(v.toMap().value("topupId").toLongLong() != topupId)
+			pending << v;
+	wallet_["pending"] = pending;
+	emit walletChanged();
+	request("POST", "/api/app/wallet/topup/cancel", body, [this](int status, const QJsonObject &o) {
+		if(!(status == 200 && o.value("ok").toBool()) && o.value("error").toString() != "not_found")
+			emit walletResult(false, walletError(o.value("error").toString(), status));
+		loadWallet();
 	});
 }
 

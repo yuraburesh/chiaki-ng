@@ -1,5 +1,6 @@
 // AnyPlay: продовження гри й оплата прямо в програмі (з головного екрана і з меню під час гри).
 // Обраний час одразу закривається для інших у боті; оплата перевіряється автоматично або адміном.
+// Оплата: з балансу (одразу, гра не переривається), баланс + картка (решту переказом) або вся сума переказом.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -25,6 +26,15 @@ ColumnLayout {
     property double paidEnd: 0
     readonly property Item firstOption: optRepeater.count > 0 ? optRepeater.itemAt(0) : null
     AnyPlayStyle { id: ap }
+    AnyPlayWallet { id: wallet }
+    property string pay: ""               // вибір клієнта: wallet | transfer; "" — з балансу, якщо там щось є
+    readonly property real walletBal: wallet.balance(wallet.currencyOf(curMethod))
+    readonly property string payChoice: !wallet.on || walletBal <= 0 ? "transfer" : (pay !== "" ? pay : "wallet")
+    // «Баланс + картка»: скільки з балансу вже відкладено на це продовження (переказати треба лише решту)
+    readonly property var walletPart: pending ? (pending.walletPart || null) : null
+    function quoteFor(o) { return wallet.quote(o, priceFor(o), curMethod); }
+    // що піде на сервер для цього варіанта: wallet — з балансу, mix — баланс + доплата, transfer — переказом
+    function payModeFor(o) { return payChoice === "wallet" ? (quoteFor(o).ok ? "wallet" : "mix") : "transfer"; }
     onInfoChanged: {
         if (pending) {
             lastPending = pending;
@@ -145,8 +155,41 @@ ColumnLayout {
             if (i.active === undefined) return qsTr("Завантажуємо…");
             if (!i.active) return qsTr("Продовжити можна лише під час своєї гри. Нову бронь можна зробити тут же: вкладка «Бронювання» на головному екрані.");
             if (i.closed) return qsTr("Зараз триває обслуговування, продовження тимчасово недоступне.");
-            return qsTr("Гра зараз до <b>%1</b>. Обери, на скільки продовжити. Оплата тут же, гра не переривається.")
+            return (wallet.on ? qsTr("Гра зараз до <b>%1</b>. Обери, на скільки продовжити. Гра не переривається.")
+                              : qsTr("Гра зараз до <b>%1</b>. Обери, на скільки продовжити. Оплата тут же, гра не переривається."))
                 .arg(panel.cloud.formatTime(i.end));
+        }
+    }
+
+    // ── з балансу або переказом ──
+    GridLayout {
+        visible: wallet.on && !!panel.info.active && !panel.info.closed && !panel.pending
+        Layout.fillWidth: true
+        Layout.fillHeight: false   // кнопки однакової висоти, але сітка не розтягується на висоту стовпця
+        Layout.maximumWidth: 460
+        columns: 2
+        columnSpacing: 6
+        rowSpacing: 6
+        ApMethod {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.preferredWidth: 1
+            enabled: panel.walletBal > 0
+            checked: panel.payChoice === "wallet"
+            text: qsTr("З балансу")
+            sub: panel.walletBal > 0
+                ? qsTr("є %1, не вистачить — доплатиш %2").arg(wallet.money(panel.walletBal, wallet.currencyOf(panel.curMethod))).arg(wallet.viaText(panel.curMethod))
+                : qsTr("баланс порожній")
+            onClicked: panel.pay = "wallet"
+        }
+        ApMethod {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.preferredWidth: 1
+            checked: panel.payChoice === "transfer"
+            text: qsTr("Переказом")
+            sub: wallet.transferText(panel.curMethod)
+            onClicked: panel.pay = "transfer"
         }
     }
 
@@ -170,7 +213,7 @@ ColumnLayout {
                 onClicked: {
                     panel.method = modelData.code;
                     if (panel.pending && panel.pending.method !== modelData.code)
-                        panel.cloud.extend(panel.hoursOf(panel.pending), modelData.code);
+                        panel.cloud.extend(panel.hoursOf(panel.pending), modelData.code, panel.walletPart ? "mix" : "transfer");
                 }
             }
         }
@@ -190,10 +233,20 @@ ColumnLayout {
                 radio: false
                 enabled: modelData.free
                 text: qsTr("+%1 год, до %2").arg(modelData.hours).arg(panel.cloud.formatTime((panel.info.end || 0) + modelData.hours * 3600))
-                onClicked: { panel.status = qsTr("Закріплюємо час…"); panel.statusOk = true; panel.cloud.extend(modelData.hours, panel.curMethod); }
+                onClicked: {
+                    const how = panel.payModeFor(modelData);
+                    panel.status = how === "wallet" ? qsTr("Оплачуємо з балансу…") : qsTr("Закріплюємо час…");
+                    panel.statusOk = true;
+                    panel.cloud.extend(modelData.hours, panel.curMethod, how);
+                }
                 ApChip {
+                    readonly property var q: panel.quoteFor(opt.modelData)
                     anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-                    text: opt.modelData.free ? panel.priceFor(opt.modelData) : qsTr("зайнято")
+                    // ціна з урахуванням способу: «з балансу 75 ₴», «60 ₴ + 15 ₴ карткою» або просто ціна
+                    text: !opt.modelData.free ? qsTr("зайнято")
+                        : panel.payChoice !== "wallet" ? panel.priceFor(opt.modelData)
+                        : q.ok ? qsTr("з балансу %1").arg(wallet.money(q.price, q.currency))
+                        : qsTr("%1 + %2 %3").arg(wallet.money(q.part, q.currency)).arg(wallet.money(q.rest, q.currency)).arg(wallet.viaText(panel.curMethod))
                 }
             }
         }
@@ -212,6 +265,16 @@ ColumnLayout {
                 color: ap.ink
             }
             ApButton { small: true; ghost: true; text: qsTr("Копіювати суму"); onClicked: panel.cloud.copyText(panel.pending.amount) }
+        }
+        ApText {   // «Баланс + картка»: це лише доплата, решту відкладено з балансу
+            visible: !!panel.walletPart
+            Layout.fillWidth: true
+            color: ap.gold
+            role: panel.compact ? "small" : "body"
+            text: panel.walletPart
+                ? qsTr("Це доплата. Ще %1 спишемо з балансу, щойно вона надійде.")
+                    .arg(wallet.money(panel.walletPart.amount, panel.walletPart.currency || wallet.currencyOf(panel.pending.method)))
+                : ""
         }
         ApButton {   // головне: відкрити оплату одразу з потрібною сумою
             visible: !!panel.pending && !!panel.pending.payUrl

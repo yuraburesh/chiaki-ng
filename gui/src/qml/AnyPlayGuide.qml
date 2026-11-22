@@ -29,6 +29,30 @@ GridLayout {
         }
         return fallback;
     }
+    // клавіша дії з режиму «Пішки» ("" — у цій розкладці такої дії немає)
+    function footKey(id) {
+        const profiles = Chiaki.settings.anyplayProfiles();
+        for (let i = 0; i < profiles.length; i++) {
+            if (profiles[i].id !== "foot")
+                continue;
+            const list = profiles[i].bindings;
+            for (let j = 0; j < list.length; j++)
+                if (list[j].id === id)
+                    return list[j].key ? list[j].keyName : "";
+        }
+        return "";
+    }
+    // GTA VI: злам машини (крутити обидва стіки в різні боки)
+    readonly property string lockBoth: footKey("lock_both")
+    readonly property string lockBack: footKey("lock_both_back")
+    readonly property var lockRow: lockBoth || lockBack ? [{
+        title: qsTr("Злам машини (GTA VI)"),
+        text: qsTr("Коли гра просить крутити обидва стіки в різні боки, просто тримай %1: лівий стік крутиться за годинниковою стрілкою, правий проти. Якщо стрілки на екрані показують навпаки, тримай %2. Окремо: лівий стік клавішами %3, правий клавішами %4 або колом мишею.")
+            .arg(lockBoth || "—").arg(lockBack || "—")
+            .arg([footKey("lock_l_ccw"), footKey("lock_l_cw")].filter((k) => k).join(" і "))
+            .arg([footKey("lock_r_ccw"), footKey("lock_r_cw")].filter((k) => k).join(" і ")),
+        keys: [lockBoth, lockBack].filter((k) => k)
+    }] : []
     // геймпад: під час гри — якщо зараз керують ним; поза грою — якщо він підключений
     property bool pad: Chiaki.session ? !!Chiaki.session.gamepadMode : Chiaki.controllers.length > 0
     readonly property string ps: keyOf("ps", "P")
@@ -58,7 +82,7 @@ GridLayout {
         { title: qsTr("Меню AnyPlay"), text: qsTr("Відкривається так: %1. Тут продовження бронювання, якість картинки, клавіші і «Вийти з гри». Гра на приставці при цьому йде далі.").arg(menuKey), keys: ["`"] },
         { title: qsTr("Закінчити гру"), text: qsTr("Відкрий меню AnyPlay і обери «Вийти з гри». Приставку вимикати не треба: коли час гри вийде, вона завершить усе сама."), keys: ["`"] }
     ]
-    readonly property var rows: pad ? padRows : keyRows
+    readonly property var rows: pad ? padRows : keyRows.concat(lockRow)
 
     Repeater {
         model: guide.rows

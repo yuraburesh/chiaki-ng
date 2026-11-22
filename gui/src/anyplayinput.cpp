@@ -1,4 +1,5 @@
 #include "anyplayinput.h"
+#include "anyplayspin.h"
 #include "settings.h"
 
 #include <QCoreApplication>
@@ -20,6 +21,7 @@
 namespace {
 
 constexpr int TurboIntervalMs = 55;  // старий формат «turbo»: кнопка натискається ~9 разів на секунду
+constexpr int SpinTickMs = 16;       // обертання стіка: оновлення ~60 разів на секунду, коло плавне
 constexpr int TapMs = 90;            // коротке натискання (коліщатко): досить довге, щоб гра його помітила
 
 const QString OverrideGroupBase = QStringLiteral("anyplay_keys");
@@ -224,6 +226,9 @@ AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 		turbo_phase = !turbo_phase;
 		emit Changed();
 	});
+	spin_timer.setInterval(SpinTickMs);
+	spin_timer.setTimerType(Qt::PreciseTimer);
+	connect(&spin_timer, &QTimer::timeout, this, [this]() { emit Changed(); });
 	pending_timer.setSingleShot(true);
 	pending_timer.setInterval(PendingMs);
 	connect(&pending_timer, &QTimer::timeout, this, [this]() {
@@ -302,6 +307,7 @@ QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, const QS
 				: kind == "turbo" ? APBinding::Kind::Turbo
 				: kind == "macro" ? APBinding::Kind::Macro
 				: kind == "cycle" ? APBinding::Kind::Cycle
+				: kind == "spin" ? APBinding::Kind::Spin
 				: kind == "none" ? APBinding::Kind::None
 				: APBinding::Kind::Hold;
 			binding.out = StepFromJson(bo);
@@ -319,6 +325,9 @@ QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, const QS
 				binding.hold_out = StepFromJson(hold);
 				binding.hold_min = qMax(0, hold.value("ms").toInt(300));
 			}
+			const QJsonObject spin = bo.value("spin").toObject();
+			binding.spin_l = qBound(-1, spin.value("l").toInt(0), 1);
+			binding.spin_r = qBound(-1, spin.value("r").toInt(0), 1);
 			binding.profile = bo.value("profile").toString();
 			binding.owner = profile.id;
 			if(apply_overrides)
@@ -449,8 +458,11 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 			}
 		}
 		const bool turbo = it->kind == APBinding::Kind::Turbo;
+		const bool spin = it->kind == APBinding::Kind::Spin;
 		active.erase(it);
 		AfterRelease();
+		if(spin)
+			UpdateSpinTimer();
 		if(turbo)
 		{
 			bool any_turbo = false;
@@ -498,6 +510,11 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 	{
 		case APBinding::Kind::Hold:
 			active.insert(name, b);
+			break;
+		case APBinding::Kind::Spin:
+			b.pressed_at = clock.elapsed();
+			active.insert(name, b);
+			UpdateSpinTimer();
 			break;
 		case APBinding::Kind::Turbo:
 			active.insert(name, b);
@@ -550,7 +567,7 @@ bool AnyPlayInput::Tap(const QString &name)
 	}
 	else if(b.kind == APBinding::Kind::Cycle)
 		Cycle(b);
-	else if(b.kind != APBinding::Kind::None)
+	else if(b.kind != APBinding::Kind::None && b.kind != APBinding::Kind::Spin)
 		AddTap(b.out, TapMs);
 	if(!b.profile.isEmpty())
 		SwitchProfile(b.profile);
@@ -669,7 +686,19 @@ void AnyPlayInput::ReleaseAll()
 	macro_index = -1;
 	macro_timer.stop();
 	turbo_timer.stop();
+	spin_timer.stop();
 	emit Changed();
+}
+
+void AnyPlayInput::UpdateSpinTimer()
+{
+	bool any = false;
+	for(const auto &b : active)
+		any |= b.kind == APBinding::Kind::Spin;
+	if(any && !spin_timer.isActive())
+		spin_timer.start();
+	else if(!any)
+		spin_timer.stop();
 }
 
 void AnyPlayInput::AddTap(const APStep &step, int ms)
@@ -917,6 +946,17 @@ APStep AnyPlayInput::Output() const
 		sum.rx = wheel_rx;
 		sum.ry = wheel_ry;
 	}
+	// злам машини: поки тримаєш клавішу, стік крутиться по колу повного відхилення (замість руху клавішами)
+	const qint64 now = clock.elapsed();
+	for(const auto &b : active)
+	{
+		if(b.kind != APBinding::Kind::Spin)
+			continue;
+		if(b.spin_l)
+			AnyPlaySpinStick(now - b.pressed_at, b.spin_l, &sum.lx, &sum.ly);
+		if(b.spin_r)
+			AnyPlaySpinStick(now - b.pressed_at, b.spin_r, &sum.rx, &sum.ry);
+	}
 	return sum;
 }
 
@@ -1104,6 +1144,7 @@ QVariantList AnyPlayInput::ProfilesForEditor()
 			row["aim"] = bo.value("aim").toObject().toVariantMap();   // {when, btn}: що робить у прицілі
 			row["x"] = bo.value("x").toInt(0) != 0;
 			row["hold"] = !bo.value("hold").toObject().isEmpty();   // клавіша зброї: натисни або тримай
+			row["spin"] = bo.value("spin").toObject().toVariantMap();   // злам машини: який стік і куди крутиться
 			row["profile"] = b.profile;
 			row["steps"] = b.steps.size();
 			bindings.append(row);

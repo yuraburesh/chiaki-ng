@@ -60,7 +60,13 @@
         {"id": "quick_nav", "name": "Швидка навігація", "key": "N", "btn": ["DPAD_DOWN"], "x": 1},
         {"id": "switch", "name": "Змінити героя", "key": "Alt", "btn": ["R1", "DPAD_RIGHT"], "x": 1},
         {"id": "focus", "name": "Фокус", "key": "CapsLock", "btn": ["L3", "R3"]},
-        {"id": "wank", "name": "Застосунок WAiNK", "key": "Y", "btn": ["DPAD_UP"], "x": 1}
+        {"id": "wank", "name": "Застосунок WAiNK", "key": "Y", "btn": ["DPAD_UP"], "x": 1},
+        {"id": "lock_both", "name": "Злам машини: обидва стіки", "key": "V", "do": "spin", "spin": {"l": 1, "r": -1}},
+        {"id": "lock_both_back", "name": "Злам машини: обидва навпаки", "key": "U", "do": "spin", "spin": {"l": -1, "r": 1}},
+        {"id": "lock_l_ccw", "name": "Злам машини: лівий стік", "key": "9", "do": "spin", "spin": {"l": -1}},
+        {"id": "lock_l_cw", "name": "Злам машини: лівий стік", "key": "0", "do": "spin", "spin": {"l": 1}},
+        {"id": "lock_r_ccw", "name": "Злам машини: правий стік", "key": "K", "do": "spin", "spin": {"r": -1}},
+        {"id": "lock_r_cw", "name": "Злам машини: правий стік", "key": "L", "do": "spin", "spin": {"r": 1}}
       ]
     },
     {
@@ -81,7 +87,13 @@
         {"id": "look_back", "name": "Глянути назад", "key": "C", "btn": ["R3"]},
         {"id": "veh_weapon", "name": "Зброя транспорту", "key": "Tab", "btn": ["L1"]},
         {"id": "sidearm", "name": "Дістати пістолет", "key": "H", "btn": ["L1"]},
-        {"id": "veh_menu", "name": "Меню транспорту: радіо, фари", "key": "X", "btn": ["DPAD_LEFT"]}
+        {"id": "veh_menu", "name": "Меню транспорту: радіо, фари", "key": "X", "btn": ["DPAD_LEFT"]},
+        {"id": "lock_both", "name": "Злам машини: обидва стіки", "key": "V", "do": "spin", "spin": {"l": 1, "r": -1}},
+        {"id": "lock_both_back", "name": "Злам машини: обидва навпаки", "key": "U", "do": "spin", "spin": {"l": -1, "r": 1}},
+        {"id": "lock_l_ccw", "name": "Злам машини: лівий стік", "key": "9", "do": "spin", "spin": {"l": -1}},
+        {"id": "lock_l_cw", "name": "Злам машини: лівий стік", "key": "0", "do": "spin", "spin": {"l": 1}},
+        {"id": "lock_r_ccw", "name": "Злам машини: правий стік", "key": "K", "do": "spin", "spin": {"r": -1}},
+        {"id": "lock_r_cw", "name": "Злам машини: правий стік", "key": "L", "do": "spin", "spin": {"r": 1}}
       ]
     },
     {

@@ -74,6 +74,12 @@ Item {
     function howOf(b) {
         const d = b["do"] || "", pn = pnOf(b);
         if (d === "macro") return b.hold ? qsTr("натисни або тримай") : qsTr("комбінація");
+        if (d === "spin") {
+            // тримаєш клавішу: стік крутиться по колу (↻ за годинниковою, ↺ проти)
+            const sp = b.spin || {}, arrow = (v) => v > 0 ? "↻" : "↺";
+            if (sp.l && sp.r) return qsTr("тримай: лівий %1, правий %2").arg(arrow(sp.l)).arg(arrow(sp.r));
+            return sp.r ? qsTr("тримай: ↺ або ↻, ще можна колом мишею") : qsTr("тримай: ↺ або ↻");
+        }
         if (d === "cycle") {
             const z = b.aim && b.aim.btn && b.aim.btn[0];
             if (z === "DPAD_UP" || z === "DPAD_DOWN") return qsTr("по колу; у прицілі ближче й далі");

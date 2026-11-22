@@ -29,7 +29,7 @@ Item {
     readonly property Item firstItem: openPage === "extend" && canExtend ? extendBtn : resumeBtn
     AnyPlayStyle { id: ap }
 
-    readonly property var items: [resumeBtn, extendBtn, keysBtn, qualityBtn, consoleBtn, homeBtn, advBtn, exitBtn]
+    readonly property var items: [resumeBtn, extendBtn, keysBtn, qualityBtn, consoleBtn, homeBtn, walletBtn, supportBtn, advBtn, exitBtn]
     function itemFor(p) {
         for (let i = 0; i < items.length; i++)
             if (items[i].pageId === p)
@@ -241,8 +241,11 @@ Item {
                     PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: qualityBtn }
                     PauseItem { id: qualityBtn; pageId: "quality"; text: qsTr("Якість"); KeyNavigation.up: keysBtn; KeyNavigation.down: consoleBtn }
                     PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: qualityBtn; KeyNavigation.down: homeBtn }
-                    PauseItem { id: homeBtn; pageId: "home"; text: panel.admin ? qsTr("Панель адміна") : qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: advBtn }
-                    PauseItem { id: advBtn; pageId: "advanced"; visible: panel.admin; text: qsTr("Розширені налаштування"); KeyNavigation.up: homeBtn; KeyNavigation.down: exitBtn }
+                    PauseItem { id: homeBtn; pageId: "home"; text: panel.admin ? qsTr("Панель адміна") : qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: walletBtn }
+                    // AnyPlay 110: баланс і підтримка, не виходячи з гри (відкривається головне вікно на потрібній вкладці)
+                    PauseItem { id: walletBtn; pageId: "wallet"; visible: !panel.admin && Chiaki.cloud.hasWallet; text: qsTr("Баланс"); KeyNavigation.up: homeBtn; KeyNavigation.down: supportBtn }
+                    PauseItem { id: supportBtn; pageId: "support"; visible: !panel.admin; text: Chiaki.cloud.supportUnread > 0 ? qsTr("Підтримка (%1)").arg(Chiaki.cloud.supportUnread) : qsTr("Підтримка"); KeyNavigation.up: walletBtn; KeyNavigation.down: advBtn }
+                    PauseItem { id: advBtn; pageId: "advanced"; visible: panel.admin; text: qsTr("Розширені налаштування"); KeyNavigation.up: supportBtn; KeyNavigation.down: exitBtn }
                     PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: advBtn }
                 }
 
@@ -647,13 +650,13 @@ Item {
         id: homeOver
         anchors.fill: parent
         z: 50
-        active: panel.page === "home" && panel.visible
+        active: (panel.page === "home" || panel.page === "wallet" || panel.page === "support") && panel.visible
         sourceComponent: AnyPlayHome {
             overGame: true
             onBackToGame: { panel.page = "back"; panel.resume(); }
             onBackToMenu: panel.page = "back"
         }
-        onLoaded: item.forceActiveFocus()
+        onLoaded: { if (panel.page !== "home") item.view = panel.page; item.forceActiveFocus(); }
     }
 
     component PageFlick: Flickable {

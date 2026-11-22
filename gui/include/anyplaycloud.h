@@ -5,6 +5,8 @@
 #include <QTimer>
 #include <QNetworkAccessManager>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QUrl>
 #include <QVariantMap>
 #include <QHash>
 #include <functional>
@@ -60,6 +62,18 @@ class AnyPlayCloud : public QObject
 	// баланс (передоплата за гру): {balances: [{currency, amount, symbol}], primary} із сесії; після loadWallet() ще history, topup, pending
 	Q_PROPERTY(QVariantMap wallet READ wallet NOTIFY walletChanged)
 	Q_PROPERTY(bool hasWallet READ hasWallet NOTIFY walletChanged)    // сервер уміє баланс і це клієнт (в адмінів балансу немає)
+	// ── підтримка з програми (К11): чат з адміном, не виходячи з гри ──
+	Q_PROPERTY(QVariantList supportMessages READ supportMessages NOTIFY supportChanged)
+	Q_PROPERTY(int supportUnread READ supportUnread NOTIFY supportChanged)        // нові відповіді адміна (крапка на «Підтримка»)
+	Q_PROPERTY(QString supportHours READ supportHours NOTIFY supportChanged)
+	Q_PROPERTY(bool supportTyping READ supportTyping NOTIFY supportChanged)
+	Q_PROPERTY(bool supportLoaded READ supportLoaded NOTIFY supportChanged)
+	Q_PROPERTY(bool supportSending READ supportSending NOTIFY supportChanged)
+	// ── перегляд гри клієнта адміном (К12): останній кадр як data:-адреса ──
+	Q_PROPERTY(QString previewImage READ previewImage NOTIFY previewChanged)
+	Q_PROPERTY(qint64 previewAt READ previewAt NOTIFY previewChanged)
+	// ── CRM усередині програми (К10) ──
+	Q_PROPERTY(bool webEngine READ webEngine CONSTANT)
 
 public:
 	AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent = nullptr);
@@ -148,6 +162,30 @@ public:
 	QVariantMap wallet() const { return wallet_; }
 	bool hasWallet() const { return has_wallet_ && !admin_; }
 	QVariantMap bookInfo() const { return book_info_; }
+	// підтримка (К11)
+	QVariantList supportMessages() const { return support_msgs_; }
+	int supportUnread() const { return support_unread_; }
+	QString supportHours() const { return support_hours_; }
+	bool supportTyping() const { return support_typing_; }
+	bool supportLoaded() const { return support_loaded_; }
+	bool supportSending() const { return support_sending_; }
+	Q_INVOKABLE void loadSupport();                          // нові повідомлення (усі, якщо ще не вантажили)
+	Q_INVOKABLE void sendSupport(const QString &text);
+	Q_INVOKABLE void sendSupportPhoto(const QUrl &file);     // фото з диска, до 8 МБ
+	Q_INVOKABLE void loadSupportImage(const QString &fileUrl);   // фото з чату: відповідь сигналом supportImage (data:-адреса)
+	Q_INVOKABLE void reportPicture(const QString &note = QString());   // «Картинка глючить»: скарга в телеметрії + журнал
+	// перегляд гри клієнта (К12)
+	QString previewImage() const { return preview_image_; }
+	qint64 previewAt() const { return preview_at_; }
+	Q_INVOKABLE void loadPreview(qint64 bookingId);          // адмін: забрати останній кадр гри клієнта
+	Q_INVOKABLE void clearPreview();
+	// CRM у програмі (К10)
+	bool webEngine() const;
+	Q_INVOKABLE QString crmUrl() const;                      // сторінка CRM на нашому сервері
+	Q_INVOKABLE QString webAppScript() const;                // скрипт window.AnyPlayApp (лише для нашого домену)
+	Q_INVOKABLE bool isOwnUrl(const QUrl &url) const;        // сторінка нашого сервера (інше відкриваємо зовні)
+	Q_INVOKABLE void openExternal(const QUrl &url);
+	Q_INVOKABLE void uploadLog(const QString &reason);       // журнал програми для підтримки (К13)
 	QVariantList bookStarts() const { return book_starts_; }
 	bool bookStartsLoading() const { return book_starts_loading_; }
 
@@ -166,6 +204,13 @@ signals:
 	void linkResult(bool ok, const QString &text);
 	void message(const QString &text);       // коротке сповіщення для інтерфейсу
 	void stopRequested(const QString &reason);
+	void supportChanged();
+	void supportResult(bool ok, const QString &text);
+	void supportImage(const QString &fileUrl, const QString &dataUrl);
+	void previewChanged();
+
+private slots:
+	void onPreviewFrame(const QByteArray &jpeg);             // кадр від QmlMainWindow::previewFrameReady (К12)
 
 private:
 	void request(const QString &method, const QString &path, const QJsonObject &body,
@@ -235,4 +280,24 @@ private:
 	QString walletMoney(double amount, const QString &currency, const QString &symbol = QString()) const;
 	QString walletLeftText(const QString &currency) const;
 	QString walletError(const QString &error, int status) const;
+	// ── етап 3: підтримка, перегляд, журнал ──
+	void rawRequest(const QString &method, const QString &path, const QByteArray &contentType, const QByteArray &body,
+	                std::function<void(int, const QByteArray &, const QByteArray &)> done);   // статус, тіло, тип вмісту
+	void applyExtras(const QJsonObject &o);                  // поля heartbeat і /api/app/session: support, preview, sendLog
+	void mergeSupport(const QJsonArray &messages, bool replace);
+	void previewTick();
+	QVariantList support_msgs_;
+	int support_unread_ = 0;
+	qint64 support_last_id_ = 0;
+	QString support_hours_;
+	bool support_typing_ = false, support_loaded_ = false, support_sending_ = false, support_loading_ = false;
+	QString preview_image_;
+	qint64 preview_at_ = 0;
+	bool preview_loading_ = false;
+	qint64 preview_until_ms_ = 0;                            // до коли надсилати кадри (час цього комп'ютера)
+	int preview_width_ = 480;
+	bool preview_busy_ = false;                              // кадр уже готується або летить на сервер
+	QTimer preview_timer;
+	qint64 log_sent_ms_ = 0, log_admin_ms_ = 0;              // журнал: коли надсилали після помилки і на прохання адміна
+	bool complaint_ = false;                                 // клієнт натиснув «Картинка глючить» (піде в наступні stats)
 };

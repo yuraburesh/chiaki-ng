@@ -1,8 +1,9 @@
 // AnyPlay: головний екран програми (новий дизайн: вечірній градієнт, вкладки, рядки з тонкими лініями).
 // Клієнт: «Гра» (таймер, мої броні, налаштування гри), «Бронювання», «Баланс», «Якість», «Мій PSN», «Як керувати», «Клавіші».
 // «Баланс» є лише тоді, коли сервер його вміє (старий сервер — вкладки й фішки балансу немає); адмінам балансу немає.
-// Адмін: «Панель» (хто грає і як: пристрій, керування, якість, зв'язок; завершити гру, подарувати гру, закрити доступ),
-// «Спільний PSN», «Свої PSN», а також «Якість», «Як керувати», «Клавіші».
+// Адмін: «Панель» (хто грає і як: пристрій, керування, якість, зв'язок, екран клієнта; завершити гру, подарувати гру, закрити доступ),
+// «CRM» (повна CRM усередині програми; поверх гри її немає), «Спільний PSN», «Свої PSN», а також «Якість», «Як керувати», «Клавіші».
+// Клієнт: ще «Підтримка» — чат з адміном просто в програмі, і поверх гри теж (число нових відповідей на вкладці).
 // Гість (cloud.guest): грає, поки приставка вільна; замість тексту про бронь — про гостьовий доступ, продовження немає.
 import QtQuick
 import QtQuick.Layouts
@@ -45,7 +46,7 @@ Rectangle {
     property bool overGame: false
     signal backToGame()
     signal backToMenu()
-    property string view: "home"         // home | book | wallet | quality | psn | guide | keys | (адмін) shared | clients
+    property string view: "home"         // home | book | wallet | support | quality | psn | guide | keys | (адмін) crm | shared | clients
     signal openKeys()                    // лишився для сумісності: клавіші тепер окрема вкладка
     color: ap.bg1
     focus: visible
@@ -92,7 +93,10 @@ Rectangle {
         }
         if (view === "shared") { sharedPage.rev++; home.cloud.refreshAdmin(); }
         if (view === "clients") { clientsPage.result = ""; home.cloud.refreshAdmin(); }
+        if (view === "crm") crmOpened = true;
+        if (view === "crm" && home.overGame) view = "home";   // поверх гри CRM немає (вбудований браузер лише поза грою)
     }
+    property bool crmOpened: false   // CRM вантажимо, коли її вперше відкрили, і тримаємо, поки відкрите вікно
     onIsAdminChanged: view = "home"
     Component.onCompleted: loadMine()
 
@@ -365,7 +369,15 @@ Rectangle {
         }
         // після оплати броні оновлюємо стан (з'являється таймер до гри)
         function onBookChanged() { if (home.view === "book") home.cloud.refresh(); }
+        // нова відповідь підтримки, а чат закритий: коротко кажемо (крапка на вкладці лишається)
+        function onSupportChanged() {
+            const n = home.cloud.supportUnread;
+            if (n > home.supportSeen && home.visible && home.view !== "support" && !home.isAdmin)
+                toast.show(qsTr("Нова відповідь від підтримки: вкладка «Підтримка»"));
+            home.supportSeen = n;
+        }
     }
+    property int supportSeen: 0
 
     // ── фон ──
     ApBackground { anchors.fill: parent }
@@ -389,13 +401,15 @@ Rectangle {
             readonly property bool wideFits: brand.implicitWidth + tabsWide.implicitWidth + who.implicitWidth + 84 <= width
             readonly property bool oneLine: wideFits || brand.implicitWidth + tabsTight.implicitWidth + who.implicitWidth + 64 <= width
             readonly property var tabModel: home.isAdmin
-                ? [{ id: "home", text: qsTr("Панель") }, { id: "shared", text: qsTr("Спільний PSN") }, { id: "clients", text: qsTr("Свої PSN") },
+                ? [{ id: "home", text: qsTr("Панель") }, ...(home.overGame ? [] : [{ id: "crm", text: qsTr("CRM") }]),
+                   { id: "shared", text: qsTr("Спільний PSN") }, { id: "clients", text: qsTr("Свої PSN") },
                    { id: "quality", text: qsTr("Якість") }, { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }]
-                : clientTabs(home.walletOn)
+                : clientTabs(home.walletOn, home.cloud.supportUnread)
             // вкладки клієнта; «Баланс» — лише коли сервер його вміє
-            function clientTabs(withWallet) {
+            function clientTabs(withWallet, unread) {
                 return [{ id: "home", text: qsTr("Гра") }, { id: "book", text: qsTr("Бронювання") },
                         ...(withWallet ? [{ id: "wallet", text: qsTr("Баланс") }] : []),
+                        { id: "support", text: unread > 0 ? qsTr("Підтримка (%1)").arg(unread) : qsTr("Підтримка") },
                         { id: "quality", text: qsTr("Якість") }, { id: "psn", text: qsTr("Мій PSN") },
                         { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }];
             }
@@ -820,6 +834,14 @@ Rectangle {
                                 }
                             }
                         }
+                        // що зараз бачить клієнт: маленьке вікно, оновлюється раз на ~1,5 с (лише поки відкрите)
+                        AnyPlayPreview {
+                            visible: !!home.cur && !!home.liveInfo
+                            Layout.fillWidth: true
+                            Layout.maximumWidth: 600
+                            Layout.topMargin: 6
+                            bookingId: home.cur ? home.cur.id : 0
+                        }
                         Flow {
                             Layout.fillWidth: true
                             Layout.topMargin: 10
@@ -901,9 +923,16 @@ Rectangle {
                         }
                         ApRow {
                             title: qsTr("CRM")
-                            subtitle: qsTr("броні й клієнти, у боті")
+                            subtitle: home.overGame ? qsTr("броні, клієнти, баланси, адміни: у боті (тут, коли вийдеш з гри)")
+                                                    : qsTr("броні, клієнти, баланси, прибуток, адміни з правами")
                             clickable: true
-                            onClicked: { home.cloud.openBot(); toast.show(qsTr("У боті натисни кнопку «CRM» внизу зліва")); }
+                            onClicked: {
+                                if (home.overGame || !home.cloud.webEngine) {
+                                    home.cloud.openBot();
+                                    toast.show(qsTr("У боті натисни кнопку «CRM» внизу зліва"));
+                                } else
+                                    home.view = "crm";
+                            }
                             ApChip { text: qsTr("відкрити") }
                         }
                         ApRow {
@@ -916,6 +945,24 @@ Rectangle {
                         }
                     }
                 }
+            }
+
+            // ═════════ CRM (адмін, поза грою): та сама сторінка, що в боті, на всю ширину ═════════
+            Loader {
+                anchors.fill: parent
+                active: home.crmOpened && !home.gated && home.isAdmin && !home.overGame
+                visible: home.view === "crm" && !home.gated && home.isAdmin
+                sourceComponent: AnyPlayCrm {
+                    contentWidth: home.cw
+                    onBack: home.view = "home"
+                }
+            }
+
+            // ═════════ ПІДТРИМКА (клієнт): чат з адміном, і поверх гри теж ═════════
+            AnyPlaySupport {
+                anchors.fill: parent
+                visible: !home.gated && !home.isAdmin && home.view === "support"
+                contentWidth: Math.min(home.cw, 860)
             }
 
             // ═════════ БРОНЮВАННЯ ═════════

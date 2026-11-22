@@ -6,8 +6,16 @@
 #include "qmlmainwindow.h"
 #include "anyplayinput.h"
 #include "streamsession.h"
+#include "sessionlog.h"
 
 #include <QClipboard>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QHttpMultiPart>
+#include <QMimeDatabase>
+#include <QSet>
+#include <algorithm>
 #include <QDateTime>
 #include <QDebug>
 #include <QGuiApplication>
@@ -156,6 +164,22 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 		});
 	});
 
+	// К12: кадри гри для адміна — лише поки він дивиться (сервер каже preview.want у heartbeat)
+	preview_timer.setInterval(1500);
+	connect(&preview_timer, &QTimer::timeout, this, &AnyPlayCloud::previewTick);
+	// за іменем: вікно дає кадри для перегляду, лише якщо вміє (сигнал previewFrameReady)
+	if(backend->qmlWindow() && backend->qmlWindow()->metaObject()->indexOfSignal("previewFrameReady(QByteArray)") >= 0)
+		connect(backend->qmlWindow(), SIGNAL(previewFrameReady(QByteArray)), this, SLOT(onPreviewFrame(QByteArray)));
+	// К13: після помилки підключення програма сама шле журнал підтримці (не частіше разу на 10 хв)
+	connect(backend, &QmlBackend::sessionError, this, [this](const QString &, const QString &) {
+		const qint64 now = QDateTime::currentMSecsSinceEpoch();
+		if(loggedIn() && now - log_sent_ms_ > 10 * 60 * 1000)
+		{
+			log_sent_ms_ = now;
+			QTimer::singleShot(1500, this, [this]() { uploadLog(QStringLiteral("connect_error")); });
+		}
+	});
+
 	if(loggedIn())
 	{
 		setState("wait");
@@ -301,6 +325,7 @@ void AnyPlayCloud::refresh()
 void AnyPlayCloud::applySession(const QJsonObject &o)
 {
 	skew_ = o.value("now").toVariant().toLongLong() - QDateTime::currentSecsSinceEpoch();
+	applyExtras(o);
 	const bool wasAdmin = admin_;
 	admin_ = o.value("admin").toBool();
 	{
@@ -466,6 +491,7 @@ void AnyPlayCloud::heartbeat()
 		}
 		if(status != 200)
 			return; // тимчасові проблеми зі зв'язком не обривають гру
+		applyExtras(o);
 		if(!o.value("continue").toBool())
 		{
 			QString reason = o.value("reason").toString() == "kicked"
@@ -584,6 +610,31 @@ QJsonObject AnyPlayCloud::takeStats()
 	o["loss"] = qRound(stat_.loss / n * 100.0) / 100.0;         // відсотки
 	o["dropped"] = stat_.dropped;                               // кадрів пропущено за проміжок
 	o["local"] = local;
+	// К14: наскільки рівно кадри доходять до екрана (лічильники вікна за проміжок між heartbeat)
+	if(QmlMainWindow *w = backend->qmlWindow())
+	{
+		QVariantMap p;
+		if(w->metaObject()->indexOfMethod("takePresentStats()") < 0
+			|| !QMetaObject::invokeMethod(w, "takePresentStats", Qt::DirectConnection, Q_RETURN_ARG(QVariantMap, p)))
+		{
+			for(const char *k : { "presentGapMax", "presentGaps", "swapchainResets", "vrr" })
+			{
+				const QVariant v = w->property(k);
+				if(v.isValid())
+					p.insert(QString::fromLatin1(k), v);
+			}
+		}
+		for(const char *k : { "presentGapMax", "presentGaps", "swapchainResets" })
+			if(p.contains(QString::fromLatin1(k)))
+				o[QString::fromLatin1(k)] = p.value(QString::fromLatin1(k)).toInt();
+		if(p.contains(QStringLiteral("vrr")) && p.value(QStringLiteral("vrr")).isValid())
+			o["vrr"] = p.value(QStringLiteral("vrr")).toBool();
+	}
+	if(complaint_)
+	{
+		o["complaint"] = true;
+		complaint_ = false;
+	}
 	stat_ = StatWindow();
 	stat_sent_ = true;
 	return o;
@@ -1793,4 +1844,397 @@ QString AnyPlayCloud::linkErrorText(const QString &errors) const
 	if(!last.isEmpty())
 		text += QStringLiteral("\n") + tr("Технічно: %1").arg(last);
 	return text;
+}
+
+
+// ═════════ етап 3: підтримка (К11), перегляд гри (К12), журнал (К13), CRM у програмі (К10) ═════════
+
+void AnyPlayCloud::rawRequest(const QString &method, const QString &path, const QByteArray &contentType, const QByteArray &body,
+                              std::function<void(int, const QByteArray &, const QByteArray &)> done)
+{
+	QNetworkRequest req(QUrl(server_ + path));
+	req.setTransferTimeout(30000);
+	req.setRawHeader("X-AnyPlay-Build", QByteArray::number(ANYPLAY_BUILD));
+	req.setRawHeader("X-AnyPlay-Platform", anyplayPlatform());
+	if(!token_.isEmpty())
+		req.setRawHeader("Authorization", "Bearer " + token_.toUtf8());
+	if(!contentType.isEmpty())
+		req.setHeader(QNetworkRequest::ContentTypeHeader, contentType);
+	QNetworkReply *reply = method == "GET" ? nam.get(req) : nam.post(req, body);
+	connect(reply, &QNetworkReply::finished, this, [reply, done]() {
+		reply->deleteLater();
+		const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+		const QByteArray type = reply->header(QNetworkRequest::ContentTypeHeader).toByteArray();
+		done(status, reply->readAll(), type);
+	});
+}
+
+void AnyPlayCloud::applyExtras(const QJsonObject &o)
+{
+	// підтримка: скільки нових відповідей адміна (крапка на кнопці «Підтримка»)
+	if(o.value("support").isObject())
+	{
+		const QJsonObject sup = o.value("support").toObject();
+		const int unread = sup.value("unread").toInt();
+		const qint64 last = sup.value("lastId").toVariant().toLongLong();
+		if(unread != support_unread_)
+		{
+			support_unread_ = unread;
+			emit supportChanged();
+		}
+		// чат уже відкривали: нові повідомлення підтягуємо одразу
+		if(support_loaded_ && last > support_last_id_)
+			loadSupport();
+	}
+	// перегляд гри: адмін дивиться — надсилаємо зменшені кадри до until
+	if(o.value("preview").isObject())
+	{
+		const QJsonObject pv = o.value("preview").toObject();
+		const qint64 until = pv.value("until").toVariant().toLongLong();
+		if(pv.value("want").toBool() && until > 0)
+		{
+			preview_until_ms_ = (until - skew_) * 1000;
+			const double interval = pv.value("interval").toDouble(1.5);
+			// ноутбук не встигає малювати (обробку спрощено): кадри вдвічі рідше
+			const bool weak = QSettings().contains(QStringLiteral("anyplay/render_cap"));
+			preview_timer.setInterval(qBound(500, int(interval * 1000.0 * (weak ? 2 : 1)), 10000));
+			preview_width_ = qBound(160, pv.value("width").toInt(480), 960);
+			if(!preview_timer.isActive() && QDateTime::currentMSecsSinceEpoch() < preview_until_ms_)
+			{
+				preview_timer.start();
+				previewTick();
+			}
+		}
+		else
+		{
+			preview_until_ms_ = 0;
+			preview_timer.stop();
+		}
+	}
+	// адмін попросив журнал програми (CRM → «Отримати журнал»)
+	if(o.value("sendLog").toBool())
+	{
+		const qint64 now = QDateTime::currentMSecsSinceEpoch();
+		if(now - log_admin_ms_ > 60 * 1000)
+		{
+			log_admin_ms_ = now;
+			uploadLog(QStringLiteral("admin"));
+		}
+	}
+}
+
+// ── підтримка (К11) ──
+
+void AnyPlayCloud::mergeSupport(const QJsonArray &messages, bool replace)
+{
+	if(replace)
+		support_msgs_.clear();
+	QSet<qint64> have;
+	for(const QVariant &v : support_msgs_)
+		have.insert(v.toMap().value("id").toLongLong());
+	for(const QJsonValue &v : messages)
+	{
+		const QVariantMap m = v.toObject().toVariantMap();
+		const qint64 id = m.value("id").toLongLong();
+		if(id && have.contains(id))
+			continue;
+		have.insert(id);
+		support_msgs_.append(m);
+		support_last_id_ = qMax(support_last_id_, id);
+	}
+	std::sort(support_msgs_.begin(), support_msgs_.end(), [](const QVariant &a, const QVariant &b) {
+		return a.toMap().value("id").toLongLong() < b.toMap().value("id").toLongLong();
+	});
+}
+
+void AnyPlayCloud::loadSupport()
+{
+	if(!loggedIn() || support_loading_)
+		return;
+	support_loading_ = true;
+	const bool full = !support_loaded_;
+	const QString path = full ? QStringLiteral("/api/app/support")
+	                          : QStringLiteral("/api/app/support?after=%1").arg(support_last_id_);
+	request("GET", path, QJsonObject(), [this, full](int status, const QJsonObject &o) {
+		support_loading_ = false;
+		if(status != 200 || !o.value("ok").toBool())
+		{
+			if(full)
+				emit supportResult(false, status == 404
+					? tr("Чат у програмі ще не працює на сервері. Напиши в бот: кнопка «Підтримка».")
+					: tr("Не вдалося завантажити чат. Перевір інтернет і спробуй ще раз."));
+			return;
+		}
+		mergeSupport(o.value("messages").toArray(), full);
+		support_hours_ = o.value("hours").toString();
+		support_typing_ = o.value("typing").toBool();
+		support_loaded_ = true;
+		support_unread_ = 0;   // чат відкрито: усе прочитано (сервер так само рахує прочитаним те, що віддав)
+		emit supportChanged();
+	});
+}
+
+void AnyPlayCloud::sendSupport(const QString &text)
+{
+	const QString t = text.trimmed();
+	if(t.isEmpty() || !loggedIn())
+		return;
+	support_sending_ = true;
+	emit supportChanged();
+	QJsonObject body;
+	body["text"] = t.left(4000);
+	request("POST", "/api/app/support/send", body, [this](int status, const QJsonObject &o) {
+		support_sending_ = false;
+		emit supportChanged();
+		if(status == 200 && o.value("ok").toBool())
+		{
+			emit supportResult(true, QString());
+			loadSupport();
+		}
+		else
+			emit supportResult(false, tr("Не вдалося надіслати. Перевір інтернет і спробуй ще раз."));
+	});
+}
+
+void AnyPlayCloud::sendSupportPhoto(const QUrl &file)
+{
+	const QString path = file.isLocalFile() ? file.toLocalFile() : file.toString();
+	QFile *f = new QFile(path);
+	if(!f->open(QIODevice::ReadOnly))
+	{
+		delete f;
+		emit supportResult(false, tr("Не вдалося відкрити файл."));
+		return;
+	}
+	if(f->size() > 8 * 1024 * 1024)
+	{
+		delete f;
+		emit supportResult(false, tr("Фото завелике: до 8 МБ."));
+		return;
+	}
+	QHttpMultiPart *multi = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+	QHttpPart part;
+	const QString mime = QMimeDatabase().mimeTypeForFile(path).name();
+	QString name = QFileInfo(path).fileName();
+	name.replace(QLatin1Char('"'), QLatin1Char('_'));
+	part.setHeader(QNetworkRequest::ContentTypeHeader, mime.startsWith(QLatin1String("image/")) ? mime : QStringLiteral("image/jpeg"));
+	part.setHeader(QNetworkRequest::ContentDispositionHeader, QStringLiteral("form-data; name=\"photo\"; filename=\"%1\"").arg(name));
+	part.setBodyDevice(f);
+	f->setParent(multi);
+	multi->append(part);
+	QNetworkRequest req(QUrl(server_ + "/api/app/support/photo"));
+	req.setTransferTimeout(60000);
+	req.setRawHeader("X-AnyPlay-Build", QByteArray::number(ANYPLAY_BUILD));
+	req.setRawHeader("X-AnyPlay-Platform", anyplayPlatform());
+	req.setRawHeader("Authorization", "Bearer " + token_.toUtf8());
+	support_sending_ = true;
+	emit supportChanged();
+	QNetworkReply *reply = nam.post(req, multi);
+	multi->setParent(reply);
+	connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+		reply->deleteLater();
+		support_sending_ = false;
+		emit supportChanged();
+		const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+		const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+		if(status == 200 && o.value("ok").toBool())
+		{
+			emit supportResult(true, QString());
+			loadSupport();
+		}
+		else
+			emit supportResult(false, status == 413 ? tr("Фото завелике: до 8 МБ.") : tr("Не вдалося надіслати фото. Спробуй ще раз."));
+	});
+}
+
+void AnyPlayCloud::loadSupportImage(const QString &fileUrl)
+{
+	if(fileUrl.isEmpty())
+		return;
+	// фото з чату вимагає входу (заголовок), тому вантажимо самі й даємо QML як data:-адресу
+	const QString path = fileUrl.startsWith(server_) ? fileUrl.mid(server_.size()) : fileUrl;
+	if(!path.startsWith(QLatin1Char('/')))
+		return;
+	rawRequest("GET", path, QByteArray(), QByteArray(), [this, fileUrl](int status, const QByteArray &data, const QByteArray &type) {
+		if(status != 200 || data.isEmpty())
+			return;
+		const QByteArray mime = type.isEmpty() ? QByteArrayLiteral("image/jpeg") : type.split(';').first().trimmed();
+		emit supportImage(fileUrl, QStringLiteral("data:%1;base64,%2").arg(QString::fromLatin1(mime), QString::fromLatin1(data.toBase64())));
+	});
+}
+
+void AnyPlayCloud::reportPicture(const QString &note)
+{
+	complaint_ = true;
+	uploadLog(note.isEmpty() ? QStringLiteral("complaint") : QStringLiteral("complaint: ") + note.left(300));
+	if(playing_)
+		QTimer::singleShot(500, this, &AnyPlayCloud::heartbeat);   // скарга одразу видна адміну в «здоров'ї» картинки
+	emit message(tr("Дякуємо! Ми отримали журнал програми й подивимось, що з картинкою."));
+}
+
+// ── перегляд гри клієнта (К12) ──
+
+void AnyPlayCloud::previewTick()
+{
+	QmlMainWindow *w = backend->qmlWindow();
+	if(!playing_ || !w || !backend->qmlSession() || QDateTime::currentMSecsSinceEpoch() >= preview_until_ms_)
+	{
+		preview_timer.stop();
+		return;
+	}
+	if(preview_busy_)
+		return;   // попередній кадр ще готується або летить: не накопичуємо
+	if(w->metaObject()->indexOfMethod("requestPreviewFrame(int)") >= 0
+		&& QMetaObject::invokeMethod(w, "requestPreviewFrame", Qt::QueuedConnection, Q_ARG(int, preview_width_)))
+		preview_busy_ = true;
+	else
+		preview_timer.stop();   // вікно не вміє давати кадри
+}
+
+void AnyPlayCloud::onPreviewFrame(const QByteArray &jpeg)
+{
+	if(jpeg.isEmpty() || jpeg.size() > 200 * 1024 || !playing_)
+	{
+		preview_busy_ = false;
+		return;
+	}
+	rawRequest("POST", "/api/app/preview", "image/jpeg", jpeg, [this](int status, const QByteArray &, const QByteArray &) {
+		preview_busy_ = false;
+		if(status == 404 || status == 410)
+		{
+			preview_until_ms_ = 0;   // сервер не хоче кадрів (адмін закрив перегляд або сервер старий)
+			preview_timer.stop();
+		}
+	});
+}
+
+void AnyPlayCloud::loadPreview(qint64 bookingId)
+{
+	if(!admin_ || preview_loading_ || bookingId <= 0)
+		return;
+	preview_loading_ = true;
+	rawRequest("GET", QStringLiteral("/api/app/admin/preview?bookingId=%1").arg(bookingId), QByteArray(), QByteArray(),
+		[this](int status, const QByteArray &data, const QByteArray &type) {
+		preview_loading_ = false;
+		if(status != 200 || data.isEmpty() || !type.startsWith("image/"))
+			return;
+		preview_image_ = QStringLiteral("data:image/jpeg;base64,") + QString::fromLatin1(data.toBase64());
+		preview_at_ = QDateTime::currentSecsSinceEpoch() + skew_;
+		emit previewChanged();
+	});
+}
+
+void AnyPlayCloud::clearPreview()
+{
+	if(preview_image_.isEmpty() && !preview_at_)
+		return;
+	preview_image_.clear();
+	preview_at_ = 0;
+	emit previewChanged();
+}
+
+// ── журнал програми (К13) ──
+
+static QByteArray logTail(const QString &file, qint64 max)
+{
+	QFile f(file);
+	if(max <= 0 || !f.open(QIODevice::ReadOnly))
+		return QByteArray();
+	const qint64 size = f.size();
+	if(size > max)
+	{
+		f.seek(size - max);
+		f.readLine();   // з початку цілого рядка
+	}
+	return f.readAll();
+}
+
+void AnyPlayCloud::uploadLog(const QString &reason)
+{
+	if(!loggedIn())
+		return;
+	const QString dir = GetLogBaseDir();
+	QFileInfoList files;
+	if(!dir.isEmpty())
+		files = QDir(dir).entryInfoList({ QStringLiteral("chiaki_session_*.log") }, QDir::Files, QDir::Time);
+	const qint64 limit = 480 * 1024;
+	// найновіший журнал; якщо він короткий (гра щойно почалась), спереду ще кінець попереднього
+	QByteArray tail;
+	if(!files.isEmpty())
+	{
+		tail = logTail(files[0].absoluteFilePath(), limit);
+		if(files.size() > 1 && files[0].size() < 64 * 1024)
+		{
+			const QByteArray prev = logTail(files[1].absoluteFilePath(), limit - tail.size());
+			if(!prev.isEmpty())
+				tail = "──── " + files[1].fileName().toUtf8() + " ────\n" + prev + "\n──── " + files[0].fileName().toUtf8() + " ────\n" + tail;
+		}
+	}
+	// про всяк випадок прибираємо токен пристрою, якщо він десь потрапив у журнал
+	if(!token_.isEmpty())
+		tail.replace(token_.toUtf8(), QByteArrayLiteral("<token>"));
+	QByteArray head;
+	head += "AnyPlay " + QByteArray::number(ANYPLAY_BUILD) + " " + anyplayPlatform() + " " + QSysInfo::prettyProductName().toUtf8()
+		+ " " + QSysInfo::currentCpuArchitecture().toUtf8() + "\n";
+	head += "reason: " + reason.toUtf8() + "\n";
+	head += "time: " + QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8() + "\n";
+	head += "quality: " + QByteArray::number(qualityLevel()) + (autoQuality() ? " auto" : "") + "\n";
+	if(files.isEmpty())
+		head += "(журналів трансляції на цьому комп'ютері ще немає)\n";
+	head += "\n";
+	rawRequest("POST", "/api/app/log", "text/plain; charset=utf-8", head + tail, [](int status, const QByteArray &, const QByteArray &) {
+		if(status != 200)
+			qWarning() << "AnyPlay: log upload failed with HTTP" << status;
+	});
+}
+
+// ── CRM у програмі (К10) ──
+
+bool AnyPlayCloud::webEngine() const
+{
+#ifdef CHIAKI_HAVE_WEBENGINE
+	return true;
+#else
+	return false;
+#endif
+}
+
+QString AnyPlayCloud::crmUrl() const
+{
+	return server_ + QStringLiteral("/app/admin.html");
+}
+
+bool AnyPlayCloud::isOwnUrl(const QUrl &url) const
+{
+	const QUrl own(server_);
+	const int def = own.scheme() == QLatin1String("https") ? 443 : 80;
+	return url.scheme() == own.scheme() && url.host() == own.host() && url.port(def) == own.port(def);
+}
+
+QString AnyPlayCloud::webAppScript() const
+{
+	if(token_.isEmpty())
+		return QString();
+	const QUrl own(server_);
+	QJsonObject app;
+	app["token"] = token_;
+	app["platform"] = QString::fromLatin1(anyplayPlatform());
+	app["build"] = ANYPLAY_BUILD;
+	const QByteArray json = QJsonDocument(app).toJson(QJsonDocument::Compact);
+	QJsonObject where;
+	where["host"] = own.host();
+	where["protocol"] = own.scheme() + QLatin1Char(':');
+	const QByteArray whereJson = QJsonDocument(where).toJson(QJsonDocument::Compact);
+	// токен пристрою отримує лише сторінка нашого сервера; на будь-якій іншій адресі скрипт нічого не робить
+	return QStringLiteral(
+		"(function(){var w=%1;if(location.protocol!==w.protocol||location.hostname!==w.host)return;"
+		"try{Object.defineProperty(window,'AnyPlayApp',{value:Object.freeze(%2),writable:false,configurable:false});}catch(e){}})();")
+		.arg(QString::fromUtf8(whereJson), QString::fromUtf8(json));
+}
+
+void AnyPlayCloud::openExternal(const QUrl &url)
+{
+	const QString scheme = url.scheme().toLower();
+	if(scheme == QLatin1String("https") || scheme == QLatin1String("http") || scheme == QLatin1String("tg") || scheme == QLatin1String("mailto"))
+		QDesktopServices::openUrl(url);
 }

@@ -20,6 +20,9 @@
         <file>BookPanel.qml</file>
         <file>WalletPanel.qml</file>
         <file>AnyPlayWallet.qml</file>
+        <file>AnyPlayCrm.qml</file>
+        <file>AnyPlaySupport.qml</file>
+        <file>AnyPlayPreview.qml</file>
         <file>AnyPlayPsnLogin.qml</file>
         <file>AnyPlayStreamMenu.qml</file>
         <file>AnyPlayGuide.qml</file>

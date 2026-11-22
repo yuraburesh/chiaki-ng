@@ -701,6 +701,9 @@ JNIEXPORT jstring JNICALL JNI_FCN(psnListDevices)(JNIEnv *env, jobject obj, jstr
 	return r;
 }
 
+// AnyPlay: той самий файл для відновлення ланцюжка сертифікатів (сервер сповіщень Sony, крок PSN-2): lib/src/aia.c
+extern void chiaki_aia_set_ca_file(const char *path);
+
 // AnyPlay: файл кореневих сертифікатів для всіх HTTPS-запитів бібліотеки (див. пояснення біля __wrap_curl_easy_init)
 JNIEXPORT void JNICALL JNI_FCN(setCaBundle)(JNIEnv *env, jobject obj, jstring path_string)
 {
@@ -711,6 +714,7 @@ JNIEXPORT void JNICALL JNI_FCN(setCaBundle)(JNIEnv *env, jobject obj, jstring pa
 		strcpy(anyplay_ca_bundle, path);
 		pthread_mutex_unlock(&anyplay_ca_mutex);
 	}
+	chiaki_aia_set_ca_file(path);
 	setenv("SSL_CERT_FILE", path, 1);
 	E->ReleaseStringUTFChars(env, path_string, path);
 }

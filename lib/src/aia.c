@@ -16,6 +16,21 @@
 #include <string.h>
 
 #define AIA_PEM_BEGIN "-----BEGIN CERTIFICATE-----"
+
+static char aia_ca_file_path[1024];
+
+CHIAKI_EXPORT void chiaki_aia_set_ca_file(const char *path)
+{
+	if(!path || strlen(path) >= sizeof(aia_ca_file_path))
+		aia_ca_file_path[0] = 0;
+	else
+		strcpy(aia_ca_file_path, path);
+}
+
+const char *chiaki_aia_ca_file(void)
+{
+	return aia_ca_file_path[0] ? aia_ca_file_path : NULL;
+}
 #define AIA_MAX_HOPS 4
 
 bool chiaki_aia_should_stop(const ChiakiAiaControl *control)

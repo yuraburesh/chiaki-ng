@@ -80,6 +80,11 @@ char *chiaki_aia_blob_take(size_t *len_out);
 char *chiaki_aia_blob_with_ca(FILE *ca_file, size_t *len_out);
 
 size_t chiaki_aia_blob_len(void);
+
+// AnyPlay: файл кореневих сертифікатів, який застосунок задав сам (Android). CURLINFO_CAINFO повертає лише
+// вбудований у curl шлях, а не той, що задали через CURLOPT_CAINFO, тож без цього відновлення ланцюжка
+// сертифікатів на Android не бачило жодного кореня і з'єднання з сервером сповіщень Sony падало з curl 60.
+const char *chiaki_aia_ca_file(void);
 uint32_t chiaki_aia_blob_generation(void);
 void chiaki_aia_blob_reset(void);
 

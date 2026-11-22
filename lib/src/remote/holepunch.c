@@ -2249,6 +2249,8 @@ ws_connect_attempt:
             else {
                 const char *ca_path = NULL;
                 CURLcode ca_info_res = curl_easy_getinfo(curl, CURLINFO_CAINFO, &ca_path);
+                if(chiaki_aia_ca_file())
+                    ca_path = chiaki_aia_ca_file();
                 FILE *ca_file = ca_path ? fopen(ca_path, "rb") : NULL;
                 if(ca_info_res == CURLE_OK && (!ca_path || ca_file))
                     aia_blob = chiaki_aia_blob_with_ca(ca_file, &aia_blob_len);

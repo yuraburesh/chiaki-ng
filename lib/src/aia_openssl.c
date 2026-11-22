@@ -76,6 +76,11 @@ void *chiaki_aia_trust_store(CURL *connection)
 	if(curl_easy_getinfo(connection, CURLINFO_CAINFO, &file) != CURLE_OK ||
 		curl_easy_getinfo(connection, CURLINFO_CAPATH, &path) != CURLE_OK)
 		goto error;
+	if(chiaki_aia_ca_file())
+	{
+		file = chiaki_aia_ca_file();
+		path = NULL;
+	}
 #ifdef _WIN32
 	const curl_version_info_data *version = curl_version_info(CURLVERSION_NOW);
 	if(version->ssl_version && strstr(version->ssl_version, "Schannel") && !file) {
@@ -162,6 +167,14 @@ bool chiaki_aia_verify_with_store(
 		}
 		if(added == 0)
 			goto out;
+	}
+	else if(chiaki_aia_ca_file())
+	{
+		if(X509_STORE_load_locations(store, chiaki_aia_ca_file(), NULL) != 1)
+		{
+			CHIAKI_LOGE(log, "aia: could not load the configured CA file");
+			goto out;
+		}
 	}
 	else if(X509_STORE_set_default_paths(store) != 1)
 	{

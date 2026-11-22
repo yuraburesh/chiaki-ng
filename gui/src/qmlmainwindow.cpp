@@ -65,10 +65,17 @@ extern "C" {
 #include <QQuickGraphicsDevice>
 #include <QTimer>
 #include <QWaitCondition>
+#include <QImage>
+#include <QBuffer>
+#include <QSettings>
+#include <QThreadPool>
+#include <QVariantMap>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QtGlobal>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -398,6 +405,46 @@ private:
     bool armed = false;
     qint64 wakeup_target_us = 0;
     quint64 generation = 0;
+};
+
+// AnyPlay: рівний темп показу. Монітори зі змінною частотою (FreeSync, G-Sync, «змінна частота» Windows)
+// оновлюють екран тоді, коли програма показує кадр. Кадр з приставки іноді запізнюється (раз на секунду
+// або частіше на Wi-Fi), і тоді монітор чекає довше, ніж зазвичай, а на більшості таких панелей кадр після
+// довгої паузи виходить помітно світлішим: картинка «спалахує». Цей потік стежить, щоб пауза між показами
+// не перевищувала ~1,25 кадру: якщо новий кадр запізнюється, той самий кадр показується ще раз.
+class SteadyPresentThread final : public QThread
+{
+public:
+    explicit SteadyPresentThread(QmlMainWindow *owner) : owner(owner) {}
+
+    void stopThread()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        stopping = true;
+        condition.notify_one();
+    }
+
+protected:
+    void run() override
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        while (!stopping) {
+            lock.unlock();
+            const qint64 now_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+            qint64 next_us = owner ? owner->steadyPresentTick(now_us) : now_us + 100000;
+            lock.lock();
+            if (stopping)
+                break;
+            const qint64 wait_us = std::clamp<qint64>(next_us - now_us, 1000, 250000);
+            condition.wait_for(lock, std::chrono::microseconds(wait_us), [this]() { return stopping; });
+        }
+    }
+
+private:
+    QmlMainWindow *owner = nullptr;
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool stopping = false;
 };
 
 class BufferedPlaybackPacerThread final : public QThread
@@ -2232,6 +2279,34 @@ static void anyplay_display_referred(struct pl_frame *frame)
     frame->color.transfer = PL_COLOR_TRC_SRGB;
 }
 
+// AnyPlay: «Картинка». Повзунки -100…100, нуль — типові значення AnyPlay:
+//  - середні тони трохи глибші (степінь 1,045 до закодованого сигналу): кадри приставки ми показуємо без
+//    перерахунку гами (anyplay_display_referred, 108), і на моніторі ноутбука з гамою 2,2 середні тони
+//    світліші, ніж на телевізорі з гамою 2,4, — звідси «блідо й тьмяно». Повний перерахунок (1,09) давав
+//    скарги «темно» у 107, тож беремо половину шляху;
+//  - насиченість ×1,06: телевізори у звичайному режимі трохи підсилюють колір, без кислотності;
+//  - контраст і теплота без змін.
+// Яскравість міняє гаму (світлішають і темнішають середні тони, біле лишається білим і не пересвічується),
+// контраст тягне навколо середньо-сірого, теплота зсуває колірну температуру.
+static struct pl_color_adjustment anyplayColorAdjustment(int brightness, int contrast, int saturation, int warmth,
+                                                         const struct pl_color_adjustment *base)
+{
+    struct pl_color_adjustment adj = base ? *base : pl_color_adjustment_neutral;
+    const float b = qBound(-100, brightness, 100) / 100.0f;
+    const float c = qBound(-100, contrast, 100) / 100.0f;
+    const float sat = qBound(-100, saturation, 100) / 100.0f;
+    const float w = qBound(-100, warmth, 100) / 100.0f;
+    static const float kBaseGamma = 1.0f / 1.045f;
+    static const float kBaseSaturation = 1.06f;
+    adj.gamma *= kBaseGamma * std::pow(2.0f, b * 0.6f);
+    const float gain = 1.0f + c * 0.35f;
+    adj.brightness = adj.brightness * gain + 0.5f * (1.0f - gain);
+    adj.contrast *= gain;
+    adj.saturation *= kBaseSaturation * (1.0f + sat * 0.5f);
+    adj.temperature -= w * 0.35f;   // у libplacebo більше = холодніше
+    return adj;
+}
+
 static bool map_frame(pl_gpu gpu, pl_tex *tex,
                       const struct pl_source_frame *src,
                       struct pl_frame *out_frame)
@@ -2605,6 +2680,12 @@ QmlMainWindow::~QmlMainWindow()
 
     drainRenderThread();
 
+    if (steady_present_thread) {
+        steady_present_thread->stopThread();
+        steady_present_thread->wait();
+        delete steady_present_thread;
+        steady_present_thread = nullptr;
+    }
     if (buffered_pace_thread) {
         buffered_pace_thread->stopThread();
         buffered_pace_thread->wait();
@@ -2712,6 +2793,7 @@ QmlMainWindow::~QmlMainWindow()
     }
     pl_cache_destroy(&placebo_cache);
     pl_queue_destroy(&placebo_queue);
+    destroyPreviewResources();
     pl_renderer_destroy(&placebo_renderer);
     // User shader hooks hold a reference to the GPU (their descriptors destroy
     // buffers/textures via p->gpu), so they must be released before the GPU is.
@@ -5363,6 +5445,26 @@ renderer_backend_ready:
     present_pace_thread = new DeferredPresentPacerThread(this);
     present_pace_thread->start();
 
+    {
+        QSettings anyplay_settings;
+        steady_present_enabled = anyplay_settings.value(QStringLiteral("anyplay/steady_present"), true).toBool();
+        pic_brightness.store(qBound(-100, anyplay_settings.value(QStringLiteral("anyplay/pic_brightness"), 0).toInt(), 100));
+        pic_contrast.store(qBound(-100, anyplay_settings.value(QStringLiteral("anyplay/pic_contrast"), 0).toInt(), 100));
+        pic_saturation.store(qBound(-100, anyplay_settings.value(QStringLiteral("anyplay/pic_saturation"), 0).toInt(), 100));
+        pic_warmth.store(qBound(-100, anyplay_settings.value(QStringLiteral("anyplay/pic_warmth"), 0).toInt(), 100));
+        // «Власна» обробка (вікна chiaki) більше не показується в AnyPlay: хто її обрав, переходить на «Висока
+        // якість»; перед наступною грою рівень якості сам виставить свою обробку (AnyPlayCloud::applyRender)
+        if (anyplay_settings.value(QStringLiteral("anyplay/custom_preset_migrated"), 0).toInt() < 110) {
+            anyplay_settings.setValue(QStringLiteral("anyplay/custom_preset_migrated"), 110);
+            if (settings && settings->GetPlaceboPreset() == PlaceboPreset::Custom) {
+                settings->SetPlaceboPreset(PlaceboPreset::HighQuality);
+                qCInfo(chiakiGui) << "[anyplay] custom render preset replaced with HighQuality";
+            }
+        }
+    }
+    steady_present_thread = new SteadyPresentThread(this);
+    steady_present_thread->start(QThread::HighPriority);
+
     vulkan_deferred_swap_enabled = settings->GetVulkanDeferredSwap();
     deferred_swap_thread = new DeferredSwapThread(this);
     deferred_swap_thread->start(QThread::HighPriority);
@@ -6034,6 +6136,7 @@ void QmlMainWindow::processDeferredSwapTask(qint64 submit_begin_us,
             logSwapInterval(swap_us);
             this->last_swap_return_us.storeRelease(swap_us);
             this->last_present_complete_us.storeRelease(swap_us);
+            notePresent(swap_us);
             if (startup_video_visible_pending.loadAcquire() != 0) {
                 const quint64 startup_visibility_generation = startup_video_visible_generation.loadAcquire();
                 QMetaObject::invokeMethod(this, [this, startup_visibility_generation]() {
@@ -6375,6 +6478,8 @@ void QmlMainWindow::createSwapchain()
         << " swapchain_depth=" << swapchain_depth
         << " present_vsync_enabled=" << (present_vsync_enabled ? 1 : 0)
         << " created=" << (placebo_swapchain ? 1 : 0);
+    if (placebo_swapchain)
+        noteSwapchainReset("vulkan_swapchain_create");
     if (!placebo_swapchain) {
         vk_funcs.vkDestroySurfaceKHR(placebo_vk_inst->instance, surface, nullptr);
         surface = VK_NULL_HANDLE;
@@ -6439,6 +6544,11 @@ void QmlMainWindow::resizeSwapchain()
     {
         QMutexLocker locker(&placebo_swapchain_mutex);
         pl_swapchain_resize(placebo_swapchain, &new_swapchain_size.rwidth(), &new_swapchain_size.rheight());
+    }
+    if (swapchain_size.isValid() && new_swapchain_size != swapchain_size) {
+        qCInfo(chiakiGui).nospace() << "[present] swapchain_resize " << swapchain_size.width() << "x" << swapchain_size.height()
+            << " -> " << new_swapchain_size.width() << "x" << new_swapchain_size.height();
+        noteSwapchainReset("swapchain_resize");
     }
 
     if (quick_frame)
@@ -7063,6 +7173,12 @@ void QmlMainWindow::render()
 
     struct pl_render_params params = *render_params;
     params.frame_mixer = effectiveFrameMixerConfig(&params);
+    // AnyPlay: «Картинка» — кольори поверх будь-якої обробки (і «Власної», якщо її колись обрали)
+    if (stream_session_active.loadAcquire() != 0) {
+        anyplay_color_adj = anyplayColorAdjustment(picBrightness(), picContrast(), picSaturation(), picWarmth(),
+                                                   params.color_adjustment);
+        params.color_adjustment = &anyplay_color_adj;
+    }
     const bool content_timed = params.frame_mixer == nullptr;
     const bool mixer_active = params.frame_mixer != nullptr;
     const bool has_settings = settings != nullptr;
@@ -7599,6 +7715,7 @@ void QmlMainWindow::render()
             }
             if (present && !async_present_completion) {
                 this->last_present_complete_us.storeRelease(present_complete_us);
+                notePresent(present_complete_us);
                 if (startup_video_visible_pending.loadAcquire() != 0) {
                     const quint64 startup_visibility_generation = startup_video_visible_generation.loadAcquire();
                     QMetaObject::invokeMethod(this, [this, startup_visibility_generation]() {
@@ -7690,6 +7807,18 @@ void QmlMainWindow::render()
         QMutexLocker locker(&placebo_state_mutex);
         return pl_queue_num_frames(placebo_queue);
     }();
+    // AnyPlay: кожна зміна колірного простору вікна йде в журнал (на Windows з HDR-дисплеєм зміна підказки
+    // перестворює вивід, а картинка на мить міняє яскравість — так це видно в журналі підтримки)
+    if (!hint_logged_valid || hint_logged_prim != static_cast<int>(hint.primaries) || hint_logged_trc != static_cast<int>(hint.transfer)) {
+        qCInfo(chiakiGui).nospace() << "[color] swapchain_hint prim=" << static_cast<int>(hint.primaries)
+            << " trc=" << static_cast<int>(hint.transfer) << " max_luma=" << hint.hdr.max_luma
+            << " from_frame=" << (hint_frame ? 1 : 0) << " streaming=" << stream_session_active.loadAcquire();
+        if (hint_logged_valid && stream_session_active.loadAcquire() != 0)
+            noteSwapchainReset("colorspace_hint_change");
+        hint_logged_valid = true;
+        hint_logged_prim = static_cast<int>(hint.primaries);
+        hint_logged_trc = static_cast<int>(hint.transfer);
+    }
     {
         QMutexLocker locker(&placebo_swapchain_mutex);
         pl_swapchain_colorspace_hint(placebo_swapchain, &hint);
@@ -7708,6 +7837,17 @@ void QmlMainWindow::render()
                             render_schedule_state.second);
     }
 
+    if (swapchain_logged_prim != static_cast<int>(sw_frame.color_space.primaries) ||
+        swapchain_logged_trc != static_cast<int>(sw_frame.color_space.transfer)) {
+        qCInfo(chiakiGui).nospace() << "[color] swapchain_output prim=" << static_cast<int>(sw_frame.color_space.primaries)
+            << " trc=" << static_cast<int>(sw_frame.color_space.transfer)
+            << " max_luma=" << sw_frame.color_space.hdr.max_luma
+            << " streaming=" << stream_session_active.loadAcquire();
+        if (swapchain_logged_prim >= 0 && stream_session_active.loadAcquire() != 0)
+            noteSwapchainReset("swapchain_output_colorspace_change");
+        swapchain_logged_prim = static_cast<int>(sw_frame.color_space.primaries);
+        swapchain_logged_trc = static_cast<int>(sw_frame.color_space.transfer);
+    }
     struct pl_frame target_frame = {};
     pl_frame_from_swapchain(&target_frame, &sw_frame);
     if (target_frame.num_planes <= 0) {
@@ -7819,7 +7959,24 @@ void QmlMainWindow::render()
         }
     }
     if (frame_mix.num_frames == 0) {
-        if (kept_frame_enqueued) {
+        // AnyPlay: посеред гри (черга на мить порожня після скидання через втрачений кадр) не малюємо
+        // «лише інтерфейс» на чорному тлі: це був би чорний кадр. Лишаємо на екрані попередній кадр гри.
+        // Якщо кадрів немає довше за чверть секунди (зв'язок завис), малюємо інтерфейс як було, щоб меню жило.
+        const qint64 since_present_us = static_cast<qint64>(chiaki_time_now_monotonic_us()) - steady_last_present_us.loadAcquire();
+        const bool mid_stream_gap = stream_session_active.loadAcquire() != 0 && has_video &&
+            loading_transition_complete.loadAcquire() != 0 && since_present_us >= 0 && since_present_us < 250000;
+        if (mid_stream_gap && !kept_frame_enqueued) {
+            static qint64 last_gap_log_us = 0;
+            static int gap_count = 0;
+            gap_count++;
+            const qint64 now_gap_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+            if (now_gap_us - last_gap_log_us >= 5000000) {
+                qCInfo(chiakiGui).nospace() << "[present] empty_frame_mix_kept_previous count=" << gap_count;
+                last_gap_log_us = now_gap_us;
+                gap_count = 0;
+            }
+        }
+        if (kept_frame_enqueued || mid_stream_gap) {
             close_started_frame(false);
             bool scheduled_pending = finalize_render();
             if (!scheduled_pending)
@@ -7989,6 +8146,9 @@ void QmlMainWindow::render()
         }
     }
     close_started_frame(true);
+    // AnyPlay К12: зменшений кадр для адміна — уже після показу, щоб не затримувати кадр гри
+    if (preview_request_width.loadAcquire() > 0 && stream_session_active.loadAcquire() != 0)
+        renderPreviewIfRequested(bypass_frame_queue ? &direct_render_frame : hint_frame);
 
     if (startup_video_visible_refresh_pending.loadAcquire() != 0) {
         loading_transition_complete.storeRelease(1);
@@ -8208,4 +8368,231 @@ bool QmlMainWindow::event(QEvent *event)
 QObject *QmlMainWindow::focusObject() const
 {
     return quick_window->focusObject();
+}
+
+
+// ── AnyPlay: рівний темп показу, плавність (К14), «Картинка», кадр для перегляду адміном (К12) ──
+
+void QmlMainWindow::notePresent(qint64 present_us)
+{
+    const qint64 prev_us = steady_last_present_us.fetchAndStoreAcquire(present_us);
+    if (prev_us <= 0 || present_us <= prev_us || stream_session_active.loadAcquire() == 0 || !has_video)
+        return;
+    const qint64 gap_us = present_us - prev_us;
+    const qint64 frame_us = static_cast<qint64>(qMax(4.0, stream_configured_frame_interval_ms) * 1000.0);
+    if (gap_us > 5000000)
+        return;   // вікно ховали або систему присипляли: не рахуємо
+    if (gap_us > 2 * frame_us)
+        present_gaps.fetchAndAddRelaxed(1);
+    qint64 cur = present_gap_max_us.loadRelaxed();
+    while (gap_us > cur && !present_gap_max_us.testAndSetRelaxed(cur, gap_us))
+        cur = present_gap_max_us.loadRelaxed();
+}
+
+qint64 QmlMainWindow::steadyPresentTick(qint64 now_us)
+{
+    const qint64 frame_us = static_cast<qint64>(qMax(4.0, stream_configured_frame_interval_ms) * 1000.0);
+    if (!steady_present_enabled || stream_session_active.loadAcquire() == 0 || !has_video ||
+        loading_transition_complete.loadAcquire() == 0 || !isExposed())
+        return now_us + 100000;
+    const qint64 last_us = steady_last_present_us.loadAcquire();
+    if (last_us <= 0)
+        return now_us + frame_us;
+    const qint64 threshold_us = frame_us + frame_us / 4;   // ~1,25 кадру
+    const qint64 due_us = last_us + threshold_us;
+    if (now_us < due_us)
+        return due_us;
+    if (now_us - last_us > 2000000)
+        return now_us + 100000;   // показу давно не було (вікно згорнуте тощо): не будимо
+    // показ уже йде або щойно попросили — не дублюємо
+    const qint64 last_kick_us = steady_last_kick_us.loadAcquire();
+    if (render_active.loadAcquire() != 0 || deferred_present_in_flight.loadAcquire() != 0 ||
+        (last_kick_us > last_us && now_us - last_kick_us < frame_us))
+        return now_us + 2000;
+    steady_last_kick_us.storeRelease(now_us);
+    steady_repaints.fetchAndAddRelaxed(1);
+    scheduleUpdate(false, UpdateRequestReason::VSync);   // сам перекидає в головний потік
+    return now_us + frame_us;
+}
+
+void QmlMainWindow::noteSwapchainReset(const char *why)
+{
+    const int total = swapchain_resets_total.fetchAndAddRelaxed(1) + 1;
+    const bool streaming = stream_session_active.loadAcquire() != 0;
+    if (streaming)
+        swapchain_resets.fetchAndAddRelaxed(1);
+    qCInfo(chiakiGui).nospace() << "[present] swapchain_reset reason=" << why << " streaming=" << (streaming ? 1 : 0)
+        << " total=" << total;
+}
+
+QVariantMap QmlMainWindow::takePresentStats()
+{
+    QVariantMap out;
+    out[QStringLiteral("presentGapMax")] = static_cast<int>(present_gap_max_us.fetchAndStoreRelaxed(0) / 1000);
+    out[QStringLiteral("presentGaps")] = present_gaps.fetchAndStoreRelaxed(0);
+    out[QStringLiteral("swapchainResets")] = swapchain_resets.fetchAndStoreRelaxed(0);
+    out[QStringLiteral("steadyRepaints")] = steady_repaints.fetchAndStoreRelaxed(0);
+    out[QStringLiteral("vrr")] = QVariant();   // з Vulkan на Windows і macOS надійно не дізнатись
+    return out;
+}
+
+void QmlMainWindow::savePicture()
+{
+    QSettings s;
+    s.setValue(QStringLiteral("anyplay/pic_brightness"), picBrightness());
+    s.setValue(QStringLiteral("anyplay/pic_contrast"), picContrast());
+    s.setValue(QStringLiteral("anyplay/pic_saturation"), picSaturation());
+    s.setValue(QStringLiteral("anyplay/pic_warmth"), picWarmth());
+    emit pictureChanged();
+    scheduleUpdate(false, UpdateRequestReason::RenderRequested);
+}
+
+void QmlMainWindow::setPicBrightness(int v) { v = qBound(-100, v, 100); if (pic_brightness.exchange(v) != v) savePicture(); }
+void QmlMainWindow::setPicContrast(int v) { v = qBound(-100, v, 100); if (pic_contrast.exchange(v) != v) savePicture(); }
+void QmlMainWindow::setPicSaturation(int v) { v = qBound(-100, v, 100); if (pic_saturation.exchange(v) != v) savePicture(); }
+void QmlMainWindow::setPicWarmth(int v) { v = qBound(-100, v, 100); if (pic_warmth.exchange(v) != v) savePicture(); }
+
+void QmlMainWindow::resetPicture()
+{
+    pic_brightness.store(0);
+    pic_contrast.store(0);
+    pic_saturation.store(0);
+    pic_warmth.store(0);
+    savePicture();
+}
+
+void QmlMainWindow::requestPreviewFrame(int maxWidth)
+{
+    if (stream_session_active.loadAcquire() == 0 || preview_encoding.loadAcquire() != 0)
+        return;
+    preview_request_width.testAndSetRelease(0, qBound(64, maxWidth, 960));
+}
+
+void QmlMainWindow::destroyPreviewResources()
+{
+    pl_gpu gpu = placeboGpu();
+    if (gpu) {
+        pl_buf_destroy(gpu, &preview_buf);
+        pl_tex_destroy(gpu, &preview_tex);
+    }
+    pl_renderer_destroy(&preview_renderer);
+    preview_download_pending = false;
+}
+
+void QmlMainWindow::pollPreviewDownload()
+{
+    pl_gpu gpu = placeboGpu();
+    if (!preview_download_pending || !gpu || !preview_buf)
+        return;
+    if (pl_buf_poll(gpu, preview_buf, 0))
+        return;   // відеокарта ще копіює: перевіримо при наступному показі
+    preview_download_pending = false;
+    const int w = preview_w, h = preview_h;
+    QImage image(w, h, QImage::Format_RGBA8888);
+    const bool read_ok = !image.isNull() && pl_buf_read(gpu, preview_buf, 0, image.bits(), static_cast<size_t>(w) * h * 4);
+    preview_request_width.storeRelease(0);
+    if (!read_ok)
+        return;
+    preview_encoding.storeRelease(1);
+    QPointer<QmlMainWindow> self(this);
+    QThreadPool::globalInstance()->start([self, image]() {
+        QByteArray jpeg;
+        {
+            QBuffer out(&jpeg);
+            out.open(QIODevice::WriteOnly);
+            image.convertToFormat(QImage::Format_RGB888).save(&out, "JPEG", 60);
+        }
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, jpeg]() {
+            if (!self)
+                return;
+            self->preview_encoding.storeRelease(0);
+            if (!jpeg.isEmpty())
+                emit self->previewFrameReady(jpeg);
+        }, Qt::QueuedConnection);
+    });
+}
+
+void QmlMainWindow::renderPreviewIfRequested(const struct pl_frame *source)
+{
+    pl_gpu gpu = placeboGpu();
+    if (!gpu)
+        return;
+    if (render_backend == RenderBackend::OpenGL && !makeOpenGLContextCurrent())
+        return;
+    if (preview_download_pending) {
+        pollPreviewDownload();
+        return;
+    }
+    const int max_w = preview_request_width.loadAcquire();
+    if (max_w <= 0 || !source || source->num_planes <= 0)
+        return;
+    // розмір з пропорціями кадру гри (зазвичай 16:9), парні сторони
+    float src_w = source->crop.x1 - source->crop.x0;
+    float src_h = source->crop.y1 - source->crop.y0;
+    if (src_w <= 0 || src_h <= 0) {
+        src_w = source->planes[0].texture ? source->planes[0].texture->params.w : 16;
+        src_h = source->planes[0].texture ? source->planes[0].texture->params.h : 9;
+    }
+    const int w = qBound(64, qMin(max_w, static_cast<int>(src_w)), 960) & ~1;
+    const int h = qMax(36, static_cast<int>(w * src_h / qMax(1.0f, src_w))) & ~1;
+    pl_fmt fmt = pl_find_named_fmt(gpu, "rgba8");
+    if (!fmt || !(fmt->caps & PL_FMT_CAP_RENDERABLE) || !(fmt->caps & PL_FMT_CAP_HOST_READABLE)) {
+        preview_request_width.storeRelease(0);
+        return;
+    }
+    if (!preview_renderer)
+        preview_renderer = pl_renderer_create(placebo_log, gpu);
+    struct pl_tex_params tex_params = {};
+    tex_params.w = w;
+    tex_params.h = h;
+    tex_params.format = fmt;
+    tex_params.renderable = true;
+    tex_params.host_readable = true;
+    if (!preview_renderer || !pl_tex_recreate(gpu, &preview_tex, &tex_params)) {
+        preview_request_width.storeRelease(0);
+        return;
+    }
+    const size_t bytes = static_cast<size_t>(w) * h * 4;
+    if (!preview_buf || preview_buf->params.size != bytes) {
+        pl_buf_destroy(gpu, &preview_buf);
+        struct pl_buf_params buf_params = {};
+        buf_params.size = bytes;
+        buf_params.host_readable = true;
+        preview_buf = pl_buf_create(gpu, &buf_params);
+    }
+    if (!preview_buf) {
+        preview_request_width.storeRelease(0);
+        return;
+    }
+    struct pl_frame target = {};
+    target.num_planes = 1;
+    target.planes[0].texture = preview_tex;
+    target.planes[0].components = 4;
+    target.planes[0].component_mapping[0] = 0;
+    target.planes[0].component_mapping[1] = 1;
+    target.planes[0].component_mapping[2] = 2;
+    target.planes[0].component_mapping[3] = 3;
+    target.repr = pl_color_repr_rgb;
+    target.color = pl_color_space_srgb;
+    target.crop.x0 = 0;
+    target.crop.y0 = 0;
+    target.crop.x1 = static_cast<float>(w);
+    target.crop.y1 = static_cast<float>(h);
+    struct pl_render_params params = pl_render_fast_params;   // найпростіша обробка: кадр маленький і рідкий
+    params.color_adjustment = &anyplay_color_adj;              // адмін бачить ті самі кольори, що й клієнт
+    if (!pl_render_image(preview_renderer, source, &target, &params)) {
+        preview_request_width.storeRelease(0);
+        return;
+    }
+    struct pl_tex_transfer_params transfer = {};
+    transfer.tex = preview_tex;
+    transfer.buf = preview_buf;
+    transfer.row_pitch = static_cast<size_t>(w) * 4;
+    if (!pl_tex_download(gpu, &transfer)) {
+        preview_request_width.storeRelease(0);
+        return;
+    }
+    preview_w = w;
+    preview_h = h;
+    preview_download_pending = true;   // забираємо при наступних показах, коли відеокарта закінчить
 }

@@ -13,7 +13,7 @@ import org.streetpea.chiaking
 
 Item {
     id: panel
-    property string page: "back"     // back | extend | keys | quality | console | home | advanced | exit
+    property string page: "back"     // back | extend | keys | quality | picture | console | home | advanced | exit
     readonly property bool admin: Chiaki.cloud.admin === true
     readonly property bool guest: !admin && Chiaki.cloud.guest === true
     readonly property bool canExtend: !admin && !guest   // продовжувати бронювання може лише клієнт зі своєю бронню
@@ -29,7 +29,7 @@ Item {
     readonly property Item firstItem: openPage === "extend" && canExtend ? extendBtn : resumeBtn
     AnyPlayStyle { id: ap }
 
-    readonly property var items: [resumeBtn, extendBtn, keysBtn, qualityBtn, consoleBtn, homeBtn, advBtn, exitBtn]
+    readonly property var items: [resumeBtn, extendBtn, keysBtn, qualityBtn, pictureBtn, consoleBtn, homeBtn, advBtn, exitBtn]
     function itemFor(p) {
         for (let i = 0; i < items.length; i++)
             if (items[i].pageId === p)
@@ -41,7 +41,7 @@ Item {
     // перейти з лівого стовпця у вміст праворуч (Enter або →)
     function enterContent() {
         const target = page === "exit" ? exitConfirm : (page === "quality" ? qualityList.firstOpt : (page === "extend" ? extendPanel.firstOption
-                     : (page === "keys" ? keysLoader.item : (page === "advanced" ? advFirst : null))));
+                     : (page === "keys" ? keysLoader.item : (page === "advanced" ? advFirst : (page === "picture" ? picturePanel.firstControl : null)))));
         if (target && target.visible && target.enabled)
             target.forceActiveFocus(Qt.TabFocusReason);
         else {
@@ -146,8 +146,7 @@ Item {
         { id: ChiakiWindow.VideoPreset.Default, name: qsTr("Стандартна") },
         { id: ChiakiWindow.VideoPreset.HighQuality, name: qsTr("Висока якість") },
         { id: ChiakiWindow.VideoPreset.HighQualitySpatial, name: qsTr("Висока якість і ШІ-чіткість") },
-        { id: ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial, name: qsTr("Висока якість і посилена ШІ-чіткість") },
-        { id: ChiakiWindow.VideoPreset.Custom, name: qsTr("Власна"), info: qsTr("налаштовується кнопкою «Обробка: власні налаштування»") }
+        { id: ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial, name: qsTr("Висока якість і посилена ШІ-чіткість") }
     ]
     function setVideoPreset(id) {
         Chiaki.window.videoPreset = id;
@@ -155,11 +154,6 @@ Item {
     }
     function setVideoMode(mode) { Chiaki.window.videoMode = mode; }
     function zoomText(v) { return v <= -1 ? qsTr("без чорних смуг") : qsTr("%1 x").arg((v >= 0 ? v + 1 : v).toFixed(2).replace(".", ",")); }
-    // налаштування екрана й обробки відкриваються поверх гри своїми вікнами: меню перед цим закриваємо
-    function openStreamSettings(placebo) {
-        panel.resume();
-        if (placebo) root.openPlaceboSettings(); else root.openDisplaySettings();
-    }
     function num1(x) { return (isFinite(x) ? x : 0).toFixed(1).replace(".", ","); }
     function streamChips() {
         const s = Chiaki.session, w = Chiaki.window;
@@ -239,8 +233,9 @@ Item {
                     PauseItem { id: resumeBtn; pageId: "back"; text: qsTr("Повернутись у гру"); KeyNavigation.down: extendBtn }
                     PauseItem { id: extendBtn; pageId: "extend"; visible: panel.canExtend; text: qsTr("Продовжити бронювання"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
                     PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: qualityBtn }
-                    PauseItem { id: qualityBtn; pageId: "quality"; text: qsTr("Якість"); KeyNavigation.up: keysBtn; KeyNavigation.down: consoleBtn }
-                    PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: qualityBtn; KeyNavigation.down: homeBtn }
+                    PauseItem { id: qualityBtn; pageId: "quality"; text: qsTr("Якість"); KeyNavigation.up: keysBtn; KeyNavigation.down: pictureBtn }
+                    PauseItem { id: pictureBtn; pageId: "picture"; text: qsTr("Картинка"); KeyNavigation.up: qualityBtn; KeyNavigation.down: consoleBtn }
+                    PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: pictureBtn; KeyNavigation.down: homeBtn }
                     PauseItem { id: homeBtn; pageId: "home"; text: panel.admin ? qsTr("Панель адміна") : qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: advBtn }
                     PauseItem { id: advBtn; pageId: "advanced"; visible: panel.admin; text: qsTr("Розширені налаштування"); KeyNavigation.up: homeBtn; KeyNavigation.down: exitBtn }
                     PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: advBtn }
@@ -392,6 +387,16 @@ Item {
                         }
                     }
 
+                    // картинка: яскравість, контраст, насиченість, теплота (одразу, без перепідключення)
+                    PageFlick {
+                        visible: panel.page === "picture"
+                        AnyPlayPicture {
+                            id: picturePanel
+                            width: content.width
+                            navLeft: pictureBtn
+                        }
+                    }
+
                     // керування самою приставкою
                     PageFlick {
                         visible: panel.page === "console"
@@ -496,24 +501,11 @@ Item {
                                             KeyNavigation.left: advBtn
                                         }
                                     }
-                                    Flow {
+                                    ApText {
                                         Layout.fillWidth: true
-                                        Layout.topMargin: 12
-                                        spacing: 8
-                                        ApButton {
-                                            small: true; ghost: true
-                                            focusPolicy: Qt.StrongFocus
-                                            text: qsTr("Налаштування екрана")
-                                            onClicked: panel.openStreamSettings(false)
-                                            KeyNavigation.left: advBtn
-                                        }
-                                        ApButton {
-                                            visible: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.Custom
-                                            small: true; ghost: true
-                                            focusPolicy: Qt.StrongFocus
-                                            text: qsTr("Обробка: власні налаштування")
-                                            onClicked: panel.openStreamSettings(true)
-                                        }
+                                        Layout.topMargin: 10
+                                        role: "hint"
+                                        text: qsTr("Кольори, яскравість і контраст: пункт «Картинка» ліворуч.")
                                     }
                                 }
                             }

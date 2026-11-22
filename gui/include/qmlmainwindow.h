@@ -7,6 +7,8 @@
 #include <QTimer>
 #include <QAtomicInteger>
 #include <QElapsedTimer>
+#include <QVariantMap>
+#include <QByteArray>
 #include <QWindow>
 #include <QQuickWindow>
 #include <QtGui/qtguiglobal.h>
@@ -58,6 +60,7 @@ class StatsOverlayWidget;
 class BufferedPlaybackPacerThread;
 class DeferredPresentPacerThread;
 class DeferredSwapThread;
+class SteadyPresentThread;
 
 class QmlMainWindow : public QWindow
 {
@@ -75,6 +78,12 @@ class QmlMainWindow : public QWindow
     Q_PROPERTY(int runtimeRendererBackend READ runtimeRendererBackend CONSTANT)
     Q_PROPERTY(double queueDepthAverage READ queueDepthAverage NOTIFY queueDepthAverageChanged)
     Q_PROPERTY(double pendingFrameAge READ pendingFrameAge NOTIFY pendingFrameAgeChanged)
+    // AnyPlay: «Картинка» — повзунки -100…100, 0 = типові значення AnyPlay (див. anyplayColorAdjustment у .cpp)
+    Q_PROPERTY(int picBrightness READ picBrightness WRITE setPicBrightness NOTIFY pictureChanged)
+    Q_PROPERTY(int picContrast READ picContrast WRITE setPicContrast NOTIFY pictureChanged)
+    Q_PROPERTY(int picSaturation READ picSaturation WRITE setPicSaturation NOTIFY pictureChanged)
+    Q_PROPERTY(int picWarmth READ picWarmth WRITE setPicWarmth NOTIFY pictureChanged)
+    Q_PROPERTY(bool picIsDefault READ picIsDefault NOTIFY pictureChanged)
 
 public:
     enum class UpdateRequestReason {
@@ -161,6 +170,28 @@ public:
     Q_INVOKABLE void setStatsOverlayActive(bool active);
     Q_INVOKABLE void noteLoadingTransitionComplete();
     Q_INVOKABLE void presentStartupWarmupFrame(unsigned width, unsigned height, bool hdr);
+
+    // AnyPlay: «Картинка» (кольори під час гри, діють одразу)
+    int picBrightness() const { return pic_brightness.load(std::memory_order_relaxed); }
+    int picContrast() const { return pic_contrast.load(std::memory_order_relaxed); }
+    int picSaturation() const { return pic_saturation.load(std::memory_order_relaxed); }
+    int picWarmth() const { return pic_warmth.load(std::memory_order_relaxed); }
+    bool picIsDefault() const { return !picBrightness() && !picContrast() && !picSaturation() && !picWarmth(); }
+    void setPicBrightness(int v);
+    void setPicContrast(int v);
+    void setPicSaturation(int v);
+    void setPicWarmth(int v);
+    Q_INVOKABLE void resetPicture();
+
+    // AnyPlay К14: плавність показу за час від попереднього виклику (і скидання лічильників):
+    // presentGapMax (мс), presentGaps (пауз довших за 2 кадри), swapchainResets, steadyRepaints (скільки разів
+    // повторно показали кадр, щоб монітор зі змінною частотою не блимав), vrr (null: невідомо)
+    Q_INVOKABLE QVariantMap takePresentStats();
+
+    // AnyPlay К12: зменшений кадр гри для перегляду адміном. Асинхронно: кадр малюється окремо на відеокарті
+    // при наступному показі, копіюється без очікування і стискається в JPEG у фоновому потоці → previewFrameReady.
+    // Повторний запит, поки попередній не готовий, ігнорується. Без гри сигналу не буде.
+    Q_INVOKABLE void requestPreviewFrame(int maxWidth = 480);
     void armVerbosePlaceboQuietWindow();
     bool startupWarmupFrameActive() const { return startup_warmup_frame_active; }
 
@@ -191,11 +222,14 @@ signals:
     void loadingTransitionCompleteChanged();
     void statsOverlayActiveChanged();
     void streamFpsChanged();
+    void pictureChanged();
+    void previewFrameReady(const QByteArray &jpeg);
 
 private:
     friend class BufferedPlaybackPacerThread;
     friend class DeferredPresentPacerThread;
     friend class DeferredSwapThread;
+    friend class SteadyPresentThread;
 
     struct PendingFrameEntry;
 
@@ -219,6 +253,14 @@ private:
     void completeStartupVideoVisibility(quint64 generation);
     // AnyPlay: спокійний старт гри — екран завантаження тримається, доки картинка не піде рівно
     void resetStartupSettle();
+    // AnyPlay: рівний темп показу і плавність (К14)
+    void notePresent(qint64 present_us);
+    qint64 steadyPresentTick(qint64 now_us);   // з потоку SteadyPresentThread: повертає, коли перевірити знову
+    void noteSwapchainReset(const char *why);
+    void savePicture();
+    void renderPreviewIfRequested(const struct pl_frame *source);
+    void pollPreviewDownload();
+    void destroyPreviewResources();
     void noteStartupFrame(bool recovered, int32_t frames_dropped);
     void finishStartupSettle(const char *reason);
     bool throttleFramePresentation(double interval_s);
@@ -357,6 +399,29 @@ private:
     QmlBackend *backend = {};
     StreamSession *session = {};
     AVBufferRef *vulkan_hw_dev_ctx = nullptr;
+    // ── AnyPlay: рівний темп показу, лічильники плавності, «Картинка», кадр для перегляду ──
+    SteadyPresentThread *steady_present_thread = nullptr;
+    bool steady_present_enabled = true;
+    QAtomicInteger<qint64> steady_last_present_us = 0;
+    QAtomicInteger<qint64> steady_last_kick_us = 0;
+    QAtomicInteger<qint64> present_gap_max_us = 0;
+    QAtomicInteger<int> present_gaps = 0;
+    QAtomicInteger<int> swapchain_resets = 0;
+    QAtomicInteger<int> steady_repaints = 0;
+    QAtomicInteger<int> swapchain_resets_total = 0;
+    bool hint_logged_valid = false;
+    int hint_logged_prim = -1, hint_logged_trc = -1;
+    int swapchain_logged_prim = -1, swapchain_logged_trc = -1;
+    std::atomic<int> pic_brightness{0}, pic_contrast{0}, pic_saturation{0}, pic_warmth{0};
+    struct pl_color_adjustment anyplay_color_adj = {};
+    QAtomicInteger<int> preview_request_width = 0;   // >0 — чекаємо кадр такої ширини
+    bool preview_download_pending = false;
+    int preview_w = 0, preview_h = 0;
+    pl_renderer preview_renderer = {};
+    pl_tex preview_tex = {};
+    pl_buf preview_buf = {};
+    QAtomicInteger<int> preview_encoding = 0;
+
     std::atomic<double> queue_depth_average{0.0};
     QAtomicInteger<int> queue_depth_cached = 0;
     double pending_frame_age = 0.0;

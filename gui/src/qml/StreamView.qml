@@ -149,6 +149,9 @@ Item {
         }
     }
 
+    // AnyPlay: «віддача на екрані» (краї картинки пульсують разом з вібрацією); під усіма написами й меню
+    AnyPlayRumbleEdge { }
+
     Rectangle {
         id: loadingView
         anchors.fill: parent
@@ -494,7 +497,9 @@ Item {
             }
             Text {
                 font.pixelSize: 12; color: "#e6ffffff"
-                text: Chiaki.session ? qsTr("%1 Мбіт/с").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ",")) : ""
+                // перші секунди гри чесного виміру ще немає (measuredBitrateReady): замість «0,1 Мбіт/с» пишемо «вимірюю»
+                text: !Chiaki.session ? "" : Chiaki.session.measuredBitrateReady === false ? qsTr("вимірюю…")
+                    : qsTr("%1 Мбіт/с").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ","))
             }
             Text {
                 font.pixelSize: 12
@@ -1585,6 +1590,8 @@ Item {
             const loss = Chiaki.session.averagePacketLoss;
             const lost = Chiaki.session.framesLost - lastLost;
             lastLost = Chiaki.session.framesLost;
+            if (ticks <= 3)   // перші 6 с після підключення: втрати на старті (перший ключовий кадр) у рахунок не йдуть
+                return;
             if (loss > 0.03 || lost >= 6) { bad += 2; good = 0; }
             else if (loss > 0.012 || lost >= 2) { bad += 1; good = Math.max(0, good - 5); }
             else { bad = Math.max(0, bad - 1); good++; }

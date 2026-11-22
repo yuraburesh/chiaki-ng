@@ -6,6 +6,7 @@
 #include <QMutex>
 #include <QTimer>
 #include <QAtomicInteger>
+#include <QElapsedTimer>
 #include <QWindow>
 #include <QQuickWindow>
 #include <QtGui/qtguiglobal.h>
@@ -216,6 +217,10 @@ private:
     void scheduleRenderIfBacklog(UpdateRequestReason reason = UpdateRequestReason::PendingFrame);
     void handleBufferedPlaybackWake(qint64 timer_fire_us);
     void completeStartupVideoVisibility(quint64 generation);
+    // AnyPlay: спокійний старт гри — екран завантаження тримається, доки картинка не піде рівно
+    void resetStartupSettle();
+    void noteStartupFrame(bool recovered, int32_t frames_dropped);
+    void finishStartupSettle(const char *reason);
     bool throttleFramePresentation(double interval_s);
     void handleDeferredPresentWake(qint64 timer_fire_us);
     bool enqueueDeferredSwap(qint64 submit_begin_us,
@@ -434,6 +439,18 @@ private:
     bool stats_overlay_visible = false;
     QAtomicInteger<quint64> startup_video_visible_generation = 0;
     bool startup_warmup_frame_active = false;
+    // AnyPlay: спокійний старт гри (усе в потоці інтерфейсу)
+    int startup_settle_state = 0;            // 0 — першого кадру гри ще не було, 1 — чекаємо рівну картинку, 2 — можна показувати
+    int startup_settle_hold_ms = 0;          // скільки щонайменше тримати екран завантаження після першого кадру
+    int startup_settle_streak = 0;           // кадрів поспіль без втрат і пауз
+    int startup_settle_frames = 0;           // усього кадрів гри за час очікування
+    int startup_settle_restarts = 0;         // скільки разів відлік починався знову
+    int startup_settle_net_lost = 0;         // лічильник загублених у мережі кадрів на минулому кадрі
+    qint64 startup_settle_last_frame_ms = 0;
+    QElapsedTimer startup_settle_clock;      // від першого кадру гри
+    // AnyPlay: колірний простір вікна під час гри (лише потік малювання), див. render()
+    struct pl_color_space stream_hint_last = {};
+    bool stream_hint_last_valid = false;
     bool vulkan_deferred_swap_enabled = false;
     bool present_vsync_enabled = true;
 

@@ -92,6 +92,8 @@ if(APPLE)
 		src/macWakeSleep.cpp
 		include/macMouseLook.h
 		src/macMouseLook.m
+		include/macTrackpadHaptic.h
+		src/macTrackpadHaptic.m
 	)
 	set_source_files_properties(src/macMouseLook.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 elseif(WIN32)

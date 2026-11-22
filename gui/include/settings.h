@@ -289,6 +289,13 @@ class Settings : public QObject
 		bool GetHideCursor() const				{ return settings.value("settings/hide_cursor", true).toBool(); }
 		void SetHideCursor(bool enabled)		{ settings.setValue("settings/hide_cursor", enabled); }
 
+		// AnyPlay: «віддача на екрані» для гри клавіатурою й мишею — краї картинки пульсують разом з вібрацією (типово вимкнено)
+		bool GetAnyPlayHapticScreen() const		{ return settings.value("anyplay/haptic_screen", false).toBool(); }
+		void SetAnyPlayHapticScreen(bool enabled)	{ settings.setValue("anyplay/haptic_screen", enabled); }
+		// AnyPlay: скільки щонайменше тримати екран завантаження після першого кадру гри, мс.
+		// Перемикача в програмі немає; 0 — показувати картинку одразу, як у збірках до 109.
+		int GetAnyPlayStartupHoldMs() const		{ return qBound(0, settings.value("anyplay/startup_hold_ms", 700).toInt(), 3000); }
+
 		RumbleHapticsIntensity GetRumbleHapticsIntensity() const;
 		void SetRumbleHapticsIntensity(RumbleHapticsIntensity intensity);
 

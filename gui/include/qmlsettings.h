@@ -172,6 +172,8 @@ class QmlSettings : public QObject
     Q_PROPERTY(qreal anyplayMouseSensitivity READ anyplayMouseSensitivity WRITE setAnyplayMouseSensitivity NOTIFY anyplayMouseSensitivityChanged)
     Q_PROPERTY(qreal anyplayVehicleSensitivity READ anyplayVehicleSensitivity WRITE setAnyplayVehicleSensitivity NOTIFY anyplayMouseSensitivityChanged)
     Q_PROPERTY(bool anyplayInvertY READ anyplayInvertY WRITE setAnyplayInvertY NOTIFY anyplayInvertYChanged)
+    // AnyPlay: «Віддача на екрані» — краї картинки пульсують разом з вібрацією, коли грають клавіатурою й мишею
+    Q_PROPERTY(bool anyplayHapticScreen READ anyplayHapticScreen WRITE setAnyplayHapticScreen NOTIFY anyplayHapticScreenChanged)
 
 public:
     QmlSettings(Settings *settings, QObject *parent = nullptr);
@@ -655,6 +657,8 @@ public:
     void setAnyplayVehicleSensitivity(qreal value);
     bool anyplayInvertY() const;
     void setAnyplayInvertY(bool invert);
+    bool anyplayHapticScreen() const;
+    void setAnyplayHapticScreen(bool enabled);
     Q_INVOKABLE void clearKeyMapping();
     Q_INVOKABLE void exportSettings();
     Q_INVOKABLE QString chooseSteamBasePath();
@@ -669,6 +673,7 @@ signals:
     void anyplayAskGameChanged();
     void anyplayMouseSensitivityChanged();
     void anyplayInvertYChanged();
+    void anyplayHapticScreenChanged();
     void anyplayPreviewChanged();   // на екрані клавіш змінилось, що натиснуто
     void anyplayControlsChanged();  // розкладку або клавіші змінили
     void resolutionLocalPS4Changed();

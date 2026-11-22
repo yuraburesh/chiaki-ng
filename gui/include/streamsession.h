@@ -161,6 +161,10 @@ class StreamSession : public QObject
 	Q_PROPERTY(QString host READ GetHost CONSTANT)
 	Q_PROPERTY(bool connected READ GetConnected NOTIFY ConnectedChanged)
 	Q_PROPERTY(double measuredBitrate READ GetMeasuredBitrate NOTIFY MeasuredBitrateChanged)
+	// AnyPlay: false, поки чесного виміру ще немає (перші секунди гри): індикатор замість числа пише «вимірюю»
+	Q_PROPERTY(bool measuredBitrateReady READ GetMeasuredBitrateReady NOTIFY MeasuredBitrateReadyChanged)
+	// AnyPlay: «віддача на екрані» — сила вібрації 0..1 з плавним згасанням (0, коли вимкнено або грають геймпадом)
+	Q_PROPERTY(double rumbleLevel READ GetRumbleLevel NOTIFY RumbleLevelChanged)
 	Q_PROPERTY(double averagePacketLoss READ GetAveragePacketLoss NOTIFY AveragePacketLossChanged)
 	Q_PROPERTY(bool muted READ GetMuted WRITE SetMuted NOTIFY MutedChanged)
 	Q_PROPERTY(bool cantDisplay READ GetCantDisplay NOTIFY CantDisplayChanged)
@@ -187,6 +191,25 @@ class StreamSession : public QObject
 		QString host;
 		int audio_volume;
 		double measured_bitrate = 0;
+		// AnyPlay: вимір швидкості потоку вважаємо чесним лише після другого звіту приставки й кількох секунд гри
+		bool measured_bitrate_ready = false;
+		QAtomicInteger<int> video_frames_started{0};   // 1 — декодер уже віддав перший кадр
+		QElapsedTimer bitrate_ready_clock;
+		double bitrate_ready_last = 0;
+		int bitrate_ready_reports = 0;
+		void UpdateMeasuredBitrateReady();
+		// AnyPlay: «віддача на екрані». Вібрацію пишуть потоки мережі, читає потік інтерфейсу разом з кадром гри.
+		Settings *anyplay_settings = nullptr;
+		QAtomicInteger<int> screen_rumble_on{0};        // налаштування ввімкнено і зараз грають клавіатурою й мишею
+		QAtomicInteger<int> screen_rumble_state{0};     // класична вібрація: останнє значення моторів, 0..255
+		QAtomicInteger<qint64> screen_rumble_state_ms{0};
+		QAtomicInteger<int> screen_rumble_peak{0};      // тактильний звук DualSense: найбільша середня гучність від минулого кадру
+		double rumble_level = 0;                        // згладжене значення 0..1
+		double rumble_level_shown = 0;                  // те, що віддано в QML (кроками)
+		qint64 rumble_tick_ms = 0;
+		qint64 rumble_emit_ms = 0;
+		qint64 rumble_trackpad_ms = 0;
+		void UpdateScreenRumbleEnabled();
 		double average_packet_loss = 0;
 		int32_t frames_lost = 0;
 		int32_t pending_frames_lost = 0;
@@ -364,6 +387,11 @@ class StreamSession : public QObject
 		QString GetHost() { return host; }
 		bool GetConnected() { return connected; }
 		double GetMeasuredBitrate()	{ return measured_bitrate; }
+		bool GetMeasuredBitrateReady() const	{ return measured_bitrate_ready; }
+		double GetRumbleLevel() const	{ return rumble_level_shown; }
+		// AnyPlay: «віддача на екрані» — рахує силу вібрації; викликається в потоці інтерфейсу з кожним кадром гри,
+		// тому зміна потрапляє на екран разом з кадром і окремих перемальовувань не додає
+		void TickScreenRumble();
 		double GetAveragePacketLoss()	{ return average_packet_loss; }
 		quint64 DecoderFlushGeneration() const { return decoder_flush_generation.loadRelaxed(); }
 		int GetFramesLost()		{ return frames_lost; }
@@ -434,6 +462,8 @@ class StreamSession : public QObject
 		void NicknameReceived(QString nickname);
 		void ConnectedChanged();
 		void MeasuredBitrateChanged();
+		void MeasuredBitrateReadyChanged();
+		void RumbleLevelChanged();
 		void AveragePacketLossChanged();
 		void FramesLostChanged();
 		void MutedChanged();

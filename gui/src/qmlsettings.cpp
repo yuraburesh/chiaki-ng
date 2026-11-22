@@ -2388,3 +2388,16 @@ void QmlSettings::setAnyplayInvertY(bool invert)
     AnyPlayInput::SetInvertY(invert);
     emit anyplayInvertYChanged();
 }
+
+bool QmlSettings::anyplayHapticScreen() const
+{
+    return settings->GetAnyPlayHapticScreen();
+}
+
+void QmlSettings::setAnyplayHapticScreen(bool enabled)
+{
+    if (enabled == settings->GetAnyPlayHapticScreen())
+        return;
+    settings->SetAnyPlayHapticScreen(enabled);
+    emit anyplayHapticScreenChanged();
+}

@@ -21,6 +21,10 @@
 
 #include <cstring>
 
+#ifdef Q_OS_MACOS
+#include "macTrackpadHaptic.h"
+#endif
+
 #define SETSU_UPDATE_INTERVAL_MS 4
 #define STEAMDECK_UPDATE_INTERVAL_MS 4
 #define STEAMDECK_HAPTIC_INTERVAL_MS 10 // check every interval
@@ -405,6 +409,7 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 	dpad_regular = true;
 	dpad_regular_touch_switched = false;
 	rumble_haptics_intensity = RumbleHapticsIntensity::Off;
+	anyplay_settings = connect_info.settings;
 	input_block = 0;
 	player_index = 0;
 	memset(led_color, 0, sizeof(led_color));
@@ -723,6 +728,8 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 			}
 			pending_frames_lost = total;
 		}
+		UpdateMeasuredBitrateReady();
+		UpdateScreenRumbleEnabled();
 	});
 
 	StartAudioOutDrainThread();
@@ -2531,6 +2538,23 @@ void StreamSession::PushHapticsFrame(uint8_t *buf, size_t buf_size)
 			QMetaObject::invokeMethod(anyplay, [this]() { anyplay->NoteHaptics(); }, Qt::QueuedConnection);
 	}
 
+	// AnyPlay: «віддача на екрані» — запам'ятовуємо найбільшу середню гучність тактильного звуку до наступного
+	// кадру гри (читає TickScreenRumble). Коли віддачу вимкнено, це одна перевірка прапорця.
+	if(screen_rumble_on.loadRelaxed() && ps5_rumble_intensity >= 0)
+	{
+		const size_t samples = buf_size / sizeof(int16_t);
+		quint32 sum = 0;
+		for(size_t i = 0; i < samples; i++)
+		{
+			int16_t v;
+			memcpy(&v, buf + i * sizeof(int16_t), sizeof(int16_t));
+			sum += static_cast<quint32>(qAbs(static_cast<int>(v)));
+		}
+		const int mean = static_cast<int>(sum / samples);   // 0..32767
+		int seen = screen_rumble_peak.loadRelaxed();
+		while(mean > seen && !screen_rumble_peak.testAndSetRelaxed(seen, mean, seen)) {}
+	}
+
 #if CHIAKI_GUI_ENABLE_STEAMDECK_NATIVE
 	if(sdeck && haptics_handheld > 0 && enable_steamdeck_haptics)
 	{
@@ -2741,6 +2765,12 @@ void StreamSession::Event(ChiakiEvent *event)
 				return;
 			uint8_t left = event->rumble.left;
 			uint8_t right = event->rumble.right;
+			// AnyPlay: «віддача на екрані» — стан моторів читає TickScreenRumble у потоці інтерфейсу
+			if(screen_rumble_on.loadRelaxed())
+			{
+				screen_rumble_state_ms.storeRelaxed(static_cast<qint64>(chiaki_time_now_monotonic_ms()));
+				screen_rumble_state.storeRelaxed(qMax(left, right));
+			}
 			uint8_t left_adj = left * rumble_multiplier;
 			uint8_t right_adj = right * rumble_multiplier;
 			QMetaObject::invokeMethod(this, [this, left, right, left_adj, right_adj]() {
@@ -3137,12 +3167,110 @@ void StreamSession::CancelPsnConnection(bool stop_thread)
 
 void StreamSession::TriggerFfmpegFrameAvailable()
 {
+	if(!video_frames_started.loadRelaxed())
+		video_frames_started.storeRelaxed(1);
 	emit FfmpegFrameAvailable();
 	if(measured_bitrate != session.stream_connection.measured_bitrate)
 	{
 		measured_bitrate = session.stream_connection.measured_bitrate;
 		emit MeasuredBitrateChanged();
 	}
+}
+
+// AnyPlay: індикатор «Мбіт/с» — це середній розмір кадру відео, помножений на кадри за секунду. Бібліотека
+// рахує його між звітами приставки про зв'язок (lib/src/streamconnection.c, CONNECTIONQUALITY): до першого
+// звіту там просто 0, а перший звіт покриває сам старт гри, коли картинка ще майже нерухома й кадри крихітні.
+// Тому в перші секунди число близьке до нуля й виглядає як «інтернет упав», хоча це лише розмір відео.
+// Чесним вважаємо вимір після другого звіту і щонайменше 4 с відео; до того індикатор пише «вимірюю».
+void StreamSession::UpdateMeasuredBitrateReady()
+{
+	if(measured_bitrate_ready || !video_frames_started.loadRelaxed())
+		return;
+	const double value = session.stream_connection.measured_bitrate;
+	if(!bitrate_ready_clock.isValid())
+	{
+		bitrate_ready_clock.start();
+		bitrate_ready_last = value;
+		return;
+	}
+	if(value != bitrate_ready_last)
+	{
+		bitrate_ready_last = value;
+		bitrate_ready_reports++;
+	}
+	const qint64 ms = bitrate_ready_clock.elapsed();
+	// якщо звіти приходять рідко, після 12 с показуємо те, що є
+	if(value > 0.0 && ((bitrate_ready_reports >= 2 && ms >= 4000) || ms >= 12000))
+	{
+		measured_bitrate_ready = true;
+		emit MeasuredBitrateReadyChanged();
+	}
+}
+
+// AnyPlay: «віддача на екрані» діє, коли її ввімкнено в меню гри і зараз грають клавіатурою й мишею
+// (геймпад вібрує сам). Перечитується п'ять разів на секунду, тож перемикач у меню діє одразу.
+void StreamSession::UpdateScreenRumbleEnabled()
+{
+	const bool on = anyplay_settings && !gamepad_mode && anyplay_settings->GetAnyPlayHapticScreen();
+	if(on != (screen_rumble_on.loadRelaxed() != 0))
+	{
+		screen_rumble_state.storeRelaxed(0);
+		screen_rumble_peak.storeRelaxed(0);
+		screen_rumble_on.storeRelaxed(on ? 1 : 0);
+	}
+	// віддачу вимкнули або кадри гри перестали надходити (зв'язок завис): край екрана не лишається затемненим
+	if(rumble_level_shown > 0.0
+		&& (!on || static_cast<qint64>(chiaki_time_now_monotonic_ms()) - rumble_tick_ms > 400))
+	{
+		rumble_level = 0.0;
+		rumble_level_shown = 0.0;
+		emit RumbleLevelChanged();
+	}
+}
+
+// середня гучність тактильного звуку (0..32767) → сила 0..1; тихіше за поріг вібрації геймпада — тиша
+static double AnyPlayHapticLevel(int mean_abs)
+{
+	const double v = (mean_abs * 2.0 - HAPTIC_RUMBLE_MIN_STRENGTH) / 12000.0;
+	return v <= 0.0 ? 0.0 : qPow(qMin(v, 1.0), 0.6);
+}
+
+void StreamSession::TickScreenRumble()
+{
+	if(!screen_rumble_on.loadRelaxed())
+		return;   // вимкнено: жодної роботи (значення на екрані скидає UpdateScreenRumbleEnabled)
+	const qint64 now = static_cast<qint64>(chiaki_time_now_monotonic_ms());
+	double target = 0.0;
+	// класична вібрація: мотори крутяться, доки приставка не надішле інше значення (але не довше 5 с, як у геймпада)
+	const int motors = screen_rumble_state.loadRelaxed();
+	if(motors > 0 && now - screen_rumble_state_ms.loadRelaxed() < 5000)
+		target = qPow(motors / 255.0, 0.7);
+	// тактильний звук DualSense: найгучніший пакет від минулого кадру
+	const int peak = screen_rumble_peak.fetchAndStoreRelaxed(0);
+	if(peak > 0)
+		target = qMax(target, AnyPlayHapticLevel(peak));
+	// вгору одразу, вниз плавно (спадає в e разів за 120 мс)
+	const double dt = qBound(0.0, (now - rumble_tick_ms) / 1000.0, 0.25);
+	rumble_tick_ms = now;
+	rumble_level = qMax(target, rumble_level * qExp(-dt / 0.12));
+	if(rumble_level < 0.03)
+		rumble_level = 0.0;
+	// на екран — кроками по 1/20 і не частіше ніж раз на 30 мс
+	const double shown = qRound(rumble_level * 20.0) / 20.0;
+	if(shown != rumble_level_shown && (shown == 0.0 || now - rumble_emit_ms >= 30))
+	{
+		rumble_level_shown = shown;
+		rumble_emit_ms = now;
+		emit RumbleLevelChanged();
+	}
+#ifdef Q_OS_MACOS
+	// MacBook: легкий поштовх трекпада (відчувається, лише коли палець лежить на трекпаді), не частіше 8 разів на секунду
+	if(rumble_level >= 0.25 && now - rumble_trackpad_ms >= (rumble_level >= 0.6 ? 120 : 200))
+	{
+		rumble_trackpad_ms = now;
+		macTrackpadHapticTick(rumble_level >= 0.6 ? 1 : 0);
+	}
+#endif
 }
 
 bool StreamSession::RequestIDR()

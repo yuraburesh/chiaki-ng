@@ -3218,6 +3218,15 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
         return;
     stream_frames_current.fetchAndAddRelaxed(1);
 
+    if (!startup_warmup_frame_active) {
+        // AnyPlay: спокійний старт — рахуємо рівні кадри, поки на екрані ще завантаження
+        if (startup_settle_state != 2)
+            noteStartupFrame(frame.recovered, frames_lost);
+        // AnyPlay: «віддача на екрані» оновлюється разом з кадром гри (вимкнена — одна перевірка прапорця)
+        if (session)
+            session->TickScreenRumble();
+    }
+
     if (bypass_frame_queue) {
         {
             QMutexLocker locker(&direct_frame_mutex);
@@ -5372,6 +5381,7 @@ renderer_backend_ready:
         session = s;
         stream_session_active.storeRelease(s ? 1 : 0);
         startup_video_visible_generation.fetchAndAddRelaxed(1);
+        resetStartupSettle();
         grab_input = 0;
         if (session)
             session->BlockInput(0);
@@ -6078,8 +6088,101 @@ void QmlMainWindow::completeStartupVideoVisibility(quint64 generation)
     emit hasVideoChanged();
     updateMouseLookCapture();
     startCursorGuard();
-    startup_video_visible_refresh_pending.storeRelease(1);
+    // AnyPlay: екран завантаження знімаємо не з першим кадром, а коли картинка пішла рівно (finishStartupSettle);
+    // якщо вона вже рівна (або очікування вимкнено) — одразу, як і раніше
+    if (startup_settle_state == 2)
+        startup_video_visible_refresh_pending.storeRelease(1);
     armQuickNeedSync("completeStartupVideoVisibility");
+    quick_need_render.storeRelaxed(1);
+    scheduleUpdate(true, UpdateRequestReason::PendingFrame);
+}
+
+// AnyPlay: спокійний старт гри.
+// Раніше екран завантаження зникав з першим же кадром відео. А в першу секунду-дві картинка ще нерівна:
+// перші кадри можуть загубитись у мережі (тоді декодер стоїть і чекає новий ключовий кадр), libplacebo саме
+// збирає шейдери під справжній формат кадру (перші кадри малюються з паузами), вікно ховає курсор і ловить мишку.
+// Людина бачила це як «екран блимає, наче заглючило». Тепер екран завантаження лишається, доки не пройде
+// кілька кадрів поспіль без втрат і пауз і щонайменше startup_settle_hold_ms від першого кадру, а якщо зв'язок
+// такий, що рівно не стає, то не довше 3 секунд. Відео під екраном завантаження весь цей час уже малюється.
+static const int kStartupSettleFrames = 12;        // стільки кадрів поспіль без втрат (0,2 с при 60 кадрах, 0,4 с при 30)
+static const int kStartupSettleGapMs = 250;        // довша пауза між кадрами — картинка ще стоїть, рахуємо знову
+static const int kStartupSettleLimitMs = 3000;     // довше екран завантаження через це не тримаємо
+
+void QmlMainWindow::resetStartupSettle()
+{
+    startup_settle_state = 0;
+    startup_settle_streak = 0;
+    startup_settle_frames = 0;
+    startup_settle_restarts = 0;
+    startup_settle_net_lost = 0;
+    startup_settle_last_frame_ms = 0;
+    startup_settle_clock.invalidate();
+}
+
+void QmlMainWindow::noteStartupFrame(bool recovered, int32_t frames_dropped)
+{
+    Q_ASSERT(QThread::currentThread() == QGuiApplication::instance()->thread());
+    if (startup_settle_state == 2)
+        return;
+    const int net_lost = session ? session->GetFramesLost() : 0;
+    if (startup_settle_state == 0) {
+        // перший кадр гри
+        startup_settle_state = 1;
+        startup_settle_hold_ms = settings ? settings->GetAnyPlayStartupHoldMs() : 0;
+        startup_settle_clock.start();
+        startup_settle_streak = 0;
+        startup_settle_frames = 0;
+        startup_settle_restarts = 0;
+        startup_settle_net_lost = net_lost;
+        startup_settle_last_frame_ms = 0;
+        if (startup_settle_hold_ms <= 0) {
+            finishStartupSettle("очікування вимкнено");
+            return;
+        }
+        const quint64 generation = startup_video_visible_generation.loadAcquire();
+        QTimer::singleShot(qMax(kStartupSettleLimitMs, startup_settle_hold_ms), this, [this, generation]() {
+            if (startup_video_visible_generation.loadAcquire() == generation)
+                finishStartupSettle("ліміт часу");
+        });
+    }
+    const qint64 now_ms = startup_settle_clock.elapsed();
+    const bool clean = !recovered
+        && frames_dropped == 0
+        && net_lost == startup_settle_net_lost
+        && (startup_settle_frames == 0 || now_ms - startup_settle_last_frame_ms <= kStartupSettleGapMs);
+    startup_settle_net_lost = net_lost;
+    startup_settle_last_frame_ms = now_ms;
+    startup_settle_frames++;
+    if (clean) {
+        startup_settle_streak++;
+    } else {
+        startup_settle_streak = 0;
+        startup_settle_restarts++;
+    }
+    if (startup_settle_streak >= kStartupSettleFrames && now_ms >= startup_settle_hold_ms)
+        finishStartupSettle("картинка рівна");
+}
+
+void QmlMainWindow::finishStartupSettle(const char *reason)
+{
+    Q_ASSERT(QThread::currentThread() == QGuiApplication::instance()->thread());
+    if (startup_settle_state == 2)
+        return;
+    const bool waited = startup_settle_state == 1;
+    startup_settle_state = 2;
+    qCInfo(chiakiGui).nospace()
+        << "AnyPlay startup: showing the picture, reason=" << reason
+        << " ms_since_first_frame=" << (waited && startup_settle_clock.isValid() ? startup_settle_clock.elapsed() : 0)
+        << " frames=" << startup_settle_frames
+        << " restarts=" << startup_settle_restarts
+        << " hold_ms=" << startup_settle_hold_ms
+        << " has_video=" << has_video;
+    if (!has_video)
+        return;   // перший кадр ще не дійшов до екрана: completeStartupVideoVisibility зніме завантаження сам
+    if (loading_transition_complete.loadAcquire() != 0)
+        return;
+    startup_video_visible_refresh_pending.storeRelease(1);
+    armQuickNeedSync("finishStartupSettle");
     quick_need_render.storeRelaxed(1);
     scheduleUpdate(true, UpdateRequestReason::PendingFrame);
 }
@@ -7528,6 +7631,18 @@ void QmlMainWindow::render()
         }
     }
     struct pl_color_space hint = hint_frame ? hint_frame->color : pl_color_space{};
+    // AnyPlay: поки йде гра, вікно лишається в колірному просторі останнього кадру й тоді, коли кадру на мить
+    // немає (черга спорожніла, кадр не вдалося передати відеокарті). Без цього підказка для вікна стрибала б
+    // між sRGB (кадри гри після anyplay_display_referred) і BT.1886 (типове для «кадру немає»), а там, де
+    // система пропонує обидва простори (macOS, Wayland), libplacebo щоразу пересоздавав би вікно виводу.
+    if (hint_frame) {
+        stream_hint_last = hint_frame->color;
+        stream_hint_last_valid = true;
+    } else if (stream_active && stream_hint_last_valid) {
+        hint = stream_hint_last;
+    } else {
+        stream_hint_last_valid = false;
+    }
     // libplacebo API 361 and later read a hint with unknown primaries and transfer as a request for
     // VK_COLOR_SPACE_PASS_THROUGH_EXT, and switching MoltenVK's swapchain to it waits forever for the
     // old swapchain, so the window hung at launch. Fill in the defaults it inferred before.

@@ -30,6 +30,7 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(qint64 nextEnd READ nextEnd NOTIFY changed)
 	Q_PROPERTY(qint64 ownEnd READ ownEnd NOTIFY changed)            // кінець саме поточної броні (endTs — кінець усього ланцюжка броней)
 	Q_PROPERTY(bool continues READ continues NOTIFY changed)        // наступна оплачена бронь цього клієнта йде одразу, без перерви
+	Q_PROPERTY(bool guest READ guest NOTIFY changed)                // гостьовий доступ: грає, поки приставка вільна (endTs — початок найближчої чужої гри)
 	Q_PROPERTY(qint64 clockSkew READ clockSkew NOTIFY changed)   // сервер − комп'ютер, секунди
 	Q_PROPERTY(QString consoleName READ consoleName NOTIFY changed)
 	Q_PROPERTY(QString notice READ notice NOTIFY changed)
@@ -73,6 +74,7 @@ public:
 	qint64 nextEnd() const { return next_end_; }
 	qint64 ownEnd() const { return own_end_ > 0 ? own_end_ : end_; }
 	bool continues() const { return continues_; }
+	bool guest() const { return guest_; }
 	QString otherDevice() const { return other_device_; }
 	bool paymentChecking() const { return payment_checking_; }
 	qint64 clockSkew() const { return skew_; }
@@ -126,6 +128,7 @@ public:
 	void applyRender(int level, bool keepOwn = false);
 	Q_INVOKABLE void refreshAdmin();
 	Q_INVOKABLE void adminKick(qint64 bookingId);    // адмін: завершити поточну гру клієнта
+	Q_INVOKABLE void adminGrant(qint64 userId, int minutes, const QString &name = QString());   // адмін: подарувати гру просто зараз на 10…2880 хв (крок 5)
 	Q_INVOKABLE void adminSetClosed(bool closed);    // адмін: закрити / відкрити доступ усім клієнтам
 	Q_INVOKABLE void adminDropShared();              // адмін: прибрати спільний акаунт PSN із сервера
 	Q_INVOKABLE QString localPsnName() const;        // під яким акаунтом PSN увійдено в цій програмі ("" — не увійдено)
@@ -185,6 +188,16 @@ private:
 	qint64 end_ = 0, next_start_ = 0, next_end_ = 0, skew_ = 0;
 	qint64 own_end_ = 0;
 	bool continues_ = false;
+	bool guest_ = false;            // гостьовий доступ (сервер каже «guest» у сесії)
+	// ── телеметрія гри: раз на секунду знімаємо показники трансляції, у heartbeat ідуть середні за проміжок ──
+	struct StatWindow { int n = 0; double fps_stream = 0, fps_shown = 0, bitrate = 0, loss = 0; int dropped = 0; };
+	StatWindow stat_;
+	qint64 stat_connected_ms_ = 0;  // коли трансляція підключилась (перші секунди не рахуємо: кадри ще не пішли)
+	bool stat_sent_ = false;        // перші показники цієї трансляції вже надіслано
+	QTimer stat_timer;
+	void sampleStats();
+	QJsonObject takeStats();
+	QString adminError(const QJsonObject &o, int status, const QString &fallback) const;
 	QString other_device_;          // стан other_device: назва пристрою, на якому йде гра
 	bool payment_checking_ = false; // гра в кредит, поки адмін перевіряє оплату продовження
 	QTimer other_timer;             // other_device: частіше питаємо сервер, щоб «Грати» з'явилось одразу, як там вийдуть з гри

@@ -13,6 +13,7 @@
     <file>ApTabs.qml</file>
     <file>ApText.qml</file>
     <file>ApTimer.qml</file>
+    <file>ApTumbler.qml</file>
     <file>MainView.qml</file>
     <file>AnyPlayHome.qml</file>
         <file>ExtendPanel.qml</file>

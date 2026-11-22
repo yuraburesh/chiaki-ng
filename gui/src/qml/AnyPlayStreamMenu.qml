@@ -1,6 +1,10 @@
-// AnyPlay: меню під час гри для клієнта, у стилі паузи GTA.
+// AnyPlay: меню під час гри, у стилі паузи GTA. Одне й те саме для клієнта й адміна.
 // Ліворуч пункти великими літерами, праворуч вміст обраного пункту; угорі скільки лишилось, унизу зв'язок.
-// Пункти: повернутись у гру, продовжити гру, клавіші, якість, керування приставкою, вийти з гри.
+// Пункти: повернутись у гру, продовжити бронювання, клавіші, якість, керування приставкою, головне вікно, вийти з гри.
+// Адмін: без «Продовжити бронювання», зате з пунктом «Розширені налаштування» (усе, що було в стандартному меню трансляції:
+// вигляд картинки на екрані, обробка картинки, мікрофон, налаштування екрана, дані трансляції) і з вибором,
+// чи переводити приставку в режим спокою, коли виходить з гри.
+// Гість (cloud.guest): без «Продовжити бронювання», угорі замість часу броні — гостьовий доступ.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -9,7 +13,10 @@ import org.streetpea.chiaking
 
 Item {
     id: panel
-    property string page: "back"     // back | extend | keys | quality | console | exit
+    property string page: "back"     // back | extend | keys | quality | console | home | advanced | exit
+    readonly property bool admin: Chiaki.cloud.admin === true
+    readonly property bool guest: !admin && Chiaki.cloud.guest === true
+    readonly property bool canExtend: !admin && !guest   // продовжувати бронювання може лише клієнт зі своєю бронню
     property string openPage: ""     // з якої сторінки відкрити меню (нагадування про кінець гри відкриває «Продовжити гру»)
     property int tick: 0
     // меню відкривається клавішею ` (під Esc); Ctrl+O / Cmd+O теж працює, але не показуємо: Ctrl у GTA — «присісти»
@@ -19,10 +26,10 @@ Item {
     signal resume()   // закрити меню й повернутись у гру
     signal exit()     // завершити трансляцію
     // з чого почати фокус, коли меню відкрилось (з нагадування про кінець гри — одразу «Продовжити гру»)
-    readonly property Item firstItem: openPage === "extend" ? extendBtn : resumeBtn
+    readonly property Item firstItem: openPage === "extend" && canExtend ? extendBtn : resumeBtn
     AnyPlayStyle { id: ap }
 
-    readonly property var items: [resumeBtn, extendBtn, keysBtn, qualityBtn, consoleBtn, exitBtn]
+    readonly property var items: [resumeBtn, extendBtn, keysBtn, qualityBtn, consoleBtn, homeBtn, advBtn, exitBtn]
     function itemFor(p) {
         for (let i = 0; i < items.length; i++)
             if (items[i].pageId === p)
@@ -34,7 +41,7 @@ Item {
     // перейти з лівого стовпця у вміст праворуч (Enter або →)
     function enterContent() {
         const target = page === "exit" ? exitConfirm : (page === "quality" ? qualityList.firstOpt : (page === "extend" ? extendPanel.firstOption
-                     : (page === "keys" ? keysLoader.item : null)));
+                     : (page === "keys" ? keysLoader.item : (page === "advanced" ? advFirst : null))));
         if (target && target.visible && target.enabled)
             target.forceActiveFocus(Qt.TabFocusReason);
         else {
@@ -45,7 +52,7 @@ Item {
     }
     onVisibleChanged: {
         if (visible)
-            page = openPage !== "" ? openPage : "back";
+            page = openPage !== "" && (openPage !== "extend" || canExtend) ? openPage : "back";
         else
             page = "back";
     }
@@ -55,11 +62,22 @@ Item {
 
     function leftText() {
         tick;
+        if (panel.admin) {   // адмін грає без броні: показуємо, чий зараз час на приставці
+            const a = Chiaki.cloud.adminInfo || ({});
+            if (a.current)
+                return qsTr("Режим адміна. Зараз час броні: %1, до %2").arg(a.current.user).arg(Chiaki.cloud.formatTime(a.current.end));
+            const n = a.next || [];
+            return n.length ? qsTr("Режим адміна. Наступна бронь: %1 о %2").arg(n[0].user).arg(Chiaki.cloud.formatTime(n[0].start)) : qsTr("Режим адміна");
+        }
         const sec = Chiaki.cloud.endTs - Math.floor(Date.now() / 1000) - Chiaki.cloud.clockSkew;
         if (!(Chiaki.cloud.endTs > 0) || sec <= 0)
-            return "";
+            return panel.guest ? qsTr("Гостьовий доступ") : "";
         const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60;
-        return qsTr("Лишилось %1, гра до %2").arg((h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(x).padStart(2, "0")).arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs));
+        const left = (h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(x).padStart(2, "0");
+        if (panel.guest)   // гість грає до початку найближчої чужої гри; якщо броней попереду немає, кінця не показуємо
+            return sec > 11 * 3600 ? qsTr("Гостьовий доступ: приставка вільна")
+                                   : qsTr("Гостьовий доступ до %1, лишилось %2").arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs)).arg(left);
+        return qsTr("Лишилось %1, гра до %2").arg(left).arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs));
     }
     // головні клавіші: беремо справжні призначення (з урахуванням змін клієнта)
     property int layoutRev: 0
@@ -118,7 +136,48 @@ Item {
         Chiaki.cloud.setQualityLevel(q.level);
         Chiaki.cloud.reconnectOnce = true;   // головний екран сам натисне «Грати» з новою якістю
         panel.page = "back";
-        panel.exit();
+        if (panel.admin && Chiaki.session)
+            Chiaki.stopSession(false);       // адміну закриття вікна показало б питання про режим спокою: закриваємо лише трансляцію
+        else
+            panel.exit();
+    }
+    // ── розширені налаштування (адмін): те, що було в стандартному меню трансляції ──
+    readonly property var videoPresets: [
+        { id: ChiakiWindow.VideoPreset.Default, name: qsTr("Стандартна") },
+        { id: ChiakiWindow.VideoPreset.HighQuality, name: qsTr("Висока якість") },
+        { id: ChiakiWindow.VideoPreset.HighQualitySpatial, name: qsTr("Висока якість і ШІ-чіткість") },
+        { id: ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial, name: qsTr("Висока якість і посилена ШІ-чіткість") },
+        { id: ChiakiWindow.VideoPreset.Custom, name: qsTr("Власна"), info: qsTr("налаштовується кнопкою «Обробка: власні налаштування»") }
+    ]
+    function setVideoPreset(id) {
+        Chiaki.window.videoPreset = id;
+        Chiaki.settings.videoPreset = id;
+    }
+    function setVideoMode(mode) { Chiaki.window.videoMode = mode; }
+    function zoomText(v) { return v <= -1 ? qsTr("без чорних смуг") : qsTr("%1 x").arg((v >= 0 ? v + 1 : v).toFixed(2).replace(".", ",")); }
+    // налаштування екрана й обробки відкриваються поверх гри своїми вікнами: меню перед цим закриваємо
+    function openStreamSettings(placebo) {
+        panel.resume();
+        if (placebo) root.openPlaceboSettings(); else root.openDisplaySettings();
+    }
+    function num1(x) { return (isFinite(x) ? x : 0).toFixed(1).replace(".", ","); }
+    function streamChips() {
+        const s = Chiaki.session, w = Chiaki.window;
+        if (!s) return [];
+        const out = [];
+        if (s.host && !Chiaki.settings.streamerMode)
+            out.push({ text: (s.connected ? qsTr("підключено до %1") : qsTr("підключення до %1")).arg(s.host), kind: s.connected ? "ok" : "wait" });
+        out.push({ text: qsTr("з приставки %1 кадр/с").arg(w.streamFps) });
+        out.push({ text: qsTr("на екрані %1 кадр/с").arg(w.shownFps) });
+        // перші секунди гри чесного виміру швидкості ще немає
+        out.push({ text: s.measuredBitrateReady === false ? qsTr("швидкість: вимірюю…") : qsTr("%1 Мбіт/с").arg(num1(s.measuredBitrate)) });
+        const loss = (isFinite(s.averagePacketLoss) ? s.averagePacketLoss : 0) * 100;
+        out.push({ text: qsTr("втрати пакетів %1%").arg(num1(loss)), kind: loss > 2 ? "bad" : loss > 0.5 ? "wait" : "" });
+        if (w.droppedFrames > 0)
+            out.push({ text: qsTr("пропущено кадрів за секунду: %1").arg(w.droppedFrames), kind: "wait" });
+        if (s.framesLost > 0)
+            out.push({ text: qsTr("втрачено кадрів у мережі: %1").arg(s.framesLost) });
+        return out;
     }
 
     // ── фон: гра видно праворуч, ліворуч темніше ──
@@ -178,12 +237,13 @@ Item {
                     Layout.alignment: Qt.AlignTop
                     spacing: 0
                     PauseItem { id: resumeBtn; pageId: "back"; text: qsTr("Повернутись у гру"); KeyNavigation.down: extendBtn }
-                    PauseItem { id: extendBtn; pageId: "extend"; text: qsTr("Продовжити бронювання"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
+                    PauseItem { id: extendBtn; pageId: "extend"; visible: panel.canExtend; text: qsTr("Продовжити бронювання"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
                     PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: qualityBtn }
                     PauseItem { id: qualityBtn; pageId: "quality"; text: qsTr("Якість"); KeyNavigation.up: keysBtn; KeyNavigation.down: consoleBtn }
                     PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: qualityBtn; KeyNavigation.down: homeBtn }
-                    PauseItem { id: homeBtn; pageId: "home"; text: qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: exitBtn }
-                    PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: homeBtn }
+                    PauseItem { id: homeBtn; pageId: "home"; text: panel.admin ? qsTr("Панель адміна") : qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: advBtn }
+                    PauseItem { id: advBtn; pageId: "advanced"; visible: panel.admin; text: qsTr("Розширені налаштування"); KeyNavigation.up: homeBtn; KeyNavigation.down: exitBtn }
+                    PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: advBtn }
                 }
 
                 // ── праворуч: вміст обраного пункту ──
@@ -210,31 +270,26 @@ Item {
                                 Layout.topMargin: 4
                                 spacing: 14
                                 ApText { role: "cap"; text: qsTr("Гучність") }
-                                Slider {
+                                MenuSlider {
                                     id: volume
                                     Layout.fillWidth: true
                                     from: 0; to: 128; stepSize: 1
                                     value: Chiaki.settings.audioVolume
                                     onMoved: Chiaki.settings.audioVolume = value
                                     KeyNavigation.left: resumeBtn
-                                    background: Rectangle {
-                                        x: volume.leftPadding
-                                        y: volume.topPadding + volume.availableHeight / 2 - height / 2
-                                        width: volume.availableWidth
-                                        height: 2
-                                        color: "#40ffffff"
-                                        Rectangle { width: volume.visualPosition * parent.width; height: parent.height; color: ap.ink }
-                                    }
-                                    handle: Rectangle {
-                                        x: volume.leftPadding + volume.visualPosition * (volume.availableWidth - width)
-                                        y: volume.topPadding + volume.availableHeight / 2 - height / 2
-                                        width: 14; height: 14; radius: 7
-                                        color: ap.ink
-                                        border.width: volume.visualFocus ? 2 : 0
-                                        border.color: ap.cyan
-                                    }
                                 }
                                 ApChip { text: ((volume.value / 128.0) * 100).toFixed(0) + "%" }
+                            }
+                            ApOpt {   // «віддача» для клавіатури: краї картинки темніють разом з вібрацією геймпада
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: 620
+                                text: qsTr("Віддача на екрані")
+                                sub: Qt.platform.os === "osx"
+                                    ? qsTr("Краї екрана темніють, коли в грі трясе, а трекпад ледь відчутно клацає. Лише для клавіатури й миші: геймпад вібрує сам.")
+                                    : qsTr("Краї екрана темніють, коли в грі трясе. Лише для клавіатури й миші: геймпад вібрує сам.")
+                                checked: Chiaki.settings.anyplayHapticScreen === true
+                                onClicked: Chiaki.settings.anyplayHapticScreen = !checked
+                                KeyNavigation.left: resumeBtn
                             }
                             ApText { role: "cap"; text: qsTr("Головні клавіші"); Layout.topMargin: 10 }
                             Flow {
@@ -354,6 +409,131 @@ Item {
                         }
                     }
 
+                    // розширені налаштування (лише адмін): те, що було в стандартному меню трансляції
+                    PageFlick {
+                        visible: panel.page === "advanced" && panel.admin
+                        ColumnLayout {
+                            width: content.width
+                            spacing: 0
+                            GridLayout {
+                                id: advGrid
+                                readonly property bool two: content.width >= 720
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: 900
+                                columns: two ? 2 : 1
+                                columnSpacing: 40
+                                rowSpacing: 18
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
+                                    Layout.alignment: Qt.AlignTop
+                                    spacing: 0
+                                    ApText { role: "cap"; text: qsTr("Картинка на екрані"); Layout.bottomMargin: 4 }
+                                    ApOpt {
+                                        id: advFirst
+                                        text: qsTr("Як є")
+                                        sub: qsTr("уся картинка, з чорними смугами, якщо екран іншої форми")
+                                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Normal
+                                        onClicked: panel.setVideoMode(ChiakiWindow.VideoMode.Normal)
+                                        KeyNavigation.left: advBtn
+                                    }
+                                    ApOpt {
+                                        text: qsTr("Наблизити")
+                                        sub: qsTr("збільшує картинку, краї можуть обрізатись")
+                                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
+                                        onClicked: panel.setVideoMode(ChiakiWindow.VideoMode.Zoom)
+                                        KeyNavigation.left: advBtn
+                                    }
+                                    RowLayout {   // наскільки наблизити (лише в режимі «Наблизити»)
+                                        visible: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
+                                        Layout.fillWidth: true
+                                        Layout.topMargin: 6
+                                        Layout.bottomMargin: 6
+                                        spacing: 12
+                                        MenuSlider {
+                                            id: zoomSlider
+                                            Layout.fillWidth: true
+                                            from: -1; to: 4; stepSize: 0.01
+                                            value: Chiaki.window.ZoomFactor
+                                            onMoved: {
+                                                Chiaki.window.ZoomFactor = value;
+                                                Chiaki.settings.sZoomFactor = value;
+                                            }
+                                        }
+                                        ApChip { text: panel.zoomText(zoomSlider.value) }
+                                    }
+                                    ApOpt {
+                                        text: qsTr("Розтягнути")
+                                        sub: qsTr("на весь екран без смуг, пропорції можуть змінитись")
+                                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Stretch
+                                        onClicked: panel.setVideoMode(ChiakiWindow.VideoMode.Stretch)
+                                        KeyNavigation.left: advBtn
+                                    }
+                                    ApText { role: "cap"; text: qsTr("Звук"); Layout.topMargin: 18; Layout.bottomMargin: 4 }
+                                    ApOpt {
+                                        enabled: !!Chiaki.session && Chiaki.session.connected
+                                        text: qsTr("Мікрофон")
+                                        sub: checked ? qsTr("увімкнено: тебе чути в грі й чаті приставки") : qsTr("вимкнено")
+                                        checked: !!Chiaki.session && !Chiaki.session.muted
+                                        onClicked: Chiaki.session.muted = !Chiaki.session.muted
+                                        KeyNavigation.left: advBtn
+                                    }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
+                                    Layout.alignment: Qt.AlignTop
+                                    spacing: 0
+                                    ApText { role: "cap"; text: qsTr("Обробка картинки"); Layout.bottomMargin: 4 }
+                                    Repeater {
+                                        model: panel.videoPresets
+                                        ApOpt {
+                                            required property var modelData
+                                            text: modelData.name
+                                            sub: modelData.info || ""
+                                            checked: Chiaki.window.videoPreset == modelData.id
+                                            onClicked: panel.setVideoPreset(modelData.id)
+                                            KeyNavigation.left: advBtn
+                                        }
+                                    }
+                                    Flow {
+                                        Layout.fillWidth: true
+                                        Layout.topMargin: 12
+                                        spacing: 8
+                                        ApButton {
+                                            small: true; ghost: true
+                                            focusPolicy: Qt.StrongFocus
+                                            text: qsTr("Налаштування екрана")
+                                            onClicked: panel.openStreamSettings(false)
+                                            KeyNavigation.left: advBtn
+                                        }
+                                        ApButton {
+                                            visible: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.Custom
+                                            small: true; ghost: true
+                                            focusPolicy: Qt.StrongFocus
+                                            text: qsTr("Обробка: власні налаштування")
+                                            onClicked: panel.openStreamSettings(true)
+                                        }
+                                    }
+                                }
+                            }
+                            ApText { role: "cap"; text: qsTr("Трансляція зараз"); Layout.topMargin: 18; Layout.bottomMargin: 8 }
+                            Flow {
+                                Layout.fillWidth: true
+                                Layout.maximumWidth: 900
+                                spacing: 6
+                                Repeater {
+                                    model: panel.visible && panel.page === "advanced" ? panel.streamChips() : []
+                                    ApChip {
+                                        required property var modelData
+                                        text: modelData.text
+                                        kind: modelData.kind || ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // вийти з гри
                     PageFlick {
                         visible: panel.page === "exit"
@@ -364,9 +544,18 @@ Item {
                             ApText {
                                 Layout.fillWidth: true; Layout.maximumWidth: 620
                                 role: "lead"; rich: true
-                                text: Chiaki.cloud.endTs > 0
-                                    ? qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до <b>%1</b>.").arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs))
-                                    : qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до кінця броні.")
+                                text: {
+                                    if (panel.admin) {   // адмін сам вирішує, що буде з приставкою після виходу
+                                        const cur = (Chiaki.cloud.adminInfo || ({})).current;
+                                        return qsTr("Трансляція закриється. Приставку можна лишити ввімкненою або перевести в режим спокою.")
+                                            + (cur ? " " + qsTr("Зараз час броні: <b>%1</b>. Режим спокою перерве гру клієнта, тож краще лишити приставку ввімкненою.").arg(cur.user) : "");
+                                    }
+                                    if (panel.guest)
+                                        return qsTr("Трансляція закриється. Повернутись можна з головного екрана кнопкою «Грати», поки приставка вільна.");
+                                    return Chiaki.cloud.endTs > 0
+                                        ? qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до <b>%1</b>.").arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs))
+                                        : qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до кінця броні.");
+                                }
                             }
                             Flow {
                                 Layout.fillWidth: true
@@ -376,8 +565,20 @@ Item {
                                     id: exitConfirm
                                     focusPolicy: Qt.StrongFocus
                                     text: qsTr("Вийти з гри")
-                                    onClicked: panel.exit()
+                                    // адміну закриття вікна показало б стандартне питання про режим спокою: відповідь уже тут, двома кнопками
+                                    onClicked: panel.admin && Chiaki.session ? Chiaki.stopSession(false) : panel.exit()
                                     KeyNavigation.left: exitBtn
+                                    KeyNavigation.right: sleepBtn
+                                }
+                                ApButton {
+                                    id: sleepBtn
+                                    visible: panel.admin && !!Chiaki.session
+                                    focusPolicy: Qt.StrongFocus
+                                    ghost: true
+                                    height: exitConfirm.height
+                                    text: qsTr("Вийти й приспати приставку")
+                                    onClicked: Chiaki.stopSession(true)
+                                    KeyNavigation.left: exitConfirm
                                     KeyNavigation.right: stayBtn
                                 }
                                 ApButton {
@@ -387,7 +588,7 @@ Item {
                                     height: exitConfirm.height
                                     text: qsTr("Залишитись")
                                     onClicked: panel.goMain()
-                                    KeyNavigation.left: exitConfirm
+                                    KeyNavigation.left: sleepBtn
                                 }
                             }
                         }
@@ -402,12 +603,35 @@ Item {
                 Layout.topMargin: 10
                 spacing: 20
                 FootText {
-                    text: Chiaki.session ? qsTr("Зв'язок %1 Мбіт/с, втрати %2%").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ","))
-                        .arg(((isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss : 0) * 100).toFixed(1).replace(".", ",")) : ""
+                    text: !Chiaki.session ? ""
+                        : Chiaki.session.measuredBitrateReady === false ? qsTr("Зв'язок: вимірюю…")   // перші секунди гри чесного виміру ще немає
+                        : qsTr("Зв'язок %1 Мбіт/с, втрати %2%").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ","))
+                            .arg(((isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss : 0) * 100).toFixed(1).replace(".", ","))
                 }
                 Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
                 FootText { text: qsTr("Закрити меню: Esc або `") }
             }
+        }
+    }
+
+    // повзунок у стилі меню: тонка лінія й кругла ручка
+    component MenuSlider: Slider {
+        id: ms
+        background: Rectangle {
+            x: ms.leftPadding
+            y: ms.topPadding + ms.availableHeight / 2 - height / 2
+            width: ms.availableWidth
+            height: 2
+            color: "#40ffffff"
+            Rectangle { width: ms.visualPosition * parent.width; height: parent.height; color: ap.ink }
+        }
+        handle: Rectangle {
+            x: ms.leftPadding + ms.visualPosition * (ms.availableWidth - width)
+            y: ms.topPadding + ms.availableHeight / 2 - height / 2
+            width: 14; height: 14; radius: 7
+            color: ap.ink
+            border.width: ms.visualFocus ? 2 : 0
+            border.color: ap.cyan
         }
     }
 

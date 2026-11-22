@@ -4,6 +4,8 @@
 #include "qmlbackend.h"
 #include "qmlsettings.h"
 #include "qmlmainwindow.h"
+#include "anyplayinput.h"
+#include "streamsession.h"
 
 #include <QClipboard>
 #include <QDateTime>
@@ -58,9 +60,19 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 	// трансляція почалась чи закінчилась — одразу кажемо серверу: приставка тримає одне підключення, і другий пристрій
 	// клієнта бачить «гра вже йде на іншому пристрої», доки тут стрім (і «Грати» одразу після виходу з гри тут)
 	connect(backend, &QmlBackend::sessionChanged, this, [this]() {
+		// показники трансляції для телеметрії: з кожною новою трансляцією рахуємо заново
+		stat_ = StatWindow();
+		stat_connected_ms_ = 0;
+		stat_sent_ = false;
+		if(this->backend->qmlSession())
+			stat_timer.start();
+		else
+			stat_timer.stop();
 		if(playing_)
 			QTimer::singleShot(0, this, &AnyPlayCloud::heartbeat);
 	});
+	stat_timer.setInterval(1000);
+	connect(&stat_timer, &QTimer::timeout, this, &AnyPlayCloud::sampleStats);
 	other_timer.setSingleShot(true);
 	other_timer.setInterval(10000);
 	connect(&other_timer, &QTimer::timeout, this, &AnyPlayCloud::refresh);
@@ -120,6 +132,8 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 		QUrl url(server_ + "/api/app/pair");
 		QUrlQuery q; q.addQueryItem("code", pair_code_); url.setQuery(q);
 		QNetworkRequest req(url);
+		req.setRawHeader("X-AnyPlay-Build", QByteArray::number(ANYPLAY_BUILD));
+		req.setRawHeader("X-AnyPlay-Platform", anyplayPlatform());
 		QNetworkReply *reply = nam.get(req);
 		connect(reply, &QNetworkReply::finished, this, [this, reply]() {
 			reply->deleteLater();
@@ -195,6 +209,8 @@ void AnyPlayCloud::login(bool openTelegram)
 {
 	QJsonObject body;
 	body["name"] = QSysInfo::machineHostName();
+	body["platform"] = QString::fromLatin1(anyplayPlatform());   // сервер запам'ятовує, з якого пристрою і якої збірки увійшли
+	body["build"] = ANYPLAY_BUILD;
 	pair_short_.clear(); pair_qr_.clear(); pair_bot_.clear(); pair_link_.clear();
 	setState("pairing");
 	request("POST", "/api/app/pair", body, [this, openTelegram](int status, const QJsonObject &o) {
@@ -242,6 +258,7 @@ void AnyPlayCloud::logout()
 	start_timer.stop();
 	start_polls_ = 0;
 	continues_ = false;
+	guest_ = false;
 	own_end_ = 0;
 	admin_ = false;
 	user_.clear();
@@ -350,6 +367,8 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	if(!own_end_)
 		own_end_ = booking.value("ownEnd").toVariant().toLongLong();
 	continues_ = o.value("continues").toBool() || booking.value("continues").toBool();
+	// гостьовий доступ: грає, поки приставка вільна; end — початок найближчої чужої гри (старий сервер цього не надсилає)
+	guest_ = o.value("guest").toBool() || booking.value("guest").toBool();
 	// гра в кредит: кінець броні вже минув, а оплату продовження ще перевіряють (endTs — кінець кредиту)
 	payment_checking_ = o.value("paymentChecking").toBool() || booking.value("paymentChecking").toBool();
 	QString st = o.value("state").toString();
@@ -434,6 +453,10 @@ void AnyPlayCloud::heartbeat()
 		return;
 	QJsonObject body;
 	body["streaming"] = backend->qmlSession() != nullptr;
+	// телеметрія: чим і як грає клієнт, якість і зв'язок за останній проміжок (адмін бачить це в CRM і в панелі)
+	const QJsonObject stats = takeStats();
+	if(!stats.isEmpty())
+		body["stats"] = stats;
 	request("POST", "/api/app/heartbeat", body, [this](int status, const QJsonObject &o) {
 		if(status == 401)
 		{
@@ -447,6 +470,8 @@ void AnyPlayCloud::heartbeat()
 		{
 			QString reason = o.value("reason").toString() == "kicked"
 				? tr("Сеанс завершив адміністратор AnyPlay.")
+				: guest_
+				? tr("Гостьовий доступ призупинено: на приставці почалась оплачена гра. Щойно приставка звільниться, тут знову з'явиться «Грати».")
 				: tr("Час твоєї броні вийшов — дякуємо за гру! Забронювати ще можна тут, кнопкою «Бронювання».");
 			stopPlay(reason);
 			refresh();
@@ -454,7 +479,15 @@ void AnyPlayCloud::heartbeat()
 		}
 		qint64 end = o.value("end").toVariant().toLongLong();
 		const bool checking = o.value("paymentChecking").toBool();
-		if(end_ > 0 && end > end_ && checking)
+		if(o.contains("guest"))
+			guest_ = o.value("guest").toBool();
+		if(guest_)
+		{
+			// гість нічого не оплачує: кінець його гри — початок найближчої чужої броні, він зсувається, коли хтось бронює чи скасовує
+			if(end_ > 0 && end > 0 && end < end_ - 60)
+				emit message(tr("Приставку забронювали: гостьовий доступ до %1.").arg(formatTime(end)));
+		}
+		else if(end_ > 0 && end > end_ && checking)
 		{
 			// час вийшов, але за продовження вже натиснули «Я оплатив»: граємо далі в кредит, доки адмін перевіряє оплату.
 			// Це ще не «оплату отримано»: якщо не підтвердять, гра зупиниться о новому endTs
@@ -472,6 +505,88 @@ void AnyPlayCloud::heartbeat()
 		end_ = end;
 		emit changed();
 	});
+}
+
+// адреса приставки в домашній мережі (тоді діють налаштування якості «вдома», а не «через інтернет»): те саме правило, що й у трансляції
+static bool lanHost(const QString &host)
+{
+	if(host.contains(QLatin1Char('.')))
+	{
+		if(host.startsWith(QLatin1String("10.")) || host.startsWith(QLatin1String("192.168.")))
+			return true;
+		for(int j = 16; j < 32; j++)
+			if(host.startsWith(QStringLiteral("172.%1.").arg(j)))
+				return true;
+		return false;
+	}
+	return host.startsWith(QLatin1String("fc"), Qt::CaseInsensitive) || host.startsWith(QLatin1String("fd"), Qt::CaseInsensitive);
+}
+
+void AnyPlayCloud::sampleStats()
+{
+	StreamSession *s = backend->qmlSession();
+	QmlMainWindow *w = backend->qmlWindow();
+	if(!s || !w || !s->GetConnected())
+	{
+		stat_connected_ms_ = 0;
+		return;
+	}
+	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	if(!stat_connected_ms_)
+		stat_connected_ms_ = now;
+	// перші секунди після підключення кадри ще не порахувались; згорнуте вікно кадрів не малює, і це не «погана картинка»
+	if(now - stat_connected_ms_ < 4000 || w->visibility() == QWindow::Minimized || w->visibility() == QWindow::Hidden)
+		return;
+	// поки швидкість ще не виміряно чесно (перші секунди гри), показники не рахуємо: інакше «0,1 Мбіт/с» зіпсувало б середнє
+	const QVariant ready = s->property("measuredBitrateReady");
+	if(ready.isValid() && !ready.toBool())
+		return;
+	// кадри за секунду у вікні доступні лише як властивості (для QML)
+	const int stream = w->property("streamFps").toInt(), shown = w->property("shownFps").toInt();
+	const double loss = s->GetAveragePacketLoss();
+	stat_.n++;
+	stat_.fps_stream += stream;
+	// кадри, що справді дійшли до екрана (якщо їх ще не порахували, ті, що прийшли з приставки): як в індикаторі під час гри
+	stat_.fps_shown += shown > 0 ? qMin(shown, stream > 0 ? stream : shown) : stream;
+	stat_.bitrate += s->GetMeasuredBitrate();
+	stat_.loss += qIsFinite(loss) ? loss * 100.0 : 0.0;
+	stat_.dropped += w->droppedFrames();
+	// перші показники нової трансляції надсилаємо одразу, а не з черговим сигналом раз на 20 с
+	if(!stat_sent_ && stat_.n >= 3 && playing_)
+		heartbeat();
+}
+
+QJsonObject AnyPlayCloud::takeStats()
+{
+	StreamSession *s = backend->qmlSession();
+	if(!s || stat_.n < 3)
+		return QJsonObject();
+	const double n = stat_.n;
+	const bool pad = s->GetGamepadMode();   // чим натискали востаннє: справжній геймпад чи клавіатура з мишею
+	const QString mode = AnyPlayInput::LiveMode();
+	const bool local = lanHost(s->GetHost());
+	const ChiakiConnectVideoProfile video = local ? settings->GetVideoProfileLocalPS5() : settings->GetVideoProfileRemotePS5();
+	QJsonObject o;
+	o["platform"] = QString::fromLatin1(anyplayPlatform());
+	o["build"] = ANYPLAY_BUILD;
+	o["input"] = pad ? QStringLiteral("gamepad") : QStringLiteral("keyboard");
+	o["layout"] = AnyPlayInput::Layout();
+	// режим клавіш має сенс лише для клавіатури: геймпад іде на приставку як є
+	o["mode"] = !pad && (mode == QLatin1String("foot") || mode == QLatin1String("vehicle") || mode == QLatin1String("air")) ? mode : QString();
+	o["quality"] = qualityLevel();
+	o["auto"] = autoQuality();
+	o["width"] = static_cast<int>(video.width);
+	o["height"] = static_cast<int>(video.height);
+	o["codec"] = chiaki_codec_is_h265(video.codec) ? QStringLiteral("h265") : QStringLiteral("h264");
+	o["fpsStream"] = qRound(stat_.fps_stream / n);
+	o["fpsShown"] = qRound(stat_.fps_shown / n);
+	o["bitrate"] = qRound(stat_.bitrate / n * 10.0) / 10.0;      // Мбіт/с
+	o["loss"] = qRound(stat_.loss / n * 100.0) / 100.0;         // відсотки
+	o["dropped"] = stat_.dropped;                               // кадрів пропущено за проміжок
+	o["local"] = local;
+	stat_ = StatWindow();
+	stat_sent_ = true;
+	return o;
 }
 
 void AnyPlayCloud::stopPlay(const QString &reason)
@@ -679,7 +794,48 @@ void AnyPlayCloud::adminKick(qint64 bookingId)
 	request("POST", "/api/app/admin", body, [this](int status, const QJsonObject &o) {
 		emit message(status == 200 && o.value("ok").toBool()
 			? tr("Гру клієнта завершено. Йому прийшло повідомлення в боті.")
-			: tr("Не вдалося завершити гру (помилка %1).").arg(status));
+			: adminError(o, status, tr("Не вдалося завершити гру (помилка %1).").arg(status)));
+		refreshAdmin();
+	});
+}
+
+// спільні відповіді сервера на дії адміна: немає права (адмін з неповними правами) або сервер ще не знає цієї дії
+QString AnyPlayCloud::adminError(const QJsonObject &o, int status, const QString &fallback) const
+{
+	const QString e = o.value("error").toString();
+	if(e == "forbidden")
+		return tr("У тебе немає права на цю дію. Права адмінів налаштовує власник у CRM.");
+	if(status == 0)
+		return tr("Немає зв'язку з сервером. Перевір інтернет і спробуй ще раз.");
+	return fallback;
+}
+
+void AnyPlayCloud::adminGrant(qint64 userId, int minutes, const QString &name)
+{
+	if(!admin_ || userId == 0)
+		return;
+	minutes = qBound(10, minutes - minutes % 5, 2880);
+	QJsonObject body;
+	body["action"] = "grant";
+	body["userId"] = userId;
+	body["minutes"] = minutes;
+	request("POST", "/api/app/admin", body, [this, name](int status, const QJsonObject &o) {
+		const QString e = o.value("error").toString();
+		const QString who = name.isEmpty() ? tr("Клієнт") : name;
+		if(status == 200 && o.value("ok").toBool())
+		{
+			const qint64 end = o.value("end").toVariant().toLongLong();
+			emit message(end > 0 ? tr("✓ Гру подаровано: %1 може грати до %2. Йому прийшло повідомлення в боті.").arg(who, formatTime(end))
+			                     : tr("✓ Гру подаровано: %1 може грати просто зараз. Йому прийшло повідомлення в боті.").arg(who));
+		}
+		else if(e == "busy")
+			emit message(tr("Приставка зараз зайнята: іде чиясь гра або до наступної броні менше 10 хвилин. Подарувати гру можна, коли вона вільна."));
+		else if(e == "action" || (status == 404 && e != "not_found"))
+			emit message(tr("Сервер ще не вміє дарувати гру з програми. Подаруй її в CRM: кнопка «CRM» у боті."));
+		else if(e == "not_found")
+			emit message(tr("Такого клієнта сервер не знайшов. Онови панель і спробуй ще раз."));
+		else
+			emit message(adminError(o, status, tr("Не вдалося подарувати гру (помилка %1).").arg(status)));
 		refreshAdmin();
 	});
 }

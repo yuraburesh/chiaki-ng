@@ -366,6 +366,14 @@ void AnyPlayInput::NotifyConfigChanged()
 	}
 }
 
+QString AnyPlayInput::LiveMode()
+{
+	for(const AnyPlayInput *input : std::as_const(Instances()))
+		if(!input->preview)
+			return input->current_profile;
+	return QString();
+}
+
 QString AnyPlayInput::ProfileName(const QString &id) const
 {
 	for(const auto &p : profiles)

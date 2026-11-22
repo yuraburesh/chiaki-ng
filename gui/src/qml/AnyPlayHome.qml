@@ -1,7 +1,9 @@
 // AnyPlay: головний екран програми (новий дизайн: вечірній градієнт, вкладки, рядки з тонкими лініями).
 // Клієнт: «Гра» (таймер, мої броні, налаштування гри), «Бронювання», «Баланс», «Якість», «Мій PSN», «Як керувати», «Клавіші».
 // «Баланс» є лише тоді, коли сервер його вміє (старий сервер — вкладки й фішки балансу немає); адмінам балансу немає.
-// Адмін: «Панель» (хто грає, завершити гру, закрити доступ), «Спільний PSN», «Свої PSN», а також «Якість», «Як керувати», «Клавіші».
+// Адмін: «Панель» (хто грає і як: пристрій, керування, якість, зв'язок; завершити гру, подарувати гру, закрити доступ),
+// «Спільний PSN», «Свої PSN», а також «Якість», «Як керувати», «Клавіші».
+// Гість (cloud.guest): грає, поки приставка вільна; замість тексту про бронь — про гостьовий доступ, продовження немає.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -18,6 +20,20 @@ Rectangle {
     readonly property bool isAdmin: cloud.loggedIn && cloud.admin
     readonly property var adm: cloud.adminInfo || ({})
     readonly property var cur: adm.current || null
+    // телеметрія поточної гри: об'єкт у current.live (старий сервер надсилає там лише true або false)
+    readonly property var liveInfo: {
+        const c = home.cur;
+        if (!c) return null;
+        if (c.live && typeof c.live === "object") return c.live;
+        if (c.liveStats && typeof c.liveStats === "object") return c.liveStats;
+        return null;
+    }
+    // дані старші за півтори хвилини (програма клієнта шле їх раз на 20 с): клієнт згорнув гру або зник зв'язок
+    readonly property int liveAgeMin: liveInfo && liveInfo.at > 0 && nowTs() - liveInfo.at > 90 ? Math.max(1, Math.floor((nowTs() - liveInfo.at) / 60)) : 0
+    // гостьовий доступ: грає, поки приставка вільна (кінець гри — початок найближчої чужої броні)
+    readonly property bool guestPlay: !isAdmin && st === "play" && cloud.guest === true
+    // попереду броней немає (сервер тоді ставить кінець через 12 годин): відлік нічого не каже, пишемо «приставка вільна»
+    readonly property bool guestOpen: guestPlay && cloud.endTs - nowTs() > 11 * 3600
     readonly property string st: cloud.state
     // без входу чи без зв'язку з сервером — лише екран входу / помилки, без вкладок
     readonly property bool gated: !cloud.loggedIn || st === "login" || st === "pairing" || st === "offline"
@@ -183,6 +199,35 @@ Rectangle {
         return t;
     }
     readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна"), qsTr("Ультра")]
+    // ── адміну: як клієнт грає просто зараз, фішками (пристрій, керування, гра й режим, якість, кадри, швидкість, втрати) ──
+    function num1(x) { return (Math.round(Number(x) * 10) / 10).toString().replace(".", ","); }
+    function liveChips(l, ageMin) {
+        if (!l) return [];
+        const out = [];
+        const healthText = l.healthText || ({ good: qsTr("картинка плавна"), fair: qsTr("картинка підгальмовує"), bad: qsTr("картинка глючить") })[l.health] || "";
+        if (ageMin > 0)
+            out.push({ text: qsTr("дані %1 хв тому").arg(ageMin), kind: "wait" });
+        else if (healthText)
+            out.push({ text: "● " + healthText, kind: ({ good: "ok", fair: "wait", bad: "bad" })[l.health] || "" });
+        const platform = ({ windows: "Windows", mac: "Mac", mac_intel: "Mac (Intel)", android: "Android", linux: "Linux" })[l.platform] || "";
+        const device = [l.device || "", platform, l.build ? qsTr("збірка %1").arg(l.build) : ""].filter((x) => x !== "").join(", ");
+        if (device) out.push({ text: device });
+        const input = ({ keyboard: qsTr("клавіатура і миша"), gamepad: qsTr("геймпад"), touch: qsTr("сенсорні кнопки") })[l.input] || "";
+        if (input) out.push({ text: input });
+        const game = l.layoutName || ({ gta6: "GTA VI", gta5: "GTA V", universal: qsTr("інша гра") })[l.layout] || "";
+        const mode = l.input === "gamepad" ? "" : ({ foot: qsTr("пішки"), vehicle: qsTr("транспорт"), air: qsTr("авіація") })[l.mode] || "";
+        if (game) out.push({ text: game + (mode ? ", " + mode : ""), icon: home.gameLogo(l.layout) });
+        const quality = l.qualityName || home.levelNames[l.quality] || "";
+        if (quality) out.push({ text: quality + (l.height > 0 ? " " + l.height + "p" : "") });
+        if (l.fpsShown !== undefined) {
+            const target = l.quality === 0 ? 30 : 60;
+            out.push({ text: l.fpsStream > 0 && l.fpsStream - l.fpsShown >= 2 ? qsTr("%1 з %2 кадр/с").arg(l.fpsShown).arg(l.fpsStream) : qsTr("%1 кадр/с").arg(l.fpsShown),
+                       kind: l.fpsShown < target * 0.6 ? "bad" : l.fpsShown < target * 0.9 ? "wait" : "" });
+        }
+        if (l.bitrate !== undefined) out.push({ text: qsTr("%1 Мбіт/с").arg(home.num1(l.bitrate)) });
+        if (l.loss !== undefined) out.push({ text: qsTr("втрати %1%").arg(home.num1(l.loss)), kind: l.loss > 2 ? "bad" : l.loss > 0.5 ? "wait" : "" });
+        return out;
+    }
     function levelName() { return levelNames[home.cloud.qualityLevel] || levelNames[1]; }
     function qualityName() { return home.cloud.autoQuality ? qsTr("Авто: %1").arg(levelName()) : levelName(); }
     function setQuality(level) {
@@ -227,6 +272,7 @@ Rectangle {
         }
     }
     function adminConnect() {
+        if (home.overGame) { home.backToGame(); return; }   // адмін уже в грі: це вікно відкрите з меню гри
         const c = home.cur;
         if (c)
             root.showConfirmDialog(qsTr("Підключитись"), c.live
@@ -237,7 +283,18 @@ Rectangle {
             home.play();
     }
 
-    readonly property bool popupOpen: extendPopup.opened || updateDialog.visible || gamePicker.visible
+    // адмін: перед тим як забрати в клієнта гру, питаємо ще раз і показуємо, чию саме
+    function askKick() {
+        const c = home.cur;
+        if (c)
+            confirmPopup.ask({ title: qsTr("Завершити гру клієнта"), name: c.user, action: qsTr("Завершити гру"),
+                text: qsTr("Приставка відключиться просто зараз, а оплачений час до %1 згорить. Клієнт отримає повідомлення в боті.").arg(home.cloud.formatTime(c.end)),
+                run: () => home.cloud.adminKick(c.id) });
+    }
+    // адмін: подарувати клієнту гру просто зараз (час обирається барабанами)
+    function askGift(userId, name) { giftPopup.ask(userId, name); }
+
+    readonly property bool popupOpen: extendPopup.opened || confirmPopup.opened || giftPopup.opened || updateDialog.visible || gamePicker.visible
     Keys.onReturnPressed: if (!popupOpen) primaryAction()
     Keys.onEnterPressed: if (!popupOpen) primaryAction()
     Keys.onEscapePressed: {
@@ -293,7 +350,7 @@ Rectangle {
         home.reopenPsn = true;
         root.showAnyPlayPsnLogin(create);
     }
-    function closePopups() { extendPopup.close(); }
+    function closePopups() { extendPopup.close(); confirmPopup.close(); giftPopup.close(); }
     onVisibleChanged: if (!visible) closePopups(); else { layoutRev++; loadMine(); }
     Connections {
         target: Chiaki.cloud
@@ -572,19 +629,22 @@ Rectangle {
                         spacing: 12
                         ApText {
                             role: "eyebrow"
-                            text: home.st === "play" ? qsTr("Час твоєї гри") : (home.cloud.nextStart ? qsTr("Твоя наступна гра") : qsTr("Бронювання"))
+                            text: home.guestPlay ? qsTr("Гостьовий доступ")
+                                : home.st === "play" ? qsTr("Час твоєї гри") : (home.cloud.nextStart ? qsTr("Твоя наступна гра") : qsTr("Бронювання"))
                         }
                         ApTimer {
-                            visible: hero.timer
+                            visible: hero.timer && !home.guestOpen
                             size: home.timerSize
                             color: home.st === "play" ? ap.gold : ap.ink
                             text: home.st === "play" ? home.dur(home.cloud.endTs - home.nowTs()) : home.dur(home.cloud.nextStart - home.nowTs())
                         }
                         ApText {
-                            visible: !hero.timer
+                            visible: !hero.timer || home.guestOpen
                             Layout.fillWidth: true
                             role: "big"; size: home.bigSize
-                            text: home.cloud.nextStart ? qsTr("Вже скоро!") : qsTr("Немає оплачених броней")
+                            text: home.guestOpen ? qsTr("Приставка вільна")
+                                : home.cloud.nextStart ? qsTr("Вже скоро!")
+                                : home.cloud.guest === true ? qsTr("Приставка зайнята") : qsTr("Немає оплачених броней")
                         }
                         ApText {
                             Layout.fillWidth: true
@@ -594,11 +654,17 @@ Rectangle {
                                 const c = home.cloud;
                                 if (home.st === "play" && c.paymentChecking)   // гра в кредит: час броні вийшов, оплату продовження ще перевіряють
                                     return qsTr("Оплату продовження ще перевіряємо, тому гра не зупинилась. Поки що грати можна до <b>%1</b>; щойно оплату підтвердять, час додасться сам.").arg(c.formatTime(c.endTs));
+                                if (home.guestPlay)   // гість нічого не оплачує і не продовжує: грає до початку найближчої чужої гри
+                                    return (home.guestOpen ? qsTr("Гостьовий доступ: граєш, поки приставка вільна. Якщо хтось забронює час, попередимо за 10 хвилин.")
+                                                           : qsTr("Гостьовий доступ: граєш, поки приставка вільна. До <b>%1</b>, потім почнеться оплачена гра іншого гравця.").arg(c.formatTime(c.endTs)))
+                                        + (c.playPsn ? " " + (c.playOwn ? qsTr("Акаунт PSN: %1 (твій).") : qsTr("Акаунт PSN: %1 (спільний).")).arg(c.playPsn) : "");
                                 if (home.st === "play")
                                     return qsTr("Лишилось до кінця. Гра до <b>%1</b>, потім завершиться сама.").arg(c.formatTime(c.endTs))
                                         + (c.playPsn ? " " + (c.playOwn ? qsTr("Акаунт PSN: %1 (твій).") : qsTr("Акаунт PSN: %1 (спільний).")).arg(c.playPsn) : "");
                                 if (c.nextStart)
                                     return qsTr("До початку гри <b>%1–%2</b>. Доступ відкриється сам рівно в цей час, програму можна не закривати.").arg(c.formatTime(c.nextStart)).arg(c.formatTime(c.nextEnd));
+                                if (c.guest === true)   // гість, а на приставці зараз чужа оплачена гра
+                                    return qsTr("У тебе гостьовий доступ, але зараз на приставці оплачена гра іншого гравця. Кнопка «Грати» з'явиться тут, щойно приставка звільниться. Свій час можна забронювати просто зараз.");
                                 return qsTr("Обери час і оплати прямо тут. Приставка відкриється сама в час твоєї гри.");
                             }
                         }
@@ -615,11 +681,18 @@ Rectangle {
                                 onClicked: home.primaryAction()
                             }
                             ApButton {
-                                visible: home.st === "play" && !home.cloud.paymentChecking   // у кредит продовження вже оформлене й перевіряється
+                                visible: home.st === "play" && !home.cloud.paymentChecking && !home.guestPlay   // у кредит продовження вже оформлене й перевіряється; гостю продовжувати нічого
                                 ghost: true
                                 height: primaryBtn.height
                                 text: qsTr("Продовжити бронювання")
                                 onClicked: extendPopup.open()
+                            }
+                            ApButton {   // гість може забронювати свій час, тоді його ніхто не перерве
+                                visible: home.guestPlay
+                                ghost: true
+                                height: primaryBtn.height
+                                text: qsTr("Забронювати свій час")
+                                onClicked: home.view = "book"
                             }
                         }
                     }
@@ -731,6 +804,22 @@ Rectangle {
                                                 : qsTr("Найближчих оплачених броней немає.");
                             }
                         }
+                        // як клієнт грає просто зараз (це шле його програма): здоров'я картинки, пристрій, керування, гра, якість, зв'язок
+                        Flow {
+                            visible: !!home.liveInfo
+                            Layout.fillWidth: true
+                            Layout.maximumWidth: 600
+                            spacing: 6
+                            Repeater {
+                                model: home.liveChips(home.liveInfo, home.liveAgeMin)
+                                ApChip {
+                                    required property var modelData
+                                    text: modelData.text
+                                    kind: modelData.kind || ""
+                                    icon: modelData.icon || ""
+                                }
+                            }
+                        }
                         Flow {
                             Layout.fillWidth: true
                             Layout.topMargin: 10
@@ -738,7 +827,8 @@ Rectangle {
                             ApButton {   // адмін може зайти на приставку будь-коли
                                 id: adminPrimary
                                 minWidth: 260
-                                text: home.consoleIndex() >= 0 ? qsTr("Підключитись до приставки") : qsTr("Шукаю PS5…")
+                                text: home.overGame ? qsTr("▶ Повернутись у гру")
+                                    : home.consoleIndex() >= 0 ? qsTr("Підключитись до приставки") : qsTr("Шукаю PS5…")
                                 onClicked: home.adminConnect()
                             }
                             ApButton {
@@ -746,12 +836,7 @@ Rectangle {
                                 ghost: true
                                 height: adminPrimary.height
                                 text: qsTr("Завершити гру клієнта")
-                                onClicked: {
-                                    const c = home.cur;
-                                    if (c)
-                                        root.showConfirmDialog(qsTr("Завершити гру"), qsTr("Завершити гру %1 просто зараз? Приставка відключиться, клієнт отримає повідомлення в боті.").arg(c.user),
-                                                               () => home.cloud.adminKick(c.id));
-                                }
+                                onClicked: home.askKick()
                             }
                             ApButton {
                                 ghost: true
@@ -762,8 +847,9 @@ Rectangle {
                                     if (home.adm.closed)
                                         home.cloud.adminSetClosed(false);
                                     else
-                                        root.showConfirmDialog(qsTr("Закрити доступ"), qsTr("Тимчасово закрити доступ усім клієнтам? Хто грає, відключиться, бот показуватиме «технічні роботи», поки не відкриєш знову."),
-                                                               () => home.cloud.adminSetClosed(true));
+                                        confirmPopup.ask({ title: qsTr("Закрити доступ усім"), name: home.cur ? qsTr("Зараз грає %1").arg(home.cur.user) : "", action: qsTr("Закрити доступ"),
+                                            text: qsTr("Тимчасово закрити доступ усім клієнтам? Хто грає, відключиться, бот показуватиме «технічні роботи», поки не відкриєш знову."),
+                                            run: () => home.cloud.adminSetClosed(true) });
                                 }
                             }
                         }
@@ -780,9 +866,16 @@ Rectangle {
                         Repeater {
                             model: adminRight.later
                             ApRow {
+                                id: laterRow
                                 required property var modelData
                                 title: modelData.user
                                 subtitle: home.cloud.formatTime(modelData.start) + "–" + home.cloud.formatTime(modelData.end) + home.psnLine(modelData, ", ")
+                                ApButton {   // подарувати цьому клієнту гру просто зараз (час обирається барабанами)
+                                    visible: !!laterRow.modelData.userId
+                                    small: true; ghost: true
+                                    text: qsTr("Подарувати")
+                                    onClicked: home.askGift(laterRow.modelData.userId, laterRow.modelData.user)
+                                }
                             }
                         }
                         ApText { role: "cap"; text: qsTr("Інструменти"); Layout.topMargin: adminRight.later.length > 0 ? 22 : 0; Layout.bottomMargin: 6 }
@@ -814,6 +907,7 @@ Rectangle {
                             ApChip { text: qsTr("відкрити") }
                         }
                         ApRow {
+                            visible: !home.overGame   // повний інтерфейс відкривається лише поза грою
                             title: qsTr("Сервіс")
                             subtitle: qsTr("усі налаштування програми")
                             clickable: true
@@ -1286,10 +1380,9 @@ Rectangle {
                             Layout.topMargin: 6
                             ghost: true; danger: true
                             text: qsTr("Видалити")
-                            onClicked: root.showConfirmDialog(qsTr("Видалити спільний акаунт"),
-                                qsTr("Прибрати акаунт «%1» із сервера? Клієнти не зможуть підключатись, доки не передаси новий акаунт. Хто вже грає, дограє до розриву з'єднання.")
-                                    .arg(sharedPage.con ? (sharedPage.con.psn_name || "PSN") : ""),
-                                () => home.cloud.adminDropShared())
+                            onClicked: confirmPopup.ask({ title: qsTr("Видалити спільний акаунт"), name: sharedPage.con ? (sharedPage.con.psn_name || "PSN") : "", action: qsTr("Видалити"),
+                                text: qsTr("Прибрати цей акаунт із сервера? Клієнти не зможуть підключатись, доки не передаси новий акаунт. Хто вже грає, дограє до розриву з'єднання."),
+                                run: () => home.cloud.adminDropShared() })
                         }
                     }
                     ColumnLayout {
@@ -1311,6 +1404,7 @@ Rectangle {
                             subtitle: sharedPage.localPsn ? qsTr("у цій програмі увійдено як: %1").arg(sharedPage.localPsn) : qsTr("у цій програмі вхід у PSN ще не виконано")
                             ApButton {
                                 small: true; ghost: true
+                                enabled: !home.overGame   // вхід у PSN і прив'язка відкривають свої екрани: під час гри їх не чіпаємо
                                 text: qsTr("Увійти")
                                 onClicked: { home.reopenShared = true; root.showAnyPlayPsnLogin(false); }
                             }
@@ -1323,6 +1417,7 @@ Rectangle {
                                 + qsTr("Код: на PS5 перемкнись на профіль цього акаунта → Налаштування → Система → Дистанційне відтворення → Прив'язати пристрій.")
                             ApButton {
                                 small: true; ghost: true
+                                enabled: !home.overGame
                                 text: qsTr("8 цифр")
                                 onClicked: { home.reopenShared = true; root.showRegistDialog("255.255.255.255", true); }
                             }
@@ -1335,6 +1430,13 @@ Rectangle {
                                 ? qsTr("3. Роздавати клієнтам «%1»").arg(sharedPage.localPsn) : qsTr("3. Передати PS5 на сервер")
                             enabled: sharedPage.registState === 1 && sharedPage.localPsn !== ""
                             onClicked: { home.cloud.uploadConsole(); home.view = "home"; }
+                        }
+                        ApText {
+                            visible: home.overGame
+                            Layout.fillWidth: true
+                            Layout.topMargin: 8
+                            role: "small"
+                            text: qsTr("Кроки 1 і 2 відкривають свої екрани, тому доступні після виходу з гри.")
                         }
                     }
                 }
@@ -1394,6 +1496,12 @@ Rectangle {
                                 spacing: 8
                                 ApRow {
                                     hairline: false
+                                    ApButton {
+                                        visible: !!cRow.modelData.userId
+                                        small: true; ghost: true
+                                        text: qsTr("Подарувати гру")
+                                        onClicked: home.askGift(cRow.modelData.userId, cRow.modelData.user)
+                                    }
                                     title: qsTr("%1, PSN: %2").arg(cRow.modelData.user).arg(cRow.modelData.psn)
                                     subtitle: {
                                         const m = cRow.modelData;
@@ -1450,6 +1558,165 @@ Rectangle {
                     ApButton { ghost: true; text: qsTr("Забронювати ще"); onClicked: { extendPopup.close(); home.view = "book"; } }
                     Item { Layout.fillWidth: true }
                     ApButton { ghost: true; text: qsTr("Закрити"); onClicked: extendPopup.close() }
+                }
+            }
+        }
+
+        // ── підтвердження дії адміна: що саме станеться і з ким (ім'я клієнта великими літерами) ──
+        HomePopup {
+            id: confirmPopup
+            maxW: 520
+            property string title: ""
+            property string name: ""
+            property string text: ""
+            property string actionText: ""
+            property var run: null
+            function ask(o) {
+                title = o.title || ""; name = o.name || ""; text = o.text || ""; actionText = o.action || qsTr("Так"); run = o.run || null;
+                open();
+                confirmCancel.forceActiveFocus(Qt.TabFocusReason);   // Enter одразу після відкриття нічого не руйнує
+            }
+            function accept() { const f = run; run = null; close(); if (f) f(); }
+            onOpenedChanged: if (!opened && home.visible) home.restoreFocus()
+            contentItem: ColumnLayout {
+                spacing: 12
+                ApText { role: "cap"; color: ap.bad; text: confirmPopup.title }
+                ApText {
+                    visible: confirmPopup.name !== ""
+                    Layout.fillWidth: true
+                    Layout.rightMargin: 24
+                    role: "big"; size: 38
+                    font.capitalization: Font.MixedCase
+                    lineHeight: 0.9
+                    text: confirmPopup.name
+                }
+                ApText { Layout.fillWidth: true; role: "lead"; text: confirmPopup.text }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 10
+                    spacing: 10
+                    ApButton {
+                        id: confirmOk
+                        danger: true
+                        text: confirmPopup.actionText
+                        onClicked: confirmPopup.accept()
+                        KeyNavigation.right: confirmCancel
+                    }
+                    ApButton {
+                        id: confirmCancel
+                        ghost: true
+                        Layout.preferredHeight: confirmOk.height
+                        text: qsTr("Скасувати")
+                        onClicked: confirmPopup.close()
+                        KeyNavigation.left: confirmOk
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+        }
+
+        // ── подарувати гру на точний час: два барабани, години й хвилини (як у будильнику) ──
+        HomePopup {
+            id: giftPopup
+            maxW: 480
+            property var userId: 0
+            property string name: ""
+            readonly property int minutes: Math.min(2880, giftHours.value * 60 + giftMins.value)   // сервер приймає 10…2880 хв з кроком 5
+            readonly property bool valid: minutes >= 10
+            function ask(uid, who) {
+                userId = uid; name = who || "";
+                giftHours.setValue(2); giftMins.setValue(0);
+                open();
+                giftHours.forceActiveFocus(Qt.TabFocusReason);
+            }
+            function durText(m) {
+                const h = Math.floor(m / 60), x = m % 60;
+                return h && x ? qsTr("%1 год %2 хв").arg(h).arg(x) : h ? qsTr("%1 год").arg(h) : qsTr("%1 хв").arg(x);
+            }
+            function send() {
+                if (!valid) return;
+                home.cloud.adminGrant(userId, minutes, name);
+                close();
+            }
+            onOpenedChanged: if (!opened && home.visible) home.restoreFocus()
+            contentItem: ColumnLayout {
+                spacing: 10
+                ApText { role: "cap"; text: qsTr("Подарувати гру") }
+                ApText {
+                    Layout.fillWidth: true
+                    Layout.rightMargin: 24
+                    role: "big"; size: 38
+                    font.capitalization: Font.MixedCase
+                    lineHeight: 0.9
+                    text: giftPopup.name
+                }
+                ApText {
+                    Layout.fillWidth: true
+                    role: "lead"
+                    text: qsTr("Гра почнеться просто зараз, без оплати. Клієнт отримає повідомлення в боті.")
+                }
+                Row {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.topMargin: 4
+                    spacing: 6
+                    ApTumbler {
+                        id: giftHours
+                        count: 49
+                        label: qsTr("годин")
+                        KeyNavigation.right: giftMins
+                        Keys.onReturnPressed: giftPopup.send()
+                        Keys.onEnterPressed: giftPopup.send()
+                    }
+                    Text {
+                        y: giftHours.drumItem.height / 2 - height / 2 - 2
+                        text: ":"
+                        font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 30
+                        color: ap.mute
+                    }
+                    ApTumbler {
+                        id: giftMins
+                        count: 12
+                        step: 5
+                        twoDigits: true
+                        label: qsTr("хвилин")
+                        KeyNavigation.left: giftHours
+                        Keys.onReturnPressed: giftPopup.send()
+                        Keys.onEnterPressed: giftPopup.send()
+                    }
+                }
+                ApText {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 2
+                    horizontalAlignment: Text.AlignHCenter
+                    font.weight: Font.Medium
+                    color: giftPopup.valid ? ap.gold : ap.bad
+                    text: !giftPopup.valid ? qsTr("Щонайменше 10 хвилин")
+                        : (giftHours.value * 60 + giftMins.value > 2880 ? qsTr("Найбільше 48 год, приблизно до %1") : qsTr("%2, приблизно до %1"))
+                            .arg(home.cloud.formatTime(home.nowTs() + giftPopup.minutes * 60)).arg(giftPopup.durText(giftPopup.minutes))
+                }
+                ApText {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    role: "small"
+                    text: qsTr("Якщо раніше почнеться чиясь бронь, подарунок триватиме до неї.")
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 8
+                    spacing: 10
+                    ApButton {
+                        id: giftOk
+                        enabled: giftPopup.valid
+                        text: qsTr("Подарувати")
+                        onClicked: giftPopup.send()
+                    }
+                    Item { Layout.fillWidth: true }
+                    ApButton {
+                        ghost: true
+                        Layout.preferredHeight: giftOk.height
+                        text: qsTr("Скасувати")
+                        onClicked: giftPopup.close()
+                    }
                 }
             }
         }

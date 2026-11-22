@@ -16,8 +16,8 @@ Item {
     property bool sessionLoading: true
     property list<Item> restoreFocusItems
     readonly property bool useSeparateMenuWindow: Chiaki.window.runtimeRendererBackend === 1
-    // AnyPlay: клієнтам показуємо своє просте меню гри — воно трохи вище
-    readonly property bool anyplayClientMenu: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin
+    // AnyPlay: своє меню гри бачать і клієнти, й адмін (в адміна там ще «Розширені налаштування» з усім зі стандартного меню)
+    readonly property bool anyplayClientMenu: Chiaki.cloud.loggedIn
     // меню клієнта в стилі паузи GTA: на весь екран поверх гри (гру видно крізь праву частину)
     readonly property int streamMenuHeight: anyplayClientMenu ? Math.max(330, Math.round(view.height)) : 200
     // меню AnyPlay відкривається клавішею ` під Esc (Ctrl+O / Cmd+O теж працює, але не показуємо: Ctrl у GTA — «присісти»)
@@ -541,7 +541,8 @@ Item {
                 const b = anyplayEndBanner;
                 b.tick++;
                 const left = b.secsLeft;
-                const m = left <= 10 * 60 ? 10 : 0;
+                // гостю ще раз за 2 хвилини: його час може скоротитись раптово, коли хтось купив гру «зараз»
+                const m = Chiaki.cloud.guest === true && left <= 2 * 60 ? 2 : left <= 10 * 60 ? 10 : 0;
                 if (m === 0)
                     b.mark = 0;            // гру продовжили — наступного разу нагадаємо знову
                 else if (m !== b.mark && left > 0) {
@@ -567,7 +568,7 @@ Item {
                 }
                 Text {
                     id: endBannerAsk
-                    text: qsTr("Продовжити бронювання?")
+                    text: Chiaki.cloud.guest === true ? qsTr("Гостьовий доступ: далі оплачена гра іншого гравця") : qsTr("Продовжити бронювання?")
                     font.family: endAp.body; font.weight: Font.DemiBold; font.pixelSize: 16
                     color: endAp.ink
                 }
@@ -584,7 +585,10 @@ Item {
                 ApChip { anchors.verticalCenter: parent.verticalCenter; key: true; text: "`" }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: Chiaki.controllers.length
+                    text: Chiaki.cloud.guest === true
+                        ? (Chiaki.controllers.length ? qsTr("(під Esc) або %1 на геймпаді: меню AnyPlay. Збережись у грі заздалегідь").arg(Chiaki.settings.stringForStreamMenuShortcut())
+                                                     : qsTr("(під Esc): меню AnyPlay. Збережись у грі заздалегідь"))
+                        : Chiaki.controllers.length
                         ? qsTr("(під Esc) або %1 на геймпаді: відкриється меню AnyPlay з продовженням").arg(Chiaki.settings.stringForStreamMenuShortcut())
                         : qsTr("(під Esc): відкриється меню AnyPlay з продовженням")
                     font.family: endAp.body; font.pixelSize: 13
@@ -1566,7 +1570,9 @@ Item {
             id: anyplayStartHintText
             anchors.centerIn: parent
             font.family: "Inter"; font.weight: Font.Medium; font.pixelSize: 15; color: "#f5f3f7"
-            text: qsTr("Меню AnyPlay: %1. Там клавіші, продовження і вихід").arg(view.anyplayMenuKey)
+            text: Chiaki.cloud.admin || Chiaki.cloud.guest === true
+                ? qsTr("Меню AnyPlay: %1. Там клавіші, якість і вихід").arg(view.anyplayMenuKey)
+                : qsTr("Меню AnyPlay: %1. Там клавіші, продовження і вихід").arg(view.anyplayMenuKey)
         }
         Timer { id: anyplayStartHintTimer; interval: 12000; onTriggered: anyplayStartHint.opacity = 0 }
     }

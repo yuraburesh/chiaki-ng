@@ -150,6 +150,9 @@ class AnyPlayInput : public QObject
 		static QVariantMap PadData();
 		// Розкладку або клавіші змінили: усі рушії (і той, що зараз у грі) перечитують їх одразу
 		static void NotifyConfigChanged();
+		// Режим рушія, що зараз у грі (не екран клавіш): "foot" | "vehicle" | "air"; "" — гри немає.
+		// Для телеметрії: адмін бачить, у якому режимі клавіш грає клієнт. Викликати в потоці інтерфейсу.
+		static QString LiveMode();
 
 	signals:
 		void Changed();

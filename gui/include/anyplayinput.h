@@ -29,7 +29,7 @@ struct APStep
 struct APBinding
 {
 	// Hold — тримається, поки тримаєш клавішу; Tap/Turbo лишились лише для сумісності формату
-	enum class Kind { Hold, Tap, Turbo, Macro, Cycle, None };
+	enum class Kind { Hold, Tap, Turbo, Macro, Cycle, Spin, None };
 	QString id;
 	QString name;  // показується на екрані клавіш
 	QString key;   // назва клавіші, див. AnyPlayInput::KeyName
@@ -47,6 +47,8 @@ struct APBinding
 	APStep hold_out;
 	int hold_min = 0;
 	qint64 pressed_at = 0;   // коли натиснули (лише для утримуваних дій)
+	// Spin: поки тримаєш, стік крутиться по колу (злам машини в GTA VI). +1 — за годинниковою, -1 — проти, 0 — не чіпає
+	int spin_l = 0, spin_r = 0;
 	QString profile;     // режим, у який перемкнутись: id або "toggle" (пішки <-> транспорт)
 	QString owner;       // режим, якому належить дія
 };
@@ -193,6 +195,8 @@ class AnyPlayInput : public QObject
 		int macro_index = -1;
 		QTimer macro_timer;
 		QTimer turbo_timer;
+		QTimer spin_timer;   // поки крутиться стік: стан на приставку ~60 разів на секунду
+		void UpdateSpinTimer();
 		bool turbo_phase = false;
 		int slot = 0; // яка зброя з колеса вибрана останньою (для перебору по колу)
 		int wheel_sector = -1;            // сектор колеса, обраний коліщатком миші, поки колесо відкрите

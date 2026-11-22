@@ -535,6 +535,10 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		anyplay->Load();
 		connect(anyplay, &AnyPlayInput::Changed, this, &StreamSession::SendFeedbackState);
 		connect(anyplay, &AnyPlayInput::ProfileChanged, this, &StreamSession::ControlProfileChanged);
+		// AnyPlay 110: у журнал — зміна режиму (для автоматичного «Транспорт» / «Пішки» за сигналами гри)
+		connect(anyplay, &AnyPlayInput::ProfileChanged, this, [this](const QString &status) {
+			CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-mode] %s", status.toUtf8().constData());
+		});
 	}
 	touch_tracker=QMap<int, uint8_t>();
 	mouse_touch_id=-1;
@@ -2756,6 +2760,16 @@ void StreamSession::Event(ChiakiEvent *event)
 			emit NicknameReceived(event->server_nickname);
 			break;
 		case CHIAKI_EVENT_RUMBLE: {
+			{
+				// AnyPlay 110: початок і кінець вібрації в журнал (не кожен пакет)
+				static bool rumble_logged_on = false;
+				const bool on = event->rumble.left || event->rumble.right;
+				if(on != rumble_logged_on)
+				{
+					rumble_logged_on = on;
+					CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-rumble] %s %u %u", on ? "on" : "off", event->rumble.left, event->rumble.right);
+				}
+			}
 			if(anyplay && anyplay->VehiclePending())
 			{
 				const uint8_t l = event->rumble.left, r = event->rumble.right;
@@ -2902,6 +2916,24 @@ void StreamSession::Event(ChiakiEvent *event)
 			break;
 		}
 		case CHIAKI_EVENT_TRIGGER_EFFECTS: {
+			{
+				// AnyPlay 110: які ефекти курків надсилає гра (пішки, транспорт, зброя) — щоб навчити програму
+				// саму вмикати «Транспорт», коли герой сів у машину, і «Пішки», коли вийшов
+				static uint8_t logged_l = 0xff, logged_r = 0xff;
+				const uint8_t tl = event->trigger_effects.type_left, tr = event->trigger_effects.type_right;
+				if(tl != logged_l || tr != logged_r)
+				{
+					logged_l = tl;
+					logged_r = tr;
+					char hex_l[21], hex_r[21];
+					for(int i = 0; i < 10; i++)
+					{
+						snprintf(hex_l + i * 2, 3, "%02x", event->trigger_effects.left[i]);
+						snprintf(hex_r + i * 2, 3, "%02x", event->trigger_effects.right[i]);
+					}
+					CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-triggers] L=%02x %s R=%02x %s", tl, hex_l, tr, hex_r);
+				}
+			}
 			if(anyplay)
 			{
 				const uint8_t tl = event->trigger_effects.type_left, tr = event->trigger_effects.type_right;

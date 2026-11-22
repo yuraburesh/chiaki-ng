@@ -152,13 +152,25 @@ jobs:
           echo "VCPKG_DEFAULT_BINARY_CACHE=$env:GITHUB_WORKSPACE\vcpkg_bincache" >> $env:GITHUB_ENV
           echo "VCPKG_BINARY_SOURCES=clear;files,$env:GITHUB_WORKSPACE\vcpkg_bincache,readwrite" >> $env:GITHUB_ENV
 
-      - name: Cache vcpkg packages
-        uses: actions/cache@v4
+      # Ключ кешу містить версію образу машини GitHub: після оновлення образу (новий компілятор) vcpkg збирає бібліотеки
+      # заново, і цей новий набір має зберегтися. Зі старим сталим ключем кеш «знаходився», але не підходив
+      # («Restored 0 package(s)») і більше ніколи не перезаписувався — тому vcpkg щоразу збирався ~37 хв.
+      - name: vcpkg cache key
+        id: vcpkg-key
+        shell: pwsh
+        run: |
+          echo "prefix=vcpkg-bin-x64-${{ env.vcpkg_baseline }}-${{ hashFiles('vcpkg.json') }}-" >> $env:GITHUB_OUTPUT
+          echo "image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         continue-on-error: true
         with:
           path: vcpkg_bincache
-          key: vcpkg-bin-x64-${{ env.vcpkg_baseline }}-${{ hashFiles('vcpkg.json') }}
+          key: ${{ steps.vcpkg-key.outputs.prefix }}${{ steps.vcpkg-key.outputs.image }}
           restore-keys: |
+            ${{ steps.vcpkg-key.outputs.prefix }}
             vcpkg-bin-x64-${{ env.vcpkg_baseline }}-
 
       - name: Setup vcpkg
@@ -167,6 +179,15 @@ jobs:
           vcpkgGitCommitId: ${{ env.vcpkg_baseline }}
           runVcpkgInstall: true
           vcpkgJsonGlob: "vcpkg.json"
+
+      # зберігаємо лише тоді, коли саме для цього образу кешу ще не було (тобто vcpkg щось зібрав)
+      - name: Save vcpkg packages
+        if: ${{ steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: vcpkg_bincache
+          key: ${{ steps.vcpkg-key.outputs.prefix }}${{ steps.vcpkg-key.outputs.image }}
 
       - name: Build libplacebo
         run: |

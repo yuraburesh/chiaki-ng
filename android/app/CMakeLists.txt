@@ -23,3 +23,7 @@ target_link_libraries(chiaki-jni "${ANDROID_LIB_LOG}" "${ANDROID_LIB_MEDIANDK}" 
 
 find_package (oboe REQUIRED CONFIG)
 target_link_libraries(chiaki-jni oboe::oboe)
+# AnyPlay: файл кореневих сертифікатів для HTTPS-запитів бібліотеки до PSN (пояснення в src/main/cpp/chiaki-jni.c біля
+# __wrap_curl_easy_init). Без цього OpenSSL у застосунку не бачить жодного сертифіката (SSL_CERT_FILE він ігнорує через
+# AT_SECURE=1 у процесах Android), і всі запити до Sony падають з помилкою перевірки сертифіката (curl 60).
+target_link_options(chiaki-jni PRIVATE "-Wl,--wrap=curl_easy_init" "-Wl,--wrap=OPENSSL_issetugid")

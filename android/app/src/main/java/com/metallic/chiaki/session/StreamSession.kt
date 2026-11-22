@@ -17,8 +17,8 @@ object StreamStateConnected: StreamState()
 data class StreamStateCreateError(val error: CreateError): StreamState()
 data class StreamStateQuit(val reason: QuitReason, val reasonString: String?): StreamState()
 data class StreamStateLoginPinRequest(val pinIncorrect: Boolean): StreamState()
-/** AnyPlay: не вдалося з'єднатися з PS5 через інтернет (PSN) */
-data class StreamStatePsnFailed(val error: ErrorCode): StreamState()
+/** AnyPlay: не вдалося з'єднатися з PS5 через інтернет (PSN). step — на якому кроці (Session.psnStep), diag — подробиці з журналу */
+data class StreamStatePsnFailed(val error: ErrorCode, val step: Int = 0, val diag: PsnDiag = PsnDiag(0, 0, "")): StreamState()
 
 class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, val logVerbose: Boolean, val input: StreamInput)
 {
@@ -98,7 +98,12 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 						if(err.isSuccess)
 							session.start()
 						else
-							_state.postValue(StreamStatePsnFailed(err))
+						{
+							val step = session.psnStep()
+							val diag = ChiakiPsn.diag()
+							Log.e("AnyPlay", "PSN connect failed: step $step, error ${err.value} ($err), HTTP ${diag.http}, curl ${diag.curl}: ${diag.line}")
+							_state.postValue(StreamStatePsnFailed(err, step, diag))
+						}
 					}
 				}.apply { name = "anyplay-psn"; isDaemon = true }.start()
 			}

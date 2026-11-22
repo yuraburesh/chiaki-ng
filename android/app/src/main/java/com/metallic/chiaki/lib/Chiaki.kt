@@ -95,8 +95,12 @@ private class ChiakiNative
 		@JvmStatic external fun sessionPsnConnect(ptr: Long, duid: String): Int
 		@JvmStatic external fun sessionPsnCancel(ptr: Long)
 		@JvmStatic external fun sessionPacketLoss(ptr: Long): Double
-		@JvmStatic external fun psnListDevices(token: String): String?
+		@JvmStatic external fun psnListDevices(token: String): String
 		@JvmStatic external fun setEnv(name: String, value: String)
+		@JvmStatic external fun setCaBundle(path: String)
+		@JvmStatic external fun psnDiag(): String
+		@JvmStatic external fun sessionPsnStep(ptr: Long): Int
+		@JvmStatic external fun sessionVideoStats(ptr: Long): LongArray?
 		@JvmStatic external fun sessionStop(ptr: Long): Int
 		@JvmStatic external fun sessionJoin(ptr: Long): Int
 		@JvmStatic external fun sessionSetSurface(ptr: Long, surface: Surface?)
@@ -114,16 +118,41 @@ private class ChiakiNative
 /** AnyPlay: приставка акаунта PSN, до якої можна підключитись через інтернет */
 data class PsnDevice(val duid: String, val name: String, val remotePlayEnabled: Boolean)
 
+/**
+ * AnyPlay: що відповіли сервери Sony на «список приставок». devices == null — запит не вдався:
+ * error — код бібліотеки (ChiakiErrorCode), http — статус HTTP від Sony (0 — відповіді не було), curl — код помилки curl (0 — не було).
+ */
+class PsnDeviceList(val devices: List<PsnDevice>?, val error: Int, val http: Int, val curl: Int)
+
+/** AnyPlay: технічні подробиці останньої помилки бібліотеки (з її журналу) */
+class PsnDiag(val http: Int, val curl: Int, val line: String)
+
 object ChiakiPsn
 {
-	/** Список PS5 акаунта (null — Sony не відповіла або вхід недійсний). Блокує потік. */
-	fun listDevices(token: String): List<PsnDevice>? =
-		ChiakiNative.psnListDevices(token)?.lines()?.mapNotNull { line ->
+	/** Список PS5 акаунта. Блокує потік. */
+	fun listDevices(token: String): PsnDeviceList
+	{
+		val lines = ChiakiNative.psnListDevices(token).lines()
+		val head = lines.firstOrNull()?.split('\t') ?: listOf("err")
+		if(head[0] != "ok")
+			return PsnDeviceList(null, head.getOrNull(1)?.toIntOrNull() ?: 1, head.getOrNull(2)?.toIntOrNull() ?: 0, head.getOrNull(3)?.toIntOrNull() ?: 0)
+		val devices = lines.drop(1).mapNotNull { line ->
 			val parts = line.split('\t')
 			if(parts.size >= 3 && parts[0].length == 64) PsnDevice(parts[0], parts[1], parts[2] == "1") else null
 		}
+		return PsnDeviceList(devices, 0, 200, 0)
+	}
 
 	fun setEnv(name: String, value: String) = ChiakiNative.setEnv(name, value)
+
+	/** Файл кореневих сертифікатів для всіх HTTPS-запитів бібліотеки (curl і OpenSSL) */
+	fun setCaBundle(path: String) = ChiakiNative.setCaBundle(path)
+
+	fun diag(): PsnDiag
+	{
+		val parts = ChiakiNative.psnDiag().split('\t', limit = 3)
+		return PsnDiag(parts.getOrNull(0)?.toIntOrNull() ?: 0, parts.getOrNull(1)?.toIntOrNull() ?: 0, parts.getOrNull(2) ?: "")
+	}
 }
 
 class ErrorCode(val value: Int)
@@ -368,6 +397,11 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	/** AnyPlay: пробити з'єднання через PSN. Довго (до хвилини) — лише з фонового потоку, перед start(). */
 	fun psnConnect(duid: String) = ErrorCode(ChiakiNative.sessionPsnConnect(nativePtr, duid))
 	fun psnCancel() { if(nativePtr != 0L) ChiakiNative.sessionPsnCancel(nativePtr) }
+	/** AnyPlay: крок з'єднання через PSN, на якому зупинились: 1 роутер, 2 сесія на серверах Sony, 3 своя адреса (STUN),
+	 * 4 приставка приєднується, 5 пряме з'єднання з приставкою, 6 з'єднано */
+	fun psnStep(): Int = if(nativePtr != 0L) ChiakiNative.sessionPsnStep(nativePtr) else 0
+	/** AnyPlay: кадрів прийшло, показано, втрачено, байтів відео (наростаючі від початку сесії) */
+	fun videoStats(): LongArray? = if(nativePtr != 0L) ChiakiNative.sessionVideoStats(nativePtr) else null
 	/** AnyPlay: частка втрачених пакетів 0..1 */
 	fun packetLoss(): Double = if(nativePtr != 0L) ChiakiNative.sessionPacketLoss(nativePtr) else 0.0
 	fun stop() = ErrorCode(ChiakiNative.sessionStop(nativePtr))

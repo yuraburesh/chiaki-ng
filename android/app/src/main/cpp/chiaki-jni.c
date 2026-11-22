@@ -11,7 +11,11 @@
 #include <chiaki/regist.h>
 #include <chiaki/remote/holepunch.h>
 
+#include <curl/curl.h>
+
 #include <stdlib.h>
+#include <stdio.h>
+#include <pthread.h>
 
 #include <string.h>
 #include <linux/in.h>
@@ -55,6 +59,89 @@ static void anyplay_format_hex(char *hex, const uint8_t *buf, size_t buf_size)
 		hex[i * 2 + 1] = digits[buf[i] & 0xf];
 	}
 	hex[buf_size * 2] = 0;
+}
+
+// ── AnyPlay: кореневі сертифікати для HTTPS-запитів бібліотеки до PSN ──
+// У застосунку Android немає сховища сертифікатів, яке бачить OpenSSL, тому програма кладе свій файл cacert.pem і має
+// сказати про нього бібліотеці. Змінної SSL_CERT_FILE для цього замало: OpenSSL читає її через ossl_safe_getenv(),
+// а той повертає NULL, коли OPENSSL_issetugid() != 0. На Android (API 18+) OPENSSL_issetugid() = getauxval(AT_SECURE),
+// і в КОЖНОМУ процесі застосунку це 1: ядро ставить AT_SECURE, коли init запускає zygote (зміна домену SELinux),
+// а застосунки є його копіями (fork). Тож OpenSSL мовчки ігнорував SSL_CERT_FILE, не знаходив жодного кореневого
+// сертифіката, і кожен запит до Sony падав з «SSL peer certificate or SSH remote key was not OK» (curl 60) —
+// клієнт бачив «Sony зараз не відповідає». Два незалежні виправлення (обидва вмикає android/app/CMakeLists.txt
+// прапорцем лінкера --wrap, бо сама бібліотека lib/ не дає задати файл сертифікатів):
+//  1) кожному з'єднанню curl, яке створює бібліотека, явно задаємо файл сертифікатів (CURLOPT_CAINFO);
+//  2) OpenSSL не вважає процес застосунку «setuid» і читає SSL_CERT_FILE (потрібно там, де бібліотека сама
+//     перевіряє ланцюжок через сховище OpenSSL за замовчуванням: lib/src/aia_openssl.c).
+static pthread_mutex_t anyplay_ca_mutex = PTHREAD_MUTEX_INITIALIZER;
+static char anyplay_ca_bundle[1024];
+
+CURL *__real_curl_easy_init(void);
+
+CURL *__wrap_curl_easy_init(void)
+{
+	CURL *curl = __real_curl_easy_init();
+	if(!curl)
+		return NULL;
+	char path[sizeof(anyplay_ca_bundle)];
+	pthread_mutex_lock(&anyplay_ca_mutex);
+	memcpy(path, anyplay_ca_bundle, sizeof(path));
+	pthread_mutex_unlock(&anyplay_ca_mutex);
+	if(path[0])
+		curl_easy_setopt(curl, CURLOPT_CAINFO, path); // curl копіює рядок собі
+	return curl;
+}
+
+int __wrap_OPENSSL_issetugid(void)
+{
+	return 0;
+}
+
+/** Останні помилки з журналу → статус HTTP і код помилки curl (0 — не було) */
+#define ANYPLAY_DIAG_LINE 260
+
+static void anyplay_diag(long *http_code, int *curl_code, char *last_line, size_t last_line_size)
+{
+	char buf[8192];
+	*http_code = 0;
+	*curl_code = 0;
+	if(last_line_size)
+		last_line[0] = 0;
+	size_t len = anyplay_log_last_errors(buf, sizeof(buf));
+	// найновіші рядки внизу: ідемо з кінця й беремо перший статус HTTP та першу помилку curl
+	char *end = buf + len;
+	while(end > buf)
+	{
+		char *line_end = end - 1; // на '\n'
+		char *line = line_end;
+		while(line > buf && line[-1] != '\n')
+			line--;
+		*line_end = 0;
+		if(last_line_size && !last_line[0])
+			snprintf(last_line, last_line_size, "%s", line);
+		const char *h = strstr(line, "HTTP code ");
+		if(h && !*http_code && !*curl_code)
+			*http_code = strtol(h + 10, NULL, 10);
+		const char *c = strstr(line, "CURL error ");
+		if(c && !*curl_code && !*http_code)
+		{
+			c += 11;
+			size_t best = 0;
+			for(int code = 1; code < CURL_LAST; code++)
+			{
+				const char *text = curl_easy_strerror((CURLcode)code);
+				size_t text_len = strlen(text);
+				if(text_len > best && strncmp(c, text, text_len) == 0)
+				{
+					best = text_len;
+					*curl_code = code;
+				}
+			}
+			if(!*curl_code)
+				*curl_code = -1;
+		}
+		end = line;
+	}
 }
 
 static char *strdup_jni(const char *str)
@@ -197,6 +284,7 @@ typedef struct android_chiaki_session_t
 	void *audio_output;
 	bool started; // потік сесії запущено (інакше join нема чого чекати)
 	ChiakiHolepunchSession holepunch; // AnyPlay: з'єднання через PSN (належить ChiakiSession)
+	int psn_step; // AnyPlay: на якому кроці з'єднання через PSN ми зараз (або де зупинились), див. sessionPsnConnect
 } AndroidChiakiSession;
 
 static void android_chiaki_event_cb(ChiakiEvent *event, void *user)
@@ -471,38 +559,85 @@ JNIEXPORT jint JNICALL JNI_FCN(sessionPsnConnect)(JNIEnv *env, jobject obj, jlon
 		CHIAKI_LOGE(log, "PSN: invalid console id");
 		return CHIAKI_ERR_INVALID_DATA;
 	}
+	// кроки (psn_step): 1 — роутер (UPnP), 2 — сесія на серверах Sony, 3 — наша адреса для приставки (STUN),
+	// 4 — приставка приєднується до сесії, 5 — пряме з'єднання з приставкою
+	anyplay_log_clear_errors();
+	session->psn_step = 1;
 	err = chiaki_holepunch_upnp_discover(session->holepunch);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		CHIAKI_LOGE(log, "PSN: upnp discover failed");
 		return err;
 	}
+	session->psn_step = 2;
 	err = chiaki_holepunch_session_create(session->holepunch);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		CHIAKI_LOGE(log, "PSN: failed to create session");
 		return err;
 	}
+	session->psn_step = 3;
 	err = holepunch_session_create_offer(session->holepunch);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		CHIAKI_LOGE(log, "PSN: failed to create offer for ctrl connection");
 		return err;
 	}
+	session->psn_step = 4;
 	err = chiaki_holepunch_session_start(session->holepunch, duid, CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		CHIAKI_LOGE(log, "PSN: failed to start session");
 		return err;
 	}
+	session->psn_step = 5;
 	err = chiaki_holepunch_session_punch_hole(session->holepunch, CHIAKI_HOLEPUNCH_PORT_TYPE_CTRL);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		CHIAKI_LOGE(log, "PSN: failed to punch hole for control connection");
 		return err;
 	}
+	session->psn_step = 6;
 	CHIAKI_LOGI(log, "PSN: punched hole for control connection");
 	return CHIAKI_ERR_SUCCESS;
+}
+
+// AnyPlay: крок з'єднання через PSN, на якому сесія зараз або де вона зупинилась (0 — ще не починали, 6 — з'єднано)
+JNIEXPORT jint JNICALL JNI_FCN(sessionPsnStep)(JNIEnv *env, jobject obj, jlong ptr)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	return session ? session->psn_step : 0;
+}
+
+// AnyPlay: «статус HTTP<TAB>код curl<TAB>останній рядок помилки» з журналу бібліотеки (після невдалої дії)
+JNIEXPORT jstring JNICALL JNI_FCN(psnDiag)(JNIEnv *env, jobject obj)
+{
+	long http_code;
+	int curl_code;
+	char line[ANYPLAY_DIAG_LINE];
+	anyplay_diag(&http_code, &curl_code, line, sizeof(line));
+	for(char *c = line; *c; c++)
+		if(*c == '\t' || *c == '\n')
+			*c = ' ';
+	char out[ANYPLAY_DIAG_LINE + 64];
+	snprintf(out, sizeof(out), "%ld\t%d\t%s", http_code, curl_code, line);
+	return jnistr_from_ascii(env, out);
+}
+
+// AnyPlay: лічильники відео для телеметрії: кадрів прийшло, показано, втрачено, байтів (наростаючі)
+JNIEXPORT jlongArray JNICALL JNI_FCN(sessionVideoStats)(JNIEnv *env, jobject obj, jlong ptr)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	uint64_t stats[4] = { 0 };
+	if(session)
+		android_chiaki_video_decoder_stats(&session->video_decoder, stats);
+	jlong values[4];
+	for(int i = 0; i < 4; i++)
+		values[i] = (jlong)stats[i];
+	jlongArray r = E->NewLongArray(env, 4);
+	if(r)
+		E->SetLongArrayRegion(env, r, 0, 4, values);
+	return r;
 }
 
 JNIEXPORT void JNICALL JNI_FCN(sessionPsnCancel)(JNIEnv *env, jobject obj, jlong ptr)
@@ -512,27 +647,37 @@ JNIEXPORT void JNICALL JNI_FCN(sessionPsnCancel)(JNIEnv *env, jobject obj, jlong
 		chiaki_holepunch_main_thread_cancel(session->holepunch, false);
 }
 
-// AnyPlay: приставки акаунта PSN, до яких можна підключитись через інтернет. Рядки «duid<TAB>назва<TAB>0|1».
+// AnyPlay: приставки акаунта PSN, до яких можна підключитись через інтернет.
+// Перший рядок — «ok» або «err<TAB>код бібліотеки<TAB>статус HTTP<TAB>код curl»; далі рядки «duid<TAB>назва<TAB>0|1».
 JNIEXPORT jstring JNICALL JNI_FCN(psnListDevices)(JNIEnv *env, jobject obj, jstring token_string)
 {
+	char status[96];
 	if(!token_string)
-		return NULL;
+		return E->NewStringUTF(env, "err\t11\t0\t0\n"); // CHIAKI_ERR_INVALID_DATA
 	const char *token = E->GetStringUTFChars(env, token_string, NULL);
 	ChiakiHolepunchDeviceInfo *devices = NULL;
 	size_t count = 0;
+	anyplay_log_clear_errors();
 	ChiakiErrorCode err = chiaki_holepunch_list_devices(token, CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5, &devices, &count, &global_log);
 	E->ReleaseStringUTFChars(env, token_string, token);
 	if(err != CHIAKI_ERR_SUCCESS)
-		return NULL;
-	size_t buf_size = count * 128 + 1;
+	{
+		long http_code;
+		int curl_code;
+		anyplay_diag(&http_code, &curl_code, NULL, 0);
+		snprintf(status, sizeof(status), "err\t%d\t%ld\t%d\n", (int)err, http_code, curl_code);
+		return E->NewStringUTF(env, status);
+	}
+	size_t buf_size = count * 128 + 8;
 	char *buf = calloc(1, buf_size);
 	if(!buf)
 	{
 		if(devices)
 			chiaki_holepunch_free_device_list(&devices);
-		return NULL;
+		snprintf(status, sizeof(status), "err\t%d\t0\t0\n", (int)CHIAKI_ERR_MEMORY);
+		return E->NewStringUTF(env, status);
 	}
-	size_t off = 0;
+	size_t off = (size_t)snprintf(buf, buf_size, "ok\n");
 	for(size_t i = 0; i < count; i++)
 	{
 		char hex[sizeof(devices[i].device_uid) * 2 + 1];
@@ -551,9 +696,23 @@ JNIEXPORT jstring JNICALL JNI_FCN(psnListDevices)(JNIEnv *env, jobject obj, jstr
 		chiaki_holepunch_free_device_list(&devices);
 	char *safe = strdup_jni(buf);
 	free(buf);
-	jstring r = safe ? E->NewStringUTF(env, safe) : NULL;
+	jstring r = E->NewStringUTF(env, safe ? safe : "err\t4\t0\t0\n"); // CHIAKI_ERR_MEMORY
 	free(safe);
 	return r;
+}
+
+// AnyPlay: файл кореневих сертифікатів для всіх HTTPS-запитів бібліотеки (див. пояснення біля __wrap_curl_easy_init)
+JNIEXPORT void JNICALL JNI_FCN(setCaBundle)(JNIEnv *env, jobject obj, jstring path_string)
+{
+	const char *path = E->GetStringUTFChars(env, path_string, NULL);
+	if(strlen(path) < sizeof(anyplay_ca_bundle))
+	{
+		pthread_mutex_lock(&anyplay_ca_mutex);
+		strcpy(anyplay_ca_bundle, path);
+		pthread_mutex_unlock(&anyplay_ca_mutex);
+	}
+	setenv("SSL_CERT_FILE", path, 1);
+	E->ReleaseStringUTFChars(env, path_string, path);
 }
 
 // AnyPlay: змінна середовища (шлях до кореневих сертифікатів для HTTPS-запитів до PSN)

@@ -8,6 +8,10 @@ import android.content.DialogInterface
 import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.util.TypedValue
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -99,6 +103,19 @@ object AnyPlayStyle
 		d.getButton(DialogInterface.BUTTON_POSITIVE)?.let { button(it, true) }
 		d.getButton(DialogInterface.BUTTON_NEGATIVE)?.let { button(it, false) }
 		d.getButton(DialogInterface.BUTTON_NEUTRAL)?.let { button(it, false) }
+	}
+
+	/** Текст вікна з помилкою: пояснення, а нижче дрібним блідим рядком технічний код для підтримки (якщо є) */
+	fun errorMessage(text: String, code: String): CharSequence
+	{
+		if(code.isEmpty())
+			return text
+		val b = SpannableStringBuilder(text).append("\n\n")
+		val from = b.length
+		b.append("Код для підтримки: ").append(code)
+		b.setSpan(RelativeSizeSpan(0.78f), from, b.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+		b.setSpan(ForegroundColorSpan(MUTE), from, b.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+		return b
 	}
 
 	/** Показати вікно-повідомлення одразу в стилі AnyPlay */

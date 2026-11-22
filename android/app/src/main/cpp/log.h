@@ -20,4 +20,8 @@ void android_chiaki_file_log_fini(ChiakiLog *log);
 void android_chiaki_jni_log_init(AndroidChiakiJNILog *log, JNIEnv *env, jobject java_log);
 void android_chiaki_jni_log_fini(AndroidChiakiJNILog *log, JNIEnv *env);
 
+// AnyPlay: останні рядки рівня «помилка» з усіх журналів, старіші зверху, кожен з нового рядка. Повертає довжину.
+size_t anyplay_log_last_errors(char *out, size_t out_size);
+void anyplay_log_clear_errors(void);
+
 #endif

@@ -7,13 +7,64 @@
 #include <string.h>
 #include <errno.h>
 #include <jni.h>
+#include <pthread.h>
 
 #include "chiaki-jni.h"
 
 #define LOG_TAG "Chiaki"
 
+// AnyPlay: останні помилки бібліотеки (усіх журналів) — з них програма дістає технічний код для клієнта й підтримки:
+// бібліотека повертає лише загальний код («помилка мережі»), а статус HTTP чи помилку curl пише тільки в журнал
+#define ANYPLAY_ERRORS_MAX 12
+#define ANYPLAY_ERROR_LEN 512
+static pthread_mutex_t anyplay_errors_mutex = PTHREAD_MUTEX_INITIALIZER;
+static char anyplay_errors[ANYPLAY_ERRORS_MAX][ANYPLAY_ERROR_LEN];
+static unsigned int anyplay_errors_count = 0;
+
+static void anyplay_log_note_error(const char *msg)
+{
+	pthread_mutex_lock(&anyplay_errors_mutex);
+	char *slot = anyplay_errors[anyplay_errors_count % ANYPLAY_ERRORS_MAX];
+	strncpy(slot, msg, ANYPLAY_ERROR_LEN - 1);
+	slot[ANYPLAY_ERROR_LEN - 1] = 0;
+	anyplay_errors_count++;
+	pthread_mutex_unlock(&anyplay_errors_mutex);
+}
+
+void anyplay_log_clear_errors(void)
+{
+	pthread_mutex_lock(&anyplay_errors_mutex);
+	anyplay_errors_count = 0;
+	pthread_mutex_unlock(&anyplay_errors_mutex);
+}
+
+size_t anyplay_log_last_errors(char *out, size_t out_size)
+{
+	if(!out_size)
+		return 0;
+	size_t off = 0;
+	out[0] = 0;
+	pthread_mutex_lock(&anyplay_errors_mutex);
+	unsigned int n = anyplay_errors_count < ANYPLAY_ERRORS_MAX ? anyplay_errors_count : ANYPLAY_ERRORS_MAX;
+	for(unsigned int i = anyplay_errors_count - n; i < anyplay_errors_count; i++)
+	{
+		const char *line = anyplay_errors[i % ANYPLAY_ERRORS_MAX];
+		size_t len = strlen(line);
+		if(off + len + 2 > out_size)
+			break;
+		memcpy(out + off, line, len);
+		off += len;
+		out[off++] = '\n';
+		out[off] = 0;
+	}
+	pthread_mutex_unlock(&anyplay_errors_mutex);
+	return off;
+}
+
 void log_cb_android(ChiakiLogLevel level, const char *msg, void *user)
 {
+	if(level == CHIAKI_LOG_ERROR)
+		anyplay_log_note_error(msg);
 	int prio;
 	switch(level)
 	{

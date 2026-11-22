@@ -635,6 +635,15 @@ function heroUser(){
   const s = H.session || {}, st = H.state, nx = s.next || {}, bk = s.booking;
   if(st === 'play'){
     const end = bk ? bk.end : 0, c = s.console || {};
+    // гостьовий доступ (К5): граєш, поки приставка вільна; кінець — початок чужої броні, продовжувати нічого
+    if(s.guest || (bk && bk.guest)){
+      if(H.busy) return '<span class="eyebrow">Гостьовий доступ</span><p class="big">Шукаємо приставку…</p><p class="lead">Це займає до хвилини.</p><div class="spin"></div>';
+      return '<span class="eyebrow">Гостьовий доступ</span>'
+        + (end > 0 ? '<div class="timer play" id="tick" data-to="' + end + '">' + dur(end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>')
+        + '<p class="lead">Гостьовий доступ: граєш, поки приставка вільна.' + (end > 0 ? ' До <b>' + esc(fmtTime(end)) + '</b>.' : '')
+        + (c.psn ? ' Акаунт PSN: ' + esc(c.psn) + ' (' + (c.own ? 'твій' : 'спільний') + ').' : '') + '</p>'
+        + '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button></div>';
+    }
     let h = '<span class="eyebrow">' + (end > 0 ? 'Можна грати!' : 'Твоя гра') + '</span>';
     if(H.busy) return h + '<p class="big">Шукаємо приставку…</p><p class="lead">' + (end > 0 ? 'Твій час до <b>' + esc(fmtTime(end)) + '</b>. ' : '') + 'Це займає до хвилини.</p><div class="spin"></div>';
     h += end > 0 ? '<div class="timer play" id="tick" data-to="' + end + '">' + dur(end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>';
@@ -1508,13 +1517,14 @@ let pmSel = 'back', pmDetail = false, G = {};
 function pmInit(){
   $('pm').classList.remove('hidden');
   ['loading', 'vExtend', 'vQuality', 'vHelp', 'bar'].forEach(id => $('pmSlot').appendChild($(id)));
-  $('pmNav').innerHTML = PM.map(p => '<button type="button" data-p="' + p[0] + '"' + (p[0] === 'exit' ? ' class="exit"' : '') + '>' + p[1] + '</button>').join('');
+  G = nativeJson('info') || G;
+  $('pmNav').innerHTML = PM.filter(p => !(G.guest && p[0] === 'extend')).map(p => '<button type="button" data-p="' + p[0] + '"' + (p[0] === 'exit' ? ' class="exit"' : '') + '>' + p[1] + '</button>').join('');
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
     if(b.dataset.p === 'back'){ closeApp(); return; }
     pmSel = b.dataset.p; pmDetail = true; haptic(); pmRender();
   });
   $('pmBack').onclick = () => { pmDetail = false; pmRender(); };
-  pmSel = PM.some(p => p[0] === ARG) ? ARG : 'back'; pmDetail = !!ARG;
+  pmSel = PM.some(p => p[0] === ARG) && !(G.guest && ARG === 'extend') ? ARG : 'back'; pmDetail = pmSel !== 'back' && !!ARG;
   pmTick(); pmRender();
   wFetch();   // баланс для «Продовжити гру»: з балансу чи переказом (у адміна й на старому сервері його немає)
 }

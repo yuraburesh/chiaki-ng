@@ -313,7 +313,9 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			val target = withContext(Dispatchers.IO) {
 				val r = AnyPlayCloud.session(this@AnyPlayActivity)
 				if(!r.ok)
-					PlayError("Немає зв'язку з сервером AnyPlay. Перевір інтернет.")
+					(if(!AnyPlayCloud.online(this@AnyPlayActivity)) PlayError("Немає інтернету на телефоні. Увімкни Wi-Fi або мобільний інтернет і спробуй ще раз.", "NET offline")
+					else PlayError("Немає зв'язку з сервером AnyPlay. Спробуй ще раз за хвилину.", "AP-HTTP ${r.status}"))
+						.also { AnyPlayCloud.noteError(this@AnyPlayActivity, it) }
 				else if(r.json.optString("state") == "other_device")
 					PlayError("Зараз ти граєш на «${r.json.optString("otherDevice").ifEmpty { "іншому пристрої" }}». " +
 						"Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з'явиться кнопка «Грати».")
@@ -329,12 +331,13 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 					it.putExtra(StreamActivity.EXTRA_CONNECT_INFO, target.connectInfo)
 					it.putExtra(StreamActivity.EXTRA_ANYPLAY, true)
 					it.putExtra(StreamActivity.EXTRA_ANYPLAY_ADMIN, isAdmin)   // адміну нагадування про кінець гри не потрібні
+					it.putExtra(StreamActivity.EXTRA_ANYPLAY_GUEST, target.guest)   // гість: без «Продовжити бронювання»
 				})
 				is PlayError ->
 				{
 					render()
 					AnyPlayStyle.show(MaterialAlertDialogBuilder(this@AnyPlayActivity)
-						.setMessage(target.text)
+						.setMessage(AnyPlayStyle.errorMessage(target.text, target.code))
 						.setPositiveButton("Зрозуміло", null))
 				}
 			}
@@ -352,13 +355,20 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			.setNegativeButton("Скасувати", null))
 	}
 
+	/**
+	 * Чи клієнт справді стрімить зараз. Новий сервер дає `streaming` (так/ні), а `live` там стає об'єктом телеметрії;
+	 * старий сервер дає лише `live` (так/ні).
+	 */
+	private fun streaming(c: JSONObject): Boolean =
+		if(c.has("streaming")) c.optBoolean("streaming") else c.opt("live").let { it == true || it is JSONObject }
+
 	/** Адмін може зайти на приставку будь-коли, але про клієнта попереджаємо */
 	private fun adminPlay()
 	{
 		val c = adminCurrent
 		if(c == null)
 			play()
-		else if(c.optBoolean("live"))
+		else if(c.let { streaming(it) })
 			confirm("Зараз на приставці грає ${c.optString("user")}. Якщо підключишся, його трансляція перерветься. Підключитись?", "Підключитись") { play() }
 		else
 			confirm("Зараз час броні ${c.optString("user")} (він ще не підключився). Поки ти на приставці, клієнт не зможе зайти. Підключитись?", "Підключитись") { play() }
@@ -464,7 +474,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		if(c != null)
 		{
 			val left = c.optLong("end") - (System.currentTimeMillis() / 1000 + skew)
-			lines.add((if(c.optBoolean("live")) "у грі" else "ще не підключився") +
+			lines.add((if(c.let { streaming(it) }) "у грі" else "ще не підключився") +
 				", ${formatTime(c.optLong("start"))}–${formatTime(c.optLong("end"))}, лишилось ${duration(left)}")
 			psnLine(c).let { if(it.isNotEmpty()) lines.add(it) }
 		}
@@ -528,7 +538,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			.put("pairBot", pairBot)
 		// зі стану сервера лише те, що показує сторінка: ключів доступу до PSN тут немає
 		val s = JSONObject()
-		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice"))
+		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "guest", "guestAccess", "guestWait", "guestFreeAt"))
 			session.opt(k)?.let { s.put(k, it) }
 		session.optJSONObject("console")?.let { s.put("console", JSONObject().put("psn", it.optString("psn")).put("own", it.optBoolean("own"))) }
 		// баланс клієнта {balances, primary}: сторінка показує вкладку «Баланс» і оплату з балансу лише коли він є

@@ -69,6 +69,8 @@ class StreamActivity : AppCompatActivity()
 		const val EXTRA_CONNECT_INFO = "connect_info"
 		const val EXTRA_ANYPLAY = "anyplay"   // гра через сервер AnyPlay: час броні контролює сервер
 		const val EXTRA_ANYPLAY_ADMIN = "anyplay_admin"   // грає адмін: без нагадувань про кінець гри
+		const val EXTRA_ANYPLAY_GUEST = "anyplay_guest"   // гостьовий доступ (К5): без «Продовжити бронювання»
+		private const val INPUT_RECENT_MS = 20000L
 		private const val ANYPLAY_BEAT_MS = 20000L
 		private const val ANYPLAY_BANNER_MS = 20000L
 		private const val HIDE_UI_TIMEOUT_MS = 2000L
@@ -185,7 +187,10 @@ class StreamActivity : AppCompatActivity()
 		{
 			controlsJob?.cancel()
 			controlsJob = fragment.controllerState
-				.onEach { viewModel.input.touchControllerState = it }
+				.onEach {
+					viewModel.input.touchControllerState = it
+					anyplayTouchAt = SystemClock.elapsedRealtime()
+				}
 				.launchIn(lifecycleScope)
 			fragment.onScreenControlsEnabled = viewModel.onScreenControlsEnabled
 			if(fragment is TouchpadOnlyFragment)
@@ -205,6 +210,16 @@ class StreamActivity : AppCompatActivity()
 	@Volatile private var anyplayContinues = false   // після цієї броні одразу йде наступна: гра не закінчується
 	@Volatile private var anyplayLoss = 0.0
 	@Volatile private var anyplayControls = true
+	@Volatile private var anyplayGuest = false        // гостьовий доступ: граємо, поки приставка вільна
+	// телеметрія (К1): коли востаннє керували екранними кнопками, геймпадом, клавіатурою; лічильники відео з минулого сигналу
+	@Volatile private var anyplayTouchAt = 0L
+	@Volatile private var anyplayPadAt = 0L
+	@Volatile private var anyplayKeysAt = 0L
+	private var statSession: Any? = null
+	private var statPrev: LongArray? = null
+	private var statPrevAt = 0L
+	@Volatile private var statLossSum = 0.0
+	@Volatile private var statLossN = 0
 	private var anyplayReminded = 0                  // 10 — уже нагадали перед цим кінцем (один раз, за 10 хв), 0 — ще ні
 	private var anyplayBanner: View? = null
 	private var anyplayMenu: AnyPlayWebDialog? = null
@@ -221,6 +236,7 @@ class StreamActivity : AppCompatActivity()
 		if(anyplayFirstResume)
 		{
 			anyplayFirstResume = false
+			anyplayGuest = intent.getBooleanExtra(EXTRA_ANYPLAY_GUEST, false)
 			viewModel.session.resume()
 		}
 		else
@@ -231,11 +247,13 @@ class StreamActivity : AppCompatActivity()
 		anyplayBeatJob = lifecycleScope.launch {
 			while(isActive)
 			{
-				val r = withContext(Dispatchers.IO) { AnyPlayCloud.heartbeat(this@StreamActivity, true) }
+				val stats = anyplayStats()
+				val r = withContext(Dispatchers.IO) { AnyPlayCloud.heartbeat(this@StreamActivity, true, stats) }
 				if(r.status == 200 && r.json.has("left"))
 				{
 					anyplayEndAt = SystemClock.elapsedRealtime() + r.json.optLong("left") * 1000
 					anyplayContinues = r.json.optBoolean("continues")
+					anyplayGuest = r.json.optBoolean("guest")
 				}
 				if(r.status == 401)
 					anyplayEnd("Доступ скасовано адміністратором.")
@@ -269,7 +287,7 @@ class StreamActivity : AppCompatActivity()
 			anyplayReminded = 0   // гру продовжили: нагадаємо знову перед новим кінцем
 			return
 		}
-		if(anyplayAdmin || anyplayContinues || left <= 0)
+		if(anyplayAdmin || anyplayGuest || anyplayContinues || left <= 0)
 			return
 		val step = if(left <= 10 * 60) 10 else return
 		if(anyplayReminded != 0 && anyplayReminded <= step)
@@ -367,6 +385,8 @@ class StreamActivity : AppCompatActivity()
 				delay(waitMs)   // приставці треба мить, щоб закрити попередню трансляцію
 			val target = withContext(Dispatchers.IO) {
 				val r = AnyPlayCloud.session(this@StreamActivity)
+				if(r.ok)
+					anyplayGuest = r.json.optBoolean("guest")
 				r.json.optJSONObject("booking")?.let { b ->
 					if(b.optLong("end") > 0 && r.json.optLong("now") > 0)
 					{
@@ -378,8 +398,12 @@ class StreamActivity : AppCompatActivity()
 					AnyPlayCloud.playTarget(this@StreamActivity, r.json)
 				else if(r.ok)
 					PlayError("Час твоєї броні вийшов. Дякуємо за гру!")
+				else if(!AnyPlayCloud.online(this@StreamActivity))
+					PlayError("Немає інтернету на телефоні. Увімкни Wi-Fi або мобільний інтернет і підключись знову з головного екрана.", "NET offline")
+						.also { AnyPlayCloud.noteError(this@StreamActivity, it) }
 				else
-					PlayError("Немає зв'язку з сервером AnyPlay. Перевір інтернет.")
+					PlayError("Немає зв'язку з сервером AnyPlay. Спробуй підключитись знову з головного екрана.", "AP-HTTP ${r.status}")
+						.also { AnyPlayCloud.noteError(this@StreamActivity, it) }
 			}
 			when(target)
 			{
@@ -388,7 +412,7 @@ class StreamActivity : AppCompatActivity()
 					viewModel.session.connectInfo = target.connectInfo
 					viewModel.session.resume()
 				}
-				is PlayError -> anyplayEnd(target.text)
+				is PlayError -> anyplayEnd(target.text, target.code)
 			}
 		}
 	}
@@ -411,6 +435,11 @@ class StreamActivity : AppCompatActivity()
 				loss += (viewModel.session.session?.packetLoss() ?: 0.0) / 4
 			}
 			anyplayLoss = if(loss.isNaN()) 0.0 else loss
+			if(viewModel.session.state.value == StreamStateConnected)
+			{
+				statLossSum += anyplayLoss
+				statLossN++
+			}
 			if(viewModel.session.state.value != StreamStateConnected || !AnyPlayQuality.auto(this))
 			{
 				ticks = 0
@@ -444,8 +473,66 @@ class StreamActivity : AppCompatActivity()
 		}
 	}
 
+	/**
+	 * Телеметрія для heartbeat (К1) за проміжок з минулого сигналу. null — картинки ще немає
+	 * (перший сигнал нової трансляції лише запам'ятовує лічильники).
+	 */
+	private fun anyplayStats(): JSONObject?
+	{
+		val session = viewModel.session.session
+		val v = session?.videoStats()
+		val now = SystemClock.elapsedRealtime()
+		if(session == null || v == null || v.size < 4 || viewModel.session.state.value != StreamStateConnected)
+		{
+			statSession = null
+			statPrev = null
+			return null
+		}
+		val prev = statPrev
+		val fresh = statSession !== session || prev == null || v[0] < prev[0]
+		statSession = session
+		statPrev = v
+		val dt = (now - statPrevAt) / 1000.0
+		statPrevAt = now
+		val lossN = statLossN
+		val loss = if(lossN > 0) statLossSum / lossN else anyplayLoss
+		statLossSum = 0.0
+		statLossN = 0
+		if(fresh || prev == null || dt < 1.0)
+			return null
+		val profile = viewModel.session.connectInfo.videoProfile
+		fun round(x: Double, d: Int): Double { val m = Math.pow(10.0, d.toDouble()); return Math.round(x * m) / m }
+		return JSONObject()
+			.put("platform", "android")
+			.put("build", AnyPlayCloud.BUILD)
+			.put("input", anyplayInput())
+			.put("layout", "universal")   // на телефоні одна розкладка: кнопки як на геймпаді PS5
+			.put("mode", "")
+			.put("quality", AnyPlayQuality.level(this))
+			.put("auto", AnyPlayQuality.auto(this))
+			.put("width", profile.width)
+			.put("height", profile.height)
+			.put("codec", if(profile.codec == com.metallic.chiaki.lib.Codec.CODEC_H264) "h264" else "h265")
+			.put("fpsStream", round((v[0] - prev[0]) / dt, 1))
+			.put("fpsShown", round((v[1] - prev[1]) / dt, 1))
+			.put("bitrate", round((v[3] - prev[3]) * 8.0 / dt / 1e6, 2))
+			.put("loss", round(loss * 100.0, 2))
+			.put("dropped", v[2] - prev[2])
+			.put("local", false)
+	}
+
+	/** Чим керували останні 20 с: справжній геймпад, клавіатура чи кнопки на екрані */
+	private fun anyplayInput(): String
+	{
+		val now = SystemClock.elapsedRealtime()
+		val recent = listOf("gamepad" to anyplayPadAt, "keyboard" to anyplayKeysAt, "touch" to anyplayTouchAt)
+			.filter { it.second > 0 && now - it.second <= INPUT_RECENT_MS }
+			.maxByOrNull { it.second }
+		return recent?.first ?: if(anyplayControls) "touch" else "gamepad"
+	}
+
 	/** Сервер AnyPlay завершив гру: зупиняємо стрім і пояснюємо чому */
-	private fun anyplayEnd(text: String)
+	private fun anyplayEnd(text: String, code: String = "")
 	{
 		if(dialogContents == AnyPlayEndDialog || isFinishing)
 			return
@@ -458,7 +545,7 @@ class StreamActivity : AppCompatActivity()
 		viewModel.session.shutdown()
 		dialog?.dismiss()
 		val d = MaterialAlertDialogBuilder(this)
-			.setMessage(text)
+			.setMessage(AnyPlayStyle.errorMessage(text, code))
 			.setCancelable(false)
 			.setPositiveButton("Зрозуміло") { _, _ ->
 				dialog = null
@@ -567,6 +654,7 @@ class StreamActivity : AppCompatActivity()
 			.put("loss", anyplayLoss)
 			.put("controls", anyplayControls)
 			.put("admin", anyplayAdmin)
+			.put("guest", anyplayGuest)
 			.put("quality", AnyPlayQuality.name(this@StreamActivity))
 			.toString()
 
@@ -711,9 +799,9 @@ class StreamActivity : AppCompatActivity()
 				if(dialogContents != PsnFailedDialog && dialogContents != AnyPlayEndDialog)
 				{
 					dialog?.dismiss()
+					val e = AnyPlayCloud.connectError(this, state.step, state.error.value, state.diag)
 					val dialog = MaterialAlertDialogBuilder(this)
-						.setMessage("Не вдалося з'єднатися з приставкою через інтернет (${state.error}).\n\n"
-							+ "Перевір інтернет і спробуй ще раз. Якщо не допомагає, спробуй інший Wi-Fi або мобільний інтернет.")
+						.setMessage(AnyPlayStyle.errorMessage(e.text, e.code))
 						.setPositiveButton("Спробувати ще раз") { _, _ ->
 							dialog = null
 							reconnect()
@@ -809,8 +897,23 @@ class StreamActivity : AppCompatActivity()
 
 	private fun adjustStreamViewAspect() = adjustSurfaceViewAspect()
 
-	override fun dispatchKeyEvent(event: KeyEvent) = viewModel.input.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
-	override fun onGenericMotionEvent(event: MotionEvent) = viewModel.input.onGenericMotionEvent(event) || super.onGenericMotionEvent(event)
+	override fun dispatchKeyEvent(event: KeyEvent): Boolean
+	{
+		// телеметрія: геймпад чи клавіатура (системні кнопки телефона, як «Назад», не рахуємо)
+		val src = event.source
+		if(src and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || src and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK)
+			anyplayPadAt = SystemClock.elapsedRealtime()
+		else if(event.device?.isVirtual == false && event.device?.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC)
+			anyplayKeysAt = SystemClock.elapsedRealtime()
+		return viewModel.input.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
+	}
+
+	override fun onGenericMotionEvent(event: MotionEvent): Boolean
+	{
+		if(event.source and InputDevice.SOURCE_CLASS_JOYSTICK == InputDevice.SOURCE_CLASS_JOYSTICK)
+			anyplayPadAt = SystemClock.elapsedRealtime()
+		return viewModel.input.onGenericMotionEvent(event) || super.onGenericMotionEvent(event)
+	}
 }
 
 enum class TransformMode

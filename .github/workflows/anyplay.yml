@@ -9,37 +9,114 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Що збирати: all — усе, mac — лише Mac (швидше), arm — лише Mac на процесорах M"
+        description: "Що збирати: all — усе; mac — обидва Mac; arm — Mac на процесорах M; intel — Mac Intel; win — Windows; linux — Linux"
         type: choice
-        options: [all, mac, arm]
+        options: [all, mac, arm, intel, win, linux]
         default: all
       arm_runner:
         description: "Машина GitHub для збірки Mac M (якщо на macos-15 черга)"
         type: string
         default: macos-15
 
+# новіший push у гілку зупиняє ще не завершену збірку старішого (вона вже нікому не потрібна і займає машини);
+# запуски вручну не зупиняються
+concurrency:
+  group: anyplay-desktop-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 permissions:
   contents: write
 
 jobs:
+  # Що збирати. Вручну: параметр platforms. Під час push: мітки в повідомленні коміту
+  # [win] [mac] [arm] [intel] [linux] — збирати лише їх (можна кілька); без міток — усе.
+  # [android] без інших міток — комп'ютерні програми не збираються. [skip ci] — нічого (так працює GitHub).
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      win: ${{ steps.p.outputs.win }}
+      arm: ${{ steps.p.outputs.arm }}
+      intel: ${{ steps.p.outputs.intel }}
+      linux: ${{ steps.p.outputs.linux }}
+    steps:
+      - id: p
+        env:
+          EVENT: ${{ github.event_name }}
+          PLATFORMS: ${{ inputs.platforms }}
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          win=false; arm=false; intel=false; linux=false
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            case "${PLATFORMS:-all}" in
+              all) win=true; arm=true; intel=true; linux=true ;;
+              mac) arm=true; intel=true ;;
+              arm) arm=true ;;
+              intel) intel=true ;;
+              win) win=true ;;
+              linux) linux=true ;;
+            esac
+          else
+            msg=$(printf '%s' "$MSG" | tr '[:upper:]' '[:lower:]')
+            has() { case "$msg" in *"[$1]"*) return 0 ;; esac; return 1; }
+            if has win || has mac || has arm || has intel || has linux || has android; then
+              has win && win=true
+              { has mac || has arm; } && arm=true
+              { has mac || has intel; } && intel=true
+              has linux && linux=true
+            else
+              win=true; arm=true; intel=true; linux=true
+            fi
+          fi
+          printf 'win=%s\narm=%s\nintel=%s\nlinux=%s\n' $win $arm $intel $linux | tee -a "$GITHUB_OUTPUT"
+
   windows:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.win == 'true' }}
     uses: ./.github/workflows/build-windows-x86.yml
   macos:
+    needs: plan
+    if: ${{ needs.plan.outputs.arm == 'true' }}
     uses: ./.github/workflows/build-macos-arm.yml
     with:
       runner: ${{ inputs.arm_runner || 'macos-15' }}
   macos_intel:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms != 'arm' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.intel == 'true' }}
     uses: ./.github/workflows/build-macos-x86.yml
   linux:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.linux == 'true' }}
     uses: ./.github/workflows/build-appimage-x64.yml
 
+  # Mac M: GitHub часто не дає машину macOS arm64 і через 15 хв скасовує job
+  # («The job was not acquired by Runner of type hosted even after multiple attempts»).
+  # Тоді в тому самому запуску сам пробуємо ще двічі, без rerun-failed-jobs: спершу знову macos-15,
+  # потім macos-26 (там бібліотеки ставляться зі збірок для macOS 15, а збірка сама зупиняється,
+  # якщо якийсь файл вимагає новішої macOS, тож поганий файл не опублікується).
+  # Повтор — лише коли машину не дали (cancelled); справжня помилка збірки (failure) не повторюється.
+  # !cancelled(): якщо весь запуск зупинили вручну чи новішим push, повторів немає.
+  macos_retry1:
+    needs: macos
+    if: ${{ !cancelled() && needs.macos.result == 'cancelled' }}
+    uses: ./.github/workflows/build-macos-arm.yml
+    with:
+      runner: macos-15
+  macos_retry2:
+    needs: macos_retry1
+    if: ${{ !cancelled() && needs.macos_retry1.result == 'cancelled' }}
+    uses: ./.github/workflows/build-macos-arm.yml
+    with:
+      runner: macos-26
+
+  # Реліз виходить, щойно готові ті платформи, що зібрались з першого разу: Windows і Mac Intel не чекають повторів Mac M.
   release:
-    needs: [windows, macos, macos_intel, linux]
+    needs: [plan, windows, macos, macos_intel, linux]
     if: ${{ always() && (needs.windows.result == 'success' || needs.macos.result == 'success' || needs.macos_intel.result == 'success') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      build: ${{ steps.build.outputs.build }}
     steps:
       # номер збірки — з anyplay-build.txt (той самий, що вшитий у програму й у встановлювач)
       - uses: actions/checkout@v7
@@ -87,6 +164,12 @@ jobs:
           cp "out/mac/AnyPlay-Mac-$BUILD.zip" dist/ || true
           cp "out/mac-intel/AnyPlay-Mac-Intel-$BUILD.zip" dist/ || true
           ls -la dist
+          {
+            echo "### AnyPlay $BUILD (збірка ${{ github.run_number }})"
+            echo "Windows: ${{ needs.windows.result }}; Mac M: ${{ needs.macos.result }}; Mac Intel: ${{ needs.macos_intel.result }}; Linux: ${{ needs.linux.result }}"
+            [ "${{ needs.macos.result }}" = "cancelled" ] && echo "Mac M: GitHub не дав машину, повтор іде окремо й допише файли в цей самий реліз."
+            echo '```'; ls -la dist; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       # make_latest: false — що з цього отримають клієнти, вирішує власник: «Опублікувати» в CRM
       - uses: softprops/action-gh-release@v2
         with:
@@ -97,4 +180,42 @@ jobs:
             AnyPlay ${{ steps.build.outputs.build }} — програма для оренди PS5: вхід через Telegram, доступ лише в час оплаченої броні, якість, клавіші та свій акаунт PSN.
             Перше встановлення: Windows — AnyPlay-chiaki-ng-Windows.exe; Mac (Apple M1 і новіші) — AnyPlay-chiaki-ng-Mac.dmg; Mac (Intel) — AnyPlay-chiaki-ng-Mac-Intel.dmg; Linux / Steam Deck — AppImage.
             Файли з номером збірки (AnyPlay-Windows-${{ steps.build.outputs.build }}.exe, AnyPlay-Mac-${{ steps.build.outputs.build }}.zip, AnyPlay-Mac-Intel-${{ steps.build.outputs.build }}.zip) програма завантажує сама, коли оновлення опубліковано.
+          files: dist/*
+
+  # Mac M з повтору: дописує файли в уже створений реліз anyplay-r<N> (ті самі назви файлів).
+  # Якщо з першого разу не зібралось нічого, крім Mac M, релізу ще немає — тоді цей job його й створює.
+  release_mac_late:
+    needs: [release, macos_retry1, macos_retry2]
+    if: ${{ !cancelled() && needs.release.result != 'failure' && (needs.macos_retry1.result == 'success' || needs.macos_retry2.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: anyplay-build.txt
+          sparse-checkout-cone-mode: false
+      - name: Build number
+        id: build
+        run: |
+          build=$(tr -d '[:space:]' < anyplay-build.txt)
+          if [[ ! "$build" =~ ^[0-9]+$ ]]; then echo "У anyplay-build.txt має бути лише номер збірки"; exit 1; fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: chiaki-ng-macos_arm64-Release
+          path: out/mac
+      - name: Rename files
+        env:
+          BUILD: ${{ steps.build.outputs.build }}
+        run: |
+          mkdir -p dist
+          cp out/mac/*.dmg "dist/AnyPlay-chiaki-ng-Mac.dmg"
+          cp "out/mac/AnyPlay-Mac-$BUILD.zip" dist/ || true
+          ls -la dist
+          echo "Mac M зібрано з повтору (${{ needs.macos_retry1.result == 'success' && 'macos-15' || 'macos-26' }}), файли дописано в реліз anyplay-r${{ github.run_number }}." >> "$GITHUB_STEP_SUMMARY"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: anyplay-r${{ github.run_number }}
+          name: AnyPlay ${{ steps.build.outputs.build }} (збірка ${{ github.run_number }})
+          make_latest: false
           files: dist/*

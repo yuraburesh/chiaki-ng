@@ -93,7 +93,7 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: payStateRow.implicitHeight + 22
         radius: ap.radius
-        color: "#0dffffff"
+        color: ap.glass
         border.width: 1
         border.color: Qt.rgba(tone.r, tone.g, tone.b, 0.55)
         Rectangle {   // кольорова смужка зліва

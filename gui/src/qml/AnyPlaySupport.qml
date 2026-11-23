@@ -137,10 +137,10 @@ Item {
                     anchors.rightMargin: 8
                     width: Math.max(timeText.implicitWidth + 24, Math.min(maxW, Math.max(bodyText.implicitWidth, msg.photo ? 240 : 0) + 24))
                     height: col.implicitHeight + 16
-                    radius: 6
-                    color: msg.mine ? "#26ffffff" : "#12ffffff"
-                    border.width: msg.mine ? 0 : 1
-                    border.color: ap.hair
+                    radius: ap.cardRadius
+                    color: msg.mine ? "#33ff6a6a" : ap.glass
+                    border.width: 1
+                    border.color: msg.mine ? "#66ff8a3d" : ap.cardEdge
                     ColumnLayout {
                         id: col
                         x: 12; y: 8

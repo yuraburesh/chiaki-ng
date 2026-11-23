@@ -64,7 +64,7 @@ Item {
                 visible: !!crm.web && crm.web.loading
                 height: parent.height
                 width: parent.width * (crm.web ? crm.web.loadProgress : 0) / 100
-                color: ap.cyan
+                gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
             }
         }
         Item {

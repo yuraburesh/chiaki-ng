@@ -443,7 +443,7 @@ Rectangle {
             function clientTabs(withWallet, unread) {
                 return [{ id: "home", text: qsTr("Гра") }, { id: "book", text: qsTr("Бронювання") },
                         ...(withWallet ? [{ id: "wallet", text: qsTr("Баланс") }] : []),
-                        { id: "support", text: unread > 0 ? qsTr("Підтримка (%1)").arg(unread) : qsTr("Підтримка") },
+                        { id: "support", text: qsTr("Підтримка"), badge: unread },
                         { id: "quality", text: qsTr("Якість") }, { id: "psn", text: qsTr("Мій PSN") },
                         { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }];
             }

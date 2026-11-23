@@ -578,14 +578,23 @@ ColumnLayout {
             text: tb.text
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
-            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 16
-            color: tb.checked ? ap.dark : (tb.accent ? ap.gold : ap.ink)
+            font.family: ap.body; font.pixelSize: 16
+            color: tb.checked ? ap.inkAccent : (tb.accent ? ap.gold : ap.ink)
+            font.weight: tb.checked ? Font.Bold : Font.Medium
         }
-        background: Rectangle {
+        transform: Translate { y: tb.down ? 1 : (tb.hovered && !tb.checked ? -1 : 0); Behavior on y { NumberAnimation { duration: ap.tHover } } }
+        scale: tb.down ? ap.pressScale : 1
+        Behavior on scale { NumberAnimation { duration: ap.tPress } }
+        background: Rectangle {   // дизайн 112: скло, обраний час — захід сонця
             radius: ap.radius
-            color: tb.checked ? (tb.accent ? ap.gold : ap.ink) : (tb.hovered ? "#14ffffff" : "#0affffff")
-            border.width: tb.visualFocus ? 2 : 1
-            border.color: tb.visualFocus ? ap.cyan : (tb.accent ? ap.gold : (tb.checked || tb.hovered ? ap.ink : ap.edge))
+            color: tb.hovered ? ap.glassHi : ap.glass
+            border.width: tb.visualFocus ? 2 : (tb.checked ? 0 : 1)
+            border.color: tb.visualFocus ? ap.cyan : (tb.accent ? ap.gold : (tb.hovered ? ap.edgeHi : ap.edge))
+            Rectangle {
+                anchors.fill: parent; radius: parent.radius
+                visible: tb.checked
+                gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
+            }
         }
     }
 }

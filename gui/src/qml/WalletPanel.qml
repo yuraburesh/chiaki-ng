@@ -374,14 +374,23 @@ GridLayout {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
-            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 15
-            color: ab.checked ? ap.dark : ap.ink
+            font.family: ap.body; font.pixelSize: 15
+            color: ap.ink
+            font.weight: ab.checked ? Font.Bold : Font.Medium
         }
-        background: Rectangle {
+        transform: Translate { y: ab.down ? 1 : (ab.hovered && !ab.checked ? -1 : 0); Behavior on y { NumberAnimation { duration: ap.tHover } } }
+        scale: ab.down ? ap.pressScale : 1
+        Behavior on scale { NumberAnimation { duration: ap.tPress } }
+        background: Rectangle {   // дизайн 112: скло, обране — захід сонця
             radius: ap.radius
-            color: ab.checked ? ap.ink : (ab.hovered ? "#14ffffff" : "#0affffff")
-            border.width: ab.visualFocus ? 2 : 1
-            border.color: ab.visualFocus ? ap.cyan : (ab.checked || ab.hovered ? ap.ink : ap.edge)
+            color: ab.hovered ? ap.glassHi : ap.glass
+            border.width: ab.visualFocus ? 2 : (ab.checked ? 0 : 1)
+            border.color: ab.visualFocus ? ap.cyan : (ab.hovered ? ap.edgeHi : ap.edge)
+            Rectangle {
+                anchors.fill: parent; radius: parent.radius
+                visible: ab.checked
+                gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
+            }
         }
     }
 

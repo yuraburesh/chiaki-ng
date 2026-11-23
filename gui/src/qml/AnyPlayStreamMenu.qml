@@ -451,8 +451,8 @@ Item {
                             ApText { role: "cap"; text: qsTr("Керування приставкою") }
                             AnyPlayGuide {
                                 Layout.fillWidth: true
-                                columns: content.width >= 900 ? 2 : 1
-                                columnSpacing: 40
+                                columns: content.width >= 700 ? 2 : 1   // 1280×720 теж у дві колонки: без прокрутки
+                                columnSpacing: 32
                                 compact: true
                                 menuKey: panel.menuKey
                             }

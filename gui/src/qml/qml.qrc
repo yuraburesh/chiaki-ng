@@ -5,6 +5,9 @@
     <file>AnyPlayStyle.qml</file>
     <file>ApBackground.qml</file>
     <file>ApButton.qml</file>
+    <file>ApCard.qml</file>
+    <file>ApKey.qml</file>
+    <file>ApSwitch.qml</file>
     <file>ApChip.qml</file>
     <file>ApField.qml</file>
     <file>ApMethod.qml</file>

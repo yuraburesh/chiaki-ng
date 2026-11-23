@@ -69,7 +69,7 @@ Item {
             const n = a.next || [];
             return n.length ? qsTr("Режим адміна. Наступна бронь: %1 о %2").arg(n[0].user).arg(Chiaki.cloud.formatTime(n[0].start)) : qsTr("Режим адміна");
         }
-        const sec = Chiaki.cloud.endTs - Math.floor(Date.now() / 1000) - Chiaki.cloud.clockSkew;
+        const sec = Math.floor(Chiaki.cloud.endTs - Date.now() / 1000 - Chiaki.cloud.clockSkew);
         if (!(Chiaki.cloud.endTs > 0) || sec <= 0)
             return panel.guest ? qsTr("Гостьовий доступ") : "";
         const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60;
@@ -174,15 +174,24 @@ Item {
         return out;
     }
 
-    // ── фон: гра видно праворуч, ліворуч темніше ──
+    // ── фон: ніч Vice City — гра ледь проглядає крізь темне скло, знизу світіння заходу сонця ──
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
             orientation: Gradient.Horizontal
             // гра під меню лише ледь проглядає: інакше текст зливається з яскравою картинкою
-            GradientStop { position: 0.0; color: "#f70d0a16" }
-            GradientStop { position: 0.5; color: "#f00d0a16" }
-            GradientStop { position: 1.0; color: "#e00d0a16" }
+            GradientStop { position: 0.0; color: "#f714091f" }
+            GradientStop { position: 0.45; color: "#ee150a22" }
+            GradientStop { position: 1.0; color: "#d8180b26" }
+        }
+    }
+    Rectangle {   // світіння обрію: рожево-помаранчеве знизу
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        height: parent.height * 0.55
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#00ff4f8b" }
+            GradientStop { position: 0.75; color: "#24ff4f8b" }
+            GradientStop { position: 1.0; color: "#40ff8a3d" }
         }
     }
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: (wheel) => wheel.accepted = true }
@@ -190,13 +199,14 @@ Item {
     Item {
         id: zoom
         readonly property real k: Math.max(1, Math.min(2.2, Math.min(panel.width / 1600, panel.height / 1000)))
+        readonly property bool low: height < 780          // 1280×720, 1366×768: щільніші пункти, щоб усе вмістилось без прокрутки
         width: panel.width / k
         height: panel.height / k
         scale: k
         transformOrigin: Item.TopLeft
 
         ColumnLayout {
-            anchors { fill: parent; leftMargin: zoom.width < 900 ? 20 : 32; rightMargin: anchors.leftMargin; topMargin: zoom.height < 640 ? 16 : 28; bottomMargin: zoom.height < 640 ? 12 : 22 }
+            anchors { fill: parent; leftMargin: zoom.width < 900 ? 20 : 32; rightMargin: anchors.leftMargin; topMargin: zoom.low ? 16 : 28; bottomMargin: zoom.low ? 12 : 22 }
             spacing: 0
 
             // ── шапка ──
@@ -204,32 +214,54 @@ Item {
                 Layout.fillWidth: true
                 Layout.bottomMargin: 12
                 spacing: 20
-                Text {
-                    text: qsTr("Пауза AnyPlay")
-                    font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: zoom.height < 640 ? 24 : 30
-                    font.letterSpacing: 2; font.capitalization: Font.AllUppercase
-                    color: ap.ink
+                Column {
+                    spacing: 6
+                    Text {
+                        text: qsTr("Пауза")
+                        font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: zoom.low ? 30 : 40
+                        font.letterSpacing: 3; font.capitalization: Font.AllUppercase
+                        color: ap.ink
+                    }
+                    Rectangle {   // смужка заходу сонця під заголовком
+                        width: 64; height: 3; radius: 2
+                        gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
+                    }
                 }
                 Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
-                ApText { role: "eyebrow"; text: panel.leftText() }
+                // скільки лишилось: золота пігулка
+                Rectangle {
+                    visible: timeText.text !== ""
+                    Layout.alignment: Qt.AlignVCenter
+                    implicitWidth: timeText.implicitWidth + 28
+                    implicitHeight: timeText.implicitHeight + 14
+                    radius: height / 2
+                    color: ap.glass
+                    border.width: 1; border.color: panel.admin ? ap.edge : "#66ffd27a"
+                    Text {
+                        id: timeText
+                        anchors.centerIn: parent
+                        text: panel.leftText()
+                        color: panel.admin ? ap.mute : ap.gold
+                        font.family: ap.display; font.weight: Font.Medium; font.pixelSize: zoom.low ? 14 : 16
+                        font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
+                    }
+                }
             }
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: ap.hair }
-
             RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.topMargin: zoom.height < 640 ? 12 : 22
-                Layout.bottomMargin: 12
-                spacing: zoom.width < 1000 ? 32 : 56
+                Layout.topMargin: zoom.low ? 20 : 30
+                Layout.bottomMargin: zoom.low ? 18 : 22
+                spacing: zoom.width < 1000 ? 40 : 56
 
                 // ── ліворуч: пункти меню ──
                 ColumnLayout {
-                    readonly property real w: Math.max(220, Math.min(300, zoom.width * 0.26))
+                    readonly property real w: Math.max(230, Math.min(320, zoom.width * 0.25))
                     Layout.fillWidth: false
                     Layout.preferredWidth: w
                     Layout.maximumWidth: w
                     Layout.alignment: Qt.AlignTop
-                    spacing: 0
+                    spacing: zoom.low ? 3 : 6
                     PauseItem { id: resumeBtn; pageId: "back"; text: qsTr("Повернутись у гру"); KeyNavigation.down: extendBtn }
                     PauseItem { id: extendBtn; pageId: "extend"; visible: panel.canExtend; text: qsTr("Продовжити бронювання"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
                     PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: qualityBtn }
@@ -249,6 +281,16 @@ Item {
                     id: content
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+
+                    // скляна панель під вмістом (об'єм: світліша смужка вгорі, тінь)
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.leftMargin: -18; anchors.rightMargin: -18; anchors.topMargin: -16; anchors.bottomMargin: -10
+                        radius: ap.cardRadius
+                        color: "#5a0c0618"
+                        border.width: 1; border.color: ap.cardEdge
+                        Rectangle { x: 1; y: 1; width: parent.width - 2; height: 1; color: ap.cardTop }
+                    }
 
                     // повернутись у гру: гра не на паузі, гучність, головні клавіші
                     PageFlick {
@@ -667,15 +709,17 @@ Item {
         Item { id: pfInner; width: pf.width; height: childrenRect.height }
     }
 
-    // пункт ліворуч: великі літери, обраний — з підсвіткою і відступом
+    // пункт ліворуч: великі літери на склі. Обраний — у градієнті заходу сонця зі світінням; наведення — зсув праворуч
+    // і підсвітка; натиск — стискання; фокус з клавіатури чи геймпада — блакитна рамка
     component PauseItem: Item {
         id: pi
         property string pageId
         property string text
         property bool danger: false
         readonly property bool current: panel.page === pageId
+        readonly property bool hov: piMouse.containsMouse
         Layout.fillWidth: true
-        implicitHeight: piText.implicitHeight + (zoom.height < 640 ? 18 : 26)
+        implicitHeight: piText.implicitHeight + (zoom.low ? 16 : 22)
         activeFocusOnTab: true
         onActiveFocusChanged: if (activeFocus) panel.page = pageId
         function activate() {
@@ -686,33 +730,68 @@ Item {
         Keys.onEnterPressed: activate()
         Keys.onSpacePressed: activate()
         Keys.onRightPressed: if (pageId !== "back") activate()
-        Rectangle {
+        Item {
+            id: piBody
             anchors.fill: parent
-            visible: pi.current
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: "#1fffffff" }
-                GradientStop { position: 1.0; color: "#00ffffff" }
+            x: 0
+            transform: Translate { x: pi.hov && !pi.current ? 6 : 0; Behavior on x { NumberAnimation { duration: ap.tHover; easing.type: Easing.OutCubic } } }
+            scale: piMouse.pressed ? ap.pressScale : 1
+            Behavior on scale { NumberAnimation { duration: ap.tPress } }
+            // тінь під обраним
+            Rectangle {
+                visible: pi.current
+                x: 0; y: 4; width: parent.width; height: parent.height
+                radius: ap.radius
+                color: pi.danger ? "#40ff4f4f" : "#55ff4f8b"
+                opacity: 0.6
+            }
+            // скло (наведення) або градієнт (обраний)
+            Rectangle {
+                anchors.fill: parent
+                radius: ap.radius
+                color: pi.hov ? ap.glassHi : "transparent"
+                border.width: pi.hov && !pi.current ? 1 : 0
+                border.color: ap.edge
+                Behavior on color { ColorAnimation { duration: ap.tHover } }
+            }
+            Rectangle {
+                anchors.fill: parent
+                radius: ap.radius
+                visible: pi.current
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: pi.danger ? "#e0d94a5a" : ap.accentA }
+                    GradientStop { position: 1.0; color: pi.danger ? "#c0b0303f" : ap.accentB }
+                }
+                Rectangle { x: 6; y: 1; width: parent.width - 12; height: 1; color: "#59ffffff" }   // відблиск зверху
+            }
+            Text {
+                id: piText
+                anchors { left: parent.left; leftMargin: 16; right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+                text: pi.text
+                elide: Text.ElideRight
+                font.family: ap.display; font.weight: pi.current ? Font.DemiBold : Font.Medium; font.pixelSize: zoom.low ? 17 : 19
+                font.letterSpacing: 1.8; font.capitalization: Font.AllUppercase
+                color: pi.current ? ap.inkAccent : pi.danger ? ap.bad : ap.ink
+                opacity: pi.current || pi.hov || pi.activeFocus ? 1 : 0.72
+                Behavior on opacity { NumberAnimation { duration: ap.tHover } }
+            }
+            Text {   // стрілка праворуч у обраного: туди йде вміст
+                visible: pi.current && pi.pageId !== "back"
+                anchors { right: parent.right; rightMargin: 14; verticalCenter: parent.verticalCenter }
+                text: "›"
+                color: ap.inkAccent
+                font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: zoom.low ? 18 : 22
+            }
+            Rectangle {   // фокус з клавіатури чи геймпада
+                anchors.fill: parent
+                anchors.margins: -3
+                radius: ap.radius + 3
+                visible: pi.activeFocus
+                color: "transparent"
+                border.width: 2; border.color: ap.cyan
             }
         }
-        Rectangle {   // фокус з клавіатури чи геймпада
-            visible: pi.activeFocus
-            anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-            width: 2
-            color: ap.cyan
-        }
-        Text {
-            id: piText
-            anchors { left: parent.left; leftMargin: pi.current ? 12 : 4; right: parent.right; verticalCenter: parent.verticalCenter }
-            text: pi.text
-            elide: Text.ElideRight
-            font.family: ap.display; font.weight: Font.Medium; font.pixelSize: zoom.height < 640 ? 15 : 17
-            font.letterSpacing: 1.8; font.capitalization: Font.AllUppercase
-            color: pi.danger ? ap.bad : ap.ink
-            opacity: pi.current || piMouse.containsMouse || pi.activeFocus ? 1 : 0.6
-            Behavior on anchors.leftMargin { NumberAnimation { duration: 120 } }
-        }
-        Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: 1; color: ap.hair }
         MouseArea {
             id: piMouse
             anchors.fill: parent

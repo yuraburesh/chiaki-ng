@@ -475,7 +475,8 @@ Item {
     // ── усе на одній сторінці: якщо не вміщується, зменшуємо малюнок геймпада (прокрутка лишається тільки на крайній випадок) ──
     property real gpCap: 540
     // AnyPlay 111: у головному вікні схема більша й стабільна: розмір залежить лише від ширини вікна, а не від розкладки чи режиму
-    readonly property bool big: !inGame
+    // AnyPlay 112: і в меню гри той самий розрахунок «усе на одній сторінці» (раніше там підгонка зменшувала геймпад кроками)
+    readonly property bool big: true
     // AnyPlay 112: у головному вікні все на одній сторінці. Масштаб — за шириною й висотою вікна (менший з двох),
     // розмір геймпада — за місцем, що лишилось після незмінних за висотою частин. Від розкладки й режиму не залежить.
     readonly property real k: big ? Math.max(0.82, Math.min(1.35, page.cw / 1180, flick.height / 690)) : 1   // масштаб кнопок і підписів
@@ -607,12 +608,9 @@ Item {
                         id: pick
                         width: Math.max(Math.round(210 * root.k), pickRow.implicitWidth + 18)
                         height: Math.round(36 * root.k)
-                        radius: 2
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0; color: "#ffffff" }
-                            GradientStop { position: 1; color: "#d9ffffff" }
-                        }
+                        radius: ap.radius
+                        color: ap.glassHi
+                        border.width: 1; border.color: ap.edgeHi
                         // клік по полю розкладки лише скасовує очікування клавіші (не призначає ЛКМ)
                         MouseArea { anchors.fill: parent; onPressed: { root.cancelWait(); root.forceActiveFocus(); } }
                         Row {
@@ -631,7 +629,7 @@ Item {
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.layouts[root.layoutIndex()] ? root.layouts[root.layoutIndex()].name : ""
-                                color: ap.dark
+                                color: ap.ink
                                 font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(14 * root.k)
                             }
                         }
@@ -643,7 +641,7 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 rightPadding: 4
                                 text: (root.layoutIndex() + 1) + " / " + root.layouts.length
-                                color: "#6a6278"
+                                color: ap.faint
                                 font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 11
                             }
                             Repeater {
@@ -652,12 +650,12 @@ Item {
                                     required property var modelData
                                     width: arrow.implicitWidth + 12; height: arrow.implicitHeight + 4
                                     radius: 4
-                                    color: arrowArea.containsMouse ? "#221a0b2e" : "transparent"
+                                    color: arrowArea.containsMouse ? ap.glassHi : "transparent"
                                     Text {
                                         id: arrow
                                         anchors.centerIn: parent
                                         text: modelData[1]
-                                        color: ap.dark
+                                        color: ap.ink
                                         font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 15
                                     }
                                     MouseArea {
@@ -773,7 +771,12 @@ Item {
                                         }
                                     }
                                 }
-                                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: cur ? "#ffffff" : "#26ffffff" }
+                                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: "#26ffffff" }
+                                Rectangle {   // поточний режим — лінія заходу сонця
+                                    visible: cur
+                                    anchors.bottom: parent.bottom; width: parent.width; height: 3; radius: 1.5
+                                    gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
+                                }
                                 MouseArea {
                                     id: tabArea
                                     anchors.fill: parent
@@ -1508,21 +1511,32 @@ Item {
         font.capitalization: Font.AllUppercase
     }
 
-    component LinkButton: Rectangle {
+    component LinkButton: Item {
         id: lb
         property alias text: lbText.text
         signal clicked()
-        width: lbText.implicitWidth + Math.round(18 * root.k)
-        height: lbText.implicitHeight + Math.round(10 * root.k)
-        radius: 3
-        // легкий об'єм і підйом при наведенні, як у клавіш
-        y: lbArea.pressed ? 1 : lbArea.containsMouse ? -1 : 0
-        Behavior on y { NumberAnimation { duration: 120 } }
-        color: lbArea.containsMouse ? "#1fffffff" : "#0fffffff"
-        Behavior on color { ColorAnimation { duration: 150 } }
-        border.width: 1
-        border.color: lbArea.containsMouse ? "#ffffff" : "#38ffffff"
-        Text { id: lbText; anchors.centerIn: parent; color: ap.ink; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k) }
+        width: lbText.implicitWidth + Math.round(22 * root.k)
+        height: lbText.implicitHeight + Math.round(12 * root.k)
+        // скляна кнопка: наведення піднімає й підсвічує край заходом сонця, натиск опускає
+        Rectangle {   // тінь
+            x: 1; y: 3; width: parent.width - 2; height: parent.height
+            radius: ap.radiusSmall; color: ap.shadow; opacity: lbArea.containsMouse ? 0.9 : 0.5
+        }
+        Rectangle {
+            id: lbFace
+            width: parent.width; height: parent.height
+            y: lbArea.pressed ? 1 : lbArea.containsMouse ? -ap.lift : 0
+            scale: lbArea.pressed ? ap.pressScale : 1
+            Behavior on y { NumberAnimation { duration: ap.tHover; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: ap.tPress } }
+            radius: ap.radiusSmall
+            color: lbArea.containsMouse ? ap.glassHi : ap.glass
+            Behavior on color { ColorAnimation { duration: ap.tHover } }
+            border.width: 1
+            border.color: lbArea.containsMouse ? ap.accent : ap.edge
+            Rectangle { x: 4; y: 1; width: parent.width - 8; height: 1; color: ap.cardTop }
+            Text { id: lbText; anchors.centerIn: parent; color: ap.ink; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k) }
+        }
         MouseArea { id: lbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.forceActiveFocus(); lb.clicked(); } }   // фокус спершу: кнопка може відкрити вікно, яке забере його собі
     }
 
@@ -1548,7 +1562,7 @@ Item {
             visible: !kc.isEmpty
             x: 1; y: kc.depth + 1
             width: parent.width - 2; height: parent.height - kc.depth
-            radius: 5
+            radius: ap.chipRadius
             color: "#40000000"
         }
         // бортик (бік клавіші)
@@ -1556,7 +1570,7 @@ Item {
             visible: !kc.isEmpty
             y: kc.depth
             width: parent.width; height: parent.height - kc.depth
-            radius: 5
+            radius: ap.chipRadius
             color: kc.isWait ? "#b9b4c4" : "#2a2238"
             border.width: 1; border.color: kc.isWait ? "#ffffff" : "#26ffffff"
         }
@@ -1566,13 +1580,13 @@ Item {
             y: kc.lift
             Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
             width: parent.width; height: parent.height - kc.depth
-            radius: 5
+            radius: ap.chipRadius
             gradient: Gradient {
                 GradientStop { position: 0; color: kc.isWait ? "#ffffff" : kc.isEmpty ? "transparent" : kc.hov ? "#5a5070" : "#4a4160" }
                 GradientStop { position: 1; color: kc.isWait ? "#e6e2ee" : kc.isEmpty ? "transparent" : kc.hov ? "#463d5c" : "#383049" }
             }
             border.width: kc.isEmpty ? 0 : 1
-            border.color: kc.isWait || kc.hov ? "#ffffff" : "#59ffffff"
+            border.color: kc.isWait ? "#ffffff" : kc.hov ? ap.accent : "#59ffffff"
             // відблиск зверху
             Rectangle {
                 visible: !kc.isEmpty && !kc.isWait

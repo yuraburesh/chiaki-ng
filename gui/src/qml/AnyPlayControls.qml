@@ -475,22 +475,27 @@ Item {
     // ── усе на одній сторінці: якщо не вміщується, зменшуємо малюнок геймпада (прокрутка лишається тільки на крайній випадок) ──
     property real gpCap: 540
     // AnyPlay 111: у головному вікні схема більша й стабільна: розмір залежить лише від ширини вікна, а не від розкладки чи режиму
-    readonly property bool big: !inGame
-    readonly property real k: big ? Math.max(1.12, Math.min(1.4, page.cw / 1150)) : 1   // масштаб кнопок і підписів
+    // AnyPlay 112: і в меню гри той самий розрахунок «усе на одній сторінці» (раніше там підгонка зменшувала геймпад кроками)
+    readonly property bool big: true
+    // AnyPlay 112: у головному вікні все на одній сторінці. Масштаб — за шириною й висотою вікна (менший з двох),
+    // розмір геймпада — за місцем, що лишилось після незмінних за висотою частин. Від розкладки й режиму не залежить.
+    readonly property real k: big ? Math.max(0.82, Math.min(1.35, page.cw / 1180, flick.height / 690)) : 1   // масштаб кнопок і підписів
+    readonly property int extraMax: 24          // найбільше «Інших дій» серед усіх розкладок і режимів (GTA VI пішки: 23)
+    readonly property real bigRigH: Math.max(Math.round(200 * k), flick.height - side.height - extra.height - bottomBox.height - Math.round(36 * k) - 6)
     // головне вікно: схема ширша за інші вкладки (до 1600), щоб не лишалось порожніх полів обабіч
-    readonly property real inset: big ? Math.min(sideInset, Math.max(28, (width - 1600) / 2)) : sideInset
+    readonly property real inset: !inGame ? Math.min(sideInset, Math.max(28, (width - 1900) / 2)) : sideInset
     property string hoverBtn: ""          // кнопка геймпада під мишею в підписах: її лінія й кнопка підсвічуються
     // низьке вікно в меню гри (ноутбук 13"): щільніші рядки й без зайвого, щоб усе вмістилось без прокрутки
     readonly property bool tight: inGame && flick.height > 0 && flick.height < 800
     readonly property bool tighter: tight && flick.height < 670   // 1366×768 і менше
     // висота рядка підписів і «Інших дій»: якщо геймпад уже найменший, а сторінка ще не вміщується, рядки щільнішають
-    readonly property real baseRow: big ? Math.round(31 * k) : tighter ? 23 : tight ? 26 : 31
+    readonly property real baseRow: big ? Math.max(20, Math.min(Math.round(36 * k), Math.floor((bigRigH - 12) / root.sideL.length) - 1)) : tighter ? 23 : tight ? 26 : 31
     property real rowH: 31
     onBaseRowChanged: { rowH = baseRow; fitTimer.restart(); }
     // поки сторінка підганяється під вікно, її не видно: людина одразу бачить готовий розмір, без «великий, а потім зменшується»
     property bool fitted: false
     function refit() {
-        if (big) { rowH = baseRow; fitted = true; return; }   // головне вікно: без підгонки (вона й змушувала геймпад скакати), сторінка гортається
+        if (big) { rowH = baseRow; fitted = true; return; }   // головне вікно: розміри вже пораховані з висоти вікна   // головне вікно: без підгонки (вона й змушувала геймпад скакати), сторінка гортається
         if (!visible || flick.height < 200)
             return;
         const over = page.height - flick.height, gh = gp.height;
@@ -558,20 +563,20 @@ Item {
             id: page
             opacity: root.fitted ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 120 } }
-            readonly property real cw: Math.min(root.big ? 1600 : 1440, root.width - 2 * root.inset)
+            readonly property real cw: Math.min(root.inGame ? 1440 : 1900, root.width - 2 * root.inset)
             readonly property bool narrow: cw <= (root.inGame ? 600 : 900)   // у меню гри ліворуч список розділів, тож місця менше
             x: (root.width - cw) / 2
             width: cw
             topPadding: 0
-            bottomPadding: root.tighter ? 2 : root.inGame ? 12 : 28
+            bottomPadding: root.tighter ? 2 : root.inGame ? 12 : root.big ? 4 : 28
             spacing: 0
             // відступи між частинами — як у прототипі (12 між заголовком і екраном, 10 поля екрана, 14 під верхом, 8 між частинами)
 
             // заголовок
             Item {
-                visible: !root.inGame
+                visible: !root.inGame && !root.big
                 width: page.cw
-                height: h1.implicitHeight
+                height: visible ? h1.implicitHeight : 0
                 Text {
                     id: h1
                     objectName: "apH1"
@@ -582,11 +587,12 @@ Item {
                 }
             }
 
-            Gap { height: root.inGame ? 0 : 21 }
+            Gap { height: root.inGame ? 0 : root.big ? Math.round(10 * root.k) : 21 }
             // ── верх: розкладка, режим, кнопки й миша ──
             Item {
                 id: side
                 objectName: "apSide"
+                z: 5                                   // підказка «?» відкривається поверх геймпада
                 width: page.cw
                 readonly property real gapX: 28
                 readonly property bool modesInline: pickBlock.width + gapX + modesBlock.width <= width
@@ -602,12 +608,9 @@ Item {
                         id: pick
                         width: Math.max(Math.round(210 * root.k), pickRow.implicitWidth + 18)
                         height: Math.round(36 * root.k)
-                        radius: 2
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0; color: "#ffffff" }
-                            GradientStop { position: 1; color: "#d9ffffff" }
-                        }
+                        radius: ap.radius
+                        color: ap.glassHi
+                        border.width: 1; border.color: ap.edgeHi
                         // клік по полю розкладки лише скасовує очікування клавіші (не призначає ЛКМ)
                         MouseArea { anchors.fill: parent; onPressed: { root.cancelWait(); root.forceActiveFocus(); } }
                         Row {
@@ -626,7 +629,7 @@ Item {
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.layouts[root.layoutIndex()] ? root.layouts[root.layoutIndex()].name : ""
-                                color: ap.dark
+                                color: ap.ink
                                 font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(14 * root.k)
                             }
                         }
@@ -638,7 +641,7 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 rightPadding: 4
                                 text: (root.layoutIndex() + 1) + " / " + root.layouts.length
-                                color: "#6a6278"
+                                color: ap.faint
                                 font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 11
                             }
                             Repeater {
@@ -647,12 +650,12 @@ Item {
                                     required property var modelData
                                     width: arrow.implicitWidth + 12; height: arrow.implicitHeight + 4
                                     radius: 4
-                                    color: arrowArea.containsMouse ? "#221a0b2e" : "transparent"
+                                    color: arrowArea.containsMouse ? ap.glassHi : "transparent"
                                     Text {
                                         id: arrow
                                         anchors.centerIn: parent
                                         text: modelData[1]
-                                        color: ap.dark
+                                        color: ap.ink
                                         font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 15
                                     }
                                     MouseArea {
@@ -682,7 +685,56 @@ Item {
                     readonly property real bigW: Math.max(modesRow.implicitWidth, Math.min(Math.round(480 * root.k), side.width - Math.round(210 * root.k) - 18 - actsBlock.width - 2 * side.gapX))
                     width: Math.min(side.width, root.big ? bigW : Math.max(modesRow.implicitWidth, root.tight ? side.width - pickBlock.width - side.gapX : 560))
                     spacing: 5
-                    Cap { text: qsTr("Режим") }
+                    Row {
+                        spacing: 8
+                        Cap { text: qsTr("Режим"); anchors.verticalCenter: parent.verticalCenter }
+                        // головне вікно: підказка про режими й колесо зброї — у кружечку «?» (наведи або клацни)
+                        Rectangle {
+                            id: helpDot
+                            visible: root.big && root.view.hint !== ""
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.round(18 * root.k); height: width; radius: width / 2
+                            color: helpArea.containsMouse || helpPop.pinned ? "#ffffff" : "#1fffffff"
+                            border.width: 1; border.color: "#80ffffff"
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Text {
+                                anchors.centerIn: parent
+                                text: "?"
+                                color: helpArea.containsMouse || helpPop.pinned ? ap.dark : ap.ink
+                                font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: Math.round(11 * root.k)
+                            }
+                            MouseArea {
+                                id: helpArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                Accessible.name: qsTr("Як перемикаються режими")
+                                onClicked: { helpPop.pinned = !helpPop.pinned; root.forceActiveFocus(); }
+                            }
+                            Rectangle {
+                                id: helpPop
+                                property bool pinned: false
+                                visible: helpArea.containsMouse || pinned
+                                x: 0; y: parent.height + 8
+                                width: Math.min(Math.round(520 * root.k), page.cw - modesBlock.x - 20)
+                                height: helpText.implicitHeight + 24
+                                radius: 10
+                                color: "#f2221a30"
+                                border.width: 1; border.color: "#40ffffff"
+                                Text {
+                                    id: helpText
+                                    x: 14; y: 12
+                                    width: parent.width - 28
+                                    text: root.view.hint
+                                    textFormat: Text.StyledText
+                                    wrapMode: Text.WordWrap
+                                    color: "#d9ffffff"
+                                    lineHeight: 1.15
+                                    font.family: ap.body; font.pixelSize: Math.round(13 * root.k)
+                                }
+                            }
+                        }
+                    }
                     Row {
                         id: modesRow
                         spacing: 2
@@ -719,7 +771,12 @@ Item {
                                         }
                                     }
                                 }
-                                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: cur ? "#ffffff" : "#26ffffff" }
+                                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: "#26ffffff" }
+                                Rectangle {   // поточний режим — лінія заходу сонця
+                                    visible: cur
+                                    anchors.bottom: parent.bottom; width: parent.width; height: 3; radius: 1.5
+                                    gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
+                                }
                                 MouseArea {
                                     id: tabArea
                                     anchors.fill: parent
@@ -734,11 +791,11 @@ Item {
                         width: Math.min(root.tight ? 900 : root.big ? modesBlock.bigW : 560, modesBlock.width)
                         topPadding: 1
                         text: root.tighter ? (root.view.hintShort || "") : root.view.hint
-                        visible: text !== "" || root.big
+                        visible: text !== "" && !root.big
                         // у головному вікні місце під 5 рядків підказки завжди, щоб геймпад не стрибав між розкладками
                         // скільки рядків займе найдовша підказка (GTA, ~330 знаків) за цієї ширини: стільки місця й тримаємо для всіх
                         readonly property int reserveLines: Math.max(3, Math.ceil(330 * 0.6 * hintFm.font.pixelSize / Math.max(1, width)))
-                        height: root.big ? Math.ceil(Math.max(implicitHeight, reserveLines * hintFm.lineSpacing + 6)) : visible ? implicitHeight : 0
+                        height: visible ? implicitHeight : 0
                         FontMetrics { id: hintFm; font.family: ap.body; font.pixelSize: Math.round(12 * root.k) }
                         textFormat: Text.StyledText
                         wrapMode: Text.WordWrap
@@ -841,11 +898,11 @@ Item {
                 }
             }
 
-            Gap { height: root.tighter ? 4 : 14 }
+            Gap { height: root.tighter ? 4 : root.big ? Math.round(10 * root.k) : 14 }
             // ── назва режиму над геймпадом ──
             Column {
                 objectName: "apTitle"
-                visible: !root.tight
+                visible: !root.tight && !root.big
                 height: visible ? implicitHeight : 0
                 width: page.cw
                 spacing: 4
@@ -860,7 +917,7 @@ Item {
                 Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 1; height: 16; color: "#66ffffff" }
             }
 
-            Gap { height: root.tight ? 0 : 8 }
+            Gap { height: root.tight || root.big ? 0 : 8 }
             // ── геймпад з підписами ──
             Item {
                 id: rig
@@ -870,7 +927,7 @@ Item {
                 readonly property real leftMC: colL.maxRow
                 readonly property real rightMC: colR.maxRow
                 readonly property real gpW: page.narrow ? Math.min(440, root.gpCap, page.cw)
-                                          : root.big ? Math.max(320, Math.min(700, page.cw - 2 * gap - 2 * Math.round(300 * root.k)))
+                                          : root.big ? Math.max(240, Math.min(920, page.cw - 2 * gap - 2 * Math.round(290 * root.k), (root.bigRigH - 8) * root.padW / root.padH))
                                                      : Math.max(200, Math.min(540, root.gpCap, page.cw - leftMC - rightMC - 2 * gap))
                 readonly property real rest: page.cw - 2 * gap - gpW
                 readonly property real leftW: page.narrow ? 0 : root.big ? rest / 2 : (leftMC > rest / 2 ? leftMC : rightMC > rest / 2 ? Math.max(leftMC, rest - rightMC) : rest / 2)
@@ -879,7 +936,7 @@ Item {
                 readonly property real narrowColW: narrowCols === 2 ? (page.cw - 28) / 2 : page.cw
                 // у головному вікні висота не залежить від кількості рядків: завжди 10 з кожного боку (sideL/sideR)
                 height: page.narrow ? gp.height + 8 + (narrowCols === 2 ? Math.max(colL.height, colR.height) : colL.height + colR.height)
-                                    : root.big ? Math.max(gp.height, root.sideL.length * (root.rowH + 1)) + 12
+                                    : root.big ? root.bigRigH
                                     : Math.max(gp.height, colL.height, colR.height) + 12
 
                 Column {
@@ -1153,17 +1210,35 @@ Item {
                 }
             }
 
-            Gap { height: 8; visible: extra.visible }
+            Gap { height: root.big ? Math.round(8 * root.k) : 8; visible: extra.visible }
             // ── інші дії ──
             Item {
                 id: extra
-                visible: root.view.extra.length > 0
+                // головне вікно: місце під «Інші дії» однакове для всіх розкладок і режимів (за найбільшою), тож геймпад не стрибає
+                visible: root.big || root.view.extra.length > 0
                 width: page.cw
-                height: visible ? extraGrid.y + extraGrid.height : 0
-                readonly property int cols: Math.max(1, Math.floor((width + 24) / ((root.big ? 290 * root.k : root.tighter ? 168 : 230) + 24)))
+                readonly property real rowE: Math.round(27 * root.k)
+                readonly property int reserveRows: Math.ceil(root.extraMax / cols)
+                height: !visible ? 0 : root.big ? extraGrid.y + reserveRows * rowE : extraGrid.y + extraGrid.height
+                readonly property int cols: root.big ? Math.max(2, Math.min(4, Math.floor((width + 24) / (270 * root.k + 24))))
+                                                     : Math.max(1, Math.floor((width + 24) / ((root.tighter ? 168 : 230) + 24)))
                 readonly property real colW: (width - (cols - 1) * 24) / cols
                 Rectangle { width: parent.width; height: 1; color: "#2bffffff" }
-                Cap { id: extraCap; y: 11; text: qsTr("Інші дії") }
+                Cap { id: extraCap; y: root.big ? Math.round(8 * root.k) : 11; text: qsTr("Інші дії") }
+                Text {
+                    visible: root.big && root.view.extra.length > 0
+                    anchors.left: extraCap.right; anchors.leftMargin: 14; anchors.verticalCenter: extraCap.verticalCenter
+                    text: qsTr("ⓘ наведи мишу, щоб побачити, як натискати")
+                    color: "#66ffffff"
+                    font.family: ap.body; font.pixelSize: Math.round(12 * root.k)
+                }
+                Text {
+                    visible: root.big && root.view.extra.length === 0
+                    anchors.left: extraCap.right; anchors.leftMargin: 14; anchors.verticalCenter: extraCap.verticalCenter
+                    text: qsTr("у цьому режимі всі дії вже на геймпаді вище")
+                    color: "#80ffffff"
+                    font.family: ap.body; font.pixelSize: Math.round(13 * root.k)
+                }
                 Grid {
                     id: extraGrid
                     y: extraCap.y + extraCap.height + 4
@@ -1180,7 +1255,14 @@ Item {
                             // рядки однакової висоти в межах ряду сітки, як у прототипі
                             readonly property int rowIdx: Math.floor(index / extra.cols)
                             readonly property real natural: Math.max(root.rowH, Math.max(liText.implicitHeight, liKeys.implicitHeight) + (root.rowH < 26 ? 2 : 8))
-                            height: extra.rowHeight(rowIdx)
+                            height: root.big ? extra.rowE : extra.rowHeight(rowIdx)
+                            // головне вікно: сіра примітка («на джойстику: L1») — у рядку, якщо вміщується, інакше в підказці при наведенні
+                            readonly property bool howFits: !li.modelData.how || liFm.advanceWidth(li.modelData.name + "   " + li.modelData.how.replace(/<[^>]+>/g, "")) <= liText.width
+                            FontMetrics { id: liFm; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k) }
+                            HoverHandler { id: liHover; enabled: root.big && !li.howFits }
+                            ToolTip.visible: liHover.hovered && root.big && !li.howFits
+                            ToolTip.text: li.modelData.name + ": " + li.modelData.how.replace(/<[^>]+>/g, "")
+                            ToolTip.delay: 250
                             Column {
                                 id: liText
                                 anchors.verticalCenter: parent.verticalCenter
@@ -1189,11 +1271,15 @@ Item {
                                 Text {
                                     width: parent.width
                                     // назва і сіра примітка («на джойстику: L1») в одному рядку: так усі дії вміщуються без прокрутки
-                                    text: li.modelData.name + (li.modelData.how ? '  <font color="#80ffffff">' + li.modelData.how + '</font>' : "")
+                                    text: li.modelData.name + (li.modelData.how && (!root.big || li.howFits) ? '  <font color="#80ffffff">' + li.modelData.how + '</font>'
+                                                                 : li.modelData.how ? '  <font color="#59ffffff">ⓘ</font>' : "")
                                     textFormat: Text.StyledText
-                                    elide: Text.ElideRight
-                                    wrapMode: root.big ? Text.WordWrap : Text.NoWrap
-                                    maximumLineCount: root.big ? 2 : 1
+                                    elide: root.big ? Text.ElideNone : Text.ElideRight
+                                    wrapMode: Text.NoWrap
+                                    maximumLineCount: 1
+                                    // довга назва трохи зменшується, а не ховається під клавіші
+                                    fontSizeMode: root.big ? Text.HorizontalFit : Text.FixedSize
+                                    minimumPixelSize: Math.round(10 * root.k)
                                     lineHeight: 0.95
                                     color: ap.ink
                                     font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k)
@@ -1221,10 +1307,53 @@ Item {
                 }
             }
 
-            Gap { height: root.inGame ? 0 : 12 }
+            // ── головне вікно: одна смуга внизу — що щойно отримала б приставка, і як міняти клавіші ──
+            Gap { height: root.big ? Math.round(8 * root.k) : 0 }
+            Rectangle {
+                id: bottomBox
+                visible: root.big
+                width: page.cw
+                height: visible ? Math.round(40 * root.k) : 0
+                radius: 10
+                color: "#0dffffff"
+                border.width: 1; border.color: "#2effffff"
+                Row {
+                    x: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 14
+                    Cap { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Перевірка") }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: bottomBox.width - 160 - tipsRow.width
+                        text: root.logLines.length ? root.logLines[0] : ""
+                        elide: Text.ElideRight
+                        color: ap.cyan
+                        font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k)
+                    }
+                }
+                Row {
+                    id: tipsRow
+                    anchors.right: parent.right; anchors.rightMargin: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Math.round(14 * root.k)
+                    Repeater {
+                        model: [[qsTr("Змінити:"), qsTr("клацни клавішу")], [qsTr("Прибрати:"), "Backspace"], [qsTr("Меню AnyPlay:"), "`"]]
+                        Text {
+                            required property var modelData
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData[0] + " " + root.bold(modelData[1])
+                            textFormat: Text.StyledText
+                            color: "#a6ffffff"
+                            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(12 * root.k)
+                        }
+                    }
+                }
+            }
+
+            Gap { height: root.inGame || root.big ? 0 : 12 }
             // ── підказки внизу ──
             Flow {
-                visible: !root.inGame
+                visible: !root.inGame && !root.big
                 height: visible ? implicitHeight : 0
                 width: page.cw
                 layoutDirection: Qt.RightToLeft
@@ -1247,7 +1376,7 @@ Item {
             // ── перевірка: що щойно отримала б приставка ──
             Rectangle {
                 id: logBox
-                visible: (root.live || (!root.inGame && !Chiaki.session)) && !root.tight
+                visible: (root.live || (!root.inGame && !Chiaki.session)) && !root.tight && !root.big
                 width: page.cw
                 height: Math.max(44, logRow.implicitHeight + 16)
                 radius: 4
@@ -1382,21 +1511,32 @@ Item {
         font.capitalization: Font.AllUppercase
     }
 
-    component LinkButton: Rectangle {
+    component LinkButton: Item {
         id: lb
         property alias text: lbText.text
         signal clicked()
-        width: lbText.implicitWidth + Math.round(18 * root.k)
-        height: lbText.implicitHeight + Math.round(10 * root.k)
-        radius: 3
-        // легкий об'єм і підйом при наведенні, як у клавіш
-        y: lbArea.pressed ? 1 : lbArea.containsMouse ? -1 : 0
-        Behavior on y { NumberAnimation { duration: 120 } }
-        color: lbArea.containsMouse ? "#1fffffff" : "#0fffffff"
-        Behavior on color { ColorAnimation { duration: 150 } }
-        border.width: 1
-        border.color: lbArea.containsMouse ? "#ffffff" : "#38ffffff"
-        Text { id: lbText; anchors.centerIn: parent; color: ap.ink; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k) }
+        width: lbText.implicitWidth + Math.round(22 * root.k)
+        height: lbText.implicitHeight + Math.round(12 * root.k)
+        // скляна кнопка: наведення піднімає й підсвічує край заходом сонця, натиск опускає
+        Rectangle {   // тінь
+            x: 1; y: 3; width: parent.width - 2; height: parent.height
+            radius: ap.radiusSmall; color: ap.shadow; opacity: lbArea.containsMouse ? 0.9 : 0.5
+        }
+        Rectangle {
+            id: lbFace
+            width: parent.width; height: parent.height
+            y: lbArea.pressed ? 1 : lbArea.containsMouse ? -ap.lift : 0
+            scale: lbArea.pressed ? ap.pressScale : 1
+            Behavior on y { NumberAnimation { duration: ap.tHover; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: ap.tPress } }
+            radius: ap.radiusSmall
+            color: lbArea.containsMouse ? ap.glassHi : ap.glass
+            Behavior on color { ColorAnimation { duration: ap.tHover } }
+            border.width: 1
+            border.color: lbArea.containsMouse ? ap.accent : ap.edge
+            Rectangle { x: 4; y: 1; width: parent.width - 8; height: 1; color: ap.cardTop }
+            Text { id: lbText; anchors.centerIn: parent; color: ap.ink; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k) }
+        }
         MouseArea { id: lbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.forceActiveFocus(); lb.clicked(); } }   // фокус спершу: кнопка може відкрити вікно, яке забере його собі
     }
 
@@ -1422,7 +1562,7 @@ Item {
             visible: !kc.isEmpty
             x: 1; y: kc.depth + 1
             width: parent.width - 2; height: parent.height - kc.depth
-            radius: 5
+            radius: ap.chipRadius
             color: "#40000000"
         }
         // бортик (бік клавіші)
@@ -1430,7 +1570,7 @@ Item {
             visible: !kc.isEmpty
             y: kc.depth
             width: parent.width; height: parent.height - kc.depth
-            radius: 5
+            radius: ap.chipRadius
             color: kc.isWait ? "#b9b4c4" : "#2a2238"
             border.width: 1; border.color: kc.isWait ? "#ffffff" : "#26ffffff"
         }
@@ -1440,13 +1580,13 @@ Item {
             y: kc.lift
             Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
             width: parent.width; height: parent.height - kc.depth
-            radius: 5
+            radius: ap.chipRadius
             gradient: Gradient {
                 GradientStop { position: 0; color: kc.isWait ? "#ffffff" : kc.isEmpty ? "transparent" : kc.hov ? "#5a5070" : "#4a4160" }
                 GradientStop { position: 1; color: kc.isWait ? "#e6e2ee" : kc.isEmpty ? "transparent" : kc.hov ? "#463d5c" : "#383049" }
             }
             border.width: kc.isEmpty ? 0 : 1
-            border.color: kc.isWait || kc.hov ? "#ffffff" : "#59ffffff"
+            border.color: kc.isWait ? "#ffffff" : kc.hov ? ap.accent : "#59ffffff"
             // відблиск зверху
             Rectangle {
                 visible: !kc.isEmpty && !kc.isWait

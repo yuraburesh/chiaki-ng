@@ -14,7 +14,7 @@ Text {
 
     textFormat: rich ? Text.StyledText : Text.PlainText
     wrapMode: Text.WordWrap
-    color: role === "eyebrow" ? ap.cyan
+    color: role === "eyebrow" ? ap.accent
          : (role === "lead" || role === "hint" || role === "cap") ? ap.mute
          : role === "small" ? ap.faint
          : ap.ink
@@ -23,15 +23,15 @@ Text {
     font.family: display ? ap.display : ap.body
     font.capitalization: display ? Font.AllUppercase : Font.MixedCase
     font.pixelSize: size > 0 ? size
-        : role === "cap" ? 13
-        : role === "h2" ? 26
-        : role === "big" ? 44
+        : role === "cap" ? ap.fsCap
+        : role === "h2" ? ap.fsH2
+        : role === "big" ? ap.fsBig
         : role === "eyebrow" ? 15
-        : role === "lead" ? 15
-        : role === "small" ? 12
-        : 14
+        : role === "lead" ? ap.fsLead
+        : role === "small" ? ap.fsSub
+        : ap.fsBody
     font.weight: (role === "cap" || role === "h2" || role === "big") ? Font.DemiBold
         : (role === "eyebrow" || role === "title") ? Font.Medium
         : Font.Normal
-    font.letterSpacing: role === "cap" ? 1.8 : role === "eyebrow" ? 3 : (role === "h2" || role === "big") ? 2 : 0
+    font.letterSpacing: role === "cap" ? ap.capSpacing : role === "eyebrow" ? 3 : (role === "h2" || role === "big") ? 1.6 : 0
 }

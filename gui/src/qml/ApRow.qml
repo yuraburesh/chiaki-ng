@@ -1,4 +1,5 @@
-// AnyPlay: рядок списку — назва, сірий підпис під нею, праворуч фішка чи кнопка, тонка лінія знизу.
+// AnyPlay: рядок списку (дизайн 112) — назва, сірий підпис під нею, праворуч фішка чи кнопка, тонка лінія знизу.
+// clickable: під наведенням скляна підкладка й підйом, під натиском опускання.
 // Вміст праворуч кладемо всередину: ApRow { title: …; ApChip { … } }.
 import QtQuick
 import QtQuick.Layouts
@@ -12,15 +13,25 @@ Item {
     property bool rich: false
     property color titleColor: ap.ink
     property color subColor: ap.faint      // підпис під назвою; у довідках світліший, щоб читався
-    property real titleSize: 14
-    property real subSize: 12
+    property real titleSize: ap.fsBody
+    property real subSize: ap.fsSub
     default property alias trailing: trail.data
     signal clicked()
     AnyPlayStyle { id: ap }
 
     Layout.fillWidth: true
     implicitWidth: 320
-    implicitHeight: Math.max(52, Math.max(texts.implicitHeight, trail.implicitHeight) + 16)
+    implicitHeight: Math.max(ap.rowHeight, Math.max(texts.implicitHeight, trail.implicitHeight) + 20)
+
+    Rectangle {   // підкладка під наведенням / фокусом (лише для рядків, що натискаються)
+        anchors { fill: parent; leftMargin: -10; rightMargin: -10; topMargin: 2; bottomMargin: 2 }
+        radius: ap.radiusSmall
+        visible: r.clickable
+        color: mouse.containsMouse || r.activeFocus ? ap.glass : "transparent"
+        border.width: r.activeFocus ? 2 : 0
+        border.color: ap.cyan
+        Behavior on color { ColorAnimation { duration: ap.tHover } }
+    }
     activeFocusOnTab: clickable
     Keys.onReturnPressed: if (clickable) clicked()
     Keys.onEnterPressed: if (clickable) clicked()
@@ -28,8 +39,9 @@ Item {
 
     Column {
         id: texts
+        transform: Translate { x: r.clickable && mouse.containsMouse ? 3 : 0; Behavior on x { NumberAnimation { duration: ap.tHover } } }
         anchors { left: parent.left; right: trail.left; rightMargin: trail.width > 0 ? 14 : 0; verticalCenter: parent.verticalCenter }
-        spacing: 1
+        spacing: 3
         Text {
             width: parent.width
             text: r.title
@@ -38,7 +50,6 @@ Item {
             font.family: ap.body
             font.weight: Font.Medium
             font.pixelSize: r.titleSize
-            font.underline: r.clickable && (mouse.containsMouse || r.activeFocus)
             color: r.titleColor
         }
         Text {

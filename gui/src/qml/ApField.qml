@@ -1,4 +1,4 @@
-// AnyPlay: поле вводу нового дизайну — прозоре, тонка рамка, світлий текст.
+// AnyPlay: поле вводу (дизайн 112) — скло, тонкий край, фокус блакитною рамкою.
 import QtQuick
 import QtQuick.Controls
 
@@ -10,15 +10,16 @@ TextField {
     selectionColor: "#668fe3ff"
     selectedTextColor: ap.ink
     font.family: ap.body
-    font.pixelSize: 14
-    leftPadding: 12; rightPadding: 12
-    topPadding: 10; bottomPadding: 10
+    font.pixelSize: ap.fsBody
+    leftPadding: 14; rightPadding: 14
+    topPadding: 12; bottomPadding: 12
     background: Rectangle {
         implicitWidth: 200
-        implicitHeight: 42
+        implicitHeight: 46
         radius: ap.radius
-        color: "#0affffff"
+        color: f.activeFocus ? "#1fffffff" : (f.hovered ? ap.glassHi : ap.glass)
         border.width: f.activeFocus ? 2 : 1
-        border.color: f.activeFocus ? ap.cyan : ap.edge
+        border.color: f.activeFocus ? ap.cyan : (f.hovered ? ap.edgeHi : ap.edge)
+        Behavior on color { ColorAnimation { duration: ap.tHover } }
     }
 }

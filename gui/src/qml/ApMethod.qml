@@ -11,8 +11,8 @@ AbstractButton {
     checkable: false            // обраний стан задає панель через checked
     hoverEnabled: true
     focusPolicy: Qt.TabFocus
-    leftPadding: 10; rightPadding: 10
-    topPadding: 9; bottomPadding: 9
+    leftPadding: 14; rightPadding: 14
+    topPadding: 12; bottomPadding: 12
     implicitWidth: 160
     implicitHeight: col.implicitHeight + topPadding + bottomPadding
     opacity: enabled ? 1 : 0.45
@@ -26,7 +26,7 @@ AbstractButton {
             width: parent.width
             text: m.text
             wrapMode: Text.WordWrap
-            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 13
+            font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 14
             color: ap.ink
         }
         Text {
@@ -34,14 +34,16 @@ AbstractButton {
             width: parent.width
             text: m.sub
             wrapMode: Text.WordWrap
-            font.family: ap.body; font.pixelSize: 11
+            font.family: ap.body; font.pixelSize: 12
             color: m.checked ? ap.mute : ap.faint
         }
     }
+    transform: Translate { y: m.down ? 1 : (m.hovered && m.enabled ? -ap.lift : 0); Behavior on y { NumberAnimation { duration: ap.tHover } } }
     background: Rectangle {
         radius: ap.radius
-        color: m.checked ? "#1fffffff" : (m.hovered && m.enabled ? "#14ffffff" : "#0affffff")
-        border.width: m.visualFocus ? 2 : 1
-        border.color: m.visualFocus ? ap.cyan : (m.checked || (m.hovered && m.enabled) ? ap.ink : ap.edge)
+        color: m.checked ? "#2bffffff" : (m.hovered && m.enabled ? ap.glassHi : ap.glass)
+        border.width: m.visualFocus || m.checked ? 2 : 1
+        border.color: m.visualFocus ? ap.cyan : (m.checked ? ap.accent : (m.hovered && m.enabled ? ap.edgeHi : ap.edge))
+        Behavior on color { ColorAnimation { duration: ap.tHover } }
     }
 }

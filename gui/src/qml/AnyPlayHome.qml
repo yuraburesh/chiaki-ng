@@ -59,7 +59,7 @@ Rectangle {
     onWalletOnChanged: if (!walletOn && view === "wallet") view = "home"
 
     // ── розміри: до 1600 px як у макеті, на великих екранах (2K, 4K без масштабу системи) усе пропорційно більше ──
-    readonly property real zoomK: Math.max(1, Math.min(2.2, Math.min(width / 1800, height / 1080)))
+    readonly property real zoomK: Math.max(1, Math.min(2.2, Math.min(width / 1560, height / 900)))
     readonly property real pageW: zoom.width
     readonly property real padX: Math.max(pageW < 1100 ? 20 : 32, (pageW - 1520) / 2)   // дизайн 112: ширший вміст, без порожніх полів
     readonly property real cw: pageW - 2 * padX                      // ширина вмісту

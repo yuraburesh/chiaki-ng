@@ -474,16 +474,23 @@ Item {
 
     // ── усе на одній сторінці: якщо не вміщується, зменшуємо малюнок геймпада (прокрутка лишається тільки на крайній випадок) ──
     property real gpCap: 540
+    // AnyPlay 111: у головному вікні схема більша й стабільна: розмір залежить лише від ширини вікна, а не від розкладки чи режиму
+    readonly property bool big: !inGame
+    readonly property real k: big ? Math.max(1.12, Math.min(1.4, page.cw / 1150)) : 1   // масштаб кнопок і підписів
+    // головне вікно: схема ширша за інші вкладки (до 1600), щоб не лишалось порожніх полів обабіч
+    readonly property real inset: big ? Math.min(sideInset, Math.max(28, (width - 1600) / 2)) : sideInset
+    property string hoverBtn: ""          // кнопка геймпада під мишею в підписах: її лінія й кнопка підсвічуються
     // низьке вікно в меню гри (ноутбук 13"): щільніші рядки й без зайвого, щоб усе вмістилось без прокрутки
     readonly property bool tight: inGame && flick.height > 0 && flick.height < 800
     readonly property bool tighter: tight && flick.height < 670   // 1366×768 і менше
     // висота рядка підписів і «Інших дій»: якщо геймпад уже найменший, а сторінка ще не вміщується, рядки щільнішають
-    readonly property real baseRow: tighter ? 23 : tight ? 26 : 31
+    readonly property real baseRow: big ? Math.round(31 * k) : tighter ? 23 : tight ? 26 : 31
     property real rowH: 31
     onBaseRowChanged: { rowH = baseRow; fitTimer.restart(); }
     // поки сторінка підганяється під вікно, її не видно: людина одразу бачить готовий розмір, без «великий, а потім зменшується»
     property bool fitted: false
     function refit() {
+        if (big) { rowH = baseRow; fitted = true; return; }   // головне вікно: без підгонки (вона й змушувала геймпад скакати), сторінка гортається
         if (!visible || flick.height < 200)
             return;
         const over = page.height - flick.height, gh = gp.height;
@@ -520,6 +527,7 @@ Item {
         clip: true
         contentWidth: width
         contentHeight: page.height
+        onContentHeightChanged: contentY = Math.max(0, Math.min(contentY, contentHeight - height))
         ScrollBar.vertical: ScrollBar {
             policy: flick.contentHeight > flick.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
             contentItem: Rectangle { implicitWidth: 4; radius: 2; color: "#40ffffff" }
@@ -550,7 +558,7 @@ Item {
             id: page
             opacity: root.fitted ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 120 } }
-            readonly property real cw: Math.min(1440, root.width - 2 * root.sideInset)
+            readonly property real cw: Math.min(root.big ? 1600 : 1440, root.width - 2 * root.inset)
             readonly property bool narrow: cw <= (root.inGame ? 600 : 900)   // у меню гри ліворуч список розділів, тож місця менше
             x: (root.width - cw) / 2
             width: cw
@@ -569,7 +577,7 @@ Item {
                     objectName: "apH1"
                     text: qsTr("Керування AnyPlay")
                     color: ap.ink
-                    font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 22; font.letterSpacing: 1.5
+                    font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: Math.round(22 * root.k); font.letterSpacing: 1.5
                     font.capitalization: Font.AllUppercase
                 }
             }
@@ -592,8 +600,8 @@ Item {
                     Cap { text: qsTr("Розкладка") }
                     Rectangle {
                         id: pick
-                        width: Math.max(210, pickRow.implicitWidth + 18)
-                        height: 36
+                        width: Math.max(Math.round(210 * root.k), pickRow.implicitWidth + 18)
+                        height: Math.round(36 * root.k)
                         radius: 2
                         gradient: Gradient {
                             orientation: Gradient.Horizontal
@@ -608,7 +616,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 0
                             Image {
-                                width: 22; height: 22
+                                width: Math.round(22 * root.k); height: width
                                 anchors.verticalCenter: parent.verticalCenter
                                 source: root.layouts[root.layoutIndex()] ? root.layouts[root.layoutIndex()].logo : ""
                                 fillMode: Image.PreserveAspectCrop
@@ -619,7 +627,7 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.layouts[root.layoutIndex()] ? root.layouts[root.layoutIndex()].name : ""
                                 color: ap.dark
-                                font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 14
+                                font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(14 * root.k)
                             }
                         }
                         Row {
@@ -670,7 +678,9 @@ Item {
                     objectName: "apModes"
                     x: side.modesInline ? pickBlock.width + side.gapX : 0
                     y: side.modesInline ? 0 : pickBlock.height + 12
-                    width: Math.min(side.width, Math.max(modesRow.implicitWidth, root.tight ? side.width - pickBlock.width - side.gapX : 560))
+                    // головне вікно: режими з підказкою займають те, що лишилось між розкладкою і кнопками праворуч, щоб усе стояло в один ряд
+                    readonly property real bigW: Math.max(modesRow.implicitWidth, Math.min(Math.round(480 * root.k), side.width - Math.round(210 * root.k) - 18 - actsBlock.width - 2 * side.gapX))
+                    width: Math.min(side.width, root.big ? bigW : Math.max(modesRow.implicitWidth, root.tight ? side.width - pickBlock.width - side.gapX : 560))
                     spacing: 5
                     Cap { text: qsTr("Режим") }
                     Row {
@@ -681,8 +691,8 @@ Item {
                             Item {
                                 required property var modelData
                                 readonly property bool cur: modelData.id === root.mode
-                                width: tabRow.implicitWidth + 28
-                                height: 33
+                                width: tabRow.implicitWidth + Math.round(28 * root.k)
+                                height: Math.round(33 * root.k)
                                 opacity: cur || tabArea.containsMouse ? 1 : 0.7
                                 Row {
                                     id: tabRow
@@ -693,7 +703,7 @@ Item {
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: modelData.name
                                         color: ap.ink
-                                        font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 14
+                                        font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(14 * root.k)
                                     }
                                     Rectangle {
                                         visible: modelData.key !== ""
@@ -721,15 +731,19 @@ Item {
                         }
                     }
                     Text {
-                        width: Math.min(root.tight ? 900 : 560, modesBlock.width)
+                        width: Math.min(root.tight ? 900 : root.big ? modesBlock.bigW : 560, modesBlock.width)
                         topPadding: 1
                         text: root.tighter ? (root.view.hintShort || "") : root.view.hint
-                        visible: text !== ""
-                        height: visible ? implicitHeight : 0
+                        visible: text !== "" || root.big
+                        // у головному вікні місце під 5 рядків підказки завжди, щоб геймпад не стрибав між розкладками
+                        // скільки рядків займе найдовша підказка (GTA, ~330 знаків) за цієї ширини: стільки місця й тримаємо для всіх
+                        readonly property int reserveLines: Math.max(3, Math.ceil(330 * 0.6 * hintFm.font.pixelSize / Math.max(1, width)))
+                        height: root.big ? Math.ceil(Math.max(implicitHeight, reserveLines * hintFm.lineSpacing + 6)) : visible ? implicitHeight : 0
+                        FontMetrics { id: hintFm; font.family: ap.body; font.pixelSize: Math.round(12 * root.k) }
                         textFormat: Text.StyledText
                         wrapMode: Text.WordWrap
                         color: "#a6ffffff"
-                        font.family: ap.body; font.pixelSize: 12
+                        font.family: ap.body; font.pixelSize: Math.round(12 * root.k)
                     }
                 }
 
@@ -754,13 +768,17 @@ Item {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: root.vehicleSens ? qsTr("Миша в транспорті") : qsTr("Миша пішки")
+                            // ширина за довшим підписом: блок не змінює ширину між режимами (інакше він переносився і геймпад стрибав)
+                            width: sensFm.advanceWidth(qsTr("Миша в транспорті")) + 2
+                            horizontalAlignment: Text.AlignRight
+                            FontMetrics { id: sensFm; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(12 * root.k) }
                             color: "#d9ffffff"
-                            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 12
+                            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(12 * root.k)
                         }
                         Slider {
                             id: sens
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 100; height: 20
+                            width: Math.round(100 * root.k); height: 20
                             padding: 0
                             from: 0.3; to: 3.0; stepSize: 0.1
                             focusPolicy: Qt.NoFocus
@@ -807,7 +825,7 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: root.tighter ? qsTr("Інверсія") : qsTr("Інвертувати вертикаль")
                                     color: "#d9ffffff"
-                                    font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 12
+                                    font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(12 * root.k)
                                 }
                             }
                             MouseArea {
@@ -836,7 +854,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     text: root.view.title
                     color: ap.ink
-                    font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 20; font.letterSpacing: 2
+                    font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: Math.round(20 * root.k); font.letterSpacing: 2
                     font.capitalization: Font.AllUppercase
                 }
                 Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 1; height: 16; color: "#66ffffff" }
@@ -848,17 +866,20 @@ Item {
                 id: rig
                 objectName: "apRig"
                 width: page.cw
-                readonly property real gap: Math.max(24, Math.min(110, page.cw * 0.07))
+                readonly property real gap: root.big ? Math.max(20, Math.min(70, page.cw * 0.035)) : Math.max(24, Math.min(110, page.cw * 0.07))
                 readonly property real leftMC: colL.maxRow
                 readonly property real rightMC: colR.maxRow
                 readonly property real gpW: page.narrow ? Math.min(440, root.gpCap, page.cw)
-                                                        : Math.max(200, Math.min(540, root.gpCap, page.cw - leftMC - rightMC - 2 * gap))
+                                          : root.big ? Math.max(320, Math.min(700, page.cw - 2 * gap - 2 * Math.round(300 * root.k)))
+                                                     : Math.max(200, Math.min(540, root.gpCap, page.cw - leftMC - rightMC - 2 * gap))
                 readonly property real rest: page.cw - 2 * gap - gpW
-                readonly property real leftW: page.narrow ? 0 : (leftMC > rest / 2 ? leftMC : rightMC > rest / 2 ? Math.max(leftMC, rest - rightMC) : rest / 2)
-                readonly property real rightW: page.narrow ? 0 : Math.max(rightMC, rest - leftW)
+                readonly property real leftW: page.narrow ? 0 : root.big ? rest / 2 : (leftMC > rest / 2 ? leftMC : rightMC > rest / 2 ? Math.max(leftMC, rest - rightMC) : rest / 2)
+                readonly property real rightW: page.narrow ? 0 : root.big ? rest / 2 : Math.max(rightMC, rest - leftW)
                 readonly property int narrowCols: page.cw >= 560 ? 2 : 1
                 readonly property real narrowColW: narrowCols === 2 ? (page.cw - 28) / 2 : page.cw
+                // у головному вікні висота не залежить від кількості рядків: завжди 10 з кожного боку (sideL/sideR)
                 height: page.narrow ? gp.height + 8 + (narrowCols === 2 ? Math.max(colL.height, colR.height) : colL.height + colR.height)
+                                    : root.big ? Math.max(gp.height, root.sideL.length * (root.rowH + 1)) + 12
                                     : Math.max(gp.height, colL.height, colR.height) + 12
 
                 Column {
@@ -969,13 +990,13 @@ Item {
                                         PadImage { g: stick.cap; opacity: capItem.pressedIn ? 0 : 1 }
                                         PadImage { g: stick.cap; dark: true; opacity: capItem.pressedIn ? 1 : 0 }
                                     }
-                                    Glow { g: root.gpd.glow[stick.modelData[0]]; on: !!root.onMap[stick.modelData[0]] }
-                                    Glow { g: root.gpd.glow[stick.modelData[0]]; on: !!root.onMap[stick.modelData[1]] }
+                                    Glow { g: root.gpd.glow[stick.modelData[0]]; on: !!root.onMap[stick.modelData[0]]; hov: root.hoverBtn === stick.modelData[0] }
+                                    Glow { g: root.gpd.glow[stick.modelData[0]]; on: !!root.onMap[stick.modelData[1]]; hov: root.hoverBtn === stick.modelData[1] }
                                 }
                             }
                             Repeater {
                                 model: Object.keys(root.gpd.glow).filter((n) => ["L1", "L2", "R1", "R2", "L3", "R3"].indexOf(n) < 0)
-                                Glow { required property var modelData; g: root.gpd.glow[modelData]; on: !!root.onMap[modelData] }
+                                Glow { required property var modelData; g: root.gpd.glow[modelData]; on: !!root.onMap[modelData]; hov: root.hoverBtn === modelData }
                             }
                             Repeater {
                                 model: [["L1", "L2"], ["R1", "R2"]]
@@ -984,12 +1005,12 @@ Item {
                                     Item {
                                         y: root.onMap[modelData[1]] ? 6 : 0
                                         Behavior on y { NumberAnimation { duration: 80; easing.type: Easing.OutQuad } }
-                                        Glow { g: root.gpd.glow[modelData[1]]; on: !!root.onMap[modelData[1]] }
+                                        Glow { g: root.gpd.glow[modelData[1]]; on: !!root.onMap[modelData[1]]; hov: root.hoverBtn === modelData[1] }
                                     }
                                     Item {
                                         y: root.onMap[modelData[0]] ? 4 : 0
                                         Behavior on y { NumberAnimation { duration: 80; easing.type: Easing.OutQuad } }
-                                        Glow { g: root.gpd.glow[modelData[0]]; on: !!root.onMap[modelData[0]] }
+                                        Glow { g: root.gpd.glow[modelData[0]]; on: !!root.onMap[modelData[0]]; hov: root.hoverBtn === modelData[0] }
                                     }
                                 }
                             }
@@ -1052,18 +1073,18 @@ Item {
                         c.strokeStyle = "rgba(26,18,48,0.18)"; c.lineWidth = 3;
                         for (const w of wd) { path(w); c.stroke(); }
                         for (const w of wd) {
-                            const hot = !!root.onMap[w.btn];
+                            const hot = !!root.onMap[w.btn] || root.hoverBtn === w.btn;
                             path(w);
-                            c.strokeStyle = hot ? "#8fe3ff" : "rgba(255,255,255,0.85)"; c.lineWidth = hot ? 1.6 : 1;
+                            c.strokeStyle = hot ? "#8fe3ff" : "rgba(255,255,255,0.85)"; c.lineWidth = hot ? 2 * root.k : root.k;
                             c.stroke();
                             c.beginPath(); c.arc(w.x0, w.y0, 1.6, 0, 2 * Math.PI);
                             c.fillStyle = hot ? "#8fe3ff" : "rgba(255,255,255,0.85)"; c.fill();
-                            c.beginPath(); c.arc(w.ax, w.ay, 3, 0, 2 * Math.PI);
+                            c.beginPath(); c.arc(w.ax, w.ay, 3 * root.k, 0, 2 * Math.PI);
                             c.fillStyle = hot ? "#8fe3ff" : "#ffffff"; c.fill();
                             c.strokeStyle = "rgba(26,18,48,0.35)"; c.lineWidth = 1; c.stroke();
                         }
                     }
-                    Connections { target: root; function onOnMapChanged() { wires.requestPaint(); } }
+                    Connections { target: root; function onOnMapChanged() { wires.requestPaint(); } function onHoverBtnChanged() { wires.requestPaint(); } }
                 }
 
                 // підказка над кнопкою геймпада
@@ -1139,7 +1160,7 @@ Item {
                 visible: root.view.extra.length > 0
                 width: page.cw
                 height: visible ? extraGrid.y + extraGrid.height : 0
-                readonly property int cols: Math.max(1, Math.floor((width + 24) / ((root.tighter ? 168 : 230) + 24)))
+                readonly property int cols: Math.max(1, Math.floor((width + 24) / ((root.big ? 290 * root.k : root.tighter ? 168 : 230) + 24)))
                 readonly property real colW: (width - (cols - 1) * 24) / cols
                 Rectangle { width: parent.width; height: 1; color: "#2bffffff" }
                 Cap { id: extraCap; y: 11; text: qsTr("Інші дії") }
@@ -1171,9 +1192,11 @@ Item {
                                     text: li.modelData.name + (li.modelData.how ? '  <font color="#80ffffff">' + li.modelData.how + '</font>' : "")
                                     textFormat: Text.StyledText
                                     elide: Text.ElideRight
-                                    maximumLineCount: 1
+                                    wrapMode: root.big ? Text.WordWrap : Text.NoWrap
+                                    maximumLineCount: root.big ? 2 : 1
+                                    lineHeight: 0.95
                                     color: ap.ink
-                                    font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 13
+                                    font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k)
                                 }
                             }
                             Flow {
@@ -1214,7 +1237,7 @@ Item {
                         text: modelData[1] ? modelData[0] + " " + root.bold(modelData[1]) : modelData[0]
                         textFormat: Text.StyledText
                         color: "#b3ffffff"
-                        font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 13; font.letterSpacing: 1
+                        font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: Math.round(13 * root.k); font.letterSpacing: 1
                         font.capitalization: Font.AllUppercase
                     }
                 }
@@ -1249,7 +1272,7 @@ Item {
                                 text: modelData
                                 elide: Text.ElideRight
                                 color: index === 0 ? ap.cyan : "#99ffffff"
-                                font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 12
+                                font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(12 * root.k)
                             }
                         }
                     }
@@ -1355,7 +1378,7 @@ Item {
     component Cap: Text {
         color: ap.ink
         opacity: 0.85
-        font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 14; font.letterSpacing: 1.5
+        font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: Math.round(14 * root.k); font.letterSpacing: 1.5
         font.capitalization: Font.AllUppercase
     }
 
@@ -1363,18 +1386,23 @@ Item {
         id: lb
         property alias text: lbText.text
         signal clicked()
-        width: lbText.implicitWidth + 18
-        height: lbText.implicitHeight + 10
-        radius: 2
-        color: "#0affffff"
+        width: lbText.implicitWidth + Math.round(18 * root.k)
+        height: lbText.implicitHeight + Math.round(10 * root.k)
+        radius: 3
+        // легкий об'єм і підйом при наведенні, як у клавіш
+        y: lbArea.pressed ? 1 : lbArea.containsMouse ? -1 : 0
+        Behavior on y { NumberAnimation { duration: 120 } }
+        color: lbArea.containsMouse ? "#1fffffff" : "#0fffffff"
+        Behavior on color { ColorAnimation { duration: 150 } }
         border.width: 1
         border.color: lbArea.containsMouse ? "#ffffff" : "#38ffffff"
-        Text { id: lbText; anchors.centerIn: parent; color: ap.ink; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 13 }
+        Text { id: lbText; anchors.centerIn: parent; color: ap.ink; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k) }
         MouseArea { id: lbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.forceActiveFocus(); lb.clicked(); } }   // фокус спершу: кнопка може відкрити вікно, яке забере його собі
     }
 
-    // фішка клавіші: клацни, щоб призначити іншу
-    component KeyChip: Rectangle {
+    // фішка клавіші — «кейкап» з об'ємом: світліший верх, нижній бортик-тінь, при наведенні трохи піднімається,
+    // при натиску вдавлюється. Клацни, щоб призначити іншу клавішу
+    component KeyChip: Item {
         id: kc
         property var chip: null
         property string fixedText: ""
@@ -1382,34 +1410,72 @@ Item {
         readonly property bool isWait: !fixed && !!root.waiting && !!chip && root.waiting.p === chip.p && root.waiting.id === chip.id
         readonly property bool isEmpty: !fixed && !!chip && !chip.key && !isWait
         readonly property bool hov: !fixed && kcArea.containsMouse
-        implicitWidth: kcText.implicitWidth + 16
-        implicitHeight: 20
+        readonly property bool down: kcArea.pressed
+        // у меню гри рядки щільні (від 23 px): там клавіша лишається 20 px заввишки
+        readonly property real depth: root.big ? Math.round(3 * root.k) : 2   // висота бортика клавіші
+        readonly property real lift: down ? depth - 1 : hov ? -1 : 0           // зсув верхньої частини
+        implicitWidth: kcText.implicitWidth + Math.round(18 * root.k)
+        implicitHeight: root.big ? Math.round(21 * root.k) + depth : 20
         width: implicitWidth; height: implicitHeight
-        radius: 3
-        color: isWait ? "#ffffff" : hov ? "#24ffffff" : "#12ffffff"
-        border.width: isEmpty ? 0 : 1
-        border.color: isWait || hov ? "#ffffff" : "#4dffffff"
-        Text {
-            id: kcText
-            anchors.centerIn: parent
-            text: kc.isWait ? qsTr("тисни…") : kc.fixed ? kc.fixedText : (kc.chip && kc.chip.key ? kc.chip.keyName : qsTr("немає"))
-            color: kc.isWait ? ap.dark : kc.isEmpty ? "#99ffffff" : "#ffffff"
-            font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 11
+        // тінь під клавішею
+        Rectangle {
+            visible: !kc.isEmpty
+            x: 1; y: kc.depth + 1
+            width: parent.width - 2; height: parent.height - kc.depth
+            radius: 5
+            color: "#40000000"
         }
-        Canvas {
-            // пунктирна рамка порожньої клавіші
-            anchors.fill: parent
-            visible: kc.isEmpty
-            onVisibleChanged: requestPaint()
-            onPaint: {
-                const c = getContext("2d");
-                c.reset();
-                c.strokeStyle = kc.hov ? "#ffffff" : "rgba(255,255,255,0.3)";
-                c.lineWidth = 1;
-                c.setLineDash([3, 2]);
-                c.beginPath();
-                c.roundedRect(0.5, 0.5, width - 1, height - 1, 3, 3);
-                c.stroke();
+        // бортик (бік клавіші)
+        Rectangle {
+            visible: !kc.isEmpty
+            y: kc.depth
+            width: parent.width; height: parent.height - kc.depth
+            radius: 5
+            color: kc.isWait ? "#b9b4c4" : "#2a2238"
+            border.width: 1; border.color: kc.isWait ? "#ffffff" : "#26ffffff"
+        }
+        // верх клавіші
+        Rectangle {
+            id: face
+            y: kc.lift
+            Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            width: parent.width; height: parent.height - kc.depth
+            radius: 5
+            gradient: Gradient {
+                GradientStop { position: 0; color: kc.isWait ? "#ffffff" : kc.isEmpty ? "transparent" : kc.hov ? "#5a5070" : "#4a4160" }
+                GradientStop { position: 1; color: kc.isWait ? "#e6e2ee" : kc.isEmpty ? "transparent" : kc.hov ? "#463d5c" : "#383049" }
+            }
+            border.width: kc.isEmpty ? 0 : 1
+            border.color: kc.isWait || kc.hov ? "#ffffff" : "#59ffffff"
+            // відблиск зверху
+            Rectangle {
+                visible: !kc.isEmpty && !kc.isWait
+                x: 3; y: 1; width: parent.width - 6; height: 1
+                color: "#33ffffff"
+            }
+            Text {
+                id: kcText
+                anchors.centerIn: parent
+                text: kc.isWait ? qsTr("тисни…") : kc.fixed ? kc.fixedText : (kc.chip && kc.chip.key ? kc.chip.keyName : qsTr("немає"))
+                color: kc.isWait ? ap.dark : kc.isEmpty ? "#99ffffff" : "#ffffff"
+                font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: Math.round(11 * root.k + (root.big ? 1 : 0))
+            }
+            Canvas {
+                // пунктирна рамка порожньої клавіші
+                anchors.fill: parent
+                visible: kc.isEmpty
+                onVisibleChanged: requestPaint()
+                onWidthChanged: requestPaint()
+                onPaint: {
+                    const c = getContext("2d");
+                    c.reset();
+                    c.strokeStyle = kc.hov ? "#ffffff" : "rgba(255,255,255,0.3)";
+                    c.lineWidth = 1;
+                    c.setLineDash([3, 2]);
+                    c.beginPath();
+                    c.roundedRect(0.5, 0.5, width - 1, height - 1, 4, 4);
+                    c.stroke();
+                }
             }
         }
         MouseArea {
@@ -1437,7 +1503,7 @@ Item {
         readonly property real naturalWidth: pillRect.width + 8 + content.width
         implicitWidth: naturalWidth
         width: colWidth
-        height: page.narrow ? 28 : root.rowH
+        height: page.narrow ? Math.round(28 * root.k) : root.rowH
         Rectangle {
             visible: page.narrow
             anchors.bottom: parent.bottom
@@ -1445,30 +1511,50 @@ Item {
             color: "#12ffffff"
         }
         // кнопка геймпада стоїть точно посередині рядка (від неї йде лінія), без округлення до пікселя
+        readonly property bool lit: hot || root.hoverBtn === row.btn
         Rectangle {
-            visible: pr.hot
+            visible: pr.lit
             x: pillRect.x - 3; y: pillRect.y - 3
             width: pillRect.width + 6; height: pillRect.height + 6; radius: height / 2
-            color: "#408fe3ff"
+            color: pr.hot ? "#558fe3ff" : "#308fe3ff"
+        }
+        // тінь під кнопкою
+        Rectangle {
+            x: pillRect.x; y: pillRect.y + Math.round(2 * root.k)
+            width: pillRect.width; height: pillRect.height; radius: height / 2
+            color: "#59000000"
         }
         Rectangle {
             id: pillRect
             x: pr.mirrored ? pr.width - width : 0
-            y: (pr.height - height) / 2
-            width: Math.max(20, pillText.implicitWidth + 10); height: 18; radius: 9
-            color: pr.hot ? ap.cyan : "#ffffff"
+            y: (pr.height - height) / 2 + (pr.hot ? 1 : 0)
+            width: Math.max(Math.round(20 * root.k), pillText.implicitWidth + Math.round(10 * root.k)); height: Math.round(18 * root.k); radius: height / 2
+            gradient: Gradient {
+                GradientStop { position: 0; color: pr.hot ? "#b5eeff" : "#ffffff" }
+                GradientStop { position: 1; color: pr.hot ? ap.cyan : "#d9d5e2" }
+            }
             Text {
                 id: pillText
                 anchors.centerIn: parent
                 text: pr.row.pad || ""
                 color: pr.hot ? "#10212b" : ap.dark
-                font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 10
+                font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: Math.round(10 * root.k)
+            }
+        }
+        // наведи на рядок: підсвічується його лінія і кнопка на геймпаді
+        HoverHandler {
+            enabled: !page.narrow
+            onHoveredChanged: {
+                if (hovered) root.hoverBtn = pr.row.btn;
+                else if (root.hoverBtn === pr.row.btn) root.hoverBtn = "";
             }
         }
         Row {
             id: content
             anchors.verticalCenter: parent.verticalCenter
-            x: pr.mirrored ? pillRect.x - 8 - width : pillRect.width + 8
+            readonly property real nudge: pr.lit && !pr.hot ? 3 : 0     // при наведенні рядок трохи тягнеться до геймпада
+            x: (pr.mirrored ? pillRect.x - 8 - width - nudge : pillRect.width + 8 + nudge)
+            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
             layoutDirection: pr.mirrored ? Qt.RightToLeft : Qt.LeftToRight
             spacing: 8
             Row {
@@ -1487,8 +1573,11 @@ Item {
                 rightPadding: pr.mirrored ? gapFix : 0
                 leftPadding: pr.mirrored ? 0 : gapFix
                 text: pr.none ? qsTr("вільна") : pr.row.name
-                color: pr.hot ? ap.cyan : pr.none ? "#66ffffff" : ap.ink
-                font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 14; font.letterSpacing: 0.8
+                // у головному вікні колонка фіксованої ширини: задовга назва скорочується (повна — у підказці над кнопкою геймпада)
+                width: root.big && !page.narrow ? Math.min(implicitWidth, Math.max(40, pr.colWidth - pillRect.width - 16 - keysRow.width - 8)) : implicitWidth
+                elide: pr.mirrored ? Text.ElideLeft : Text.ElideRight
+                color: pr.lit ? ap.cyan : pr.none ? "#66ffffff" : ap.ink
+                font.family: ap.display; font.weight: Font.Medium; font.pixelSize: Math.round(14 * root.k + (root.big ? 1 : 0)); font.letterSpacing: 0.8
                 font.capitalization: Font.AllUppercase
             }
         }
@@ -1510,8 +1599,9 @@ Item {
 
     component Glow: PadImage {
         property bool on: false
-        opacity: on ? 1 : 0
+        property bool hov: false
+        opacity: on ? 1 : hov ? 0.55 : 0
         visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 80 } }
+        Behavior on opacity { NumberAnimation { duration: on ? 80 : 160 } }
     }
 }

@@ -8,6 +8,8 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import QtQuick.Window
+import QtCore
 
 import org.streetpea.chiaking
 
@@ -57,16 +59,16 @@ Rectangle {
     onWalletOnChanged: if (!walletOn && view === "wallet") view = "home"
 
     // ── розміри: до 1600 px як у макеті, на великих екранах (2K, 4K без масштабу системи) усе пропорційно більше ──
-    readonly property real zoomK: Math.max(1, Math.min(2.2, Math.min(width / 1600, height / 1000)))
+    readonly property real zoomK: Math.max(1, Math.min(2.2, Math.min(width / 1800, height / 1080)))
     readonly property real pageW: zoom.width
-    readonly property real padX: Math.max(pageW < 1100 ? 20 : 28, (pageW - 1240) / 2)
+    readonly property real padX: Math.max(pageW < 1100 ? 20 : 32, (pageW - 1520) / 2)   // дизайн 112: ширший вміст, без порожніх полів
     readonly property real cw: pageW - 2 * padX                      // ширина вмісту
     readonly property bool twoCol: cw >= 840
-    readonly property real colGap: cw > 1000 ? 64 : 40
-    readonly property real leftW: twoCol ? Math.floor((cw - colGap) * 1.25 / 2.25) : cw
+    readonly property real colGap: cw > 1000 ? 28 : 20
+    readonly property real leftW: twoCol ? Math.floor((cw - colGap) * 1.2 / 2.2) : cw
     readonly property real rightW: twoCol ? cw - colGap - leftW : cw
     readonly property real timerSize: Math.max(64, Math.min(120, pageW * 0.1))
-    readonly property real bigSize: Math.max(34, Math.min(52, pageW * 0.05))
+    readonly property real bigSize: Math.max(38, Math.min(60, pageW * 0.045))
     readonly property string menuKeyText: qsTr("клавіша ` (під Esc)")
 
     // Фон нічого не пропускає крізь себе: кліки, колесо й наведення не доходять до списку консолей під ним
@@ -96,9 +98,41 @@ Rectangle {
         if (view === "crm") crmOpened = true;
         if (view === "crm" && home.overGame) view = "home";   // поверх гри CRM немає (вбудований браузер лише поза грою)
     }
+    // ── повний екран (дизайн 112): кнопка «Весь екран» у шапці, F11 або Ctrl+Cmd+F; програма пам'ятає вибір
+    // і наступного разу відкривається так само. Типово на весь екран на ноутбуках (екран до 1600 точок завширшки).
+    Settings {
+        id: winPrefs
+        category: "anyplay"
+        property bool fullscreen: Screen.width > 0 && Screen.width <= 1600
+    }
+    readonly property var appWindow: Chiaki.window || null
+    readonly property bool isFullscreen: !!appWindow && appWindow.visibility === Window.FullScreen
+    function setFullscreen(on) {
+        if (!appWindow || home.overGame)
+            return;
+        winPrefs.fullscreen = on;
+        if (on)
+            appWindow.showFullScreen();
+        else
+            appWindow.showMaximized();
+    }
+    function applyFullscreenPref() {
+        if (appWindow && !home.overGame && !Chiaki.session && winPrefs.fullscreen && !home.isFullscreen)
+            appWindow.showFullScreen();
+    }
+    Timer { id: fullscreenStart; interval: 700; onTriggered: home.applyFullscreenPref() }
+    Shortcut {
+        enabled: !home.overGame && home.visible
+        sequences: ["F11", "Ctrl+Meta+F"]
+        onActivated: home.setFullscreen(!home.isFullscreen)
+    }
+    // після гри вікно повертається з повноекранного режиму гри: якщо програма має бути на весь екран — знову на весь екран
+    readonly property var liveSession: Chiaki.session
+    onLiveSessionChanged: if (!liveSession) fullscreenStart.restart()
+
     property bool crmOpened: false   // CRM вантажимо, коли її вперше відкрили, і тримаємо, поки відкрите вікно
     onIsAdminChanged: view = "home"
-    Component.onCompleted: loadMine()
+    Component.onCompleted: { loadMine(); if (!overGame) fullscreenStart.start(); }
 
     function nowTs() { tick; return Math.floor(Date.now() / 1000) + cloud.clockSkew; }
     function dur(s) {
@@ -425,14 +459,23 @@ Rectangle {
                         Layout.alignment: Qt.AlignBottom
                         Layout.bottomMargin: 10
                         spacing: 0
-                        Text {
-                            text: "ANYPLAY"
-                            font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 24; font.letterSpacing: 3
-                            color: ap.ink
+                        Row {
+                            spacing: 10
+                            Rectangle {   // знак: захід сонця
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 8; height: 30; radius: 4
+                                gradient: Gradient { GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
+                            }
+                            Text {
+                                text: "ANYPLAY"
+                                font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: 30; font.letterSpacing: 3.5
+                                color: ap.ink
+                            }
                         }
                         Text {
+                            Layout.leftMargin: 18
                             text: qsTr("ОРЕНДА PS5: GTA ТА ІНШІ ІГРИ")
-                            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 11; font.letterSpacing: 2
+                            font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 11; font.letterSpacing: 2.2
                             color: ap.faint
                         }
                     }
@@ -459,6 +502,11 @@ Rectangle {
                             font.family: ap.body; font.pixelSize: 13
                             color: ap.mute
                             elide: Text.ElideRight
+                        }
+                        LinkButton {   // повний екран і назад (F11, на Mac ще Ctrl+Cmd+F)
+                            visible: !home.overGame && !!home.appWindow
+                            text: home.isFullscreen ? qsTr("Вікно") : qsTr("Весь екран")
+                            onClicked: home.setFullscreen(!home.isFullscreen)
                         }
                         LinkButton {
                             visible: home.cloud.loggedIn && !home.overGame   // під час гри з акаунта не виходять
@@ -633,7 +681,7 @@ Rectangle {
                     columnSpacing: home.colGap
                     rowSpacing: 28
                     // ліворуч: таймер і головна кнопка
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         id: hero
                         readonly property bool timer: (home.st === "play") || (home.st === "wait" && home.cloud.nextStart > 0 && home.cloud.nextStart - home.nowTs() > 0)
                         Layout.preferredWidth: home.leftW
@@ -711,7 +759,7 @@ Rectangle {
                         }
                     }
                     // праворуч: мої броні й налаштування гри
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
@@ -786,16 +834,17 @@ Rectangle {
                     columns: home.twoCol ? 2 : 1
                     columnSpacing: home.colGap
                     rowSpacing: 28
-                    ColumnLayout {
+                    ApCard {   // хто грає зараз і як: головна картка панелі
                         Layout.preferredWidth: home.leftW
                         Layout.maximumWidth: home.leftW
                         Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: 8
+                        padding: 28
                         spacing: 12
+                        accentEdge: home.adm.closed ? ap.bad : (home.liveInfo ? (home.liveInfo.health === "bad" ? ap.bad : home.liveInfo.health === "fair" ? ap.gold : ap.ok) : "transparent")
                         ApText {
                             role: "eyebrow"
-                            color: home.adm.closed ? ap.bad : ap.cyan
-                            text: home.adm.closed ? qsTr("Доступ клієнтам закрито") : qsTr("Панель адміна")
+                            color: home.adm.closed ? ap.bad : ap.accent
+                            text: home.adm.closed ? qsTr("Доступ клієнтам закрито") : home.cur ? qsTr("Зараз грає") : qsTr("Панель адміна")
                         }
                         ApText {
                             Layout.fillWidth: true
@@ -822,8 +871,7 @@ Rectangle {
                         Flow {
                             visible: !!home.liveInfo
                             Layout.fillWidth: true
-                            Layout.maximumWidth: 600
-                            spacing: 6
+                            spacing: 8
                             Repeater {
                                 model: home.liveChips(home.liveInfo, home.liveAgeMin)
                                 ApChip {
@@ -838,7 +886,6 @@ Rectangle {
                         AnyPlayPreview {
                             visible: !!home.cur && !!home.liveInfo
                             Layout.fillWidth: true
-                            Layout.maximumWidth: 600
                             Layout.topMargin: 6
                             bookingId: home.cur ? home.cur.id : 0
                         }
@@ -882,9 +929,11 @@ Rectangle {
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: 12
+                        spacing: home.colGap
+                      ApCard {
+                        visible: adminRight.later.length > 0
+                        title: qsTr("Далі")
                         spacing: 0
-                        ApText { visible: adminRight.later.length > 0; role: "cap"; text: qsTr("Далі"); Layout.bottomMargin: 6 }
                         Repeater {
                             model: adminRight.later
                             ApRow {
@@ -900,7 +949,10 @@ Rectangle {
                                 }
                             }
                         }
-                        ApText { role: "cap"; text: qsTr("Інструменти"); Layout.topMargin: adminRight.later.length > 0 ? 22 : 0; Layout.bottomMargin: 6 }
+                      }
+                      ApCard {
+                        title: qsTr("Інструменти")
+                        spacing: 0
                         ApRow {
                             title: qsTr("Спільний PSN")
                             subtitle: qsTr("акаунт, на якому грають клієнти")
@@ -941,8 +993,10 @@ Rectangle {
                             subtitle: qsTr("усі налаштування програми")
                             clickable: true
                             onClicked: home.serviceMode = true
+                            hairline: false
                             ApChip { text: qsTr("відкрити") }
                         }
+                      }
                     }
                 }
             }
@@ -997,7 +1051,7 @@ Rectangle {
                     columns: home.twoCol ? 2 : 1
                     columnSpacing: home.colGap
                     rowSpacing: 28
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.preferredWidth: home.leftW
                         Layout.maximumWidth: home.leftW
                         Layout.alignment: Qt.AlignTop
@@ -1039,7 +1093,7 @@ Rectangle {
                         }
                     }
                     // праворуч: необов'язкова перевірка інтернету
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         id: speedCol
                         readonly property var sp: home.speed
                         readonly property bool done: !!sp && sp.stage === "done" && sp.downMbps >= 0
@@ -1160,7 +1214,7 @@ Rectangle {
                     columns: home.twoCol ? 2 : 1
                     columnSpacing: home.colGap
                     rowSpacing: 28
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.preferredWidth: home.leftW
                         Layout.maximumWidth: home.leftW
                         Layout.alignment: Qt.AlignTop
@@ -1296,7 +1350,7 @@ Rectangle {
                                                               () => home.cloud.setMyPsn(""))
                         }
                     }
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
@@ -1346,7 +1400,7 @@ Rectangle {
                 ColumnLayout {
                     width: home.cw
                     spacing: 16
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.fillWidth: true
                         spacing: 6
                         ApText { role: "h2"; text: qsTr("Як керувати приставкою") }
@@ -1401,7 +1455,7 @@ Rectangle {
                     columns: home.twoCol ? 2 : 1
                     columnSpacing: home.colGap
                     rowSpacing: 28
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.preferredWidth: home.leftW
                         Layout.maximumWidth: home.leftW
                         Layout.alignment: Qt.AlignTop
@@ -1432,7 +1486,7 @@ Rectangle {
                                 run: () => home.cloud.adminDropShared() })
                         }
                     }
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
@@ -1504,7 +1558,7 @@ Rectangle {
                     columns: home.twoCol ? 2 : 1
                     columnSpacing: home.colGap
                     rowSpacing: 28
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.preferredWidth: home.leftW
                         Layout.maximumWidth: home.leftW
                         Layout.alignment: Qt.AlignTop
@@ -1521,7 +1575,7 @@ Rectangle {
                             text: qsTr("У тій самій мережі, що й PS5, має бути лише цей комп'ютер. Клієнтові це не потрібно. Код потрібен один раз для кожного акаунта.")
                         }
                     }
-                    ColumnLayout {
+                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
@@ -1777,10 +1831,15 @@ Rectangle {
             visible: message !== ""
             anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 24 }
             width: Math.min(zoom.width - 40, 560, toastText.implicitWidth + 34)
-            height: toastText.implicitHeight + 20
-            radius: 4
-            color: "#f2221d2e"
-            border.color: "#66ffffff"
+            height: toastText.implicitHeight + 24
+            radius: ap.radius
+            color: ap.dialog
+            border.color: ap.edgeHi
+            Rectangle {   // смужка заходу сонця зліва
+                anchors { left: parent.left; top: parent.top; bottom: parent.bottom; margins: 8 }
+                width: 3; radius: 1.5
+                gradient: Gradient { GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
+            }
             Text {
                 id: toastText
                 anchors.centerIn: parent
@@ -1789,7 +1848,7 @@ Rectangle {
                 horizontalAlignment: Text.AlignHCenter
                 text: toast.message
                 color: ap.ink
-                font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 14
+                font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 15
             }
             Timer { id: toastTimer; interval: 8000; onTriggered: toast.message = "" }
             Connections {
@@ -1857,11 +1916,12 @@ Rectangle {
     component BalanceChip: Rectangle {
         id: bc
         signal clicked()
-        implicitWidth: bcRow.implicitWidth + 20
-        implicitHeight: bcRow.implicitHeight + 10
-        radius: ap.radius
-        color: bcMouse.containsMouse ? "#14ffffff" : "transparent"
-        border.color: bcMouse.containsMouse ? ap.ink : ap.edge
+        implicitWidth: bcRow.implicitWidth + 24
+        implicitHeight: bcRow.implicitHeight + 14
+        radius: ap.radiusSmall
+        color: bcMouse.containsMouse ? ap.glassHi : ap.glass
+        border.color: bcMouse.containsMouse ? ap.edgeHi : ap.edge
+        transform: Translate { y: bcMouse.pressed ? 1 : (bcMouse.containsMouse ? -ap.lift : 0); Behavior on y { NumberAnimation { duration: ap.tHover } } }
         Row {
             id: bcRow
             anchors.centerIn: parent
@@ -1869,15 +1929,15 @@ Rectangle {
             Text {
                 anchors.baseline: bcValue.baseline
                 text: qsTr("Баланс")
-                font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 11
+                font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 12
                 font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
                 color: ap.mute
             }
             Text {
                 id: bcValue
                 text: wallet.primaryText
-                font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 13
-                color: ap.ink
+                font.family: ap.body; font.weight: Font.Bold; font.pixelSize: 15
+                color: ap.gold
             }
         }
         MouseArea { id: bcMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: bc.clicked() }
@@ -1888,16 +1948,17 @@ Rectangle {
         id: lb
         property string text
         signal clicked()
-        implicitWidth: lbText.implicitWidth + 22
-        implicitHeight: lbText.implicitHeight + 10
-        radius: ap.radius
-        color: "#0affffff"
-        border.color: lbMouse.containsMouse ? ap.ink : ap.edge
+        implicitWidth: lbText.implicitWidth + 24
+        implicitHeight: lbText.implicitHeight + 14
+        radius: ap.radiusSmall
+        color: lbMouse.containsMouse ? ap.glassHi : ap.glass
+        border.color: lbMouse.containsMouse ? ap.edgeHi : ap.edge
+        transform: Translate { y: lbMouse.pressed ? 1 : (lbMouse.containsMouse ? -ap.lift : 0); Behavior on y { NumberAnimation { duration: ap.tHover } } }
         Text {
             id: lbText
             anchors.centerIn: parent
             text: lb.text
-            font.family: ap.body; font.weight: Font.Medium; font.pixelSize: 13
+            font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 14
             color: ap.ink
         }
         MouseArea { id: lbMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: lb.clicked() }
@@ -1930,9 +1991,19 @@ Rectangle {
             anchors.centerIn: parent
             width: Math.max(200, Math.min(hp.width - 40, hp.maxW))
             height: Math.max(80, Math.min(hp.height - 40, want))
-            radius: 4
+            radius: ap.cardRadius
             color: ap.dialog
-            border.color: ap.edge
+            border.color: ap.edgeHi
+            Rectangle {   // відблиск угорі: скло
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 1 }
+                height: 60; radius: ap.cardRadius - 1
+                gradient: Gradient { GradientStop { position: 0; color: "#14ffffff" } GradientStop { position: 1; color: "#00ffffff" } }
+            }
+            Rectangle {   // лінія заходу сонця вгорі
+                anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: ap.cardRadius; rightMargin: ap.cardRadius }
+                height: 3; radius: 1.5
+                gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: ap.accentA } GradientStop { position: 1; color: ap.accentB } }
+            }
             MouseArea {   // кліки всередині вікна його не закривають
                 anchors.fill: parent
                 acceptedButtons: Qt.AllButtons

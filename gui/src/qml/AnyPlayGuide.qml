@@ -1,5 +1,6 @@
 // AnyPlay: як керувати самою приставкою — меню PS, вихід з гри, запуск іншої гри.
-// Рядки з тонкими лініями, клавіші праворуч фішками. Клавіші справжні (з урахуванням того, що клієнт міг їх змінити).
+// Дизайн 112: у головному вікні кожна порада на скляній плитці з об'ємними клавішами праворуч;
+// compact (меню гри) — щільні рядки з тонкими лініями й фішками клавіш. Клавіші справжні (з урахуванням змін клієнта).
 import QtQuick
 import QtQuick.Layouts
 
@@ -9,9 +10,10 @@ GridLayout {
     id: guide
     property bool compact: false      // у меню гри: щільніше
     property string menuKey: qsTr("клавіша ` (під Esc)")
+    readonly property bool tiles: !compact
     columns: 1
-    columnSpacing: 64
-    rowSpacing: 0
+    columnSpacing: tiles ? 14 : 64
+    rowSpacing: tiles ? 14 : 0
 
     function keyOf(id, fallback) {
         const profiles = Chiaki.settings.anyplayProfiles();
@@ -86,23 +88,45 @@ GridLayout {
 
     Repeater {
         model: guide.rows
-        ApRow {
-            id: gRow
+        Item {
+            id: tile
             required property var modelData
             Layout.fillWidth: true
-            Layout.fillHeight: true      // у двох стовпцях лінії під рядками на одній висоті
+            Layout.fillHeight: true      // у двох стовпцях плитки (лінії) одного ряду на одній висоті
             Layout.preferredWidth: 1
-            title: modelData.title
-            subtitle: modelData.text
-            titleSize: 15
-            subSize: 13
-            subColor: ap.mute          // довідку читають уважно: текст світліший і більший
-            Repeater {
-                model: gRow.modelData.keys
-                ApChip {
-                    required property string modelData
-                    key: true
-                    text: modelData
+            implicitHeight: gRow.implicitHeight + (guide.tiles ? 16 : 0)
+            Rectangle {   // скляна плитка
+                visible: guide.tiles
+                anchors.fill: parent
+                radius: ap.radius + 2
+                color: ap.card
+                border.width: 1
+                border.color: tileMouse.containsMouse ? ap.edgeHi : ap.cardEdge
+                Behavior on border.color { ColorAnimation { duration: ap.tHover } }
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 1 }
+                    height: Math.min(40, parent.height * 0.5); radius: parent.radius - 1
+                    gradient: Gradient { GradientStop { position: 0; color: ap.cardTop } GradientStop { position: 1; color: "#00ffffff" } }
+                }
+                MouseArea { id: tileMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+            }
+            ApRow {
+                id: gRow
+                anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: guide.tiles ? 18 : 0; rightMargin: guide.tiles ? 16 : 0 }
+                hairline: !guide.tiles
+                title: tile.modelData.title
+                subtitle: tile.modelData.text
+                titleSize: guide.tiles ? 16 : 15
+                subSize: guide.tiles ? 14 : 13
+                subColor: ap.mute          // довідку читають уважно: текст світліший і більший
+                Repeater {
+                    model: tile.modelData.keys
+                    Loader {
+                        required property string modelData
+                        sourceComponent: guide.tiles ? bigKey : smallKey
+                        Component { id: bigKey; ApKey { text: modelData; size: 32; interactive: false } }
+                        Component { id: smallKey; ApChip { key: true; text: modelData } }
+                    }
                 }
             }
         }

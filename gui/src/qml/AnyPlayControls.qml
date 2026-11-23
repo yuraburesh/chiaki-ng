@@ -483,7 +483,7 @@ Item {
     readonly property int extraMax: 24          // найбільше «Інших дій» серед усіх розкладок і режимів (GTA VI пішки: 23)
     readonly property real bigRigH: Math.max(Math.round(200 * k), flick.height - side.height - extra.height - bottomBox.height - Math.round(36 * k) - 6)
     // головне вікно: схема ширша за інші вкладки (до 1600), щоб не лишалось порожніх полів обабіч
-    readonly property real inset: big ? Math.min(sideInset, Math.max(28, (width - 1600) / 2)) : sideInset
+    readonly property real inset: !inGame ? Math.min(sideInset, Math.max(28, (width - 1900) / 2)) : sideInset
     property string hoverBtn: ""          // кнопка геймпада під мишею в підписах: її лінія й кнопка підсвічуються
     // низьке вікно в меню гри (ноутбук 13"): щільніші рядки й без зайвого, щоб усе вмістилось без прокрутки
     readonly property bool tight: inGame && flick.height > 0 && flick.height < 800
@@ -563,7 +563,7 @@ Item {
             id: page
             opacity: root.fitted ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 120 } }
-            readonly property real cw: Math.min(root.big ? 1600 : 1440, root.width - 2 * root.inset)
+            readonly property real cw: Math.min(root.inGame ? 1440 : 1900, root.width - 2 * root.inset)
             readonly property bool narrow: cw <= (root.inGame ? 600 : 900)   // у меню гри ліворуч список розділів, тож місця менше
             x: (root.width - cw) / 2
             width: cw

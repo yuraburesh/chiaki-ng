@@ -121,7 +121,9 @@ jobs:
       # номер збірки — з anyplay-build.txt (той самий, що вшитий у програму й у встановлювач)
       - uses: actions/checkout@v7
         with:
-          sparse-checkout: anyplay-build.txt
+          sparse-checkout: |
+            anyplay-build.txt
+            anyplay-notes.txt
           sparse-checkout-cone-mode: false
       - name: Build number
         id: build
@@ -129,6 +131,8 @@ jobs:
           build=$(tr -d '[:space:]' < anyplay-build.txt)
           if [[ ! "$build" =~ ^[0-9]+$ ]]; then echo "У anyplay-build.txt має бути лише номер збірки"; exit 1; fi
           echo "build=$build" >> "$GITHUB_OUTPUT"
+          # «Що нового» для клієнтів (сервер бере цей рядок, коли власник публікує з Telegram)
+          echo "notes=$(head -c 600 anyplay-notes.txt 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g')" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
@@ -177,6 +181,7 @@ jobs:
           name: AnyPlay ${{ steps.build.outputs.build }} (збірка ${{ github.run_number }})
           make_latest: false
           body: |
+            Що нового: ${{ steps.build.outputs.notes }}
             AnyPlay ${{ steps.build.outputs.build }} — програма для оренди PS5: вхід через Telegram, доступ лише в час оплаченої броні, якість, клавіші та свій акаунт PSN.
             Перше встановлення: Windows — AnyPlay-chiaki-ng-Windows.exe; Mac (Apple M1 і новіші) — AnyPlay-chiaki-ng-Mac.dmg; Mac (Intel) — AnyPlay-chiaki-ng-Mac-Intel.dmg; Linux / Steam Deck — AppImage.
             Файли з номером збірки (AnyPlay-Windows-${{ steps.build.outputs.build }}.exe, AnyPlay-Mac-${{ steps.build.outputs.build }}.zip, AnyPlay-Mac-Intel-${{ steps.build.outputs.build }}.zip) програма завантажує сама, коли оновлення опубліковано.

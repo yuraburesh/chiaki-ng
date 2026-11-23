@@ -48,6 +48,7 @@ jobs:
             exit 1
           fi
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "notes=$(head -c 600 anyplay-notes.txt 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g')" >> "$GITHUB_OUTPUT"
           echo "Збірка AnyPlay: $BUILD"
       - name: Залежності
         run: |
@@ -115,6 +116,7 @@ jobs:
           name: AnyPlay для Android (збірка ${{ steps.build.outputs.build }})
           make_latest: false
           body: |
+            Що нового: ${{ steps.build.outputs.notes }}
             AnyPlay для Android, збірка ${{ steps.build.outputs.build }}.
             Програма оновлюється сама після публікації в CRM. Вручну: завантаж AnyPlay-Android-${{ steps.build.outputs.build }}.apk і встанови поверх попередньої версії.
           files: dist/AnyPlay-Android-${{ steps.build.outputs.build }}.apk

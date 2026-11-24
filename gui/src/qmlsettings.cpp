@@ -2265,7 +2265,23 @@ bool QmlSettings::anyplayAutoVehicle() const
 void QmlSettings::setAnyplayAutoVehicle(bool enabled)
 {
     AnyPlayInput::SetAutoVehicle(enabled);
-    AnyPlayInput::NotifyConfigChanged();
+    emit anyplayOptionsChanged();
+}
+
+QVariant QmlSettings::anyplayOption(const QString &name) const
+{
+    return AnyPlayInput::Option(name);
+}
+
+void QmlSettings::setAnyplayOption(const QString &name, const QVariant &value)
+{
+    AnyPlayInput::SetOption(name, value);
+    emit anyplayOptionsChanged();
+}
+
+QVariantMap QmlSettings::anyplayOptions() const
+{
+    return AnyPlayInput::Options();
 }
 
 // ── AnyPlay: екран клавіш з геймпадом ──
@@ -2324,6 +2340,15 @@ void QmlSettings::anyplayPreviewSetProfile(const QString &id)
 QVariantMap QmlSettings::anyplayPreviewState()
 {
     return anyplayPreview()->PreviewState();
+}
+
+bool QmlSettings::anyplayPreviewMouse(qreal dx, qreal dy)
+{
+    AnyPlayInput *engine = anyplayPreview();
+    if (!engine->CapturesMouse())
+        return false;
+    engine->MouseDelta(dx, dy);
+    return true;
 }
 
 void QmlSettings::anyplayPadPreview(bool on)

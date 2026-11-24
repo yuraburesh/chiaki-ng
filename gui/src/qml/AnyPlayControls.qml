@@ -80,6 +80,9 @@ Item {
             if (sp.l && sp.r) return qsTr("тримай: лівий %1, правий %2").arg(arrow(sp.l)).arg(arrow(sp.r));
             return sp.r ? qsTr("тримай: ↺ або ↻, ще можна колом мишею") : qsTr("тримай: ↺ або ↻");
         }
+        if (d === "precise") return qsTr("тримай: клавіші руху крутять стік по колу");
+        if (d === "hold_stick") return qsTr("натисни: правий стік тримає напрям від миші");
+        if (d === "hotwire") return qsTr("тримай і крути мишею: обидва стіки");
         if (d === "cycle") {
             const z = b.aim && b.aim.btn && b.aim.btn[0];
             if (z === "DPAD_UP" || z === "DPAD_DOWN") return qsTr("по колу; у прицілі ближче й далі");
@@ -102,7 +105,7 @@ Item {
     function chipOf(b) { return { p: b.p, id: b.id, key: b.key, keyName: b.keyName, name: b.name }; }
 
     function buildView(c, m) {
-        const v = { modes: [], title: "", hint: "", left: [], right: [], extra: [] };
+        const v = { modes: [], title: "", hint: "", more: "", left: [], right: [], extra: [] };
         if (!c.profiles.length || !profOf(c, m))
             return v;
         const glob = globalList(c), own = ownList(c, m);
@@ -129,6 +132,16 @@ Item {
         } else {
             v.hint = qsTr("Для цієї розкладки один набір клавіш на все.");
         }
+        // 113: плавні стіки з клавіатури — підказка про жести (у «?» в головному вікні і в довідці)
+        const byDo = (d) => glob.find((x) => x["do"] === d && x.key);
+        const pre = byDo("precise"), hold = byDo("hold_stick"), hot = byDo("hotwire");
+        const parts = [];
+        if (hot) parts.push(qsTr("Злам машини: тримай %1 — стіки стають назустріч, крути мишею (коліщатко і ← → докручують).").arg(bold(kname(hot.key))));
+        if (pre) parts.push(qsTr("Точний рух: тримай %1 — клавіші руху крутять лівий стік по колу плавно, відпустиш їх — стік стоїть; коротке натискання вмикає до наступного.").arg(bold(kname(pre.key))));
+        if (hold) parts.push(qsTr("Утримати камеру: %1 — правий стік тримає напрям від миші, поки не натиснеш ще раз.").arg(bold(kname(hold.key))));
+        v.more = parts.join(" ");
+        if (v.more && m !== "global" && !root.tight)
+            v.hint += "<br>" + v.more;
         v.title = m === "global" ? qsTr("Меню") : stripIcon(profOf(c, m).name);
         const labels = (m !== "global" && profOf(c, m).labels) || {};
         const shown = {};
@@ -149,7 +162,9 @@ Item {
         };
         v.left = sideL.map(rowFor);
         v.right = sideR.map(rowFor);
-        const ex = (m === "global" ? glob : own).filter((b) => !shown[b.p + "/" + b.id]);
+        // жести стіків зі спільних клавіш (злам машини, точний рух, утримати стік) показуємо в кожному режимі
+        const gestures = glob.filter((b) => b["do"] === "hotwire" || b["do"] === "precise" || b["do"] === "hold_stick");
+        const ex = (m === "global" ? glob : own.concat(gestures)).filter((b) => !shown[b.p + "/" + b.id]);
         const groups = [];
         for (const b of ex) {
             const g = groups.find((x) => x[0].name === b.name && howOf(x[0]) === howOf(b) && !b.steps);
@@ -318,6 +333,9 @@ Item {
         else if (aimNow(b)) log(lab + " → " + aimPn(b) + qsTr(", поки тримаєш (%1): ").arg(aimWhere(b)) + nm);
         else if (d === "cycle") log(lab + " → " + nm + qsTr(" (по колу)"));
         else if (d === "macro") log(lab + " → " + nm + qsTr(" (комбінація)"));
+        else if (d === "precise") log(lab + " → " + qsTr("точний рух: тримай і крути стік клавішами руху, або відпусти одразу, щоб увімкнути"));
+        else if (d === "hold_stick") log(lab + " → " + qsTr("утримати правий стік: рухай мишею над геймпадом, стік стоїть"));
+        else if (d === "hotwire") log(lab + " → " + qsTr("злам машини: стіки назустріч, крути мишею над геймпадом"));
         else if (b.l && b.l.length === 2) log(lab + " → " + qsTr("лівий стік: ") + nm);
         else if (b.btn) log(lab + " → " + pn + qsTr(", поки тримаєш: ") + nm);
         const h = Object.assign({}, held); h[k] = true; held = h;
@@ -462,6 +480,8 @@ Item {
             const p = point.position;
             if (last.x >= 0 && root.live) {
                 const s = root.sensNow, inv = Chiaki.settings.anyplayInvertY ? -1 : 1;
+                // злам машини або «утримати правий стік»: рух миші крутить стіки в рушії (на схемі видно те саме, що отримає приставка)
+                if (Chiaki.settings.anyplayPreviewMouse(p.x - last.x, p.y - last.y)) { last = p; return; }
                 const dx = (p.x - last.x) / 25 * s, dy = (p.y - last.y) / 25 * s * inv;
                 if (dx || dy) {
                     root.rsv = [Math.max(-1, Math.min(1, root.rsv[0] + dx)), Math.max(-1, Math.min(1, root.rsv[1] + dy))];
@@ -818,6 +838,7 @@ Item {
                         spacing: 6
                         LinkButton { text: qsTr("Скинути до стандартної"); onClicked: root.resetKeys() }
                         LinkButton { text: qsTr("Показати вибір перед грою"); onClicked: root.askBeforeGame() }
+                        LinkButton { text: qsTr("Ще…"); onClicked: { root.cancelWait(); morePanel.open = !morePanel.open; } }
                     }
                     // нове: чутливість миші для камери та інверсія вертикалі (діють одразу, і в грі теж)
                     Row {
@@ -1405,6 +1426,86 @@ Item {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // ── 113: «Ще…» — налаштування керування і занурення (перемикачі) та жести стіків ──
+    Rectangle {
+        id: morePanel
+        property bool open: false
+        property var opts: Chiaki.settings.anyplayOptions()
+        function set(name, v) { Chiaki.settings.setAnyplayOption(name, v); opts = Chiaki.settings.anyplayOptions(); }
+        Connections { target: Chiaki.settings; function onAnyplayOptionsChanged() { morePanel.opts = Chiaki.settings.anyplayOptions(); } }
+        visible: open
+        z: 30
+        anchors.centerIn: parent
+        width: Math.min(Math.round(640 * root.k), root.width - 32)
+        height: Math.min(moreCol.implicitHeight + 36, root.height - 24)
+        radius: ap.radius
+        color: "#f51a1226"
+        border.width: 1; border.color: "#40ffffff"
+        MouseArea { anchors.fill: parent; onClicked: root.forceActiveFocus() }   // клік по панелі не доходить до схеми
+        Flickable {
+            anchors.fill: parent; anchors.margins: 18
+            contentHeight: moreCol.implicitHeight
+            clip: true
+            Column {
+                id: moreCol
+                width: parent.width
+                spacing: Math.round(8 * root.k)
+                Item {
+                    width: parent.width
+                    height: moreClose.height
+                    Cap { text: qsTr("Керування: ще"); anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter }
+                    LinkButton { id: moreClose; anchors.right: parent.right; text: qsTr("Закрити"); onClicked: morePanel.open = false }
+                }
+                Repeater {
+                    model: [
+                        { name: "auto_vehicle", t: qsTr("Автоматично визначати транспорт"),
+                          d: qsTr("«Транспорт» вмикається, коли герой справді сів у машину (приставка дає опір обом педалям), і «Пішки», коли вийшов. F лишається ручним перемикачем. Перші збірки: пороги підлаштовуємо за журналами.") },
+                        { name: "haptic_strong", t: qsTr("Віддача на екрані: сильно"),
+                          d: qsTr("Край екрана від вібрації яскравіший і згасає довше. Саму віддачу вмикає перемикач «Віддача на екрані» в меню гри.") },
+                        { name: "kick_screen", t: qsTr("Віддача від пострілів і ударів"),
+                          d: qsTr("Постріл (ЛКМ) і удар з клавіатури теж дають поштовх на край екрана, навіть якщо гра не шле вібрацію.") },
+                        { name: "tremor", t: qsTr("Тремор камери від вібрації"),
+                          d: qsTr("Сильна вібрація (вибух, удар) на мить смикає камеру в грі. Лише коли граєш клавіатурою; з геймпадом нічого не міняється.") },
+                        { name: "aim_slow", t: qsTr("Повільніша миша в прицілі"),
+                          d: qsTr("Поки тримаєш приціл (ПКМ) пішки, чутливість миші 60 %: легше вести ціль.") },
+                        { name: "menu_create", t: qsTr("Create на геймпаді 1 с відкриває меню AnyPlay"),
+                          d: qsTr("Коротке натискання Create іде в гру як завжди (з запізненням до секунди).") },
+                        { name: "menu_sticks", t: qsTr("L3 + R3 разом 1 с теж відкриває меню"),
+                          d: qsTr("Якщо Create на твоєму геймпаді не працює.") }
+                    ]
+                    Item {
+                        required property var modelData
+                        width: moreCol.width
+                        height: Math.max(sw.height, optText.implicitHeight) + 6
+                        Column {
+                            id: optText
+                            width: parent.width - sw.width - 16
+                            spacing: 2
+                            Text { width: parent.width; text: modelData.t; color: ap.ink; wrapMode: Text.WordWrap; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(14 * root.k) }
+                            Text { width: parent.width; text: modelData.d; color: "#a6ffffff"; wrapMode: Text.WordWrap; font.family: ap.body; font.pixelSize: Math.round(12 * root.k) }
+                        }
+                        ApSwitch {
+                            id: sw
+                            anchors.right: parent.right; anchors.top: parent.top
+                            checked: morePanel.opts[modelData.name] === true
+                            onToggled: (on) => { morePanel.set(modelData.name, on); root.forceActiveFocus(); }
+                        }
+                    }
+                }
+                Rectangle { width: parent.width; height: 1; color: "#26ffffff" }
+                Text {
+                    width: parent.width
+                    text: root.view.more ? qsTr("Жести стіків: ") + root.view.more : qsTr("У цій розкладці немає жестів стіків.")
+                    textFormat: Text.StyledText
+                    wrapMode: Text.WordWrap
+                    color: "#d9ffffff"
+                    lineHeight: 1.15
+                    font.family: ap.body; font.pixelSize: Math.round(13 * root.k)
                 }
             }
         }

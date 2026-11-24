@@ -5,6 +5,8 @@
 #define ANYPLAY_INPUT_H
 
 #include <chiaki/controller.h>
+#include "anyplaystick.h"
+#include "anyplayvehicle.h"
 
 #include <QObject>
 #include <QHash>
@@ -28,8 +30,10 @@ struct APStep
 
 struct APBinding
 {
-	// Hold — тримається, поки тримаєш клавішу; Tap/Turbo лишились лише для сумісності формату
-	enum class Kind { Hold, Tap, Turbo, Macro, Cycle, Spin, None };
+	// Hold — тримається, поки тримаєш клавішу; Tap/Turbo лишились лише для сумісності формату.
+	// Precise — точний режим лівого стіка (тримай), StickHold — «утримати» правий стік (перемикач),
+	// Hotwire — злам машини GTA VI (тримай і крути мишею). Див. anyplaystick.h
+	enum class Kind { Hold, Tap, Turbo, Macro, Cycle, Spin, Precise, StickHold, Hotwire, None };
 	QString id;
 	QString name;  // показується на екрані клавіш
 	QString key;   // назва клавіші, див. AnyPlayInput::KeyName
@@ -94,17 +98,29 @@ class AnyPlayInput : public QObject
 		// з мертвою зоною 0.14 і округленням до сотих (щоб не смикати екран від шуму стіків)
 		static QVariantMap PadState(const ChiakiControllerState &state);
 
-		// «Сісти в транспорт» натиснуто пішки, чекаємо підтвердження від приставки
-		// (вібрація двигуна / опір курків). Можна читати з будь-якого потоку.
-		bool VehiclePending() const { return pending.load(std::memory_order_relaxed); }
-		// Сигнали від приставки, поки чекаємо (викликати в потоці об'єкта)
-		void NoteHaptics();
+		// Сигнали від приставки для автоматичного «Транспорт» / «Пішки» і для занурення (викликати в потоці об'єкта)
 		void NoteRumble(uint8_t left, uint8_t right);
 		void NoteTriggers(uint8_t type_left, uint8_t type_right);
 
-		// true: F перемикає на «транспорт» лише після підтвердження приставки; false: одразу
+		// «Автоматично визначати транспорт»: режим перемикається сам за ефектами курків і вібрацією
+		// (anyplayvehicle.h); F лишається ручним перемикачем. Типово увімкнено.
 		static bool AutoVehicle();
 		static void SetAutoVehicle(bool enabled);
+
+		// Миша під час гри: поки активні «утримати правий стік» або злам машини, рух миші іде сюди,
+		// а не в звичайну камеру. CapturesMouse можна читати лише в потоці об'єкта.
+		bool CapturesMouse() const { return hotwire_active || stick_hold; }
+		void MouseDelta(double dx, double dy);
+		// Множник чутливості миші для камери зараз: «повільніша миша в прицілі» (поки натиснуто L2 пішки)
+		float MouseScale() const;
+		// Зараз грають геймпадом: занурення для клавіатури (тремор, віддача від пострілу) мовчить
+		void SetGamepadMode(bool gamepad) { gamepad_mode = gamepad; }
+
+		// Налаштування керування (QSettings anyplay/<name>) з типовими значеннями, для екрана клавіш і сесії:
+		// auto_vehicle, haptic_strong, kick_screen, tremor, aim_slow, menu_create, menu_sticks
+		static QVariant Option(const QString &name);
+		static void SetOption(const QString &name, const QVariant &value);
+		static QVariantMap Options();
 
 		// Миша -> правий стік (камера): чутливість 0.3–3.0 і інверсія вертикалі. Читаються з будь-якого потоку.
 		// Окремо для «пішки» і для транспорту (транспорт і авіація — mode "vehicle" чи "air"; решта — пішки).
@@ -159,6 +175,10 @@ class AnyPlayInput : public QObject
 	signals:
 		void Changed();
 		void ProfileChanged(const QString &name);
+		// Постріл або удар з клавіатури: віддача на екрані (сила 0..1), якщо увімкнено kick_screen
+		void Kick(float strength);
+		// Автоматика або гравець перемкнули режим; текст для журналу [anyplay-vehicle]
+		void VehicleLog(const QString &line);
 
 	private:
 		struct Tapped { int id; APStep step; };
@@ -179,9 +199,6 @@ class AnyPlayInput : public QObject
 		void SwitchProfile(const QString &target);
 		void SetProfile(const QString &id, const QString &hint_text);
 		QString ProfileName(const QString &id) const;
-		void StartPending();
-		void StopPending();
-		void ConfirmVehicle();
 		void StartMacro(const QList<APStep> &steps);
 		void NextMacroStep();
 		void AddTap(const APStep &step, int ms);
@@ -204,14 +221,38 @@ class AnyPlayInput : public QObject
 		QElapsedTimer clock;
 
 		bool preview = false;
+		bool gamepad_mode = false;
 		bool auto_vehicle = true;
-		std::atomic<bool> pending{false};
-		QElapsedTimer pending_since;
-		QTimer pending_timer;
-		int haptic_hits = 0;
 		QString hint;
+
+		// транспорт/пішки по-справжньому (anyplayvehicle.h): перевірка кілька разів на секунду
+		AnyPlayVehicleDetector vehicle;
+		QTimer vehicle_timer;
 		uint8_t trig_left = 0, trig_right = 0;       // останні типи ефектів курків від приставки
-		uint8_t base_left = 0, base_right = 0;       // ... у мить натискання F
+		uint8_t rumble_left = 0, rumble_right = 0;   // остання вібрація
+		void TickVehicle();
+		void ApplyAuto(bool to_vehicle);
+
+		// точний режим лівого стіка (тримають клавішу Precise)
+		bool precise_active = false;
+		QString precise_key;
+		AnyPlayPreciseStick precise;
+		QHash<QString, int> precise_keys;            // натиснуті клавіші руху в точному режимі → роль (1 вліво, 2 вправо, 3 вперед, 4 назад)
+		qint64 precise_tick = 0;
+		bool PreciseRole(const APBinding &b, int *role) const;
+		void UpdatePrecise();
+
+		// «утримати» правий стік і злам машини: точка, яку тягне миша
+		bool stick_hold = false;
+		bool hotwire_active = false;
+		QString hotwire_key;
+		AnyPlayMousePoint mouse_point;
+
+		// тремор камери від вібрації: кілька кадрів правий стік смикається на ±amp
+		qint64 tremor_until = 0;
+		qint64 tremor_last = 0;
+		float tremor_amp = 0;
+		bool tremor_phase = false;
 };
 
 #endif // ANYPLAY_INPUT_H

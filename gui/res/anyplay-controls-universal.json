@@ -14,7 +14,9 @@
         {"id": "back", "name": "Назад / закрити (○)", "key": "Backspace", "btn": ["MOON"]},
         {"id": "pause", "name": "Пауза / меню", "key": "Esc", "btn": ["OPTIONS"]},
         {"id": "map", "name": "Мапа", "key": "N", "btn": ["TOUCHPAD"]},
-        {"id": "ps", "name": "Кнопка PS", "key": "P", "btn": ["PS"]}
+        {"id": "ps", "name": "Кнопка PS", "key": "P", "btn": ["PS"]},
+        {"id": "precise", "name": "Точний рух: стік по колу", "key": "Alt", "do": "precise"},
+        {"id": "hold_stick", "name": "Утримати правий стік", "key": "O", "do": "hold_stick"}
       ]
     },
     {

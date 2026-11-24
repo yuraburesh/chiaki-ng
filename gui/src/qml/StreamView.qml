@@ -1621,54 +1621,49 @@ Item {
         }
     }
 
-    // ноутбук не встигає декодувати чи малювати (кадри губляться, а мережа в порядку): спрощуємо обробку картинки без перепідключення
+    // ноутбук не встигає декодувати чи малювати (кадри губляться, а мережа в порядку): спрощуємо обробку картинки без
+    // перепідключення. AnyPlay 113: рахує AnyPlayCloud::renderCheck (пояснює людині, що сталось, через renderNotice;
+    // якщо спрощувати нема куди, радить знизити якість через qualityHint)
     Timer {
-        property int slow: 0
-        property int ticks: 0
         property int lastLost: 0
-        property int check: 0       // скільки тиків ще дивимось, чи спрощення допомогло
-        property int still: 0       // скільки з них кадри губились так само
-        property bool gaveUp: false
         interval: 2000; repeat: true
         running: !!Chiaki.session && Chiaki.session.connected
-        onRunningChanged: { slow = 0; ticks = 0; check = 0; still = 0; gaveUp = false; lastLost = Chiaki.session ? Chiaki.session.framesLost : 0; }
+        onRunningChanged: { Chiaki.cloud.renderCheck(-1, 0, false); lastLost = Chiaki.session ? Chiaki.session.framesLost : 0; }
         onTriggered: {
             if (!Chiaki.session)
                 return;
-            ticks++;
             // кадри, що загубились у мережі, теж рахуються в droppedFrames: такі тики не беремо до уваги
             const lost = Chiaki.session.framesLost - lastLost;
             lastLost = Chiaki.session.framesLost;
-            // перші 10 с після підключення та згорнуте вікно: кадри відкидаються не через обробку
-            if (gaveUp || ticks <= 5 || Chiaki.window.visibility === Window.Minimized || Chiaki.window.visibility === Window.Hidden) {
-                slow = 0;
-                return;
-            }
-            // повільна обробка = до екрана доходить помітно менше кадрів, ніж приходить з приставки.
-            // Кадри, які вертикальна синхронізація замінила свіжішими (нерівний інтервал), обробку не повільнять, тож на них не дивимось.
-            const got = Chiaki.window.streamFps, shown = Chiaki.window.shownFps;
-            const renderSlow = got >= 20 && shown > 0 && got - shown >= Math.max(8, got * 0.15)
-                && lost === 0 && Chiaki.session.averagePacketLoss < 0.01;
-            if (check > 0) {
-                if (renderSlow) still++;
-                if (--check === 0 && still >= 3) {
-                    // простіша обробка не допомогла (наприклад, екран 50 Гц): повертаємо як було й у цій грі більше не чіпаємо
-                    Chiaki.cloud.renderUndo();
-                    gaveUp = true;
-                }
-                return;
-            }
-            if (renderSlow) slow++;
-            else slow = Math.max(0, slow - 1);
-            if (slow >= 4) {
-                slow = 0;
-                if (Chiaki.cloud.renderLighter()) {
-                    check = 5; still = 0;
-                    anyplayProfileLabel.modeText = qsTr("Спрощую обробку картинки, щоб гра йшла плавно");
-                    anyplayProfileLabel.opacity = 1;
-                    anyplayProfileTimer.interval = 4000;
-                    anyplayProfileTimer.restart();
-                }
+            Chiaki.cloud.renderCheck(Chiaki.window.streamFps, Chiaki.window.shownFps, lost === 0 && Chiaki.session.averagePacketLoss < 0.01);
+        }
+    }
+    Connections {
+        target: Chiaki.cloud
+        ignoreUnknownSignals: true
+        function onRenderNotice(text) {
+            anyplayProfileLabel.modeText = text;
+            anyplayProfileLabel.opacity = 1;
+            anyplayProfileTimer.interval = 7000;
+            anyplayProfileTimer.restart();
+        }
+        function onQualityHint() { anyplayQualityHint.show(); }
+        function onMenuRequested() { Chiaki.window.menuRequested(); }   // кнопка на геймпаді («Керування»)
+    }
+    Connections {   // те саме, якщо «Керування» шле сигнал із сесії
+        target: Chiaki.session
+        ignoreUnknownSignals: true
+        function onAnyplayMenuRequested() { Chiaki.window.menuRequested(); }
+    }
+    AnyPlayQualityHint {
+        id: anyplayQualityHint
+        z: 100
+        anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 72 }
+        onLower: {
+            if (Chiaki.cloud.qualityLevel > 0) {
+                Chiaki.cloud.setQualityLevel(Chiaki.cloud.qualityLevel === 3 ? 1 : Chiaki.cloud.qualityLevel - 1);
+                Chiaki.cloud.reconnectOnce = true;
+                Chiaki.stopSession(false);
             }
         }
     }

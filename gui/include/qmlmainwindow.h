@@ -131,6 +131,7 @@ public:
 
     bool directStream() const;
     int runtimeRendererBackend() const { return static_cast<int>(render_backend); }
+    QString gpuName() const { return QString::fromUtf8(vk_device_props.deviceName); }   // AnyPlay: назва відеокарти (Vulkan; порожньо на OpenGL)
     bool loadingTransitionComplete() const { return loading_transition_complete.loadAcquire() != 0; }
 
     bool keepVideo() const;

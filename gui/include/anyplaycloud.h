@@ -74,6 +74,15 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(qint64 previewAt READ previewAt NOTIFY previewChanged)
 	// ── CRM усередині програми (К10) ──
 	Q_PROPERTY(bool webEngine READ webEngine CONSTANT)
+	// AnyPlay 113, екран «Зображення» (К18): яка обробка картинки діє, чи обмежено її через слабкий ноутбук, оцінка комп'ютера
+	Q_PROPERTY(QString renderName READ renderName NOTIFY renderChanged)     // яка обробка діє зараз: fast | default | high | ai | ai2 | custom
+	Q_PROPERTY(bool renderCapped READ renderCapped NOTIFY renderChanged)     // ноутбук не встигав: обробку тримаємо простішою (3 дні)
+	Q_PROPERTY(int renderCap READ renderCap NOTIFY renderChanged)            // до якого рівня (0..3), -1 — без обмеження
+	Q_PROPERTY(int renderCappedFrom READ renderCappedFrom NOTIFY renderChanged) // яка обробка (VideoPreset) не потягнулась, -1 — жодна
+	Q_PROPERTY(QString gpuName READ gpuName NOTIFY renderChanged)            // «Apple M2», «NVIDIA GeForce RTX 4060»
+	Q_PROPERTY(QString pcInfo READ pcInfo NOTIFY renderChanged)              // «Apple M2, 8 ГБ»
+	Q_PROPERTY(QString pcTier READ pcTier NOTIFY renderChanged)              // weak | ok | strong
+	Q_PROPERTY(bool qualityHintShown READ qualityHintShown NOTIFY renderChanged) // під час гри: показано «Картинка просідає»
 
 public:
 	AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *parent = nullptr);
@@ -140,6 +149,22 @@ public:
 	Q_INVOKABLE bool renderLighter();              // ноутбук не встигає малювати: простіша обробка картинки на цю гру
 	Q_INVOKABLE void renderUndo();                 // спрощення не допомогло (кадри губляться не через обробку): повертаємо як було
 	void applyRender(int level, bool keepOwn = false);
+	// ── екран «Зображення» ──
+	bool renderCapped() const;
+	int renderCap() const;
+	int renderCappedFrom() const;
+	QString gpuName() const;
+	QString pcInfo() const;
+	QString pcTier() const;
+	bool qualityHintShown() const { return quality_hint_shown_; }
+	Q_INVOKABLE QString renderLabel(int preset) const;   // назва обробки людською мовою за VideoPreset
+	Q_INVOKABLE QString renderNameOf(int preset) const;  // fast | default | high | ai | ai2 | custom (К18)
+	QString renderName() const;                          // те саме для обробки, що діє зараз
+	Q_INVOKABLE void setRenderPreset(int preset);        // обробка вручну з екрана «Зображення»: у вікно й у налаштування; знімає обмеження
+	Q_INVOKABLE void clearRenderCap();                   // «Спробувати ще раз»: дати ноутбуку нову спробу
+	Q_INVOKABLE bool pcCanRender(int preset) const;      // чи потягне цей комп'ютер таку обробку (за оцінкою і за виміром)
+	Q_INVOKABLE int renderCheck(int streamFps, int shownFps, bool networkOk);   // раз на 2 с під час гри: 0 нічого, 1 спростили, 2 повернули, 3 радимо знизити якість
+	Q_INVOKABLE void qualityHintDone();                  // натиснули «Знизити» або закрили підказку
 	Q_INVOKABLE void refreshAdmin();
 	Q_INVOKABLE void adminKick(qint64 bookingId);    // адмін: завершити поточну гру клієнта
 	Q_INVOKABLE void adminGrant(qint64 userId, int minutes, const QString &name = QString());   // адмін: подарувати гру просто зараз на 10…2880 хв (крок 5)
@@ -203,6 +228,10 @@ signals:
 	void busyChanged();
 	void linkResult(bool ok, const QString &text);
 	void message(const QString &text);       // коротке сповіщення для інтерфейсу
+	void renderChanged();
+	void renderNotice(const QString &text);  // під час гри: людське пояснення, чому обробку спростили чи повернули
+	void qualityHint();                      // під час гри: кадри просідають не через обробку — запропонувати знизити якість
+	void menuRequested();                    // відкрити меню AnyPlay (кнопка на геймпаді від «Керування»)
 	void stopRequested(const QString &reason);
 	void supportChanged();
 	void supportResult(bool ok, const QString &text);
@@ -265,6 +294,12 @@ private:
 	QJsonObject admin_cmp_;
 	bool reconnect_once_ = false;
 	struct { int preset = -1; QVariant cap, until; } render_undo_;   // що було до останнього спрощення обробки
+	// вимір обробки під час гри (renderCheck): скільки тиків поспіль кадри на екрані < 80% потоку, перевірка після спрощення
+	struct { int slow = 0; int ticks = 0; int check = 0; int before = 0; int sum = 0; bool gaveUp = false; qint64 hintAt = 0; int hintSlow = 0; } rc_;
+	bool quality_hint_shown_ = false;
+	mutable QString pc_cpu_, pc_mem_;
+	QString pcCpu() const;
+	QString pcMem() const;
 	qint64 link_job_user_ = 0;   // прив'язка за кодом, який адмін написав у боті: кому звітувати
 	void setBusy(bool b) { if(busy_ != b) { busy_ = b; emit busyChanged(); } }
 	// ── баланс ──

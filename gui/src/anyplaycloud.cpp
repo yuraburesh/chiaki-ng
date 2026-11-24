@@ -30,6 +30,12 @@
 #include <QUuid>
 #include <QRegularExpression>
 #include <memory>
+#ifdef Q_OS_MACOS
+#include <sys/sysctl.h>
+#endif
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 static const char *DEFAULT_SERVER = "https://34-123-25-16.sslip.io";
 static const int POLL_MS = 60 * 1000;
@@ -65,6 +71,9 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 	});
 	beat_timer.setInterval(BEAT_MS);
 	connect(&beat_timer, &QTimer::timeout, this, &AnyPlayCloud::heartbeat);
+	// екран «Зображення»: обробка картинки змінилась (вручну чи сама) — оновити підписи
+	if(QmlMainWindow *w = backend->qmlWindow())
+		connect(w, &QmlMainWindow::videoPresetChanged, this, &AnyPlayCloud::renderChanged);
 	// трансляція почалась чи закінчилась — одразу кажемо серверу: приставка тримає одне підключення, і другий пристрій
 	// клієнта бачить «гра вже йде на іншому пристрої», доки тут стрім (і «Грати» одразу після виходу з гри тут)
 	connect(backend, &QmlBackend::sessionChanged, this, [this]() {
@@ -1563,8 +1572,10 @@ void AnyPlayCloud::prepareAutoQuality()
 	{
 		s.remove(QStringLiteral("anyplay/auto_up"));
 		const int level = qualityLevel();
-		// свою обробку (Custom) «Авто» не замінює на ШІ-чіткість, тому вище «Максимальної» тоді не йдемо
-		const int top = qs->videoPreset() == static_cast<int>(PlaceboPreset::Custom) ? 2 : QUALITY_TOP;
+		// свою обробку (Custom) «Авто» не замінює на ШІ-чіткість, тому вище «Максимальної» тоді не йдемо.
+		// «Ультра» відрізняється від «Максимальної» лише ШІ-чіткістю, яку рахує відеокарта: «Авто» піднімає до неї
+		// лише потужний комп'ютер (раніше піднімало всіх після 10 хв чистої гри, і MacBook Air діставав 20–40 кадр/с)
+		const int top = qs->videoPreset() == static_cast<int>(PlaceboPreset::Custom) || pcTier() != QLatin1String("strong") ? 2 : QUALITY_TOP;
 		if(level < top && now > s.value(QStringLiteral("anyplay/auto_no_up_until"), 0).toLongLong())
 		{
 			setQualityLevel(level + 1);
@@ -1577,21 +1588,22 @@ void AnyPlayCloud::applyRender(int level, bool keepOwn)
 {
 	level = qBound(0, level, QUALITY_TOP);
 	QmlSettings *qs = backend->qmlSettings();
-	// свою обробку з розширених налаштувань (власну чи найважчу ШІ) перед грою не перезаписуємо
+	const int def = static_cast<int>(QUALITY_RENDER[level]);   // PlaceboPreset і VideoPreset ідуть в однаковому порядку
+	// перед грою не перезаписуємо обробку, яку людина обрала сама на екрані «Зображення»: свою (Custom), найважчу ШІ,
+	// або простішу за типову для цього рівня (раніше простіша мовчки поверталась до важчої на старті наступної гри)
 	const int saved = qs ? qs->videoPreset() : -1;
-	const bool own = keepOwn && (saved == static_cast<int>(PlaceboPreset::Custom) || saved == static_cast<int>(PlaceboPreset::HighQualityAdvancedSpatial));
+	const bool own = keepOwn && saved >= 0 && (saved == static_cast<int>(PlaceboPreset::Custom)
+		|| saved == static_cast<int>(PlaceboPreset::HighQualityAdvancedSpatial) || saved < def);
 	if(qs && !own)
-		qs->setVideoPreset(static_cast<int>(level == 0 ? PlaceboPreset::Fast : level == 1 ? PlaceboPreset::Default
-			: level == 2 ? PlaceboPreset::HighQuality : PlaceboPreset::HighQualitySpatial));
+		qs->setVideoPreset(def);
+	auto want = own ? static_cast<QmlMainWindow::VideoPreset>(saved) : QUALITY_RENDER[level];
 	// якщо цей ноутбук нещодавно не встигав, обробку тримаємо не вище тієї, що він тягнув (3 дні)
-	QSettings s;
-	int r = level;
-	if(QDateTime::currentSecsSinceEpoch() < s.value(QStringLiteral("anyplay/render_cap_until"), 0).toLongLong())
-		r = qMin(r, s.value(QStringLiteral("anyplay/render_cap"), QUALITY_TOP).toInt());
-	r = qBound(0, r, QUALITY_TOP);
-	// PlaceboPreset і VideoPreset ідуть в однаковому порядку
+	const int cap = renderCap();
+	if(cap >= 0 && want != QmlMainWindow::VideoPreset::Custom && static_cast<int>(want) > static_cast<int>(QUALITY_RENDER[cap]))
+		want = QUALITY_RENDER[cap];
 	if(QmlMainWindow *w = backend->qmlWindow())
-		w->setVideoPreset(own && r >= level ? static_cast<QmlMainWindow::VideoPreset>(saved) : QUALITY_RENDER[r]);   // діє одразу, без перепідключення
+		w->setVideoPreset(want);   // діє одразу, без перепідключення
+	emit renderChanged();
 }
 
 bool AnyPlayCloud::renderLighter()
@@ -1615,7 +1627,12 @@ bool AnyPlayCloud::renderLighter()
 	w->setVideoPreset(next);
 	s.setValue(QStringLiteral("anyplay/render_cap"), next == QmlMainWindow::VideoPreset::HighQuality ? 2 : next == QmlMainWindow::VideoPreset::Default ? 1 : 0);
 	s.setValue(QStringLiteral("anyplay/render_cap_until"), QDateTime::currentSecsSinceEpoch() + 3 * 24 * 3600);
-	// повідомлення показує сам екран гри (тост головного екрана тут не видно, а після гри він уже застарів)
+	s.setValue(QStringLiteral("anyplay/render_cap_from"), static_cast<int>(p));   // яка обробка не потягнулась: позначка на екрані «Зображення»
+	// повідомлення показує сам екран гри (тост головного екрана тут не видно, а після гри він уже застарів):
+	// людською мовою, що саме сталось, а не мовчки
+	emit renderNotice(tr("Цей комп'ютер не встигає з обробкою «%1»: повернули «%2». Так гра йде плавно; змінити можна в меню AnyPlay, «Зображення».")
+		.arg(renderLabel(static_cast<int>(p))).arg(renderLabel(static_cast<int>(next))));
+	emit renderChanged();
 	return true;
 }
 
@@ -1634,7 +1651,282 @@ void AnyPlayCloud::renderUndo()
 		s.setValue(QStringLiteral("anyplay/render_cap_until"), render_undo_.until);
 	else
 		s.remove(QStringLiteral("anyplay/render_cap_until"));
+	s.remove(QStringLiteral("anyplay/render_cap_from"));
+	emit renderNotice(tr("Простіша обробка не допомогла, тож повернули «%1». Якщо картинка смикається, знизь якість: меню AnyPlay, «Зображення».")
+		.arg(renderLabel(render_undo_.preset)));
 	render_undo_.preset = -1;
+	emit renderChanged();
+}
+
+// ── екран «Зображення»: обробка, оцінка комп'ютера, вимір під час гри ──
+bool AnyPlayCloud::renderCapped() const
+{
+	return renderCap() >= 0;
+}
+
+int AnyPlayCloud::renderCap() const
+{
+	QSettings s;
+	if(QDateTime::currentSecsSinceEpoch() >= s.value(QStringLiteral("anyplay/render_cap_until"), 0).toLongLong())
+		return -1;
+	return qBound(0, s.value(QStringLiteral("anyplay/render_cap"), QUALITY_TOP).toInt(), QUALITY_TOP);
+}
+
+int AnyPlayCloud::renderCappedFrom() const
+{
+	return renderCapped() ? QSettings().value(QStringLiteral("anyplay/render_cap_from"), -1).toInt() : -1;
+}
+
+QString AnyPlayCloud::renderLabel(int preset) const
+{
+	switch(static_cast<QmlMainWindow::VideoPreset>(preset))
+	{
+	case QmlMainWindow::VideoPreset::Fast: return tr("Проста");
+	case QmlMainWindow::VideoPreset::Default: return tr("Стандартна");
+	case QmlMainWindow::VideoPreset::HighQuality: return tr("Висока якість");
+	case QmlMainWindow::VideoPreset::HighQualitySpatial: return tr("ШІ-чіткість");
+	case QmlMainWindow::VideoPreset::HighQualityAdvancedSpatial: return tr("Посилена ШІ-чіткість");
+	case QmlMainWindow::VideoPreset::Custom: return tr("Своя");
+	}
+	return QString();
+}
+
+QString AnyPlayCloud::renderName() const
+{
+	QmlMainWindow *w = backend->qmlWindow();
+	return w ? renderNameOf(static_cast<int>(w->videoPreset())) : QString();
+}
+
+QString AnyPlayCloud::renderNameOf(int preset) const
+{
+	switch(static_cast<QmlMainWindow::VideoPreset>(preset))
+	{
+	case QmlMainWindow::VideoPreset::Fast: return QStringLiteral("fast");
+	case QmlMainWindow::VideoPreset::Default: return QStringLiteral("default");
+	case QmlMainWindow::VideoPreset::HighQuality: return QStringLiteral("high");
+	case QmlMainWindow::VideoPreset::HighQualitySpatial: return QStringLiteral("ai");
+	case QmlMainWindow::VideoPreset::HighQualityAdvancedSpatial: return QStringLiteral("ai2");
+	case QmlMainWindow::VideoPreset::Custom: return QStringLiteral("custom");
+	}
+	return QString();
+}
+
+void AnyPlayCloud::setRenderPreset(int preset)
+{
+	// людина обрала обробку сама: діє одразу (без перепідключення) і лишається на наступні ігри; старе обмеження знімаємо,
+	// щоб вибір не відкотився мовчки на старті наступної гри. Якщо ноутбук знов не встигне, він скаже про це явно.
+	if(QmlMainWindow *w = backend->qmlWindow())
+		w->setVideoPreset(static_cast<QmlMainWindow::VideoPreset>(preset));
+	if(QmlSettings *qs = backend->qmlSettings())
+		qs->setVideoPreset(preset);
+	clearRenderCap();
+	rc_.gaveUp = false;
+	rc_.slow = 0;
+	rc_.check = 0;
+}
+
+void AnyPlayCloud::clearRenderCap()
+{
+	QSettings s;
+	s.remove(QStringLiteral("anyplay/render_cap"));
+	s.remove(QStringLiteral("anyplay/render_cap_until"));
+	s.remove(QStringLiteral("anyplay/render_cap_from"));
+	render_undo_.preset = -1;
+	emit renderChanged();
+}
+
+QString AnyPlayCloud::gpuName() const
+{
+	QString g;
+	if(QmlMainWindow *w = backend->qmlWindow())
+		g = w->gpuName().trimmed();
+	// Vulkan лишає в назві дужки й суфікси: «Apple M2 (Apple Silicon)», «NVIDIA GeForce RTX 4060 Laptop GPU» — коротимо
+	g.remove(QRegularExpression(QStringLiteral("\\s*\\(.*\\)$")));
+	g.replace(QStringLiteral("(TM)"), QString()).replace(QStringLiteral("(R)"), QString());
+	g = g.simplified();
+	if(g.isEmpty() || g.startsWith(QLatin1String("llvmpipe")) || g.contains(QLatin1String("SwiftShader")))
+		return pcCpu().isEmpty() ? g : pcCpu();   // без відеокарти (OpenGL чи програмний рендер): хоч процесор
+	return g;
+}
+
+QString AnyPlayCloud::pcCpu() const
+{
+	if(!pc_cpu_.isNull())
+		return pc_cpu_;
+	QString c;
+#ifdef Q_OS_MACOS
+	char buf[256] = {};
+	size_t len = sizeof(buf) - 1;
+	if(sysctlbyname("machdep.cpu.brand_string", buf, &len, nullptr, 0) == 0)
+		c = QString::fromUtf8(buf);
+#elif defined(Q_OS_WIN)
+	c = QSettings(QStringLiteral("HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0"), QSettings::NativeFormat)
+		.value(QStringLiteral("ProcessorNameString")).toString();
+#else
+	QFile f(QStringLiteral("/proc/cpuinfo"));
+	if(f.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		const QRegularExpression re(QStringLiteral("^model name\\s*:\\s*(.+)$"), QRegularExpression::MultilineOption);
+		const auto m = re.match(QString::fromUtf8(f.readAll()));
+		if(m.hasMatch())
+			c = m.captured(1);
+	}
+#endif
+	c.replace(QStringLiteral("(TM)"), QString()).replace(QStringLiteral("(R)"), QString()).replace(QStringLiteral("CPU"), QString());
+	c.remove(QRegularExpression(QStringLiteral("\\s*@.*$")));
+	pc_cpu_ = c.simplified();
+	return pc_cpu_;
+}
+
+QString AnyPlayCloud::pcMem() const
+{
+	if(!pc_mem_.isNull())
+		return pc_mem_;
+	qint64 bytes = 0;
+#ifdef Q_OS_MACOS
+	size_t len = sizeof(bytes);
+	sysctlbyname("hw.memsize", &bytes, &len, nullptr, 0);
+#elif defined(Q_OS_WIN)
+	MEMORYSTATUSEX ms;
+	ms.dwLength = sizeof(ms);
+	if(GlobalMemoryStatusEx(&ms))
+		bytes = static_cast<qint64>(ms.ullTotalPhys);
+#else
+	QFile f(QStringLiteral("/proc/meminfo"));
+	if(f.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		const auto m = QRegularExpression(QStringLiteral("MemTotal:\\s*(\\d+)")).match(QString::fromUtf8(f.readAll()));
+		if(m.hasMatch())
+			bytes = m.captured(1).toLongLong() * 1024;
+	}
+#endif
+	pc_mem_ = bytes > 0 ? tr("%1 ГБ").arg(qRound(bytes / 1073741824.0)) : QString();
+	return pc_mem_;
+}
+
+QString AnyPlayCloud::pcInfo() const
+{
+	QStringList parts;
+	const QString g = gpuName(), c = pcCpu(), m = pcMem();
+	if(!g.isEmpty())
+		parts << g;
+	if(!c.isEmpty() && c != g && !g.contains(c))
+		parts << c;
+	if(!m.isEmpty())
+		parts << m;
+	return parts.join(QStringLiteral(", "));
+}
+
+// Оцінка комп'ютера для обробки картинки: strong — потягне ШІ-чіткість на 60 кадр/с; ok — «Максимальну» так, ШІ-чіткість
+// під питанням; weak — краще без важкої обробки. Спершу за назвою відеокарти, далі — за виміром під час гри (render cap).
+QString AnyPlayCloud::pcTier() const
+{
+	const QString g = gpuName() + QLatin1Char(' ') + pcCpu();
+	QString tier = QStringLiteral("ok");
+	static const QRegularExpression strong(QStringLiteral(
+		"RTX|GTX 1[6-9]|GTX 2|RX [5-9]\\d{3}|RX 7\\d{3}|Arc A|Arc B|Apple M\\d+ (Pro|Max|Ultra)|Radeon 7\\d{3}M|Radeon 8\\d{3}"),
+		QRegularExpression::CaseInsensitiveOption);
+	static const QRegularExpression weak(QStringLiteral(
+		"UHD Graphics|HD Graphics|Iris|Radeon\\(?TM\\)? Graphics|Radeon Graphics|Radeon Vega|llvmpipe|SwiftShader|Celeron|Pentium|Atom|Snapdragon|Intel Graphics"),
+		QRegularExpression::CaseInsensitiveOption);
+	if(strong.match(g).hasMatch())
+		tier = QStringLiteral("strong");
+	else if(weak.match(g).hasMatch())
+		tier = QStringLiteral("weak");
+	// вимір сильніший за назву: якщо ШІ-чіткість не потягнулась, це не «потужний»; якщо навіть «Висока якість» — слабкий
+	const int cap = renderCap();
+	if(cap >= 0 && cap <= 1)
+		tier = QStringLiteral("weak");
+	else if(cap == 2 && tier == QLatin1String("strong"))
+		tier = QStringLiteral("ok");
+	return tier;
+}
+
+bool AnyPlayCloud::pcCanRender(int preset) const
+{
+	const auto p = static_cast<QmlMainWindow::VideoPreset>(preset);
+	const int cap = renderCap();
+	const int need = p == QmlMainWindow::VideoPreset::Fast ? 0 : p == QmlMainWindow::VideoPreset::Default ? 1
+		: p == QmlMainWindow::VideoPreset::HighQuality ? 2 : 3;
+	if(cap >= 0)   // вимір під час гри важить більше за назву відеокарти: що тягнув, те й тягне
+		return need <= cap;
+	const QString t = pcTier();
+	if(t == QLatin1String("strong"))
+		return true;
+	if(t == QLatin1String("weak"))
+		return need <= 1;
+	return p != QmlMainWindow::VideoPreset::HighQualityAdvancedSpatial;   // середній: посилену ШІ-чіткість не радимо
+}
+
+// Під час гри раз на 2 с (StreamView): кадрів на екрані помітно менше, ніж приходить з приставки, а мережа в порядку —
+// це ноутбук не встигає малювати. Спрощуємо обробку й дивимось, чи стало краще; якщо ні — повертаємо (екран 50 Гц, декодер).
+// Якщо спрощувати нема куди або не допомагає, радимо знизити якість (раз на 5 хв). streamFps < 0 — нова трансляція, скинути лічильники.
+int AnyPlayCloud::renderCheck(int streamFps, int shownFps, bool networkOk)
+{
+	if(streamFps < 0)
+	{
+		rc_ = {};
+		quality_hint_shown_ = false;
+		emit renderChanged();
+		return 0;
+	}
+	rc_.ticks++;
+	QmlMainWindow *w = backend->qmlWindow();
+	// перші 10 с після підключення та згорнуте вікно: кадри відкидаються не через обробку
+	if(rc_.ticks <= 5 || !w || w->visibility() == QWindow::Minimized || w->visibility() == QWindow::Hidden)
+	{
+		rc_.slow = 0;
+		return 0;
+	}
+	// 50 Гц екран показує 50 з 60 — це не «не встигає» (менше 80% — уже так)
+	const bool slow = streamFps >= 20 && shownFps > 0 && shownFps < streamFps * 0.8 && networkOk;
+	if(rc_.check > 0)
+	{
+		rc_.sum += shownFps;
+		if(--rc_.check == 0)
+		{
+			const int avg = rc_.sum / 5;
+			if(rc_.before > 0 && avg < rc_.before * 1.15)
+			{
+				renderUndo();   // не допомогло: кадри губляться не через обробку
+				rc_.gaveUp = true;
+				return 2;
+			}
+		}
+		return 0;
+	}
+	if(slow)
+		rc_.slow++;
+	else
+		rc_.slow = qMax(0, rc_.slow - 1);
+	if(rc_.slow < 5)   // 10 с поспіль
+		return 0;
+	rc_.slow = 0;
+	if(!rc_.gaveUp && renderLighter())
+	{
+		rc_.check = 5;
+		rc_.sum = 0;
+		rc_.before = shownFps;
+		return 1;
+	}
+	const qint64 now = QDateTime::currentSecsSinceEpoch();
+	if(qualityLevel() > 0 && now - rc_.hintAt >= 300)
+	{
+		rc_.hintAt = now;
+		quality_hint_shown_ = true;
+		emit renderChanged();
+		emit qualityHint();
+		return 3;
+	}
+	return 0;
+}
+
+void AnyPlayCloud::qualityHintDone()
+{
+	if(!quality_hint_shown_)
+		return;
+	quality_hint_shown_ = false;
+	emit renderChanged();
 }
 
 bool AnyPlayCloud::autoQualityDown()

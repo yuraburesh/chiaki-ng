@@ -76,9 +76,11 @@ Item {
     // Якщо рядок незвичний — показуємо як є, лише без емодзі.
     function modeParts(raw) {
         const s = String(raw || "").replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]|[☀-➿]|️|‍/g, "").replace(/\s+/g, " ").replace(/«\s+/g, "«").replace(/\s+»/g, "»").trim();
-        const m = s.match(/^([^.…]+)\.\s+(.+)$/);
+        // «Транспорт (сів у транспорт). F — вийти» → «Транспорт» | «F — вийти»; «Точний рух увімкнено: Alt — вимкнути» → так само з двокрапкою
+        const m = s.match(/^([^.…:]+)[.:]\s+(.+)$/);
         if (!m)
-            return { text: s, detail: "" };
+            return { text: s.replace(/\s*\([^)]*\)/g, ""), detail: "" };
+        m[1] = m[1].replace(/\s*\([^)]*\)/g, "");
         let d = m[2].trim();
         const back = d.match(/^(\S+)\s+—\s+назад\s+«(.+)»\.?$/);
         if (back)

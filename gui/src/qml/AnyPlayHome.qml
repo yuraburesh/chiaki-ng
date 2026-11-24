@@ -20,6 +20,11 @@ Rectangle {
     readonly property var speed: Chiaki.speedTest || null
     property int tick: 0
     property bool serviceMode: false     // адмін тимчасово відкрив повний (сервісний) інтерфейс
+    Shortcut {
+        sequence: "Ctrl+Alt+Shift+S"
+        enabled: Chiaki.cloud.admin && !home.overGame
+        onActivated: home.serviceMode = true
+    }
     readonly property bool isAdmin: cloud.loggedIn && cloud.admin
     readonly property var adm: cloud.adminInfo || ({})
     // К15: приставки («блоки») з сервера, кожна зі своїм «зараз грає» і «далі». Старий сервер їх не віддає:
@@ -1100,10 +1105,13 @@ Rectangle {
                                 } else
                                     home.view = "crm";
                             }
+                            hairline: false
                             ApChip { text: qsTr("відкрити") }
                         }
                         ApRow {
-                            visible: !home.overGame   // повний інтерфейс відкривається лише поза грою
+                            // технічний екран оригінальної програми: прив'язка тепер у «Спільний PSN», тож кнопку сховано.
+                            // Для підтримки лишився прихований вхід: Ctrl+Alt+Shift+S (див. Shortcut на початку файлу)
+                            visible: false
                             title: qsTr("Сервіс")
                             subtitle: qsTr("усі налаштування програми")
                             clickable: true

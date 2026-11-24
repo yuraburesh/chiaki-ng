@@ -799,7 +799,6 @@ class StreamActivity : AppCompatActivity()
 						}
 						.create()
 					dialogContents = StreamQuitDialog
-					dialog = d
 					d.show()
 					AnyPlayStyle.style(d)
 				}

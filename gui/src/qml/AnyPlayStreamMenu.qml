@@ -1,9 +1,12 @@
 // AnyPlay: меню під час гри, у стилі паузи GTA. Одне й те саме для клієнта й адміна.
 // Ліворуч пункти великими літерами, праворуч вміст обраного пункту; угорі скільки лишилось, унизу зв'язок.
-// Пункти: повернутись у гру, продовжити бронювання, клавіші, якість, керування приставкою, головне вікно, вийти з гри.
-// Адмін: без «Продовжити бронювання», зате з пунктом «Розширені налаштування» (усе, що було в стандартному меню трансляції:
-// вигляд картинки на екрані, обробка картинки, мікрофон, налаштування екрана, дані трансляції) і з вибором,
-// чи переводити приставку в режим спокою, коли виходить з гри.
+// Пункти: повернутись у гру, продовжити бронювання, клавіші, зображення, керування приставкою, головне вікно, вийти з гри.
+// AnyPlay 113: «Якість», «Картинка» й «Розширені налаштування» злиті в один пункт «Зображення» (AnyPlayImage: якість з
+// прикладами, кольори, обробка, екран і звук, трансляція зараз) — однаковий для клієнта й адміна.
+// Адмін: без «Продовжити бронювання», з вибором, чи переводити приставку в режим спокою, коли виходить з гри.
+// Навігація: ↑↓ по пунктах, → чи Enter у вміст, ← назад на пункти, Esc (○ на геймпаді) з вмісту повертає на пункти,
+// з пунктів закриває меню. Геймпад: «Керування» шле ті самі клавіші, поки меню відкрите; меню відкривається ще й за
+// Chiaki.cloud.menuRequested() (кнопка на геймпаді) — див. StreamView.
 // Гість (cloud.guest): без «Продовжити бронювання», угорі замість часу броні — гостьовий доступ.
 import QtQuick
 import QtQuick.Layouts
@@ -13,7 +16,7 @@ import org.streetpea.chiaking
 
 Item {
     id: panel
-    property string page: "back"     // back | extend | keys | quality | picture | console | home | advanced | exit
+    property string page: "back"     // back | extend | keys | image | console | home | wallet | support | exit
     readonly property bool admin: Chiaki.cloud.admin === true
     readonly property bool guest: !admin && Chiaki.cloud.guest === true
     readonly property bool canExtend: !admin && !guest   // продовжувати бронювання може лише клієнт зі своєю бронню
@@ -29,7 +32,7 @@ Item {
     readonly property Item firstItem: openPage === "extend" && canExtend ? extendBtn : resumeBtn
     AnyPlayStyle { id: ap }
 
-    readonly property var items: [resumeBtn, extendBtn, keysBtn, qualityBtn, pictureBtn, consoleBtn, homeBtn, walletBtn, supportBtn, advBtn, exitBtn]
+    readonly property var items: [resumeBtn, extendBtn, keysBtn, imageBtn, consoleBtn, homeBtn, walletBtn, supportBtn, exitBtn]
     function itemFor(p) {
         for (let i = 0; i < items.length; i++)
             if (items[i].pageId === p)
@@ -40,8 +43,8 @@ Item {
     function goMain() { page = "back"; resumeBtn.forceActiveFocus(); }
     // перейти з лівого стовпця у вміст праворуч (Enter або →)
     function enterContent() {
-        const target = page === "exit" ? exitConfirm : (page === "quality" ? qualityList.firstOpt : (page === "extend" ? extendPanel.firstOption
-                     : (page === "keys" ? keysLoader.item : (page === "advanced" ? advFirst : (page === "picture" ? picturePanel.firstControl : null)))));
+        const target = page === "exit" ? exitConfirm : (page === "image" ? imagePanel.firstControl : (page === "extend" ? extendPanel.firstOption
+                     : (page === "keys" ? keysLoader.item : null)));
         if (target && target.visible && target.enabled)
             target.forceActiveFocus(Qt.TabFocusReason);
         else {
@@ -56,7 +59,14 @@ Item {
         else
             page = "back";
     }
-    Keys.onEscapePressed: panel.resume()
+    // Esc (○ на геймпаді): з вмісту праворуч — назад на пункти; з пунктів — закрити меню
+    Keys.onEscapePressed: {
+        const left = itemFor(page);
+        if (page === "back" || left.activeFocus)
+            panel.resume();
+        else
+            left.forceActiveFocus(Qt.TabFocusReason);
+    }
 
     Timer { interval: 1000; repeat: true; running: panel.visible; onTriggered: panel.tick++ }
 
@@ -116,62 +126,17 @@ Item {
         return rows.concat(modes);
     }
 
-    // Ті самі рівні якості, що й на головному екрані
-    readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна"), qsTr("Ультра")]
-    readonly property var qualities: [
-        { level: -1, name: qsTr("Авто"), info: qsTr("сама підбирає, зараз: %1").arg(levelNames[Chiaki.cloud.qualityLevel] || "") },
-        { level: 0, name: levelNames[0], info: qsTr("540p, 30 кадр/с") },
-        { level: 1, name: levelNames[1], info: qsTr("720p, 60 кадр/с") },
-        { level: 2, name: levelNames[2], info: qsTr("1080p, 60 кадр/с") },
-        { level: 3, name: levelNames[3], info: qsTr("1080p, 60 кадр/с і ШІ-чіткість на великому екрані") }
-    ]
-    function qualityOn(q) { return q.level < 0 ? Chiaki.cloud.autoQuality : (!Chiaki.cloud.autoQuality && Chiaki.cloud.qualityLevel === q.level); }
-    function setQuality(q) {
-        if (q.level < 0) { Chiaki.cloud.autoQuality = true; goMain(); return; }   // «Авто» лишає поточний рівень і далі стежить сама
-        const same = Chiaki.cloud.qualityLevel === q.level;
-        Chiaki.cloud.autoQuality = false;
-        if (same) { goMain(); return; }
-        // «Максимальна» і «Ультра» відрізняються лише обробкою на ноутбуці: міняємо одразу, без перепідключення
-        if (Chiaki.cloud.qualityLevel >= 2 && q.level >= 2) { Chiaki.cloud.setQualityLevel(q.level); goMain(); return; }
-        Chiaki.cloud.setQualityLevel(q.level);
-        Chiaki.cloud.reconnectOnce = true;   // головний екран сам натисне «Грати» з новою якістю
+    // Якість обрали на екрані «Зображення»: «Максимальна» і «Ультра» відрізняються лише обробкою на комп'ютері (без
+    // перепідключення); інший рівень — перепідключення на кілька секунд (головний екран сам натисне «Грати»)
+    function qualityPicked(level, from) {
+        if (level === -1 || level === -2) return;   // «Авто» чи той самий рівень: лишаємося в меню
+        if (from >= 2 && level >= 2) return;
+        Chiaki.cloud.reconnectOnce = true;
         panel.page = "back";
         if (panel.admin && Chiaki.session)
             Chiaki.stopSession(false);       // адміну закриття вікна показало б питання про режим спокою: закриваємо лише трансляцію
         else
             panel.exit();
-    }
-    // ── розширені налаштування (адмін): те, що було в стандартному меню трансляції ──
-    readonly property var videoPresets: [
-        { id: ChiakiWindow.VideoPreset.Default, name: qsTr("Стандартна") },
-        { id: ChiakiWindow.VideoPreset.HighQuality, name: qsTr("Висока якість") },
-        { id: ChiakiWindow.VideoPreset.HighQualitySpatial, name: qsTr("Висока якість і ШІ-чіткість") },
-        { id: ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial, name: qsTr("Висока якість і посилена ШІ-чіткість") }
-    ]
-    function setVideoPreset(id) {
-        Chiaki.window.videoPreset = id;
-        Chiaki.settings.videoPreset = id;
-    }
-    function setVideoMode(mode) { Chiaki.window.videoMode = mode; }
-    function zoomText(v) { return v <= -1 ? qsTr("без чорних смуг") : qsTr("%1 x").arg((v >= 0 ? v + 1 : v).toFixed(2).replace(".", ",")); }
-    function num1(x) { return (isFinite(x) ? x : 0).toFixed(1).replace(".", ","); }
-    function streamChips() {
-        const s = Chiaki.session, w = Chiaki.window;
-        if (!s) return [];
-        const out = [];
-        if (s.host && !Chiaki.settings.streamerMode)
-            out.push({ text: (s.connected ? qsTr("підключено до %1") : qsTr("підключення до %1")).arg(s.host), kind: s.connected ? "ok" : "wait" });
-        out.push({ text: qsTr("з приставки %1 кадр/с").arg(w.streamFps) });
-        out.push({ text: qsTr("на екрані %1 кадр/с").arg(w.shownFps) });
-        // перші секунди гри чесного виміру швидкості ще немає
-        out.push({ text: s.measuredBitrateReady === false ? qsTr("швидкість: вимірюю…") : qsTr("%1 Мбіт/с").arg(num1(s.measuredBitrate)) });
-        const loss = (isFinite(s.averagePacketLoss) ? s.averagePacketLoss : 0) * 100;
-        out.push({ text: qsTr("втрати пакетів %1%").arg(num1(loss)), kind: loss > 2 ? "bad" : loss > 0.5 ? "wait" : "" });
-        if (w.droppedFrames > 0)
-            out.push({ text: qsTr("пропущено кадрів за секунду: %1").arg(w.droppedFrames), kind: "wait" });
-        if (s.framesLost > 0)
-            out.push({ text: qsTr("втрачено кадрів у мережі: %1").arg(s.framesLost) });
-        return out;
     }
 
     // ── фон: ніч Vice City — гра ледь проглядає крізь темне скло, знизу світіння заходу сонця ──
@@ -264,16 +229,14 @@ Item {
                     spacing: zoom.low ? 3 : 6
                     PauseItem { id: resumeBtn; pageId: "back"; text: qsTr("Повернутись у гру"); KeyNavigation.down: extendBtn }
                     PauseItem { id: extendBtn; pageId: "extend"; visible: panel.canExtend; text: qsTr("Продовжити бронювання"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
-                    PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: qualityBtn }
-                    PauseItem { id: qualityBtn; pageId: "quality"; text: qsTr("Якість"); KeyNavigation.up: keysBtn; KeyNavigation.down: pictureBtn }
-                    PauseItem { id: pictureBtn; pageId: "picture"; text: qsTr("Картинка"); KeyNavigation.up: qualityBtn; KeyNavigation.down: consoleBtn }
-                    PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: pictureBtn; KeyNavigation.down: homeBtn }
+                    PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: imageBtn }
+                    PauseItem { id: imageBtn; pageId: "image"; text: qsTr("Зображення"); KeyNavigation.up: keysBtn; KeyNavigation.down: consoleBtn }
+                    PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: imageBtn; KeyNavigation.down: homeBtn }
                     PauseItem { id: homeBtn; pageId: "home"; text: panel.admin ? qsTr("Панель адміна") : qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: walletBtn }
                     // AnyPlay 110: баланс і підтримка, не виходячи з гри (відкривається головне вікно на потрібній вкладці)
                     PauseItem { id: walletBtn; pageId: "wallet"; visible: !panel.admin && Chiaki.cloud.hasWallet; text: qsTr("Баланс"); KeyNavigation.up: homeBtn; KeyNavigation.down: supportBtn }
-                    PauseItem { id: supportBtn; pageId: "support"; visible: !panel.admin; text: Chiaki.cloud.supportUnread > 0 ? qsTr("Підтримка (%1)").arg(Chiaki.cloud.supportUnread) : qsTr("Підтримка"); KeyNavigation.up: walletBtn; KeyNavigation.down: advBtn }
-                    PauseItem { id: advBtn; pageId: "advanced"; visible: panel.admin; text: qsTr("Розширені налаштування"); KeyNavigation.up: supportBtn; KeyNavigation.down: exitBtn }
-                    PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: advBtn }
+                    PauseItem { id: supportBtn; pageId: "support"; visible: !panel.admin; text: Chiaki.cloud.supportUnread > 0 ? qsTr("Підтримка (%1)").arg(Chiaki.cloud.supportUnread) : qsTr("Підтримка"); KeyNavigation.up: walletBtn; KeyNavigation.down: exitBtn }
+                    PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: supportBtn }
                 }
 
                 // ── праворуч: вміст обраного пункту ──
@@ -392,53 +355,15 @@ Item {
                         }
                     }
 
-                    // якість картинки: змінюється з перепідключенням на кілька секунд
+                    // зображення: якість з прикладами, кольори, обробка, екран і звук, трансляція зараз (AnyPlay 113)
                     PageFlick {
-                        visible: panel.page === "quality"
-                        ColumnLayout {
-                            id: qualityList
-                            readonly property Item firstOpt: qualityRepeater.count > 0 ? qualityRepeater.itemAt(0) : null
+                        visible: panel.page === "image"
+                        AnyPlayImage {
+                            id: imagePanel
                             width: content.width
-                            spacing: 0
-                            ApText { role: "cap"; text: qsTr("Якість картинки"); Layout.bottomMargin: 6 }
-                            ApText {
-                                Layout.fillWidth: true; Layout.maximumWidth: 620
-                                Layout.bottomMargin: 8
-                                role: "hint"
-                                text: qsTr("«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш рівень сам, гра перепідключиться за кілька секунд, прогрес у грі не зникає.")
-                            }
-                            Repeater {
-                                id: qualityRepeater
-                                model: panel.qualities
-                                ApOpt {
-                                    required property var modelData
-                                    Layout.maximumWidth: 620
-                                    text: modelData.name
-                                    sub: modelData.info
-                                    checked: panel.qualityOn(modelData)
-                                    onClicked: panel.setQuality(modelData)
-                                    KeyNavigation.left: qualityBtn
-                                }
-                            }
-                            ApText { role: "cap"; text: qsTr("Індикатор під час гри"); Layout.topMargin: 18; Layout.bottomMargin: 2 }
-                            ApOpt {
-                                Layout.maximumWidth: 620
-                                text: qsTr("Показувати кадри за секунду і зв'язок")
-                                sub: qsTr("Маленький рядок у кутку екрана: кадри за секунду, швидкість, втрати, якість")
-                                checked: Chiaki.cloud.showStats
-                                onClicked: Chiaki.cloud.showStats = !Chiaki.cloud.showStats
-                                KeyNavigation.left: qualityBtn
-                            }
-                        }
-                    }
-
-                    // картинка: яскравість, контраст, насиченість, теплота (одразу, без перепідключення)
-                    PageFlick {
-                        visible: panel.page === "picture"
-                        AnyPlayPicture {
-                            id: picturePanel
-                            width: content.width
-                            navLeft: pictureBtn
+                            inGame: true
+                            navLeft: imageBtn
+                            onQualityPicked: (level) => panel.qualityPicked(level, Chiaki.cloud.qualityLevel)
                         }
                     }
 
@@ -455,118 +380,6 @@ Item {
                                 columnSpacing: 32
                                 compact: true
                                 menuKey: panel.menuKey
-                            }
-                        }
-                    }
-
-                    // розширені налаштування (лише адмін): те, що було в стандартному меню трансляції
-                    PageFlick {
-                        visible: panel.page === "advanced" && panel.admin
-                        ColumnLayout {
-                            width: content.width
-                            spacing: 0
-                            GridLayout {
-                                id: advGrid
-                                readonly property bool two: content.width >= 720
-                                Layout.fillWidth: true
-                                Layout.maximumWidth: 900
-                                columns: two ? 2 : 1
-                                columnSpacing: 40
-                                rowSpacing: 18
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Layout.preferredWidth: 1
-                                    Layout.alignment: Qt.AlignTop
-                                    spacing: 0
-                                    ApText { role: "cap"; text: qsTr("Картинка на екрані"); Layout.bottomMargin: 4 }
-                                    ApOpt {
-                                        id: advFirst
-                                        text: qsTr("Як є")
-                                        sub: qsTr("уся картинка, з чорними смугами, якщо екран іншої форми")
-                                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Normal
-                                        onClicked: panel.setVideoMode(ChiakiWindow.VideoMode.Normal)
-                                        KeyNavigation.left: advBtn
-                                    }
-                                    ApOpt {
-                                        text: qsTr("Наблизити")
-                                        sub: qsTr("збільшує картинку, краї можуть обрізатись")
-                                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
-                                        onClicked: panel.setVideoMode(ChiakiWindow.VideoMode.Zoom)
-                                        KeyNavigation.left: advBtn
-                                    }
-                                    RowLayout {   // наскільки наблизити (лише в режимі «Наблизити»)
-                                        visible: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
-                                        Layout.fillWidth: true
-                                        Layout.topMargin: 6
-                                        Layout.bottomMargin: 6
-                                        spacing: 12
-                                        MenuSlider {
-                                            id: zoomSlider
-                                            Layout.fillWidth: true
-                                            from: -1; to: 4; stepSize: 0.01
-                                            value: Chiaki.window.ZoomFactor
-                                            onMoved: {
-                                                Chiaki.window.ZoomFactor = value;
-                                                Chiaki.settings.sZoomFactor = value;
-                                            }
-                                        }
-                                        ApChip { text: panel.zoomText(zoomSlider.value) }
-                                    }
-                                    ApOpt {
-                                        text: qsTr("Розтягнути")
-                                        sub: qsTr("на весь екран без смуг, пропорції можуть змінитись")
-                                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Stretch
-                                        onClicked: panel.setVideoMode(ChiakiWindow.VideoMode.Stretch)
-                                        KeyNavigation.left: advBtn
-                                    }
-                                    ApText { role: "cap"; text: qsTr("Звук"); Layout.topMargin: 18; Layout.bottomMargin: 4 }
-                                    ApOpt {
-                                        enabled: !!Chiaki.session && Chiaki.session.connected
-                                        text: qsTr("Мікрофон")
-                                        sub: checked ? qsTr("увімкнено: тебе чути в грі й чаті приставки") : qsTr("вимкнено")
-                                        checked: !!Chiaki.session && !Chiaki.session.muted
-                                        onClicked: Chiaki.session.muted = !Chiaki.session.muted
-                                        KeyNavigation.left: advBtn
-                                    }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Layout.preferredWidth: 1
-                                    Layout.alignment: Qt.AlignTop
-                                    spacing: 0
-                                    ApText { role: "cap"; text: qsTr("Обробка картинки"); Layout.bottomMargin: 4 }
-                                    Repeater {
-                                        model: panel.videoPresets
-                                        ApOpt {
-                                            required property var modelData
-                                            text: modelData.name
-                                            sub: modelData.info || ""
-                                            checked: Chiaki.window.videoPreset == modelData.id
-                                            onClicked: panel.setVideoPreset(modelData.id)
-                                            KeyNavigation.left: advBtn
-                                        }
-                                    }
-                                    ApText {
-                                        Layout.fillWidth: true
-                                        Layout.topMargin: 10
-                                        role: "hint"
-                                        text: qsTr("Кольори, яскравість і контраст: пункт «Картинка» ліворуч.")
-                                    }
-                                }
-                            }
-                            ApText { role: "cap"; text: qsTr("Трансляція зараз"); Layout.topMargin: 18; Layout.bottomMargin: 8 }
-                            Flow {
-                                Layout.fillWidth: true
-                                Layout.maximumWidth: 900
-                                spacing: 6
-                                Repeater {
-                                    model: panel.visible && panel.page === "advanced" ? panel.streamChips() : []
-                                    ApChip {
-                                        required property var modelData
-                                        text: modelData.text
-                                        kind: modelData.kind || ""
-                                    }
-                                }
                             }
                         }
                     }
@@ -646,7 +459,7 @@ Item {
                             .arg(((isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss : 0) * 100).toFixed(1).replace(".", ","))
                 }
                 Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
-                FootText { text: qsTr("Закрити меню: Esc або `") }
+                FootText { text: qsTr("Esc: назад, з пунктів — закрити меню. Відкрити й закрити: `") }
             }
         }
     }

@@ -35,7 +35,8 @@
     <file>StreamView.qml</file>
     <file>AnyPlayHud.qml</file>
     <file>AnyPlayRumbleEdge.qml</file>
-    <file>AnyPlayPicture.qml</file>
+    <file>AnyPlayImage.qml</file>
+    <file>AnyPlayQualityHint.qml</file>
     <file>StreamMenuWindow.qml</file>
     <file>ConfirmDialog.qml</file>
     <file>RemindDialog.qml</file>

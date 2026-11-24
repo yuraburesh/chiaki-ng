@@ -60,6 +60,12 @@
     <file alias="trig-r2-dark.png">anyplay-pad/trig-r2-dark.png</file>
     <file alias="trig-r2.png">anyplay-pad/trig-r2.png</file>
   </qresource>
+  <qresource prefix="/anyplay-quality">
+    <file alias="q0.jpg">anyplay-quality/q0.jpg</file>
+    <file alias="q1.jpg">anyplay-quality/q1.jpg</file>
+    <file alias="q2.jpg">anyplay-quality/q2.jpg</file>
+    <file alias="q3.jpg">anyplay-quality/q3.jpg</file>
+  </qresource>
   <qresource prefix="/anyplay-games">
     <file alias="gta5.png">anyplay-games/gta5.png</file>
     <file alias="gta6.png">anyplay-games/gta6.png</file>

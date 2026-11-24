@@ -1,8 +1,8 @@
 // AnyPlay: головний екран програми (новий дизайн: вечірній градієнт, вкладки, рядки з тонкими лініями).
-// Клієнт: «Гра» (таймер, мої броні, налаштування гри), «Бронювання», «Баланс», «Якість», «Мій PSN», «Як керувати», «Клавіші».
+// Клієнт: «Гра» (таймер, мої броні, налаштування гри), «Бронювання», «Баланс», «Зображення», «Мій PSN», «Як керувати», «Клавіші».
 // «Баланс» є лише тоді, коли сервер його вміє (старий сервер — вкладки й фішки балансу немає); адмінам балансу немає.
 // Адмін: «Панель» (хто грає і як: пристрій, керування, якість, зв'язок, екран клієнта; завершити гру, подарувати гру, закрити доступ),
-// «CRM» (повна CRM усередині програми; поверх гри її немає), «Спільний PSN», «Свої PSN», а також «Якість», «Як керувати», «Клавіші».
+// «CRM» (повна CRM усередині програми; поверх гри її немає), «Спільний PSN», «Свої PSN», а також «Зображення», «Як керувати», «Клавіші».
 // Клієнт: ще «Підтримка» — чат з адміном просто в програмі, і поверх гри теж (число нових відповідей на вкладці).
 // Гість (cloud.guest): грає, поки приставка вільна; замість тексту про бронь — про гостьовий доступ, продовження немає.
 import QtQuick
@@ -518,14 +518,14 @@ Rectangle {
             readonly property var tabModel: home.isAdmin
                 ? [{ id: "home", text: qsTr("Панель") }, ...(home.overGame ? [] : [{ id: "crm", text: qsTr("CRM") }]),
                    { id: "shared", text: qsTr("Спільний PSN") }, { id: "clients", text: qsTr("Свої PSN") },
-                   { id: "quality", text: qsTr("Якість") }, { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }]
+                   { id: "quality", text: qsTr("Зображення") }, { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }]
                 : clientTabs(home.walletOn, home.cloud.supportUnread)
             // вкладки клієнта; «Баланс» — лише коли сервер його вміє
             function clientTabs(withWallet, unread) {
                 return [{ id: "home", text: qsTr("Гра") }, { id: "book", text: qsTr("Бронювання") },
                         ...(withWallet ? [{ id: "wallet", text: qsTr("Баланс") }] : []),
                         { id: "support", text: qsTr("Підтримка"), badge: unread },
-                        { id: "quality", text: qsTr("Якість") }, { id: "psn", text: qsTr("Мій PSN") },
+                        { id: "quality", text: qsTr("Зображення") }, { id: "psn", text: qsTr("Мій PSN") },
                         { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }];
             }
             ColumnLayout {
@@ -890,8 +890,8 @@ Rectangle {
                             ApChip { text: home.layout.name || ""; icon: home.gameLogo(home.layout.id) }
                         }
                         ApRow {
-                            title: qsTr("Якість картинки")
-                            subtitle: home.cloud.autoQuality ? qsTr("сама підлаштовується під інтернет") : qsTr("стала, обрана вручну")
+                            title: qsTr("Зображення")
+                            subtitle: home.cloud.autoQuality ? qsTr("якість сама підлаштовується під інтернет; кольори, обробка") : qsTr("якість стала, обрана вручну; кольори, обробка")
                             clickable: true
                             onClicked: home.view = "quality"
                             ApChip { text: home.cloud.autoQuality ? qsTr("Авто") : home.levelName() }
@@ -1166,155 +1166,13 @@ Rectangle {
                 }
             }
 
-            // ═════════ ЯКІСТЬ ═════════
+            // ═════════ ЗОБРАЖЕННЯ (AnyPlay 113: якість з прикладами, кольори, обробка, екран) ═════════
             TabPage {
                 visible: !home.gated && home.view === "quality"
-                GridLayout {
+                AnyPlayImage {
                     width: home.cw
-                    columns: home.twoCol ? 2 : 1
-                    columnSpacing: home.colGap
-                    rowSpacing: 28
-                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
-                        Layout.preferredWidth: home.leftW
-                        Layout.maximumWidth: home.leftW
-                        Layout.alignment: Qt.AlignTop
-                        spacing: 6
-                        ApText { role: "h2"; text: qsTr("Якість картинки") }
-                        ApText {
-                            Layout.fillWidth: true
-                            Layout.maximumWidth: 560
-                            role: "hint"
-                            text: qsTr("«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш інше, якість буде сталою. Під час гри її можна змінити в меню AnyPlay.")
-                        }
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.topMargin: 10
-                            spacing: 0
-                            Repeater {
-                                model: [
-                                    { level: -1, name: qsTr("Авто (радимо)"), info: qsTr("сама підбирає під твій інтернет, зараз: %1").arg(home.levelName()) },
-                                    { level: 0, name: qsTr("Економна"), info: qsTr("540p, 30 кадр/с, для слабкого чи мобільного інтернету") },
-                                    { level: 1, name: qsTr("Оптимальна"), info: qsTr("720p, 60 кадр/с, підходить більшості (від 15 Мбіт/с)") },
-                                    { level: 2, name: qsTr("Максимальна"), info: qsTr("1080p, 60 кадр/с, швидкий інтернет (від 30 Мбіт/с, краще кабель)") },
-                                    { level: 3, name: qsTr("Ультра"), info: qsTr("1080p, 60 кадр/с і ШІ-чіткість на великому екрані; якщо ноутбук не встигає, обробка спроститься сама") }
-                                ]
-                                ApOpt {
-                                    required property var modelData
-                                    text: modelData.name
-                                    sub: modelData.info
-                                    checked: modelData.level < 0 ? home.cloud.autoQuality : (!home.cloud.autoQuality && home.cloud.qualityLevel === modelData.level)
-                                    onClicked: home.setQuality(modelData.level)
-                                }
-                            }
-                            ApText { role: "cap"; text: qsTr("Індикатор під час гри"); Layout.topMargin: 18; Layout.bottomMargin: 2 }
-                            ApOpt {
-                                text: qsTr("Показувати кадри за секунду і зв'язок")
-                                sub: qsTr("Маленький рядок у кутку екрана під час гри: кадри за секунду, швидкість, втрати, якість")
-                                checked: home.cloud.showStats
-                                onClicked: home.cloud.showStats = !home.cloud.showStats
-                            }
-                        }
-                    }
-                    // праворуч: необов'язкова перевірка інтернету
-                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
-                        id: speedCol
-                        readonly property var sp: home.speed
-                        readonly property bool done: !!sp && sp.stage === "done" && sp.downMbps >= 0
-                        readonly property int rec: done ? sp.recommendedLevel : -1
-                        // «Максимальна або Ультра»: якщо вже стоїть «Ультра», лишаємо її
-                        readonly property int applyLevel: rec === 2 && home.cloud.qualityLevel === 3 ? 3 : rec
-                        visible: !!sp
-                        Layout.preferredWidth: home.rightW
-                        Layout.maximumWidth: home.rightW
-                        Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: home.twoCol ? 4 : 0   // верх підпису праворуч — на рівні верху заголовка ліворуч
-                        spacing: 10
-                        function fmt(x) { return x >= 100 ? Math.round(x).toString() : x.toFixed(1).replace(".", ","); }
-                        ApText { role: "cap"; text: qsTr("Перевірити інтернет") }
-                        ApText {
-                            Layout.fillWidth: true
-                            role: "small"
-                            text: qsTr("Необов'язково. Перевіряє інтернет цього комп'ютера: швидкість і затримку. Гра ще залежить від того, Wi-Fi чи кабель: з кабелем стабільніше.")
-                        }
-                        ApButton {
-                            ghost: true
-                            text: speedCol.sp && speedCol.sp.running ? qsTr("Зупинити") : (speedCol.done ? qsTr("Перевірити ще раз") : qsTr("Перевірити інтернет"))
-                            onClicked: speedCol.sp.running ? speedCol.sp.cancel() : speedCol.sp.start(true)
-                        }
-                        Rectangle {   // смуга прогресу
-                            visible: !!speedCol.sp && speedCol.sp.running
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 2
-                            color: ap.hair
-                            Rectangle {
-                                height: parent.height
-                                width: parent.width * (speedCol.sp ? speedCol.sp.progress : 0)
-                                color: ap.ink
-                            }
-                        }
-                        ApText {
-                            visible: !!speedCol.sp && speedCol.sp.running
-                            role: "small"
-                            text: !speedCol.sp ? "" : speedCol.sp.stage === "ping" ? qsTr("Міряємо затримку…")
-                                : speedCol.sp.stage === "down" ? qsTr("Міряємо швидкість завантаження…") : qsTr("Міряємо віддачу…")
-                        }
-                        ApText {
-                            visible: !!speedCol.sp && speedCol.sp.error !== ""
-                            Layout.fillWidth: true
-                            color: ap.bad
-                            text: speedCol.sp ? speedCol.sp.error : ""
-                        }
-                        ColumnLayout {
-                            visible: speedCol.done
-                            Layout.fillWidth: true
-                            spacing: 0
-                            ApText {
-                                Layout.fillWidth: true
-                                Layout.bottomMargin: 4
-                                font.weight: Font.Medium
-                                text: speedCol.done ? qsTr("Швидкість %1 Мбіт/с, затримка %2 мс").arg(speedCol.fmt(speedCol.sp.downMbps)).arg(Math.round(speedCol.sp.pingMs)) : ""
-                            }
-                            ApRow {
-                                title: qsTr("Швидкість")
-                                ApChip { text: speedCol.done ? qsTr("%1 Мбіт/с").arg(speedCol.fmt(speedCol.sp.downMbps)) : "" }
-                            }
-                            ApRow {
-                                title: qsTr("Затримка")
-                                subtitle: qsTr("до 40 мс добре, понад 80 мс гра може відставати")
-                                ApChip {
-                                    text: speedCol.done && speedCol.sp.pingMs >= 0 ? qsTr("%1 мс").arg(Math.round(speedCol.sp.pingMs)) : qsTr("невідомо")
-                                    kind: speedCol.done && speedCol.sp.pingMs >= 0 ? (speedCol.sp.pingMs <= 40 ? "ok" : (speedCol.sp.pingMs > 80 ? "wait" : "")) : ""
-                                }
-                            }
-                            ApRow {
-                                visible: speedCol.done && speedCol.sp.upMbps >= 0
-                                title: qsTr("Віддача")
-                                ApChip { text: speedCol.done ? qsTr("%1 Мбіт/с").arg(speedCol.fmt(speedCol.sp.upMbps)) : "" }
-                            }
-                            ApRow {
-                                title: qsTr("Підійде")
-                                subtitle: qsTr("радимо за швидкістю")
-                                ApChip {
-                                    kind: "ok"
-                                    text: speedCol.rec === 2 ? qsTr("Максимальна або Ультра") : speedCol.rec === 1 ? qsTr("Оптимальна") : qsTr("Економна")
-                                }
-                            }
-                            ApButton {
-                                Layout.topMargin: 14
-                                readonly property bool same: !home.cloud.autoQuality && home.cloud.qualityLevel === speedCol.applyLevel
-                                enabled: speedCol.rec >= 0 && !same
-                                text: same ? qsTr("Застосовано") : qsTr("Застосувати: %1").arg(home.levelNames[Math.max(0, speedCol.applyLevel)])
-                                onClicked: home.setQuality(speedCol.applyLevel)
-                            }
-                            ApText {
-                                Layout.fillWidth: true
-                                Layout.topMargin: 6
-                                role: "small"
-                                visible: home.cloud.autoQuality
-                                text: qsTr("Зараз увімкнено «Авто». Якщо застосуєш пораду, якість стане сталою.")
-                            }
-                        }
-                    }
+                    maxW: 1600
+                    onQualityPicked: (level) => { if (level !== -2) toast.show(qsTr("Якість: %1").arg(home.qualityName())); }
                 }
             }
 

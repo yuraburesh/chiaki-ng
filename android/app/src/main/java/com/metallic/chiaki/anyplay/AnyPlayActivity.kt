@@ -88,6 +88,8 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			}
 		})
 		updater.onCreate()
+		if(savedInstanceState == null)
+			AnyPlayCloud.reportCrashIfAny(this)   // минулого разу гра обірвалась падінням — журнал для підтримки
 	}
 
 	override fun onDestroy()

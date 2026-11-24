@@ -131,6 +131,87 @@ object AnyPlayCloud
 			Thread { request(app, "POST", "/api/app/error", o) }.apply { isDaemon = true }.start()
 	}
 
+	// ── журнал для підтримки (К13): власник бачить його в CRM у картці клієнта ──
+	private const val KEY_LIVE = "stream_live"
+	private const val LOG_LIMIT = 480 * 1024
+
+	/** Гра йде (true) або закрилась як слід (false). Якщо застосунок упав посеред гри, позначка лишиться — надішлемо журнал при наступному запуску */
+	fun markLive(context: Context, live: Boolean)
+	{
+		context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_LIVE, live).apply()
+	}
+
+	/** Викликати на старті застосунку: якщо минулого разу гра обірвалась падінням — надіслати журнал */
+	fun reportCrashIfAny(context: Context)
+	{
+		val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+		if(!prefs.getBoolean(KEY_LIVE, false))
+			return
+		prefs.edit().putBoolean(KEY_LIVE, false).apply()
+		uploadLog(context, "error", "Минулого разу гра закрилась несподівано (застосунок перезапустився)")
+	}
+
+	/** Останні рядки журналів гри (chiaki) і системного журналу застосунку */
+	private fun collectLog(context: Context, note: String): String
+	{
+		val sb = StringBuilder()
+		sb.append("AnyPlay Android ").append(BUILD).append(", ").append("${Build.MANUFACTURER} ${Build.MODEL}".trim())
+			.append(", Android ").append(Build.VERSION.RELEASE).append(" (SDK ").append(Build.VERSION.SDK_INT).append(")\n")
+		if(note.isNotEmpty())
+			sb.append(note).append("\n")
+		try
+		{
+			val dir = File(context.filesDir, "session_logs")
+			val files = dir.listFiles()?.filter { it.isFile && it.name.endsWith(".log") }?.sortedByDescending { it.lastModified() } ?: listOf()
+			for(f in files.take(2).reversed())
+			{
+				val bytes = f.readBytes()
+				val tail = if(bytes.size > 160 * 1024) bytes.copyOfRange(bytes.size - 160 * 1024, bytes.size) else bytes
+				sb.append("\n===== ").append(f.name).append(" =====\n").append(String(tail, Charsets.UTF_8))
+			}
+		}
+		catch(e: Exception) { sb.append("\n(журнал гри недоступний: ").append(e.javaClass.simpleName).append(")\n") }
+		try
+		{
+			val p = ProcessBuilder("logcat", "-d", "-v", "time", "-t", "2500").redirectErrorStream(true).start()
+			val text = p.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+			p.waitFor()
+			sb.append("\n===== logcat =====\n").append(text)
+		}
+		catch(e: Exception) { sb.append("\n(logcat недоступний: ").append(e.javaClass.simpleName).append(")\n") }
+		val all = sb.toString()
+		return if(all.length > LOG_LIMIT) all.substring(0, 400) + "\n…\n" + all.substring(all.length - (LOG_LIMIT - 500)) else all
+	}
+
+	/** Надіслати журнал на сервер у фоні. reason: request (адмін попросив), error (збій), app */
+	fun uploadLog(context: Context, reason: String, note: String = "")
+	{
+		val app = context.applicationContext
+		if(token(app).isEmpty())
+			return
+		Thread {
+			var conn: HttpURLConnection? = null
+			try
+			{
+				val body = collectLog(app, note).toByteArray(Charsets.UTF_8)
+				conn = URL("$SERVER/api/app/log?reason=" + URLEncoder.encode(reason, "UTF-8")).openConnection() as HttpURLConnection
+				conn.requestMethod = "POST"
+				conn.connectTimeout = 15000
+				conn.readTimeout = 30000
+				conn.doOutput = true
+				conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+				conn.setRequestProperty("X-AnyPlay-Build", BUILD.toString())
+				conn.setRequestProperty("X-AnyPlay-Platform", "android")
+				conn.setRequestProperty("Authorization", "Bearer " + token(app))
+				conn.setFixedLengthStreamingMode(body.size)
+				conn.outputStream.use { it.write(body) }
+				conn.responseCode
+			}
+			catch(e: Exception) { }
+			finally { conn?.disconnect() }
+		}.apply { isDaemon = true; name = "anyplay-log" }.start()
+	}
+
 	/** Чи є в телефона хоч якась мережа з інтернетом (Wi-Fi, мобільний) */
 	fun online(context: Context): Boolean
 	{

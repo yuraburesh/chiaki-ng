@@ -255,6 +255,8 @@ class StreamActivity : AppCompatActivity()
 					anyplayContinues = r.json.optBoolean("continues")
 					anyplayGuest = r.json.optBoolean("guest")
 				}
+				if(r.status == 200 && r.json.optBoolean("sendLog"))
+					AnyPlayCloud.uploadLog(this@StreamActivity, "request", "Адміністратор попросив журнал")
 				if(r.status == 401)
 					anyplayEnd("Доступ скасовано адміністратором.")
 				else if(r.status == 200 && !r.json.optBoolean("continue", true))
@@ -565,6 +567,8 @@ class StreamActivity : AppCompatActivity()
 		anyplayQualityJob?.cancel()
 		anyplayRemindJob?.cancel()
 		viewModel.session.pause()
+		if(anyplay)
+			AnyPlayCloud.markLive(this, false)
 		// вийшли з гри: одразу кажемо серверу, що стріму тут більше немає — тоді на іншому пристрої клієнта
 		// одразу з'явиться «Грати» (інакше він чекав би, доки застаріє останній сигнал, до 90 с)
 		if(anyplay && isFinishing)
@@ -758,12 +762,48 @@ class StreamActivity : AppCompatActivity()
 	private fun stateChanged(state: StreamState)
 	{
 		binding.progressBar.visibility = if(state == StreamStateConnecting) View.VISIBLE else View.GONE
+		if(anyplay && state == StreamStateConnected)
+			AnyPlayCloud.markLive(this, true)
+		if(anyplay && (state is StreamStateQuit || state is StreamStatePsnFailed))
+			AnyPlayCloud.markLive(this, false)
 
 		when(state)
 		{
 			is StreamStateQuit ->
 			{
-				if(dialogContents != StreamQuitDialog && dialogContents != AnyPlayEndDialog)
+				if(dialogContents != StreamQuitDialog && dialogContents != AnyPlayEndDialog && anyplay && !isFinishing)
+				{
+					// AnyPlay: трансляція обірвалась не з нашої волі (приставка закрила її, вийшла з мережі тощо).
+					// Раніше без помилки екран гри просто закривався. Тепер кажемо, що сталось, і пропонуємо підключитись знову.
+					val reasonStr = state.reasonString?.takeIf { it.isNotBlank() }
+					val code = "QUIT ${state.reason.value}" + (reasonStr?.let { ": ${it.take(60)}" } ?: "")
+					val text = if(state.reason.isError)
+						"Зв'язок з приставкою обірвався. Спробуй підключитись знову. Якщо повториться, напиши в підтримку."
+					else
+						"Приставка завершила трансляцію. Так буває, коли PS5 перезапускається або до неї підключився інший пристрій. Можна підключитись знову."
+					AnyPlayCloud.noteError(this, PlayError(text, code))
+					AnyPlayCloud.uploadLog(this, "error", "Трансляція закрилась: $code")
+					dialog?.dismiss()
+					val d = MaterialAlertDialogBuilder(this)
+						.setMessage(AnyPlayStyle.errorMessage(text, code))
+						.setCancelable(false)
+						.setPositiveButton("Підключитись знову") { _, _ ->
+							dialog = null
+							dialogContents = null
+							viewModel.session.shutdown()
+							anyplayFreshConnect(1500)
+						}
+						.setNegativeButton("Вийти") { _, _ ->
+							dialog = null
+							finish()
+						}
+						.create()
+					dialogContents = StreamQuitDialog
+					dialog = d
+					d.show()
+					AnyPlayStyle.style(d)
+				}
+				else if(dialogContents != StreamQuitDialog && dialogContents != AnyPlayEndDialog)
 				{
 					if(state.reason.isError)
 					{
@@ -800,11 +840,19 @@ class StreamActivity : AppCompatActivity()
 				{
 					dialog?.dismiss()
 					val e = AnyPlayCloud.connectError(this, state.step, state.error.value, state.diag)
+					if(anyplay)
+						AnyPlayCloud.uploadLog(this, "error", "Не вдалося з'єднатись через PSN: ${e.code}")
 					val dialog = MaterialAlertDialogBuilder(this)
 						.setMessage(AnyPlayStyle.errorMessage(e.text, e.code))
 						.setPositiveButton("Спробувати ще раз") { _, _ ->
 							dialog = null
-							reconnect()
+							if(anyplay)
+							{
+								viewModel.session.shutdown()
+								anyplayFreshConnect(0)   // свіжий ключ від сервера: старий міг уже не діяти
+							}
+							else
+								reconnect()
 						}
 						.setOnCancelListener {
 							dialog = null

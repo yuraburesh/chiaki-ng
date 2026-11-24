@@ -52,6 +52,9 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		_state.value = StreamStateIdle
 		if(s == null)
 			return
+		// AnyPlay: подія «трансляцію зупинено» від цієї, уже закритої сесії не повинна дійти до екрана гри —
+		// інакше після перепідключення (зміна якості, повернення в застосунок) гра сама закривалась і викидало на головну
+		s.eventCallback = null
 		synchronized(psnLock)
 		{
 			if(psnPending === s)
@@ -80,7 +83,8 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		{
 			val session = Session(connectInfo, logManager.createNewFile().file.absolutePath, logVerbose)
 			_state.value = StreamStateConnecting
-			session.eventCallback = this::eventCallback
+			session.eventCallback = { event -> if(this.session === session) eventCallback(event) }
+			this.session = session
 			val duid = connectInfo.psnDuid
 			if(connectInfo.psnToken != null && duid != null)
 			{
@@ -112,7 +116,6 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 			val surface = surface
 			if(surface != null)
 				session.setSurface(surface)
-			this.session = session
 		}
 		catch(e: CreateError)
 		{

@@ -116,7 +116,7 @@ public:
 	Q_INVOKABLE void logout();
 	Q_INVOKABLE void refresh();
 	Q_INVOKABLE void openBot();
-	Q_INVOKABLE void uploadConsole();                // адмін: передати свою прив'язку PS5 і вхід PSN на сервер
+	Q_INVOKABLE void uploadConsole(const QString &mac = QString());   // адмін: передати свою прив'язку PS5 і вхід PSN на сервер (mac — яка PS5, якщо прив'язано кілька)
 	Q_INVOKABLE void setMyPsn(const QString &psn);   // клієнт: додати/прибрати свій акаунт PSN
 	Q_INVOKABLE QString formatTime(qint64 ts) const;
 	Q_INVOKABLE void loadExtend();
@@ -145,8 +145,12 @@ public:
 	Q_INVOKABLE void adminGrant(qint64 userId, int minutes, const QString &name = QString());   // адмін: подарувати гру просто зараз на 10…2880 хв (крок 5)
 	Q_INVOKABLE void adminSetClosed(bool closed);    // адмін: закрити / відкрити доступ усім клієнтам
 	Q_INVOKABLE void adminDropShared();              // адмін: прибрати спільний акаунт PSN із сервера
+	Q_INVOKABLE void adminSharedActive(qint64 consoleId);   // К16: зробити цей спільний акаунт активним на його приставці
+	Q_INVOKABLE void adminSharedRemove(qint64 consoleId);   // К16: прибрати цей спільний акаунт із сервера
+	Q_INVOKABLE int adminHostIndex(const QVariantMap &unit) const;   // К15: яка з прив'язаних у цій програмі PS5 є цією приставкою (індекс у Chiaki.hosts, -1 — не знайдено)
+	Q_INVOKABLE QVariantList localConsoles() const;  // усі PS5, прив'язані в цій програмі: {name, mac}
 	Q_INVOKABLE QString localPsnName() const;        // під яким акаунтом PSN увійдено в цій програмі ("" — не увійдено)
-	Q_INVOKABLE QString localConsoleName() const;    // PS5, прив'язана в цій програмі ("" — немає)
+	Q_INVOKABLE QString localConsoleName(const QString &mac = QString()) const;    // PS5, прив'язана в цій програмі ("" — немає); mac — яка саме, якщо їх кілька
 	Q_INVOKABLE int localRegistState() const;        // 0 — PS5 не прив'язана, 1 — прив'язана під поточним входом PSN, 2 — під іншим або невідомо
 	Q_INVOKABLE void openMyPsnLink();                // клієнт: відкрити сторінку Sony для входу на приставці
 	Q_INVOKABLE void loadBook();                                               // екран бронювання

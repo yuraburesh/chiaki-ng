@@ -22,17 +22,45 @@ Rectangle {
     property bool serviceMode: false     // адмін тимчасово відкрив повний (сервісний) інтерфейс
     readonly property bool isAdmin: cloud.loggedIn && cloud.admin
     readonly property var adm: cloud.adminInfo || ({})
-    readonly property var cur: adm.current || null
-    // телеметрія поточної гри: об'єкт у current.live (старий сервер надсилає там лише true або false)
-    readonly property var liveInfo: {
-        const c = home.cur;
+    // К15: приставки («блоки») з сервера, кожна зі своїм «зараз грає» і «далі». Старий сервер їх не віддає:
+    // тоді одна приставка з полів current/next, і панель виглядає як раніше
+    readonly property var units: {
+        const u = adm.units;
+        if (u && u.length)
+            return u;
+        return [{ id: 0, name: "", current: adm.current || null, next: adm.next || [], legacy: true }];
+    }
+    readonly property bool multiUnit: units.length > 1
+    readonly property var cur: adm.current || home.firstCurrent()
+    function firstCurrent() {
+        for (let i = 0; i < home.units.length; i++)
+            if (home.units[i].current)
+                return home.units[i].current;
+        return null;
+    }
+    // усі броні «далі» з усіх приставок, за часом (з назвою приставки, якщо їх кілька)
+    readonly property var allNext: {
+        let out = [];
+        for (let i = 0; i < home.units.length; i++) {
+            const u = home.units[i];
+            const n = u.next || [];
+            for (let j = 0; j < n.length; j++)
+                out.push(Object.assign({ unitName: home.multiUnit ? u.name : "" }, n[j]));
+        }
+        out.sort((a, b) => a.start - b.start);
+        return out;
+    }
+    // телеметрія гри: об'єкт у current.live (старий сервер надсилає там лише true або false)
+    function liveOf(c) {
         if (!c) return null;
         if (c.live && typeof c.live === "object") return c.live;
         if (c.liveStats && typeof c.liveStats === "object") return c.liveStats;
         return null;
     }
+    readonly property var liveInfo: liveOf(home.cur)
     // дані старші за півтори хвилини (програма клієнта шле їх раз на 20 с): клієнт згорнув гру або зник зв'язок
-    readonly property int liveAgeMin: liveInfo && liveInfo.at > 0 && nowTs() - liveInfo.at > 90 ? Math.max(1, Math.floor((nowTs() - liveInfo.at) / 60)) : 0
+    function liveAgeOf(l) { return l && l.at > 0 && nowTs() - l.at > 90 ? Math.max(1, Math.floor((nowTs() - l.at) / 60)) : 0; }
+    readonly property int liveAgeMin: liveAgeOf(liveInfo)
     // гостьовий доступ: грає, поки приставка вільна (кінець гри — початок найближчої чужої броні)
     readonly property bool guestPlay: !isAdmin && st === "play" && cloud.guest === true
     // попереду броней немає (сервер тоді ставить кінець через 12 годин): відлік нічого не каже, пишемо «приставка вільна»
@@ -135,6 +163,16 @@ Rectangle {
     Component.onCompleted: { loadMine(); if (!overGame) fullscreenStart.start(); }
 
     function nowTs() { tick; return Math.floor(Date.now() / 1000) + cloud.clockSkew; }
+    // «сьогодні 14:05», «вчора 21:30» або «18.11 19:00»
+    function dayTime(ts) {
+        const d = new Date(ts * 1000), n = new Date(nowTs() * 1000);
+        const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+        const y = new Date(n.getTime() - 86400000);
+        const t = cloud.formatTime(ts);
+        if (same(d, n)) return qsTr("сьогодні %1").arg(t);
+        if (same(d, y)) return qsTr("вчора %1").arg(t);
+        return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + " " + t;
+    }
     function dur(s) {
         s = Math.max(0, s);
         const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
@@ -219,9 +257,10 @@ Rectangle {
         else
             home.forceActiveFocus();
     }
-    function playNow() {
+    function playNow() { playHost(consoleIndex()); }
+    // підключитись до конкретної PS5 зі списку програми (адмін з кількома приставками обирає, до якої)
+    function playHost(i) {
         if (overGame) { backToGame(); return; }
-        const i = consoleIndex();
         if (i < 0) { toast.show(qsTr("Шукаємо приставку… зачекай кілька секунд")); Chiaki.refreshPsnToken(); return; }
         const h = Chiaki.hosts[i];
         home.cloud.prepareAutoQuality();   // «Авто»: після довгої чистої гри пробуємо якість вище
@@ -309,21 +348,58 @@ Rectangle {
             }
         }
     }
-    function adminConnect() {
+    // К15: до якої PS5 зі списку програми підключатись за цю приставку (-1 — беремо першу прив'язану, як раніше)
+    function unitHostIndex(u) {
+        if (!u || u.legacy || !home.multiUnit)
+            return -1;
+        return home.cloud.adminHostIndex(u);
+    }
+    function adminConnect(u) {
         if (home.overGame) { home.backToGame(); return; }   // адмін уже в грі: це вікно відкрите з меню гри
-        const c = home.cur;
+        const unit = u || home.units[0];
+        const c = unit ? unit.current : home.cur;
+        const idx = home.unitHostIndex(unit);
+        const go = () => idx >= 0 ? home.playHost(idx) : home.play();
         if (c)
             root.showConfirmDialog(qsTr("Підключитись"), c.live
                 ? qsTr("Зараз на приставці грає %1. Якщо підключишся, його трансляція перерветься. Підключитись?").arg(c.user)
                 : qsTr("Зараз час броні %1 (він ще не підключився). Поки ти на приставці, клієнт не зможе зайти. Підключитись?").arg(c.user),
-                () => home.play());
+                go);
         else
-            home.play();
+            go();
     }
 
+    // К16: спільні акаунти з сервера (null — старий сервер, тоді один акаунт у adm.console)
+    readonly property var sharedList: adm.shared && adm.shared.length !== undefined ? adm.shared : null
+    readonly property var sharedActive: {
+        const out = [];
+        for (let i = 0; sharedList && i < sharedList.length; i++)
+            if (sharedList[i].active)
+                out.push(sharedList[i].psn_name || qsTr("акаунт"));
+        return out;
+    }
+    function unitLabel(u) {   // приставка в рядку сервера: об'єкт {id,name}, число або рядок
+        if (!u && u !== 0) return "";
+        if (typeof u === "object") return u.name || (u.id ? qsTr("PS5 №%1").arg(u.id) : "");
+        if (typeof u === "number") {
+            for (let i = 0; i < home.units.length; i++)
+                if (home.units[i].id === u)
+                    return home.units[i].name || qsTr("PS5 №%1").arg(u);
+            return qsTr("PS5 №%1").arg(u);
+        }
+        return String(u);
+    }
+    function toggleClosed() {
+        if (home.adm.closed)
+            home.cloud.adminSetClosed(false);
+        else
+            confirmPopup.ask({ title: qsTr("Закрити доступ усім"), name: home.cur ? qsTr("Зараз грає %1").arg(home.cur.user) : "", action: qsTr("Закрити доступ"),
+                text: qsTr("Тимчасово закрити доступ усім клієнтам? Хто грає, відключиться, бот показуватиме «технічні роботи», поки не відкриєш знову."),
+                run: () => home.cloud.adminSetClosed(true) });
+    }
     // адмін: перед тим як забрати в клієнта гру, питаємо ще раз і показуємо, чию саме
-    function askKick() {
-        const c = home.cur;
+    function askKick(current) {
+        const c = current || home.cur;
         if (c)
             confirmPopup.ask({ title: qsTr("Завершити гру клієнта"), name: c.user, action: qsTr("Завершити гру"),
                 text: qsTr("Приставка відключиться просто зараз, а оплачений час до %1 згорить. Клієнт отримає повідомлення в боті.").arg(home.cloud.formatTime(c.end)),
@@ -834,98 +910,122 @@ Rectangle {
                     columns: home.twoCol ? 2 : 1
                     columnSpacing: home.colGap
                     rowSpacing: 28
-                    ApCard {   // хто грає зараз і як: головна картка панелі
+                    ColumnLayout {   // К15: картка на кожну приставку (одна, якщо сервер приставок не віддає)
                         Layout.preferredWidth: home.leftW
                         Layout.maximumWidth: home.leftW
                         Layout.alignment: Qt.AlignTop
-                        padding: 28
-                        spacing: 12
-                        accentEdge: home.adm.closed ? ap.bad : (home.liveInfo ? (home.liveInfo.health === "bad" ? ap.bad : home.liveInfo.health === "fair" ? ap.gold : ap.ok) : "transparent")
-                        ApText {
-                            role: "eyebrow"
-                            color: home.adm.closed ? ap.bad : ap.accent
-                            text: home.adm.closed ? qsTr("Доступ клієнтам закрито") : home.cur ? qsTr("Зараз грає") : qsTr("Панель адміна")
-                        }
-                        ApText {
-                            Layout.fillWidth: true
-                            role: "big"; size: home.bigSize
-                            font.capitalization: home.cur ? Font.MixedCase : Font.AllUppercase
-                            text: home.cur ? home.cur.user : qsTr("Зараз ніхто не грає")
-                        }
-                        ApText {
-                            Layout.fillWidth: true
-                            Layout.maximumWidth: 560
-                            role: "lead"
-                            text: {
-                                const c = home.cur;
-                                if (c)
-                                    return (c.live ? qsTr("у грі") : qsTr("ще не підключився")) + ", "
-                                        + qsTr("%1–%2, лишилось %3").arg(home.cloud.formatTime(c.start)).arg(home.cloud.formatTime(c.end)).arg(home.dur(c.end - home.nowTs()))
-                                        + home.psnLine(c, "\n");
-                                const n = home.adm.next || [];
-                                return n.length ? qsTr("Наступна бронь: %1, %2–%3").arg(n[0].user).arg(home.cloud.formatTime(n[0].start)).arg(home.cloud.formatTime(n[0].end)) + home.psnLine(n[0], "\n")
-                                                : qsTr("Найближчих оплачених броней немає.");
-                            }
-                        }
-                        // як клієнт грає просто зараз (це шле його програма): здоров'я картинки, пристрій, керування, гра, якість, зв'язок
-                        Flow {
-                            visible: !!home.liveInfo
-                            Layout.fillWidth: true
-                            spacing: 8
-                            Repeater {
-                                model: home.liveChips(home.liveInfo, home.liveAgeMin)
-                                ApChip {
-                                    required property var modelData
-                                    text: modelData.text
-                                    kind: modelData.kind || ""
-                                    icon: modelData.icon || ""
+                        spacing: home.colGap
+                        Repeater {
+                            model: home.units
+                            ApCard {   // хто грає зараз на цій приставці і як: головна картка панелі
+                                id: unitCard
+                                required property var modelData
+                                required property int index
+                                readonly property var c: modelData.current || null
+                                readonly property var l: home.liveOf(c)
+                                readonly property int ageMin: home.liveAgeOf(l)
+                                readonly property bool off: modelData.enabled === false
+                                readonly property int hostIdx: { home.tick; Chiaki.hosts; return home.unitHostIndex(modelData); }
+                                Layout.fillWidth: true
+                                padding: home.multiUnit ? 24 : 28
+                                spacing: 12
+                                accentEdge: home.adm.closed || off ? ap.bad : (l ? (l.health === "bad" ? ap.bad : l.health === "fair" ? ap.gold : ap.ok) : "transparent")
+                                ApText {
+                                    role: "eyebrow"
+                                    color: home.adm.closed || unitCard.off ? ap.bad : ap.accent
+                                    text: {
+                                        const name = home.multiUnit || !unitCard.modelData.legacy && unitCard.modelData.name ? unitCard.modelData.name : "";
+                                        const state = home.adm.closed ? qsTr("Доступ клієнтам закрито") : unitCard.off ? qsTr("Вимкнена: не бронюється")
+                                                    : unitCard.c ? qsTr("Зараз грає") : home.multiUnit ? qsTr("Вільна") : qsTr("Панель адміна");
+                                        return name ? name + ": " + state.toLowerCase() : state;
+                                    }
                                 }
-                            }
-                        }
-                        // що зараз бачить клієнт: маленьке вікно, оновлюється раз на ~1,5 с (лише поки відкрите)
-                        AnyPlayPreview {
-                            visible: !!home.cur && !!home.liveInfo
-                            Layout.fillWidth: true
-                            Layout.topMargin: 6
-                            bookingId: home.cur ? home.cur.id : 0
-                        }
-                        Flow {
-                            Layout.fillWidth: true
-                            Layout.topMargin: 10
-                            spacing: 10
-                            ApButton {   // адмін може зайти на приставку будь-коли
-                                id: adminPrimary
-                                minWidth: 260
-                                text: home.overGame ? qsTr("▶ Повернутись у гру")
-                                    : home.consoleIndex() >= 0 ? qsTr("Підключитись до приставки") : qsTr("Шукаю PS5…")
-                                onClicked: home.adminConnect()
-                            }
-                            ApButton {
-                                visible: !!home.cur
-                                ghost: true
-                                height: adminPrimary.height
-                                text: qsTr("Завершити гру клієнта")
-                                onClicked: home.askKick()
-                            }
-                            ApButton {
-                                ghost: true
-                                danger: !home.adm.closed
-                                height: adminPrimary.height
-                                text: home.adm.closed ? qsTr("Відкрити доступ") : qsTr("Закрити доступ усім")
-                                onClicked: {
-                                    if (home.adm.closed)
-                                        home.cloud.adminSetClosed(false);
-                                    else
-                                        confirmPopup.ask({ title: qsTr("Закрити доступ усім"), name: home.cur ? qsTr("Зараз грає %1").arg(home.cur.user) : "", action: qsTr("Закрити доступ"),
-                                            text: qsTr("Тимчасово закрити доступ усім клієнтам? Хто грає, відключиться, бот показуватиме «технічні роботи», поки не відкриєш знову."),
-                                            run: () => home.cloud.adminSetClosed(true) });
+                                ApText {
+                                    Layout.fillWidth: true
+                                    role: "big"; size: home.multiUnit ? Math.round(home.bigSize * 0.8) : home.bigSize
+                                    font.capitalization: unitCard.c ? Font.MixedCase : Font.AllUppercase
+                                    text: unitCard.c ? unitCard.c.user : qsTr("Зараз ніхто не грає")
+                                }
+                                ApText {
+                                    Layout.fillWidth: true
+                                    Layout.maximumWidth: 560
+                                    role: "lead"
+                                    text: {
+                                        const c = unitCard.c;
+                                        if (c)
+                                            return (c.live ? qsTr("у грі") : qsTr("ще не підключився")) + ", "
+                                                + qsTr("%1–%2, лишилось %3").arg(home.cloud.formatTime(c.start)).arg(home.cloud.formatTime(c.end)).arg(home.dur(c.end - home.nowTs()))
+                                                + home.psnLine(c, "\n");
+                                        const n = unitCard.modelData.next || [];
+                                        return n.length ? qsTr("Наступна бронь: %1, %2–%3").arg(n[0].user).arg(home.cloud.formatTime(n[0].start)).arg(home.cloud.formatTime(n[0].end)) + home.psnLine(n[0], "\n")
+                                                        : qsTr("Найближчих оплачених броней немає.");
+                                    }
+                                }
+                                // як клієнт грає просто зараз (це шле його програма): здоров'я картинки, пристрій, керування, гра, якість, зв'язок
+                                Flow {
+                                    visible: !!unitCard.l
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Repeater {
+                                        model: home.liveChips(unitCard.l, unitCard.ageMin)
+                                        ApChip {
+                                            required property var modelData
+                                            text: modelData.text
+                                            kind: modelData.kind || ""
+                                            icon: modelData.icon || ""
+                                        }
+                                    }
+                                }
+                                // що зараз бачить клієнт: маленьке вікно, оновлюється раз на ~1,5 с (лише поки відкрите)
+                                AnyPlayPreview {
+                                    visible: !!unitCard.c && !!unitCard.l
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 6
+                                    bookingId: unitCard.c ? unitCard.c.id : 0
+                                }
+                                Flow {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 10
+                                    spacing: 10
+                                    ApButton {   // адмін може зайти на приставку будь-коли
+                                        id: adminPrimary
+                                        minWidth: home.multiUnit ? 220 : 260
+                                        text: home.overGame ? qsTr("▶ Повернутись у гру")
+                                            : (home.multiUnit ? unitCard.hostIdx >= 0 : home.consoleIndex() >= 0)
+                                                ? (home.multiUnit ? qsTr("Підключитись до %1").arg(unitCard.modelData.name || "PS5") : qsTr("Підключитись до приставки"))
+                                            : home.multiUnit && home.consoleIndex() >= 0 ? qsTr("Підключитись (PS5 не прив'язана тут)")
+                                            : qsTr("Шукаю PS5…")
+                                        onClicked: home.adminConnect(unitCard.modelData)
+                                    }
+                                    ApButton {
+                                        visible: !!unitCard.c
+                                        ghost: true
+                                        height: adminPrimary.height
+                                        text: qsTr("Завершити гру клієнта")
+                                        onClicked: home.askKick(unitCard.c)
+                                    }
+                                    ApButton {   // з однією приставкою кнопка доступу тут, як у 112; з кількома — у «Інструментах», бо дія на всі
+                                        visible: !home.multiUnit
+                                        ghost: true
+                                        danger: !home.adm.closed
+                                        height: adminPrimary.height
+                                        text: home.adm.closed ? qsTr("Відкрити доступ") : qsTr("Закрити доступ усім")
+                                        onClicked: home.toggleClosed()
+                                    }
+                                }
+                                ApText {   // К15: цю приставку в програмі ще не прив'язано, тож «Підключитись» піде на першу прив'язану
+                                    visible: home.multiUnit && !home.overGame && unitCard.hostIdx < 0
+                                    Layout.fillWidth: true
+                                    role: "small"
+                                    text: qsTr("Щоб підключатись саме до цієї PS5, прив'яжи її в цій програмі: Спільний PSN, крок 2.")
                                 }
                             }
                         }
                     }
                     ColumnLayout {
                         id: adminRight
-                        readonly property var later: home.cur ? (home.adm.next || []).slice(0, 3) : (home.adm.next || []).slice(1, 4)
+                        // далі: з однією приставкою перша «наступна» вже названа в картці, тож тут з другої; з кількома — усі разом за часом
+                        readonly property var later: home.multiUnit ? home.allNext.slice(0, 5) : (home.cur ? home.allNext.slice(0, 3) : home.allNext.slice(1, 4))
                         Layout.preferredWidth: home.rightW
                         Layout.maximumWidth: home.rightW
                         Layout.alignment: Qt.AlignTop
@@ -940,7 +1040,8 @@ Rectangle {
                                 id: laterRow
                                 required property var modelData
                                 title: modelData.user
-                                subtitle: home.cloud.formatTime(modelData.start) + "–" + home.cloud.formatTime(modelData.end) + home.psnLine(modelData, ", ")
+                                subtitle: home.cloud.formatTime(modelData.start) + "–" + home.cloud.formatTime(modelData.end)
+                                    + (modelData.unitName ? ", " + modelData.unitName : "") + home.psnLine(modelData, ", ")
                                 ApButton {   // подарувати цьому клієнту гру просто зараз (час обирається барабанами)
                                     visible: !!laterRow.modelData.userId
                                     small: true; ghost: true
@@ -953,14 +1054,27 @@ Rectangle {
                       ApCard {
                         title: qsTr("Інструменти")
                         spacing: 0
+                        ApRow {   // К15: доступ закривається для всіх приставок одразу
+                            visible: home.multiUnit
+                            title: home.adm.closed ? qsTr("Доступ клієнтам закрито") : qsTr("Доступ клієнтам відкрито")
+                            subtitle: home.adm.closed ? qsTr("бот показує «технічні роботи» на всіх приставках") : qsTr("клієнти грають на будь-якій вільній приставці")
+                            ApButton {
+                                small: true; ghost: true
+                                danger: !home.adm.closed
+                                text: home.adm.closed ? qsTr("Відкрити") : qsTr("Закрити усім")
+                                onClicked: home.toggleClosed()
+                            }
+                        }
                         ApRow {
                             title: qsTr("Спільний PSN")
-                            subtitle: qsTr("акаунт, на якому грають клієнти")
+                            subtitle: home.sharedList ? qsTr("акаунти, на яких грають клієнти") : qsTr("акаунт, на якому грають клієнти")
                             clickable: true
                             onClicked: home.view = "shared"
                             ApChip {
-                                text: home.adm.console ? (home.adm.console.psn_name || qsTr("акаунт на %1").arg(home.adm.console.label || "PS5")) : qsTr("не передано")
-                                kind: home.adm.console ? "ok" : "bad"
+                                text: home.sharedList
+                                    ? (home.sharedActive.length ? home.sharedActive.join(", ") : qsTr("немає активного"))
+                                    : home.adm.console ? (home.adm.console.psn_name || qsTr("акаунт на %1").arg(home.adm.console.label || "PS5")) : qsTr("не передано")
+                                kind: (home.sharedList ? home.sharedActive.length : home.adm.console) ? "ok" : "bad"
                             }
                         }
                         ApRow {
@@ -969,7 +1083,8 @@ Rectangle {
                             clickable: true
                             onClicked: home.view = "clients"
                             ApChip {
-                                text: (home.adm.psnClients || []).length ? qsTr("чекають: %1").arg(home.adm.psnClients.length) : qsTr("немає заявок")
+                                text: (home.adm.psnClients || []).length ? qsTr("чекають: %1").arg(home.adm.psnClients.length)
+                                    : (home.adm.ownPsn || []).length ? qsTr("зі своїм: %1").arg(home.adm.ownPsn.length) : qsTr("немає заявок")
                                 kind: (home.adm.psnClients || []).length ? "wait" : ""
                             }
                         }
@@ -1446,8 +1561,25 @@ Rectangle {
                 id: sharedPage
                 property int rev: 0   // перечитати, що зараз у цій програмі (вхід PSN, прив'язана PS5)
                 readonly property var con: home.adm.console || null
+                readonly property var list: home.sharedList                // К16: усі спільні акаунти по приставках (null — старий сервер)
+                readonly property bool hasAny: list ? list.length > 0 : !!con
+                // К16: групи за приставкою, у порядку приставок сервера; активний акаунт першим
+                readonly property var groups: {
+                    if (!list) return [];
+                    const by = {}, order = [];
+                    for (let i = 0; i < list.length; i++) {
+                        const r = list[i];
+                        const u = r.unit;
+                        const key = u && typeof u === "object" ? String(u.id) : String(u === undefined || u === null ? 0 : u);
+                        if (!by[key]) { by[key] = { key: key, name: home.unitLabel(u), rows: [] }; order.push(key); }
+                        by[key].rows.push(r);
+                    }
+                    return order.map((k) => { by[k].rows.sort((x, y) => (y.active ? 1 : 0) - (x.active ? 1 : 0)); return by[k]; });
+                }
+                readonly property var locals: { rev; return home.cloud.localConsoles(); }   // PS5, прив'язані в цій програмі
+                property string pickedMac: ""                                              // яку з них передавати (якщо кілька)
                 readonly property string localPsn: { rev; return home.cloud.localPsnName(); }
-                readonly property string localPs5: { rev; return home.cloud.localConsoleName(); }
+                readonly property string localPs5: { rev; return home.cloud.localConsoleName(sharedPage.pickedMac); }
                 readonly property int registState: { rev; return home.cloud.localRegistState(); }   // 0 немає, 1 під цим акаунтом, 2 під іншим
                 visible: !home.gated && home.isAdmin && home.view === "shared"
                 GridLayout {
@@ -1460,30 +1592,86 @@ Rectangle {
                         Layout.maximumWidth: home.leftW
                         Layout.alignment: Qt.AlignTop
                         spacing: 10
-                        ApText { role: "h2"; text: qsTr("Спільний акаунт PSN") }
-                        ApText { role: "cap"; text: qsTr("Зараз роздається клієнтам"); Layout.topMargin: 10 }
-                        Text {
+                        ApText { role: "h2"; text: sharedPage.list ? qsTr("Спільні акаунти PSN") : qsTr("Спільний акаунт PSN") }
+                        ApText {
+                            visible: !sharedPage.list || !sharedPage.hasAny
+                            role: "cap"; text: qsTr("Зараз роздається клієнтам"); Layout.topMargin: 10
+                        }
+                        Text {   // старий сервер (один акаунт) або жодного акаунта
+                            visible: !sharedPage.list || !sharedPage.hasAny
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
                             font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 34; font.letterSpacing: 1
-                            color: sharedPage.con ? ap.ink : ap.bad
-                            text: sharedPage.con ? (sharedPage.con.psn_name || qsTr("акаунт PSN (нік ще не визначено)")) : qsTr("Акаунта немає")
+                            color: sharedPage.hasAny ? ap.ink : ap.bad
+                            text: sharedPage.hasAny ? (sharedPage.con.psn_name || qsTr("акаунт PSN (нік ще не визначено)")) : qsTr("Акаунта немає")
                         }
                         ApText {
+                            visible: !sharedPage.list || !sharedPage.hasAny
                             Layout.fillWidth: true
                             role: "lead"
-                            text: sharedPage.con
+                            text: sharedPage.hasAny
                                 ? qsTr("Приставка: %1. Передано на сервер: %2").arg(sharedPage.con.label || "PS5").arg(home.cloud.formatTime(sharedPage.con.updated_at))
                                 : qsTr("Клієнти поки не можуть грати. Передай акаунт: три кроки праворуч.")
                         }
                         ApButton {
-                            visible: !!sharedPage.con
+                            visible: !sharedPage.list && !!sharedPage.con
                             Layout.topMargin: 6
                             ghost: true; danger: true
                             text: qsTr("Видалити")
                             onClicked: confirmPopup.ask({ title: qsTr("Видалити спільний акаунт"), name: sharedPage.con ? (sharedPage.con.psn_name || "PSN") : "", action: qsTr("Видалити"),
                                 text: qsTr("Прибрати цей акаунт із сервера? Клієнти не зможуть підключатись, доки не передаси новий акаунт. Хто вже грає, дограє до розриву з'єднання."),
                                 run: () => home.cloud.adminDropShared() })
+                        }
+                        ApText {
+                            visible: !!sharedPage.list && sharedPage.hasAny
+                            Layout.fillWidth: true
+                            role: "lead"
+                            text: qsTr("Нові ігри клієнтів ідуть через активний акаунт своєї приставки. Якщо він перестане працювати, зроби активним інший: хто вже грає, дограє на попередньому.")
+                        }
+                        // К16: акаунти по приставках
+                        Repeater {
+                            model: sharedPage.groups
+                            ColumnLayout {
+                                id: grp
+                                required property var modelData
+                                required property int index
+                                Layout.fillWidth: true
+                                spacing: 0
+                                ApText {
+                                    role: "cap"
+                                    Layout.topMargin: grp.index === 0 ? 10 : 18
+                                    Layout.bottomMargin: 4
+                                    text: grp.modelData.name || qsTr("Приставка")
+                                }
+                                Repeater {
+                                    model: grp.modelData.rows
+                                    ApRow {
+                                        id: accRow
+                                        required property var modelData
+                                        required property int index
+                                        hairline: index < grp.modelData.rows.length - 1
+                                        title: modelData.psn_name || qsTr("акаунт PSN (нік ще не визначено)")
+                                        subtitle: (modelData.active ? qsTr("активний: на нього йдуть нові ігри") : qsTr("запасний"))
+                                            + (modelData.updated_at ? qsTr(", передано %1").arg(home.dayTime(modelData.updated_at)) : "")
+                                        ApChip { visible: !!accRow.modelData.active; text: qsTr("активний"); kind: "ok" }
+                                        ApButton {
+                                            visible: !accRow.modelData.active
+                                            small: true; ghost: true
+                                            text: qsTr("Зробити активним")
+                                            onClicked: home.cloud.adminSharedActive(accRow.modelData.id)
+                                        }
+                                        ApButton {
+                                            small: true; ghost: true; danger: true
+                                            text: qsTr("Видалити")
+                                            onClicked: confirmPopup.ask({ title: qsTr("Видалити спільний акаунт"), name: accRow.modelData.psn_name || "PSN", action: qsTr("Видалити"),
+                                                text: accRow.modelData.active
+                                                    ? qsTr("Прибрати активний акаунт із сервера? Якщо іншого на цій приставці немає, клієнти не зможуть підключатись, доки не передаси новий. Хто вже грає, дограє до розриву з'єднання.")
+                                                    : qsTr("Прибрати цей запасний акаунт із сервера?"),
+                                                run: () => home.cloud.adminSharedRemove(accRow.modelData.id) })
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     ApCard {   // дизайн 112: блок сторінки на скляній панелі
@@ -1492,12 +1680,16 @@ Rectangle {
                         Layout.alignment: Qt.AlignTop
                         Layout.topMargin: home.twoCol ? 4 : 0   // верх підпису праворуч — на рівні верху заголовка ліворуч
                         spacing: 0
-                        ApText { role: "cap"; text: sharedPage.con ? qsTr("Замінити на інший") : qsTr("Додати акаунт"); Layout.bottomMargin: 6 }
+                        ApText {
+                            role: "cap"; Layout.bottomMargin: 6
+                            text: sharedPage.list ? qsTr("Додати ще один акаунт або приставку") : sharedPage.con ? qsTr("Замінити на інший") : qsTr("Додати акаунт")
+                        }
                         ApText {
                             Layout.fillWidth: true
                             Layout.bottomMargin: 6
                             role: "hint"
-                            text: sharedPage.con ? qsTr("Три кроки по черзі (комп'ютер і PS5 в одній мережі). Новий акаунт сам замінить старий.")
+                            text: sharedPage.list ? qsTr("Три кроки по черзі (комп'ютер і PS5 в одній мережі). Новий акаунт додасться до списку; нова PS5 стане окремою приставкою, і клієнти зможуть бронювати її теж.")
+                                : sharedPage.con ? qsTr("Три кроки по черзі (комп'ютер і PS5 в одній мережі). Новий акаунт сам замінить старий.")
                                                  : qsTr("Три кроки по черзі (комп'ютер і PS5 в одній мережі).")
                         }
                         ApRow {
@@ -1523,6 +1715,24 @@ Rectangle {
                                 onClicked: { home.reopenShared = true; root.showRegistDialog("255.255.255.255", true); }
                             }
                         }
+                        // К15: у цій програмі прив'язано кілька PS5: яку з них передати
+                        Flow {
+                            visible: sharedPage.locals.length > 1
+                            Layout.fillWidth: true
+                            Layout.topMargin: 10
+                            spacing: 8
+                            ApText { role: "hint"; text: qsTr("Яку PS5 передати:"); height: 32; verticalAlignment: Text.AlignVCenter }
+                            Repeater {
+                                model: sharedPage.locals
+                                ApButton {
+                                    required property var modelData
+                                    small: true
+                                    ghost: sharedPage.pickedMac !== modelData.mac && !(sharedPage.pickedMac === "" && sharedPage.locals[0].mac === modelData.mac)
+                                    text: modelData.name
+                                    onClicked: sharedPage.pickedMac = modelData.mac
+                                }
+                            }
+                        }
                         ApButton {
                             Layout.topMargin: 16
                             Layout.fillWidth: true
@@ -1530,7 +1740,7 @@ Rectangle {
                             text: sharedPage.localPsn && sharedPage.localPsn !== qsTr("акаунт PSN")
                                 ? qsTr("3. Роздавати клієнтам «%1»").arg(sharedPage.localPsn) : qsTr("3. Передати PS5 на сервер")
                             enabled: sharedPage.registState === 1 && sharedPage.localPsn !== ""
-                            onClicked: { home.cloud.uploadConsole(); home.view = "home"; }
+                            onClicked: { home.cloud.uploadConsole(sharedPage.pickedMac); home.view = "home"; }
                         }
                         ApText {
                             visible: home.overGame
@@ -1548,6 +1758,7 @@ Rectangle {
                 id: clientsPage
                 property string result: ""
                 property bool resultOk: true
+                readonly property var own: home.adm.ownPsn && home.adm.ownPsn.length !== undefined ? home.adm.ownPsn : null   // К17
                 visible: !home.gated && home.isAdmin && home.view === "clients"
                 Connections {
                     target: Chiaki.cloud
@@ -1641,6 +1852,46 @@ Rectangle {
                             text: clientsPage.result
                             color: clientsPage.resultOk ? ap.ok : ap.bad
                             font.weight: Font.Medium
+                        }
+                        // К17: усі клієнти зі своїм акаунтом PSN (старий сервер цього списку не віддає: тоді нічого не показуємо)
+                        ApText {
+                            visible: !!clientsPage.own
+                            role: "cap"; Layout.topMargin: 22; Layout.bottomMargin: 6
+                            text: qsTr("Клієнти зі своїм PSN")
+                        }
+                        ApText {
+                            visible: !!clientsPage.own && !clientsPage.own.length
+                            role: "hint"
+                            topPadding: 10; bottomPadding: 10
+                            text: qsTr("Поки ніхто не грає на своєму акаунті.")
+                        }
+                        Repeater {
+                            model: clientsPage.own || []
+                            ApRow {
+                                id: ownRow
+                                required property var modelData
+                                required property int index
+                                hairline: index < clientsPage.own.length - 1
+                                title: (modelData.name || modelData.username || qsTr("Клієнт")) + (modelData.username && modelData.name ? " (" + modelData.username + ")" : "")
+                                subtitle: {
+                                    const m = ownRow.modelData;
+                                    const parts = [qsTr("PSN: %1").arg(m.psn || "—")];
+                                    const unit = home.unitLabel(m.unit);
+                                    if (unit) parts.push(unit);
+                                    if (m.lastPlay) parts.push(qsTr("остання гра %1").arg(home.dayTime(m.lastPlay)));
+                                    return parts.join(", ");
+                                }
+                                ApChip {
+                                    text: ({ ready: qsTr("готово"), requested: qsTr("чекає QR"), qr_sent: qsTr("чекаємо входу"), signed_in: qsTr("лишилось прив'язати"), pin_wait: qsTr("чекає 8 цифр") })[ownRow.modelData.status] || ownRow.modelData.status || ""
+                                    kind: ownRow.modelData.status === "ready" ? "ok" : "wait"
+                                }
+                                ApButton {
+                                    visible: !!ownRow.modelData.userId
+                                    small: true; ghost: true
+                                    text: qsTr("Подарувати")
+                                    onClicked: home.askGift(ownRow.modelData.userId, ownRow.modelData.name || ownRow.modelData.username || "")
+                                }
+                            }
                         }
                     }
                 }

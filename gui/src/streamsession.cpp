@@ -534,12 +534,34 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		anyplay = new AnyPlayInput(this);
 		anyplay->Load();
 		connect(anyplay, &AnyPlayInput::Changed, this, &StreamSession::SendFeedbackState);
-		connect(anyplay, &AnyPlayInput::ProfileChanged, this, &StreamSession::ControlProfileChanged);
+		// підказка про режим на екрані — лише коли грають клавіатурою (геймпадисту «сів у транспорт, F — вийти» ні до чого)
+		connect(anyplay, &AnyPlayInput::ProfileChanged, this, [this]() { if(!gamepad_mode) emit ControlProfileChanged(); });
 		// AnyPlay 110: у журнал — зміна режиму (для автоматичного «Транспорт» / «Пішки» за сигналами гри)
 		connect(anyplay, &AnyPlayInput::ProfileChanged, this, [this](const QString &status) {
 			CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-mode] %s", status.toUtf8().constData());
 		});
+		// AnyPlay 113: чому автоматика перемкнула режим (або гравець вручну) — щоб підлаштувати пороги за журналами
+		connect(anyplay, &AnyPlayInput::VehicleLog, this, [this](const QString &line) {
+			CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-vehicle] %s", line.toUtf8().constData());
+		});
+		// AnyPlay 113: постріл чи удар з клавіатури → віддача на екрані (якщо вона ввімкнена)
+		connect(anyplay, &AnyPlayInput::Kick, this, [this](float strength) {
+			if(screen_rumble_on.loadRelaxed())
+				rumble_level = qMax(rumble_level, static_cast<double>(strength));
+		});
 	}
+	// AnyPlay 113: Create (Share) 1 с на геймпаді відкриває меню AnyPlay
+	chiaki_controller_state_set_idle(&menu_tap_state);
+	menu_hold_timer.setSingleShot(true);
+	menu_hold_timer.setInterval(1000);
+	connect(&menu_hold_timer, &QTimer::timeout, this, [this]() {
+		if(!menu_share_held && !menu_sticks_held)
+			return;
+		if(menu_share_held)
+			menu_share_consumed = true;
+		CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-menu] %s", menu_share_held ? "Create 1 с" : "L3+R3 1 с");
+		emit AnyPlayMenuRequested();
+	});
 	touch_tracker=QMap<int, uint8_t>();
 	mouse_touch_id=-1;
 	dpad_touch_id =-1;
@@ -1068,6 +1090,14 @@ void StreamSession::HandleMouseDeltaEvent(qreal dx, qreal dy)
 {
 	if(!mouse_right_stick_enabled || gamepad_mode)   // поки грають геймпадом, випадковий рух мишки камеру не крутить
 		return;
+	// AnyPlay 113: злам машини або «утримати правий стік»: миша крутить стіки в рушії клавіш, а не камеру
+	if(anyplay && anyplay->CapturesMouse())
+	{
+		if(mouse_state.right_x || mouse_state.right_y || mouse_accum_x || mouse_accum_y)
+			ResetMouseRightStick();
+		anyplay->MouseDelta(dx, dy);
+		return;
+	}
 	mouse_accum_x += dx;
 	mouse_accum_y += dy;
 }
@@ -1087,7 +1117,8 @@ void StreamSession::UpdateMouseRightStick()
 	// mouse speed during this tick, in pixels per second
 	// AnyPlay: чутливість миші й інверсія вертикалі з екрана клавіш (діють одразу, навіть посеред гри)
 	// пішки і в транспорті своя чутливість (режим змінюється сам, коли сідаєш у транспорт)
-	const float sensitivity = AnyPlayInput::MouseSensitivity(anyplay ? anyplay->CurrentProfileId() : QString());
+	// «повільніша миша в прицілі» (перемикач на екрані клавіш) — множник з рушія
+	const float sensitivity = AnyPlayInput::MouseSensitivity(anyplay ? anyplay->CurrentProfileId() : QString()) * (anyplay ? anyplay->MouseScale() : 1.0f);
 	const float sx = static_cast<float>(mouse_accum_x) / dt * mouse_gain_x * sensitivity;
 	const float sy = static_cast<float>(mouse_accum_y) / dt * mouse_gain_y * sensitivity * (AnyPlayInput::InvertY() ? -1.0f : 1.0f);
 	mouse_accum_x = 0;
@@ -1435,6 +1466,8 @@ void StreamSession::SetGamepadMode(bool gamepad)
 	if(gamepad_mode == gamepad)
 		return;
 	gamepad_mode = gamepad;
+	if(anyplay)
+		anyplay->SetGamepadMode(gamepad);
 	if(gamepad)
 	{
 		if(anyplay)
@@ -1448,6 +1481,12 @@ void StreamSession::SetGamepadMode(bool gamepad)
 void StreamSession::ControllerStateChanged()
 {
 #if CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER
+	{
+		uint32_t buttons = 0;
+		for(auto controller : controllers)
+			buttons |= controller->GetState().buttons;
+		UpdateMenuButton(buttons);
+	}
 	if(!gamepad_mode)
 	{
 		// справжнє натискання, а не дрейф стіка чи шум тригера
@@ -1466,6 +1505,49 @@ void StreamSession::ControllerStateChanged()
 	}
 #endif
 	SendFeedbackState();
+}
+
+// AnyPlay 113: Create (Share) тримають 1 с → меню AnyPlay (коротке натискання йде на приставку з запізненням як тап);
+// L3 + R3 разом 1 с — те саме, якщо увімкнено menu_sticks
+void StreamSession::UpdateMenuButton(uint32_t buttons)
+{
+	const bool share = (buttons & CHIAKI_CONTROLLER_BUTTON_SHARE) && AnyPlayInput::Option(QStringLiteral("menu_create")).toBool();
+	if(share && !menu_share_held)
+	{
+		menu_share_held = true;
+		menu_share_consumed = false;
+		menu_hold_timer.start();
+	}
+	else if(!share && menu_share_held)
+	{
+		menu_share_held = false;
+		menu_hold_timer.stop();
+		if(!menu_share_consumed)
+		{
+			// відпустили раніше за секунду: приставка отримує звичайне коротке натискання Create
+			menu_tap_state.buttons |= CHIAKI_CONTROLLER_BUTTON_SHARE;
+			SendFeedbackState();
+			QTimer::singleShot(90, this, [this]() {
+				menu_tap_state.buttons &= ~CHIAKI_CONTROLLER_BUTTON_SHARE;
+				SendFeedbackState();
+			});
+		}
+		menu_share_consumed = false;
+	}
+	const uint32_t sticks = CHIAKI_CONTROLLER_BUTTON_L3 | CHIAKI_CONTROLLER_BUTTON_R3;
+	const bool both = (buttons & sticks) == sticks && AnyPlayInput::Option(QStringLiteral("menu_sticks")).toBool();
+	if(both && !menu_sticks_held)
+	{
+		menu_sticks_held = true;
+		if(!menu_share_held)
+			menu_hold_timer.start();
+	}
+	else if(!both && menu_sticks_held)
+	{
+		menu_sticks_held = false;
+		if(!menu_share_held)
+			menu_hold_timer.stop();
+	}
 }
 
 void StreamSession::UpdateGamepads()
@@ -1590,6 +1672,10 @@ void StreamSession::DpadSendFeedbackState()
 		auto controller_state = controller->GetState();
 		chiaki_controller_state_or(&state, &state, &controller_state);
 	}
+	// AnyPlay 113: Create тримають — приставка про це не знає, поки не вирішимо, що це (меню чи коротке натискання)
+	if(menu_share_held)
+		state.buttons &= ~CHIAKI_CONTROLLER_BUTTON_SHARE;
+	chiaki_controller_state_or(&state, &state, &menu_tap_state);
 
 #if CHIAKI_GUI_ENABLE_STEAMDECK_NATIVE
 	chiaki_controller_state_or(&state, &state, &sdeck_state);
@@ -1649,6 +1735,10 @@ void StreamSession::SendFeedbackState()
 		auto controller_state = controller->GetState();
 		chiaki_controller_state_or(&state, &state, &controller_state);
 	}
+	// AnyPlay 113: Create тримають — приставка про це не знає, поки не вирішимо, що це (меню чи коротке натискання)
+	if(menu_share_held)
+		state.buttons &= ~CHIAKI_CONTROLLER_BUTTON_SHARE;
+	chiaki_controller_state_or(&state, &state, &menu_tap_state);
 
 #if CHIAKI_GUI_ENABLE_STEAMDECK_NATIVE
 	chiaki_controller_state_or(&state, &state, &sdeck_state);
@@ -2528,20 +2618,6 @@ void StreamSession::PushHapticsFrame(uint8_t *buf, size_t buf_size)
 		return;
 	}
 
-	// AnyPlay: vibration right after "enter vehicle" confirms that the player really got in
-	if(anyplay && anyplay->VehiclePending())
-	{
-		int peak = 0;
-		for(size_t i = 0; i + sizeof(int16_t) <= buf_size; i += sizeof(int16_t))
-		{
-			int16_t v;
-			memcpy(&v, buf + i, sizeof(int16_t));
-			peak = qMax(peak, qAbs(static_cast<int>(v)));
-		}
-		if(peak > 1200)
-			QMetaObject::invokeMethod(anyplay, [this]() { anyplay->NoteHaptics(); }, Qt::QueuedConnection);
-	}
-
 	// AnyPlay: «віддача на екрані» — запам'ятовуємо найбільшу середню гучність тактильного звуку до наступного
 	// кадру гри (читає TickScreenRumble). Коли віддачу вимкнено, це одна перевірка прапорця.
 	if(screen_rumble_on.loadRelaxed() && ps5_rumble_intensity >= 0)
@@ -2770,10 +2846,17 @@ void StreamSession::Event(ChiakiEvent *event)
 					CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-rumble] %s %u %u", on ? "on" : "off", event->rumble.left, event->rumble.right);
 				}
 			}
-			if(anyplay && anyplay->VehiclePending())
+			// AnyPlay 113: вібрація → автоматика транспорту і тремор камери (лише коли значення змінилось)
+			if(anyplay)
 			{
+				static uint8_t noted_l = 0, noted_r = 0;
 				const uint8_t l = event->rumble.left, r = event->rumble.right;
-				QMetaObject::invokeMethod(anyplay, [this, l, r]() { anyplay->NoteRumble(l, r); }, Qt::QueuedConnection);
+				if(l != noted_l || r != noted_r)
+				{
+					noted_l = l;
+					noted_r = r;
+					QMetaObject::invokeMethod(anyplay, [this, l, r]() { anyplay->NoteRumble(l, r); }, Qt::QueuedConnection);
+				}
 			}
 			if(ps5_rumble_intensity < 0)
 				return;
@@ -3281,10 +3364,14 @@ void StreamSession::TickScreenRumble()
 	const int peak = screen_rumble_peak.fetchAndStoreRelaxed(0);
 	if(peak > 0)
 		target = qMax(target, AnyPlayHapticLevel(peak));
-	// вгору одразу, вниз плавно (спадає в e разів за 120 мс)
+	// профіль «сильно»: віддача помітніша і триває довше
+	const bool strong = AnyPlayInput::Option(QStringLiteral("haptic_strong")).toBool();
+	if(strong && target > 0)
+		target = qMin(1.0, 0.15 + target * 1.5);
+	// вгору одразу, вниз плавно (спадає в e разів за 120 мс; «сильно» — за 200 мс)
 	const double dt = qBound(0.0, (now - rumble_tick_ms) / 1000.0, 0.25);
 	rumble_tick_ms = now;
-	rumble_level = qMax(target, rumble_level * qExp(-dt / 0.12));
+	rumble_level = qMax(target, rumble_level * qExp(-dt / (strong ? 0.2 : 0.12)));
 	if(rumble_level < 0.03)
 		rumble_level = 0.0;
 	// на екран — кроками по 1/20 і не частіше ніж раз на 30 мс

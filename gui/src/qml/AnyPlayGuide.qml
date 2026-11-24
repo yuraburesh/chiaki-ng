@@ -44,17 +44,38 @@ GridLayout {
         }
         return "";
     }
-    // GTA VI: злам машини (крутити обидва стіки в різні боки)
-    readonly property string lockBoth: footKey("lock_both")
-    readonly property string lockBack: footKey("lock_both_back")
-    readonly property var lockRow: lockBoth || lockBack ? [{
+    // 113: плавні стіки з клавіатури (клавіші зі спільних, див. anyplaystick.h)
+    function globalKey(id) {
+        const profiles = Chiaki.settings.anyplayProfiles();
+        for (let i = 0; i < profiles.length; i++) {
+            if (profiles[i].id !== "global")
+                continue;
+            const list = profiles[i].bindings;
+            for (let j = 0; j < list.length; j++)
+                if (list[j].id === id)
+                    return list[j].key ? list[j].keyName : "";
+        }
+        return "";
+    }
+    readonly property string hotwireKey: globalKey("hotwire")
+    readonly property string preciseKey: globalKey("precise")
+    readonly property string holdKey: globalKey("hold_stick")
+    readonly property var lockRow: (hotwireKey ? [{
         title: qsTr("Злам машини (GTA VI)"),
-        text: qsTr("Коли гра просить крутити обидва стіки в різні боки, просто тримай %1: лівий стік крутиться за годинниковою стрілкою, правий проти. Якщо стрілки на екрані показують навпаки, тримай %2. Окремо: лівий стік клавішами %3, правий клавішами %4 або колом мишею.")
-            .arg(lockBoth || "—").arg(lockBack || "—")
-            .arg([footKey("lock_l_ccw"), footKey("lock_l_cw")].filter((k) => k).join(" і "))
-            .arg([footKey("lock_r_ccw"), footKey("lock_r_cw")].filter((k) => k).join(" і ")),
-        keys: [lockBoth, lockBack].filter((k) => k)
-    }] : []
+        text: qsTr("Тримай %1: обидва стіки стають назустріч, а мишею ти крутиш їх разом (правий за мишею, лівий дзеркально). Коліщатко і стрілки ← → докручують дрібно. Відпустив %1 — усе як було. Якщо гра просить просто крутити один стік по колу: лівий клавішами %2, правий клавішами %3.")
+            .arg(hotwireKey)
+            .arg([footKey("lock_l_ccw"), footKey("lock_l_cw")].filter((k) => k).join(" і ") || "—")
+            .arg([footKey("lock_r_ccw"), footKey("lock_r_cw")].filter((k) => k).join(" і ") || "—"),
+        keys: [hotwireKey, qsTr("миша")]
+    }] : []).concat(preciseKey ? [{
+        title: qsTr("Точний рух стіком"),
+        text: qsTr("Тримай %1 і клавіші руху крутять лівий стік по колу плавно, за кутом (вліво і вправо повертають, вперед і назад міняють силу). Відпустив клавішу руху — стік стоїть, де був. Коротке натискання %1 вмикає режим до наступного натискання.").arg(preciseKey),
+        keys: [preciseKey]
+    }] : []).concat(holdKey ? [{
+        title: qsTr("Утримати камеру"),
+        text: qsTr("Натисни %1: правий стік тримає напрям, який задаєш мишею, і не повертається в центр (камера дивиться, куди поставив). Ще раз %1 — відпустити.").arg(holdKey),
+        keys: [holdKey]
+    }] : [])
     // геймпад: під час гри — якщо зараз керують ним; поза грою — якщо він підключений
     property bool pad: Chiaki.session ? !!Chiaki.session.gamepadMode : Chiaki.controllers.length > 0
     readonly property string ps: keyOf("ps", "P")
@@ -70,7 +91,7 @@ GridLayout {
         { title: qsTr("Перейти в іншу гру"), text: qsTr("Утримуй PS, обери іншу гру і натисни ✕. Приставка запитає, чи закрити попередню гру: погодься."), keys: ["PS", "✕"] },
         { title: qsTr("Закрити гру"), text: qsTr("На головному екрані наведи на гру, натисни OPTIONS (на Xbox це Menu) і обери «Закрити гру»."), keys: ["OPTIONS"] },
         { title: qsTr("Пауза і меню самої гри"), text: qsTr("Під час гри кнопка OPTIONS відкриває паузу гри: карту, завдання, налаштування."), keys: ["OPTIONS"] },
-        { title: qsTr("Меню AnyPlay"), text: qsTr("Відкривається з клавіатури: %1. Тут продовження бронювання, якість картинки, клавіші і «Вийти з гри». Гра на приставці при цьому йде далі.").arg(menuKey), keys: ["`"] },
+        { title: qsTr("Меню AnyPlay"), text: qsTr("На геймпаді утримуй кнопку Create (ліворуч від тачпада) близько секунди; з клавіатури: %1. У меню ходи хрестовиною або стіком, ✕ обирає, ○ повертає. Тут продовження бронювання, якість картинки, клавіші і «Вийти з гри». Гра на приставці при цьому йде далі.").arg(menuKey), keys: ["Create", hold] },
         { title: qsTr("Закінчити гру"), text: qsTr("Відкрий меню AnyPlay і обери «Вийти з гри». Приставку вимикати не треба: коли час гри вийде, вона завершить усе сама."), keys: ["`"] }
     ]
     readonly property var keyRows: [

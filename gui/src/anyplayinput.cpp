@@ -3,6 +3,8 @@
 #include "settings.h"
 
 #include <QCoreApplication>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QPointF>
 #include <algorithm>
 #include <cmath>
@@ -36,11 +38,35 @@ QString OverrideGroupFor(const QString &layout)
 {
 	return layout == QLatin1String("gta5") ? OverrideGroupBase : OverrideGroupBase + QLatin1Char('_') + layout;
 }
-// v2: миттєве перемикання знову типове (очікування підтвердження від приставки працювало ненадійно)
-const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle_v2");
-constexpr int PendingMs = 7000;      // скільки після F чекаємо підтвердження від приставки
-constexpr int PendingGraceMs = 250;  // сигнали одразу після натискання не рахуються
-constexpr int HapticHitsNeeded = 3;  // кадри вібрації (по 10 мс) понад шум
+// v3: автоматика в обидва боки за ефектами курків (anyplayvehicle.h), типово увімкнена; v2 чекала підтвердження після F
+const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle_v3");
+constexpr int VehicleTickMs = 200;       // як часто перевіряємо, чи герой сів у транспорт або вийшов
+constexpr int PreciseTapMs = 300;        // коротше натискання клавіші точного режиму вмикає його до наступного натискання
+constexpr float AimSlowFactor = 0.6f;    // «повільніша миша в прицілі»: чутливість у прицілі
+constexpr int TremorMs = 110;            // тремор камери від вібрації: тривалість одного поштовху
+constexpr int TremorMinGapMs = 260;      // ... не частіше
+constexpr int TremorMinRumble = 90;      // ... лише від помітної вібрації (0..255)
+
+// Налаштування керування з типовими значеннями: екран клавіш читає і пише через Option/SetOption
+const QList<QPair<QString, QVariant>> &OptionDefaults()
+{
+	static const QList<QPair<QString, QVariant>> defaults = {
+		{QStringLiteral("auto_vehicle"), true},    // «Автоматично визначати транспорт»
+		{QStringLiteral("haptic_strong"), false},  // «Віддача на екрані»: сильно (false — м'яко)
+		{QStringLiteral("kick_screen"), true},     // віддача на екрані від пострілів і ударів з клавіатури
+		{QStringLiteral("tremor"), false},         // тремор камери від вібрації (правий стік смикається)
+		{QStringLiteral("aim_slow"), false},       // повільніша миша в прицілі
+		{QStringLiteral("menu_create"), true},     // утримання Create 1 с відкриває меню AnyPlay
+		{QStringLiteral("menu_sticks"), false},    // L3 + R3 разом 1 с теж відкриває меню
+	};
+	return defaults;
+}
+QString OptionKey(const QString &name)
+{
+	return name == QLatin1String("auto_vehicle") ? AutoVehicleKey : QStringLiteral("anyplay/") + name;
+}
+QMutex option_mutex;
+QHash<QString, QVariant> option_cache;   // прочитане з налаштувань: миша питає кілька сотень разів на секунду
 
 constexpr float MinSensitivity = 0.3f;
 constexpr float MaxSensitivity = 3.0f;
@@ -228,17 +254,24 @@ AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 	});
 	spin_timer.setInterval(SpinTickMs);
 	spin_timer.setTimerType(Qt::PreciseTimer);
-	connect(&spin_timer, &QTimer::timeout, this, [this]() { emit Changed(); });
-	pending_timer.setSingleShot(true);
-	pending_timer.setInterval(PendingMs);
-	connect(&pending_timer, &QTimer::timeout, this, [this]() {
-		if(!VehiclePending())
-			return;
-		StopPending();
-		// підтвердження нема: лишаємось пішки, але підказуємо, як перемкнути вручну, якщо гравець таки сів
-		hint = QStringLiteral("%1. Якщо ти вже в транспорті, натисни F2").arg(ProfileName(current_profile));
-		emit ProfileChanged(StatusText());
+	// той самий такт ~60 разів на секунду веде обертання стіка, точний режим, злам машини, «утримати» стік і тремор
+	connect(&spin_timer, &QTimer::timeout, this, [this]() {
+		const qint64 now = clock.elapsed();
+		if(precise_active)
+		{
+			precise.Advance(now - precise_tick);
+			precise_tick = now;
+		}
+		tremor_phase = !tremor_phase;
+		if(tremor_until && now >= tremor_until)
+		{
+			tremor_until = 0;
+			UpdateSpinTimer();
+		}
+		emit Changed();
 	});
+	vehicle_timer.setInterval(VehicleTickMs);
+	connect(&vehicle_timer, &QTimer::timeout, this, &AnyPlayInput::TickVehicle);
 }
 
 AnyPlayInput::~AnyPlayInput()
@@ -308,6 +341,9 @@ QList<APProfile> AnyPlayInput::ParseProfiles(const QJsonObject &config, const QS
 				: kind == "macro" ? APBinding::Kind::Macro
 				: kind == "cycle" ? APBinding::Kind::Cycle
 				: kind == "spin" ? APBinding::Kind::Spin
+				: kind == "precise" ? APBinding::Kind::Precise
+				: kind == "hold_stick" ? APBinding::Kind::StickHold
+				: kind == "hotwire" ? APBinding::Kind::Hotwire
 				: kind == "none" ? APBinding::Kind::None
 				: APBinding::Kind::Hold;
 			binding.out = StepFromJson(bo);
@@ -358,9 +394,17 @@ void AnyPlayInput::Load()
 	if(!keep)
 		current_profile = config.value("start").toString("foot");
 	auto_vehicle = preview ? false : AutoVehicle();
-	StopPending();
 	hint.clear();
 	ReleaseAll();
+	// автоматика транспорту: з чистого аркуша (приставка про курки ще нічого не казала)
+	vehicle.Reset(current_profile == QLatin1String("vehicle"), clock.elapsed());
+	bool has_vehicle = false;
+	for(const auto &p : profiles)
+		has_vehicle |= p.id == QLatin1String("vehicle");
+	if(auto_vehicle && has_vehicle)
+		vehicle_timer.start();
+	else
+		vehicle_timer.stop();
 	if(!previous.isEmpty() && previous != current_profile)
 		emit ProfileChanged(StatusText());
 }
@@ -436,6 +480,13 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 		return false; // ` відкриває меню AnyPlay і в гру не йде
 	if(!pressed)
 	{
+		// точний режим: відпущена клавіша руху більше не крутить стік, але стік лишається, де був
+		if(precise_active && precise_keys.remove(name))
+		{
+			UpdatePrecise();
+			emit Changed();
+			return true;
+		}
 		auto it = active.find(name);
 		if(it == active.end())
 			return Find(name) != nullptr;
@@ -459,8 +510,31 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 		}
 		const bool turbo = it->kind == APBinding::Kind::Turbo;
 		const bool spin = it->kind == APBinding::Kind::Spin;
+		const APBinding::Kind kind = it->kind;
+		const qint64 held_ms = clock.elapsed() - it->pressed_at;
 		active.erase(it);
 		AfterRelease();
+		if(kind == APBinding::Kind::Precise && name == precise_key)
+		{
+			if(held_ms < PreciseTapMs)
+			{
+				// коротко натиснули: точний режим лишається, поки не натиснуть ще раз (зручно з CapsLock на Mac)
+				hint = QStringLiteral("Точний рух увімкнено: %1 — вимкнути").arg(DisplayName(name));
+				emit ProfileChanged(StatusText());
+			}
+			else
+			{
+				// відпустили клавішу точного режиму: стік знову слухає клавіші руху як завжди
+				precise_active = false;
+				precise_keys.clear();
+				UpdateSpinTimer();
+			}
+		}
+		if(kind == APBinding::Kind::Hotwire && name == hotwire_key)
+		{
+			hotwire_active = false;
+			UpdateSpinTimer();
+		}
 		if(spin)
 			UpdateSpinTimer();
 		if(turbo)
@@ -475,12 +549,28 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 		return true;
 	}
 
-	if(active.contains(name))
+	if(active.contains(name) || (precise_active && precise_keys.contains(name)))
 		return true; // автоповтор клавіші
 	const APBinding *binding = Find(name);
 	if(!binding)
 		return false;
 	APBinding b = *binding; // копія: перемикання режиму нижче робить вказівник недійсним
+	// злам машини: стрілки дрібно докручують стіки (вліво — проти годинникової)
+	if(hotwire_active && (b.id == QLatin1String("nav_left") || b.id == QLatin1String("nav_right")))
+	{
+		mouse_point.Rotate(b.id == QLatin1String("nav_left") ? -AnyPlayHotwireStepDeg : AnyPlayHotwireStepDeg);
+		emit Changed();
+		return true;
+	}
+	// точний режим: клавіші руху крутять стік (кут) і міняють силу, а не штовхають його в 8 напрямків
+	int role = 0;
+	if(precise_active && PreciseRole(b, &role))
+	{
+		precise_keys.insert(name, role);
+		UpdatePrecise();
+		emit Changed();
+		return true;
+	}
 	if(!Allowed(b))
 		return true; // клавіша наша, але без прицілу нічого не робить
 	if(!(Output().buttons & CHIAKI_CONTROLLER_BUTTON_L1))
@@ -506,6 +596,10 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 		b.out = b.aim_out;
 		b.profile.clear();
 	}
+	// постріл або удар з клавіатури: віддача на екрані (приставка вібрацію на мишку не шле)
+	if(b.kind == APBinding::Kind::Hold && (b.out.buttons & (CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 | CHIAKI_CONTROLLER_BUTTON_BOX))
+		&& !preview && !gamepad_mode && Option(QStringLiteral("kick_screen")).toBool())
+		emit Kick((b.out.buttons & CHIAKI_CONTROLLER_ANALOG_BUTTON_R2) ? 0.55f : 0.3f);
 	switch(b.kind)
 	{
 		case APBinding::Kind::Hold:
@@ -513,6 +607,58 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 			break;
 		case APBinding::Kind::Spin:
 			b.pressed_at = clock.elapsed();
+			active.insert(name, b);
+			UpdateSpinTimer();
+			break;
+		case APBinding::Kind::Precise:
+		{
+			if(precise_active)
+			{
+				// режим було увімкнено коротким натисканням: ще одне вимикає
+				precise_active = false;
+				precise_keys.clear();
+				hint.clear();
+				emit ProfileChanged(StatusText());
+				UpdateSpinTimer();
+				break;
+			}
+			// точний режим: починаємо з того, куди стік дивиться зараз; натиснуті клавіші руху стають «кермом»
+			const APStep now = Output();
+			precise.Start(now.lx, now.ly);
+			precise_active = true;
+			precise_key = name;
+			precise_tick = clock.elapsed();
+			precise_keys.clear();
+			for(auto it = active.begin(); it != active.end();)
+			{
+				int r = 0;
+				if(PreciseRole(*it, &r))
+				{
+					precise_keys.insert(it.key(), r);
+					it = active.erase(it);
+				}
+				else
+					++it;
+			}
+			UpdatePrecise();
+			b.pressed_at = precise_tick;
+			active.insert(name, b);
+			UpdateSpinTimer();
+			break;
+		}
+		case APBinding::Kind::StickHold:
+			// перемикач: стік тримає напрям, який задає миша, і не повертається в центр
+			stick_hold = !stick_hold;
+			mouse_point.Reset();
+			hint = stick_hold ? QStringLiteral("Правий стік утримується: мишею задай напрям, %1 — відпустити").arg(DisplayName(name)) : QString();
+			emit ProfileChanged(StatusText());
+			UpdateSpinTimer();
+			break;
+		case APBinding::Kind::Hotwire:
+			// злам машини: обидва стіки назустріч, далі крутяться за мишею, коліщатком чи стрілками
+			hotwire_active = true;
+			hotwire_key = name;
+			AnyPlayHotwireStart(&mouse_point, AnyPlayHotwireRadiusPx);
 			active.insert(name, b);
 			UpdateSpinTimer();
 			break;
@@ -543,6 +689,13 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 
 bool AnyPlayInput::Tap(const QString &name)
 {
+	// злам машини: поділка коліщатка дрібно докручує обидва стіки
+	if(hotwire_active && (name == QLatin1String("WheelUp") || name == QLatin1String("WheelDown")))
+	{
+		mouse_point.Rotate(name == QLatin1String("WheelUp") ? AnyPlayHotwireStepDeg : -AnyPlayHotwireStepDeg);
+		emit Changed();
+		return true;
+	}
 	const APBinding *binding = Find(name);
 	if(!binding)
 		return false;
@@ -567,7 +720,14 @@ bool AnyPlayInput::Tap(const QString &name)
 	}
 	else if(b.kind == APBinding::Kind::Cycle)
 		Cycle(b);
-	else if(b.kind != APBinding::Kind::None && b.kind != APBinding::Kind::Spin)
+	else if(b.kind == APBinding::Kind::Precise || b.kind == APBinding::Kind::StickHold)
+	{
+		// коротке натискання (CapsLock на Mac приходить саме так): перемикач
+		HandleInput(name, true);
+		HandleInput(name, false);
+		return true;
+	}
+	else if(b.kind != APBinding::Kind::None && b.kind != APBinding::Kind::Spin && b.kind != APBinding::Kind::Hotwire)
 		AddTap(b.out, TapMs);
 	if(!b.profile.isEmpty())
 		SwitchProfile(b.profile);
@@ -680,6 +840,16 @@ void AnyPlayInput::NoteSlot(const APBinding &b)
 void AnyPlayInput::ReleaseAll()
 {
 	wheel_sector = -1;
+	precise_active = false;
+	precise_keys.clear();
+	hotwire_active = false;
+	if(stick_hold)
+	{
+		stick_hold = false;
+		hint.clear();
+		emit ProfileChanged(StatusText());
+	}
+	tremor_until = 0;
 	active.clear();
 	taps.clear();
 	macro.clear();
@@ -692,7 +862,7 @@ void AnyPlayInput::ReleaseAll()
 
 void AnyPlayInput::UpdateSpinTimer()
 {
-	bool any = false;
+	bool any = precise_active || hotwire_active || stick_hold || tremor_until > 0;
 	for(const auto &b : active)
 		any |= b.kind == APBinding::Kind::Spin;
 	if(any && !spin_timer.isActive())
@@ -744,13 +914,6 @@ void AnyPlayInput::SwitchProfile(const QString &target)
 	{
 		if(current_profile == QLatin1String("foot"))
 		{
-			if(auto_vehicle)
-			{
-				// Гравець може бути далеко від транспорту: лишаємось «пішки», поки приставка
-				// не підтвердить посадку (вібрація / опір курків, коли заводиться двигун).
-				StartPending();
-				return;
-			}
 			SetProfile(QStringLiteral("vehicle"),
 				QStringLiteral("%1. F — назад «%2»").arg(ProfileName(QStringLiteral("vehicle")), ProfileName(QStringLiteral("foot"))));
 			return;
@@ -763,12 +926,19 @@ void AnyPlayInput::SwitchProfile(const QString &target)
 
 void AnyPlayInput::SetProfile(const QString &id, const QString &hint_text)
 {
-	const bool was_pending = VehiclePending();
-	StopPending();
-	if(id == current_profile && !was_pending && hint_text.isEmpty())
+	if(id == current_profile && hint_text.isEmpty() && hint.isEmpty())
 		return;
+	const bool was_vehicle = current_profile == QLatin1String("vehicle");
 	current_profile = id;
 	hint = hint_text;
+	// гравець перемкнув сам (F, F1–F3, вкладка): автоматика приймає це і кілька секунд не сперечається
+	if(auto_vehicle && !preview)
+	{
+		const bool now_vehicle = id == QLatin1String("vehicle");
+		vehicle.Manual(now_vehicle, clock.elapsed());
+		if(now_vehicle != was_vehicle)
+			emit VehicleLog(QStringLiteral("вручну → %1 (L=%2 R=%3)").arg(id).arg(trig_left, 2, 16, QLatin1Char('0')).arg(trig_right, 2, 16, QLatin1Char('0')));
+	}
 	emit ProfileChanged(StatusText());
 }
 
@@ -777,7 +947,7 @@ void AnyPlayInput::SetCurrentProfile(const QString &id)
 	bool known = false;
 	for(const auto &p : profiles)
 		known |= p.id == id;
-	if(!known || (id == current_profile && hint.isEmpty() && !VehiclePending()))
+	if(!known || (id == current_profile && hint.isEmpty()))
 		return;
 	ReleaseAll();
 	SetProfile(id, QString());
@@ -789,69 +959,159 @@ void AnyPlayInput::SetPreview(bool enabled)
 	auto_vehicle = preview ? false : AutoVehicle();
 }
 
-void AnyPlayInput::StartPending()
-{
-	base_left = trig_left;
-	base_right = trig_right;
-	haptic_hits = 0;
-	pending_since.start();
-	pending_timer.start();
-	pending.store(true, std::memory_order_relaxed);
-	hint = QStringLiteral("Чекаю посадки в транспорт…");
-	emit ProfileChanged(StatusText());
-}
-
-void AnyPlayInput::StopPending()
-{
-	pending.store(false, std::memory_order_relaxed);
-	pending_timer.stop();
-	haptic_hits = 0;
-}
-
-void AnyPlayInput::ConfirmVehicle()
-{
-	if(!VehiclePending() || pending_since.elapsed() < PendingGraceMs)
-		return;
-	SetProfile(QStringLiteral("vehicle"), QString());
-}
-
-void AnyPlayInput::NoteHaptics()
-{
-	if(!VehiclePending() || pending_since.elapsed() < PendingGraceMs)
-		return;
-	if(++haptic_hits >= HapticHitsNeeded)
-		ConfirmVehicle();
-}
-
 void AnyPlayInput::NoteRumble(uint8_t left, uint8_t right)
 {
-	if(left || right)
-		ConfirmVehicle();
+	rumble_left = left;
+	rumble_right = right;
+	const qint64 now = clock.elapsed();
+	vehicle.Rumble(left || right, now);
+	// тремор камери: від помітної вібрації правий стік кілька кадрів смикається (гра хитає камеру)
+	const int strength = qMax(left, right);
+	if(strength >= TremorMinRumble && !preview && !gamepad_mode && now - tremor_last >= TremorMinGapMs && Option(QStringLiteral("tremor")).toBool())
+	{
+		tremor_last = now;
+		tremor_until = now + TremorMs;
+		tremor_amp = 0.10f + 0.22f * (strength - TremorMinRumble) / float(255 - TremorMinRumble);
+		UpdateSpinTimer();
+		emit Changed();
+	}
 }
 
 void AnyPlayInput::NoteTriggers(uint8_t type_left, uint8_t type_right)
 {
 	trig_left = type_left;
 	trig_right = type_right;
-	if(!VehiclePending())
+	vehicle.Triggers(type_left, type_right, clock.elapsed());
+}
+
+// Кілька разів на секунду: чи час перемкнути режим за курками
+void AnyPlayInput::TickVehicle()
+{
+	if(!auto_vehicle || preview)
 		return;
-	// 0x00 і 0x05 — «без ефекту»; новий ефект, якого не було в мить натискання F,
-	// означає, що педалі транспорту отримали опір
-	auto on = [](uint8_t t) { return t != 0x00 && t != 0x05; };
-	if((on(type_left) && type_left != base_left) || (on(type_right) && type_right != base_right))
-		ConfirmVehicle();
+	// в авіації автоматика мовчить: літак теж дає ефекти на курки, а «транспорт» був би неправильним режимом
+	if(current_profile == QLatin1String("air"))
+		return;
+	const int verdict = vehicle.Tick(clock.elapsed());
+	if(verdict > 0)
+		ApplyAuto(true);
+	else if(verdict < 0)
+		ApplyAuto(false);
+}
+
+void AnyPlayInput::ApplyAuto(bool to_vehicle)
+{
+	const QString id = to_vehicle ? QStringLiteral("vehicle") : QStringLiteral("foot");
+	if(id == current_profile)
+		return;
+	emit VehicleLog(QStringLiteral("авто → %1 (L=%2 R=%3, вібрація %4/%5)").arg(id)
+		.arg(trig_left, 2, 16, QLatin1Char('0')).arg(trig_right, 2, 16, QLatin1Char('0')).arg(rumble_left).arg(rumble_right));
+	ReleaseAll();
+	current_profile = id;
+	hint = to_vehicle ? QStringLiteral("%1 (сів у транспорт). F — вийти").arg(ProfileName(id))
+		: QStringLiteral("%1 (вийшов з транспорту)").arg(ProfileName(id));
+	emit ProfileChanged(StatusText());
+	emit Changed();
+}
+
+// Роль клавіші руху в точному режимі: 1 вліво, 2 вправо, 3 вперед (сила більше), 4 назад (сила менше)
+bool AnyPlayInput::PreciseRole(const APBinding &b, int *role) const
+{
+	if(b.kind != APBinding::Kind::Hold || b.out.buttons)
+		return false;
+	if(b.out.lx < -0.5f) { *role = 1; return true; }
+	if(b.out.lx > 0.5f) { *role = 2; return true; }
+	if(b.out.ly < -0.5f) { *role = 3; return true; }
+	if(b.out.ly > 0.5f) { *role = 4; return true; }
+	if(b.id == QLatin1String("nav_left")) { *role = 1; return true; }
+	if(b.id == QLatin1String("nav_right")) { *role = 2; return true; }
+	if(b.id == QLatin1String("nav_up")) { *role = 3; return true; }
+	if(b.id == QLatin1String("nav_down")) { *role = 4; return true; }
+	return false;
+}
+
+void AnyPlayInput::UpdatePrecise()
+{
+	int turn = 0, push = 0;
+	for(int role : std::as_const(precise_keys))
+	{
+		if(role == 1) turn -= 1;
+		if(role == 2) turn += 1;
+		if(role == 3) push += 1;
+		if(role == 4) push -= 1;
+	}
+	precise.turn = qBound(-1, turn, 1);
+	precise.push = qBound(-1, push, 1);
+	precise_tick = clock.elapsed();
+}
+
+void AnyPlayInput::MouseDelta(double dx, double dy)
+{
+	if(hotwire_active)
+	{
+		mouse_point.Move(dx, dy, AnyPlayHotwireRadiusPx);
+		return;
+	}
+	if(stick_hold)
+	{
+		const double radius = AnyPlayHoldRadiusPx / qMax(0.3f, MouseSensitivity(current_profile));
+		mouse_point.Move(dx, dy, radius);
+	}
+}
+
+float AnyPlayInput::MouseScale() const
+{
+	if(current_profile != QLatin1String("foot") || !Option(QStringLiteral("aim_slow")).toBool())
+		return 1.0f;
+	return (Output().buttons & CHIAKI_CONTROLLER_ANALOG_BUTTON_L2) ? AimSlowFactor : 1.0f;
+}
+
+QVariant AnyPlayInput::Option(const QString &name)
+{
+	QMutexLocker lock(&option_mutex);
+	auto it = option_cache.find(name);
+	if(it != option_cache.end())
+		return *it;
+	QVariant value;
+	for(const auto &d : OptionDefaults())
+		if(d.first == name)
+			value = QSettings().value(OptionKey(name), d.second);
+	option_cache.insert(name, value);
+	return value;
+}
+
+void AnyPlayInput::SetOption(const QString &name, const QVariant &value)
+{
+	bool known = false;
+	for(const auto &d : OptionDefaults())
+		known |= d.first == name;
+	if(!known)
+		return;
+	{
+		QMutexLocker lock(&option_mutex);
+		option_cache.insert(name, value);
+	}
+	QSettings().setValue(OptionKey(name), value);
+	if(name == QLatin1String("auto_vehicle"))
+		NotifyConfigChanged();   // рушій у грі вмикає або вимикає автоматику одразу
+}
+
+QVariantMap AnyPlayInput::Options()
+{
+	QVariantMap map;
+	for(const auto &d : OptionDefaults())
+		map.insert(d.first, Option(d.first));
+	return map;
 }
 
 bool AnyPlayInput::AutoVehicle()
 {
-	QSettings settings;
-	return settings.value(AutoVehicleKey, false).toBool();
+	return Option(QStringLiteral("auto_vehicle")).toBool();
 }
 
 void AnyPlayInput::SetAutoVehicle(bool enabled)
 {
-	QSettings settings;
-	settings.setValue(AutoVehicleKey, enabled);
+	SetOption(QStringLiteral("auto_vehicle"), enabled);
 }
 
 float AnyPlayInput::MouseSensitivity(const QString &mode)
@@ -956,6 +1216,24 @@ APStep AnyPlayInput::Output() const
 			AnyPlaySpinStick(now - b.pressed_at, b.spin_l, &sum.lx, &sum.ly);
 		if(b.spin_r)
 			AnyPlaySpinStick(now - b.pressed_at, b.spin_r, &sum.rx, &sum.ry);
+	}
+	// точний режим: лівий стік — кут і сила, які крутять клавіші руху
+	if(precise_active)
+		precise.Stick(&sum.lx, &sum.ly);
+	// «утримати» правий стік: напрям від миші, стік не повертається в центр
+	if(stick_hold && !hotwire_active)
+	{
+		const double radius = AnyPlayHoldRadiusPx / qMax(0.3f, MouseSensitivity(current_profile));
+		AnyPlayHoldStick(mouse_point, radius, InvertY(), &sum.rx, &sum.ry);
+	}
+	// злам машини: обидва стіки назустріч і крутяться за мишею
+	if(hotwire_active)
+		AnyPlayHotwireSticks(mouse_point, &sum.lx, &sum.ly, &sum.rx, &sum.ry);
+	// тремор камери від вібрації: кілька кадрів правий стік смикається туди-сюди
+	if(tremor_until && now < tremor_until)
+	{
+		sum.rx += tremor_phase ? tremor_amp : -tremor_amp;
+		sum.ry += tremor_phase ? -tremor_amp * 0.5f : tremor_amp * 0.5f;
 	}
 	return sum;
 }

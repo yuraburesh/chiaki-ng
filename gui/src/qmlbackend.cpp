@@ -1144,6 +1144,9 @@ void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
         return;
     }
 
+    // AnyPlay 113: Create (Share) 1 с на геймпаді — те саме, що клавіша ` : відкрити чи закрити меню AnyPlay
+    connect(session, &StreamSession::AnyPlayMenuRequested, window, &QmlMainWindow::menuRequested);
+
     connect(session, &StreamSession::FfmpegFrameAvailable, frame_thread->parent(), [this, use_opengl_renderer]() {
         ChiakiFfmpegDecoder *decoder = session->GetFfmpegDecoder();
         if (!decoder) {

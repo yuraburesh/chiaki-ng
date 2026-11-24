@@ -255,6 +255,15 @@ class StreamSession : public QObject
 		// AnyPlay: чим клієнт керує просто зараз — геймпадом чи клавіатурою з мишкою (перемикається само, за останнім натисканням)
 		bool gamepad_mode = false;
 		void SetGamepadMode(bool gamepad);
+		// AnyPlay: кнопка геймпада для меню AnyPlay. Create (Share) тримають 1 с → AnyPlayMenuRequested; поки вирішуємо,
+		// Create на приставку не йде (інакше вона робила б знімок), коротке натискання віддаємо їй потім як тап.
+		// L3 + R3 разом 1 с — запасний варіант (перемикач menu_sticks).
+		bool menu_share_held = false;
+		bool menu_share_consumed = false;
+		bool menu_sticks_held = false;
+		QTimer menu_hold_timer;
+		ChiakiControllerState menu_tap_state;
+		void UpdateMenuButton(uint32_t buttons);
 		bool cmd_pending = false;   // Cmd is down and not sent yet: it may be the start of Cmd+O
 		bool cmd_forwarded = false; // Cmd press was sent to the game, so its release must be sent too
 		ChiakiControllerState touch_state;
@@ -471,6 +480,8 @@ class StreamSession : public QObject
 		void FecFailure();
 		void ControlProfileChanged();
 		void GamepadModeChanged();
+		// AnyPlay: гравець утримав Create (Share) на геймпаді: відкрити або закрити меню AnyPlay
+		void AnyPlayMenuRequested();
 
 	private slots:
 		void UpdateGamepads();

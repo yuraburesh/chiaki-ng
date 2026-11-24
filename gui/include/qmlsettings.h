@@ -635,6 +635,10 @@ public:
     Q_INVOKABLE void setAnyplayLayout(const QString &id);
     Q_INVOKABLE bool anyplayAutoVehicle() const;
     Q_INVOKABLE void setAnyplayAutoVehicle(bool enabled);
+    // AnyPlay 113: налаштування керування (auto_vehicle, haptic_strong, kick_screen, tremor, aim_slow, menu_create, menu_sticks)
+    Q_INVOKABLE QVariant anyplayOption(const QString &name) const;
+    Q_INVOKABLE void setAnyplayOption(const QString &name, const QVariant &value);
+    Q_INVOKABLE QVariantMap anyplayOptions() const;
     // AnyPlay: екран клавіш з геймпадом
     Q_INVOKABLE QVariantMap anyplayControls() const;
     Q_INVOKABLE QVariantMap anyplayRebind(const QString &profile, const QString &id, const QString &key);
@@ -645,6 +649,8 @@ public:
     Q_INVOKABLE void anyplayPreviewRelease();
     Q_INVOKABLE void anyplayPreviewSetProfile(const QString &id);
     Q_INVOKABLE QVariantMap anyplayPreviewState();
+    // рух миші на екрані клавіш: true — рушій узяв його собі (злам машини, «утримати правий стік»)
+    Q_INVOKABLE bool anyplayPreviewMouse(qreal dx, qreal dy);
     // справжній геймпад на екрані клавіш: поки екран відкритий, кнопки геймпада не ходять по меню
     Q_INVOKABLE void anyplayPadPreview(bool on);
     // клавіша меню AnyPlay (` під Esc) за фізичним місцем, на будь-якій мові клавіатури
@@ -676,6 +682,7 @@ signals:
     void anyplayHapticScreenChanged();
     void anyplayPreviewChanged();   // на екрані клавіш змінилось, що натиснуто
     void anyplayControlsChanged();  // розкладку або клавіші змінили
+    void anyplayOptionsChanged();   // налаштування керування змінили
     void resolutionLocalPS4Changed();
     void resolutionRemotePS4Changed();
     void resolutionLocalPS5Changed();

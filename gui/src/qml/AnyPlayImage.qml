@@ -73,7 +73,7 @@ FocusScope {
                 return { text: qsTr("не потягнув"), kind: "bad" };
             if (tier === "weak") return { text: qsTr("цей комп'ютер не потягне"), kind: "bad" };
             if (tier === "ok") return { text: qsTr("може не встигати"), kind: "wait" };
-            return { text: qsTr("радимо: потужний комп'ютер"), kind: "ok" };
+            return { text: qsTr("радимо"), kind: "ok" };
         }
         if (l === 2) {
             if (capFrom === ChiakiWindow.VideoPreset.HighQuality) return { text: qsTr("не потягнув"), kind: "bad" };

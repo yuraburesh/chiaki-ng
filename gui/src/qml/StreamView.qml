@@ -460,60 +460,94 @@ Item {
         }
     }
 
-    // ── AnyPlay: нагадування про кінець гри — один раз, за 10 хвилин, на 40 секунд, гру не перекриває ──
-    // Мишка під час гри йде в гру, тож кнопки тут немає: клавіша меню відкриває меню одразу на «Продовжити гру».
-    // Не показуємо адміну і коли наступна бронь клієнта йде одразу, без перерви (сервер каже «continues»).
-    // AnyPlay: маленький індикатор під час гри (вмикається за бажанням у «Якість»): кадри за секунду,
-    // швидкість зв'язку, втрати і рівень якості. Поверх гри, кліків не перехоплює.
-    Rectangle {
+    // ── AnyPlay: «системний рядок» під час гри (AnyPlayHud) ──
+    // Чорні смуги над і під кадром (відео 16:9 вписане у вікно) — місце для службових написів, щоб не писати поверх гри.
+    // Спільне для всіх пігулок: масштаб від висоти вікна і чи є смуги (режим «вписати»).
+    readonly property real anyplayHudK: Math.max(1, Math.min(2, view.height / 1000))
+    readonly property bool anyplayHudFits: Chiaki.window.videoMode === ChiakiWindow.VideoMode.Normal
+    readonly property bool anyplayHudHidden: menuController.open || menuController.closing
+
+    // Режим керування («Транспорт», «Пішки»), перемикання геймпад/клавіатура, картинка, зв'язок — угорі по центру.
+    // Одна черга: нове повідомлення замінює попереднє, таймер усередині (show(label, text, ms, detail)).
+    AnyPlayHud {
+        id: anyplayHud
+        z: 100
+        edge: "top"
+        fits: view.anyplayHudFits
+        k: view.anyplayHudK
+        hidden: view.anyplayHudHidden
+        // текст режиму з C++: «🚗 Транспорт. F — назад «🚶 Пішки»» → ярлик «РЕЖИМ», «Транспорт», «F — пішки»
+        function showMode() {
+            const raw = Chiaki.session ? Chiaki.session.controlProfile : "";
+            if (raw === "")
+                return;
+            const p = modeParts(raw);
+            show(qsTr("Режим"), p.text, raw.length > 14 ? 3200 : 1600, p.detail);
+        }
+    }
+
+    // Маленький індикатор під час гри (вмикається за бажанням у «Якість»): кадри за секунду,
+    // швидкість зв'язку, втрати і рівень якості. У верхній смузі ліворуч; пігулку режиму не перекриває:
+    // на вузькому вікні спершу ховає рівень якості, а якщо й так тісно — стає під пігулку.
+    AnyPlayHud {
         id: anyplayStats
-        readonly property real k: Math.max(1, Math.min(2, view.height / 1000))
+        z: 49
+        edge: "top"; align: "left"
+        fits: view.anyplayHudFits
+        k: view.anyplayHudK
+        hidden: view.anyplayHudHidden
+        active: Chiaki.cloud.showStats && !!Chiaki.session && Chiaki.window.hasVideo && !sessionLoading && !sessionError
         readonly property int level: Chiaki.cloud.qualityLevel
         readonly property int target: level === 0 ? 30 : 60
         // кадри, що справді дійшли до екрана (якщо їх ще не порахували — ті, що прийшли з приставки)
         readonly property int fps: Chiaki.window.shownFps > 0 ? Math.min(Chiaki.window.shownFps, Chiaki.window.streamFps || Chiaki.window.shownFps) : Chiaki.window.streamFps
         readonly property real loss: Chiaki.session && isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss * 100 : 0
-        readonly property color good: "#c9f5d8"
-        readonly property color warn: "#ffd9a0"
-        readonly property color bad: "#ff9a9a"
-        visible: Chiaki.cloud.showStats && !!Chiaki.session && Chiaki.window.hasVideo && !sessionLoading && !sessionError
-                 && !(menuController.open || menuController.closing)
-        z: 49
-        anchors { top: parent.top; left: parent.left; topMargin: 8 * k; leftMargin: 8 * k }
-        scale: k
-        transformOrigin: Item.TopLeft
-        width: statsRow.implicitWidth + 18
-        height: statsRow.implicitHeight + 8
-        radius: 3
-        color: "#a6000000"
-        Row {
-            id: statsRow
-            anchors.centerIn: parent
-            spacing: 12
-            Text {
-                font.pixelSize: 12; font.weight: Font.DemiBold
-                color: anyplayStats.fps >= anyplayStats.target * 0.9 ? anyplayStats.good : anyplayStats.fps >= anyplayStats.target * 0.6 ? anyplayStats.warn : anyplayStats.bad
-                text: qsTr("%1 кадр/с").arg(anyplayStats.fps)
-            }
-            Text {
-                font.pixelSize: 12; color: "#e6ffffff"
-                // перші секунди гри чесного виміру ще немає (measuredBitrateReady): замість «0,1 Мбіт/с» пишемо «вимірюю»
-                text: !Chiaki.session ? "" : Chiaki.session.measuredBitrateReady === false ? qsTr("вимірюю…")
-                    : qsTr("%1 Мбіт/с").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ","))
-            }
-            Text {
-                font.pixelSize: 12
-                color: anyplayStats.loss < 0.5 ? "#e6ffffff" : anyplayStats.loss < 2 ? anyplayStats.warn : anyplayStats.bad
-                text: qsTr("втрати %1%").arg(anyplayStats.loss.toFixed(1).replace(".", ","))
-            }
-            Text {
-                font.pixelSize: 12; color: "#b3ffffff"
-                text: [qsTr("Економна 540p"), qsTr("Оптимальна 720p"), qsTr("Максимальна 1080p"), qsTr("Ультра 1080p")][Math.max(0, Math.min(3, anyplayStats.level))]
-            }
+        readonly property color fpsColor: fps >= target * 0.9 ? statsAp.ok : fps >= target * 0.6 ? statsAp.gold : statsAp.bad
+        toneGradient: false
+        tone: fpsColor
+        // скільки місця лишається ліворуч від пігулки режиму
+        readonly property real avail: anyplayHud.active ? (view.width - anyplayHud.width) / 2 - margin * s - 12 * s : view.width
+        readonly property real fullW: 2 * padX + 3 * s + 4 * (9 * s) + statsFps.implicitWidth + statsRate.implicitWidth + statsLoss.implicitWidth + statsLevel.implicitWidth
+        readonly property bool compact: fullW > avail
+        offsetY: compact && fullW - statsLevel.implicitWidth - 9 * s > avail ? height + 6 * s : 0
+        AnyPlayStyle { id: statsAp }
+        Text {
+            id: statsFps
+            anchors.verticalCenter: parent.verticalCenter
+            font.family: statsAp.body; font.weight: Font.DemiBold; font.pixelSize: 13 * anyplayStats.s
+            color: anyplayStats.fpsColor
+            text: qsTr("%1 кадр/с").arg(anyplayStats.fps)
+        }
+        Text {
+            id: statsRate
+            anchors.verticalCenter: parent.verticalCenter
+            font.family: statsAp.body; font.weight: Font.Medium; font.pixelSize: 13 * anyplayStats.s
+            color: statsAp.mute
+            // перші секунди гри чесного виміру ще немає (measuredBitrateReady): замість «0,1 Мбіт/с» пишемо «вимірюю»
+            text: !Chiaki.session ? "" : Chiaki.session.measuredBitrateReady === false ? qsTr("вимірюю…")
+                : qsTr("%1 Мбіт/с").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ","))
+        }
+        Text {
+            id: statsLoss
+            anchors.verticalCenter: parent.verticalCenter
+            font.family: statsAp.body; font.weight: Font.Medium; font.pixelSize: 13 * anyplayStats.s
+            color: anyplayStats.loss < 0.5 ? statsAp.mute : anyplayStats.loss < 2 ? statsAp.gold : statsAp.bad
+            text: qsTr("втрати %1%").arg(anyplayStats.loss.toFixed(1).replace(".", ","))
+        }
+        Text {
+            id: statsLevel
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !anyplayStats.compact
+            font.family: statsAp.body; font.weight: Font.Medium; font.pixelSize: 13 * anyplayStats.s
+            color: statsAp.faint
+            text: [qsTr("Економна 540p"), qsTr("Оптимальна 720p"), qsTr("Максимальна 1080p"), qsTr("Ультра 1080p")][Math.max(0, Math.min(3, anyplayStats.level))]
         }
     }
 
-    Rectangle {
+    // Нагадування про кінець гри — один раз, за 10 хвилин, на 40 секунд, у нижній смузі, гру не перекриває.
+    // Мишка під час гри йде в гру, тож кнопки тут немає: клавіша меню відкриває меню одразу на «Продовжити гру».
+    // Не показуємо адміну і коли наступна бронь клієнта йде одразу, без перерви (сервер каже «continues»).
+    AnyPlayHud {
         id: anyplayEndBanner
         property int tick: 0
         property int mark: 0                 // 10 — уже нагадали перед цим кінцем, 0 — ще ні
@@ -522,18 +556,23 @@ Item {
         readonly property bool eligible: Chiaki.cloud.loggedIn && !Chiaki.cloud.admin && Chiaki.cloud.state === "play"
                                          && Chiaki.cloud.endTs > 0 && Chiaki.cloud.continues !== true
         readonly property bool shown: { tick; return eligible && mark > 0 && secsLeft > 0 && secsLeft <= 10 * 60 && Date.now() < hideAt; }
-        readonly property real k: Math.max(1, Math.min(2, view.height / 1000))
-        visible: shown && !(menuController.open || menuController.closing)
         z: 50
-        anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 16 * k }
-        scale: k
-        transformOrigin: Item.Top
-        width: Math.min(view.width / k - 32, endBannerCol.implicitWidth + 40)
-        height: endBannerCol.implicitHeight + 24
-        radius: 4
-        color: "#f2221d2e"
-        border.color: "#80ffd9a0"
+        edge: "bottom"
+        fits: view.anyplayHudFits
+        k: view.anyplayHudK
+        hidden: view.anyplayHudHidden
+        active: shown
         AnyPlayStyle { id: endAp }
+        label: qsTr("Бронь")
+        text: qsTr("Лишилось %1 хв").arg(Math.max(1, Math.ceil(secsLeft / 60)))
+        textColor: endAp.gold
+        toneGradient: false
+        tone: endAp.gold
+        detail: Chiaki.cloud.guest === true
+            ? (Chiaki.controllers.length ? qsTr("Далі гра іншого гравця. Збережись заздалегідь: меню — ` (під Esc) або %1 на геймпаді").arg(Chiaki.settings.stringForStreamMenuShortcut())
+                                         : qsTr("Далі гра іншого гравця. Збережись заздалегідь: меню — ` (під Esc)"))
+            : (Chiaki.controllers.length ? qsTr("Продовжити бронювання: ` (під Esc) або %1 на геймпаді").arg(Chiaki.settings.stringForStreamMenuShortcut())
+                                         : qsTr("Продовжити бронювання: ` (під Esc)"))
         Timer {
             interval: 1000; repeat: true
             running: Chiaki.cloud.state === "play" && !!Chiaki.session
@@ -551,52 +590,8 @@ Item {
                 }
             }
         }
-        Column {
-            id: endBannerCol
-            anchors.centerIn: parent
-            width: Math.min(implicitWidth, anyplayEndBanner.width - 40)
-            spacing: 6
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 10
-                Text {
-                    anchors.baseline: endBannerAsk.baseline
-                    text: qsTr("Лишилось %1 хв.").arg(Math.max(1, Math.ceil(anyplayEndBanner.secsLeft / 60)))
-                    font.family: endAp.display; font.weight: Font.Medium; font.pixelSize: 18
-                    font.letterSpacing: 1.5; font.capitalization: Font.AllUppercase
-                    color: endAp.gold
-                }
-                Text {
-                    id: endBannerAsk
-                    text: Chiaki.cloud.guest === true ? qsTr("Гостьовий доступ: далі оплачена гра іншого гравця") : qsTr("Продовжити бронювання?")
-                    font.family: endAp.body; font.weight: Font.DemiBold; font.pixelSize: 16
-                    color: endAp.ink
-                }
-            }
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 6
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Натисни")
-                    font.family: endAp.body; font.pixelSize: 13
-                    color: endAp.mute
-                }
-                ApChip { anchors.verticalCenter: parent.verticalCenter; key: true; text: "`" }
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: Chiaki.cloud.guest === true
-                        ? (Chiaki.controllers.length ? qsTr("(під Esc) або %1 на геймпаді: меню AnyPlay. Збережись у грі заздалегідь").arg(Chiaki.settings.stringForStreamMenuShortcut())
-                                                     : qsTr("(під Esc): меню AnyPlay. Збережись у грі заздалегідь"))
-                        : Chiaki.controllers.length
-                        ? qsTr("(під Esc) або %1 на геймпаді: відкриється меню AnyPlay з продовженням").arg(Chiaki.settings.stringForStreamMenuShortcut())
-                        : qsTr("(під Esc): відкриється меню AnyPlay з продовженням")
-                    font.family: endAp.body; font.pixelSize: 13
-                    color: endAp.mute
-                }
-            }
-        }
     }
+
 
     Component {
         id: menuContentComponent
@@ -1533,48 +1528,33 @@ Item {
                 sessionLoading = false;
             // AnyPlay: підказка новачку — де меню, клавіші й вихід
             if (Chiaki.session && Chiaki.session.connected && view.anyplayClientMenu)
-                anyplayStartHint.show();
+                anyplayStartHint.showHint();
         }
 
         // AnyPlay: show the control mode (on foot / vehicle / aircraft) for a moment when it changes
         function onControlProfileChanged() {
-            anyplayProfileLabel.modeText = "";
-            anyplayProfileLabel.opacity = 1;
-            anyplayProfileTimer.interval = anyplayProfileLabel.text.length > 14 ? 3200 : 1600;
-            anyplayProfileTimer.restart();
+            anyplayHud.showMode();
         }
 
         // AnyPlay: керування перемкнулось між геймпадом і клавіатурою з мишкою
         function onGamepadModeChanged() {
-            anyplayProfileLabel.modeText = Chiaki.session.gamepadMode ? qsTr("Керування: геймпад") : qsTr("Керування: клавіатура і мишка");
-            anyplayProfileLabel.opacity = 1;
-            anyplayProfileTimer.interval = 2200;
-            anyplayProfileTimer.restart();
+            anyplayHud.show(qsTr("Керування"), Chiaki.session.gamepadMode ? qsTr("Геймпад") : qsTr("Клавіатура і мишка"), 2200);
         }
     }
 
-    Rectangle {
+    // AnyPlay: підказка новачку в нижній смузі — де меню, клавіші й вихід (12 с після підключення)
+    AnyPlayHud {
         id: anyplayStartHint
         z: 100
-        function show() { opacity = 1; anyplayStartHintTimer.restart(); }
-        anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 30 }
-        width: anyplayStartHintText.implicitWidth + 40
-        height: anyplayStartHintText.implicitHeight + 20
-        radius: 4
-        color: "#f2221d2e"
-        border.color: "#66ffffff"
-        opacity: 0
-        visible: opacity > 0 && !(menuController.open || menuController.closing)
-        Behavior on opacity { NumberAnimation { duration: 400 } }
-        Label {
-            id: anyplayStartHintText
-            anchors.centerIn: parent
-            font.family: "Inter"; font.weight: Font.Medium; font.pixelSize: 15; color: "#f5f3f7"
-            text: Chiaki.cloud.admin || Chiaki.cloud.guest === true
-                ? qsTr("Меню AnyPlay: %1. Там клавіші, якість і вихід").arg(view.anyplayMenuKey)
-                : qsTr("Меню AnyPlay: %1. Там клавіші, продовження і вихід").arg(view.anyplayMenuKey)
+        edge: "bottom"
+        fits: view.anyplayHudFits
+        k: view.anyplayHudK
+        hidden: view.anyplayHudHidden
+        function showHint() {
+            const key = view.anyplayMenuKey;
+            show(qsTr("Меню"), key.charAt(0).toUpperCase() + key.slice(1), 12000,
+                Chiaki.cloud.admin || Chiaki.cloud.guest === true ? qsTr("Там клавіші, якість і вихід") : qsTr("Там клавіші, продовження і вихід"));
         }
-        Timer { id: anyplayStartHintTimer; interval: 12000; onTriggered: anyplayStartHint.opacity = 0 }
     }
 
     // AnyPlay «Авто»: якщо зв'язок кілька разів поспіль поганий — знижуємо якість і підключаємось знову
@@ -1608,10 +1588,7 @@ Item {
                     Chiaki.stopSession(false);
                 } else if (!floorTold) {
                     floorTold = true;
-                    anyplayProfileLabel.modeText = qsTr("Зв'язок дуже слабкий навіть на найнижчій якості");
-                    anyplayProfileLabel.opacity = 1;
-                    anyplayProfileTimer.interval = 5000;
-                    anyplayProfileTimer.restart();
+                    anyplayHud.show(qsTr("Зв'язок"), qsTr("Дуже слабкий навіть на найнижчій якості"), 5000);
                 }
             }
             if (!reported && good >= 300) {   // 10 хвилин без втрат: наступного разу можна спробувати якість вище
@@ -1664,39 +1641,9 @@ Item {
                 slow = 0;
                 if (Chiaki.cloud.renderLighter()) {
                     check = 5; still = 0;
-                    anyplayProfileLabel.modeText = qsTr("Спрощую обробку картинки, щоб гра йшла плавно");
-                    anyplayProfileLabel.opacity = 1;
-                    anyplayProfileTimer.interval = 4000;
-                    anyplayProfileTimer.restart();
+                    anyplayHud.show(qsTr("Картинка"), qsTr("Спрощую обробку, щоб гра йшла плавно"), 4000);
                 }
             }
         }
     }
-
-    Label {
-        id: anyplayProfileLabel
-        z: 100
-        anchors {
-            top: parent.top
-            horizontalCenter: parent.horizontalCenter
-            topMargin: 28
-        }
-        property string modeText: ""
-        text: modeText !== "" ? modeText : (Chiaki.session ? Chiaki.session.controlProfile : "")
-        font.pixelSize: 26
-        font.bold: true
-        color: "white"
-        style: Text.Outline
-        styleColor: "black"
-        opacity: 0
-        visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 300 } }
-
-        Timer {
-            id: anyplayProfileTimer
-            interval: 1600
-            onTriggered: anyplayProfileLabel.opacity = 0
-        }
-    }
-
 }

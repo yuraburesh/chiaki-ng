@@ -630,6 +630,25 @@ QJsonObject AnyPlayCloud::takeStats()
 		if(p.contains(QStringLiteral("vrr")) && p.value(QStringLiteral("vrr")).isValid())
 			o["vrr"] = p.value(QStringLiteral("vrr")).toBool();
 	}
+	// К18: яка обробка картинки діє і чи встигає комп'ютер (властивості виставляє код екрана «Зображення»; без них поля пропускаємо)
+	{
+		QmlMainWindow *w = backend->qmlWindow();
+		auto prop = [this, w](const char *name) {   // спершу Chiaki.cloud, потім вікно (де малюється картинка)
+			QVariant v = property(name);
+			if(!v.isValid() && w)
+				v = w->property(name);
+			return v;
+		};
+		const QVariant render = prop("renderName"), capped = prop("renderCapped"), gpu = prop("gpuName"), tier = prop("pcTier");
+		if(render.isValid() && !render.toString().isEmpty())
+			o["render"] = render.toString();
+		if(capped.isValid() && capped.toBool())
+			o["renderCapped"] = true;
+		if(gpu.isValid() && !gpu.toString().isEmpty())
+			o["gpu"] = gpu.toString();
+		if(tier.isValid() && !tier.toString().isEmpty())
+			o["pcTier"] = tier.toString();
+	}
 	if(complaint_)
 	{
 		o["complaint"] = true;
@@ -685,14 +704,14 @@ void AnyPlayCloud::setMyPsn(const QString &psn)
 	});
 }
 
-void AnyPlayCloud::uploadConsole()
+void AnyPlayCloud::uploadConsole(const QString &mac)
 {
 	if(!admin_)
 		return;
 	QJsonObject host;
 	for(const RegisteredHost &h : settings->GetRegisteredHosts())
 	{
-		if(chiaki_target_is_ps5(h.GetTarget()))
+		if(chiaki_target_is_ps5(h.GetTarget()) && (mac.isEmpty() || h.GetServerMAC().ToString() == mac))
 		{
 			host = QJsonObject::fromVariantMap(h.ToVariantMap());
 			break;
@@ -753,6 +772,100 @@ void AnyPlayCloud::adminDropShared()
 	});
 }
 
+// К16: кілька спільних акаунтів PSN на приставку: один активний (на нього йдуть нові ігри клієнтів)
+void AnyPlayCloud::adminSharedActive(qint64 consoleId)
+{
+	if(!admin_ || consoleId <= 0)
+		return;
+	QJsonObject body;
+	body["action"] = "shared_active";
+	body["consoleId"] = consoleId;
+	request("POST", "/api/app/admin", body, [this](int status, const QJsonObject &o) {
+		const QString e = o.value("error").toString();
+		if(status == 200 && o.value("ok").toBool())
+			emit message(tr("✓ Тепер нові ігри клієнтів на цій приставці йдуть через цей акаунт. Хто вже грає, дограє на попередньому."));
+		else if(e == "action" || (status == 404 && e != "not_found"))
+			emit message(tr("Сервер ще не вміє перемикати спільні акаунти. Онови бота: у Telegram натисни «Встановити»."));
+		else
+			emit message(adminError(o, status, tr("Не вдалося перемкнути акаунт (помилка %1).").arg(status)));
+		refreshAdmin();
+	});
+}
+
+void AnyPlayCloud::adminSharedRemove(qint64 consoleId)
+{
+	if(!admin_ || consoleId <= 0)
+		return;
+	QJsonObject body;
+	body["action"] = "shared_remove";
+	body["consoleId"] = consoleId;
+	request("POST", "/api/app/admin", body, [this](int status, const QJsonObject &o) {
+		const QString e = o.value("error").toString();
+		if(status == 200 && o.value("ok").toBool())
+			emit message(tr("Спільний акаунт прибрано з сервера."));
+		else if(e == "busy" || e == "last")
+			emit message(tr("Цей акаунт зараз єдиний активний на приставці, і на неї є броні. Спершу зроби активним інший."));
+		else if(e == "action" || (status == 404 && e != "not_found"))
+			emit message(tr("Сервер ще не вміє прибирати окремі акаунти. Онови бота: у Telegram натисни «Встановити»."));
+		else
+			emit message(adminError(o, status, tr("Не вдалося прибрати акаунт (помилка %1).").arg(status)));
+		refreshAdmin();
+	});
+}
+
+// К15: приставка з панелі сервера → PS5 зі списку цієї програми. Сервер може назвати її ідентифікатором прив'язки
+// (host_id: MAC у base64 або hex), назвою з прив'язки (label/host) або лише ім'ям блока; шукаємо за всім, що є.
+int AnyPlayCloud::adminHostIndex(const QVariantMap &unit) const
+{
+	QStringList macs, names;
+	for(const char *k : { "hostId", "host_id", "mac", "server_mac" })
+	{
+		const QString v = unit.value(QString::fromLatin1(k)).toString().trimmed();
+		if(v.isEmpty())
+			continue;
+		macs << v.toLower();
+		const QByteArray raw = QByteArray::fromBase64(v.toLatin1());
+		if(raw.size() == 6)
+			macs << QString::fromLatin1(raw.toHex());
+	}
+	for(const char *k : { "label", "host", "nick", "name" })
+	{
+		const QString v = unit.value(QString::fromLatin1(k)).toString().trimmed();
+		if(!v.isEmpty())
+			names << v;
+	}
+	const QVariantList hosts = backend->hosts();
+	for(int pass = 0; pass < 2; pass++)   // спершу точний збіг MAC, потім назва
+	{
+		for(int i = 0; i < hosts.size(); i++)
+		{
+			const QVariantMap h = hosts.at(i).toMap();
+			if(!h.value("display").toBool() || !h.value("registered").toBool())
+				continue;
+			if(pass == 0 && macs.contains(h.value("mac").toString().toLower()))
+				return i;
+			if(pass == 1 && names.contains(h.value("name").toString(), Qt::CaseInsensitive))
+				return i;
+		}
+	}
+	return -1;
+}
+
+QVariantList AnyPlayCloud::localConsoles() const
+{
+	QVariantList out;
+	for(const RegisteredHost &h : settings->GetRegisteredHosts())
+	{
+		if(!chiaki_target_is_ps5(h.GetTarget()))
+			continue;
+		QVariantMap m;
+		m["name"] = h.GetServerNickname().isEmpty() ? QStringLiteral("PS5") : h.GetServerNickname();
+		m["mac"] = h.GetServerMAC().ToString();
+		out << m;
+	}
+	return out;
+}
+
 QString AnyPlayCloud::localPsnName() const
 {
 	if(settings->GetPsnRefreshToken().isEmpty() || settings->GetPsnAccountId().isEmpty())
@@ -786,10 +899,10 @@ void AnyPlayCloud::openMyPsnLink()
 	QDesktopServices::openUrl(url);
 }
 
-QString AnyPlayCloud::localConsoleName() const
+QString AnyPlayCloud::localConsoleName(const QString &mac) const
 {
 	for(const RegisteredHost &h : settings->GetRegisteredHosts())
-		if(chiaki_target_is_ps5(h.GetTarget()))
+		if(chiaki_target_is_ps5(h.GetTarget()) && (mac.isEmpty() || h.GetServerMAC().ToString() == mac))
 			return h.GetServerNickname().isEmpty() ? QStringLiteral("PS5") : h.GetServerNickname();
 	return QString();
 }

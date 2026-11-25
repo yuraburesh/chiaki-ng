@@ -44,6 +44,19 @@ GridLayout {
         }
         return "";
     }
+    // ручний перемикач «пішки ↔ транспорт» (дія з "profile": "toggle"; 115: U)
+    function toggleKeyName() {
+        const profiles = Chiaki.settings.anyplayProfiles();
+        for (let i = 0; i < profiles.length; i++) {
+            if (profiles[i].id !== "global")
+                continue;
+            const list = profiles[i].bindings;
+            for (let j = 0; j < list.length; j++)
+                if (list[j].profile === "toggle")
+                    return list[j].key ? list[j].keyName : "";
+        }
+        return "";
+    }
     // 113: плавні стіки з клавіатури (клавіші зі спільних, див. anyplaystick.h)
     function globalKey(id) {
         const profiles = Chiaki.settings.anyplayProfiles();
@@ -60,7 +73,17 @@ GridLayout {
     readonly property string hotwireKey: globalKey("hotwire")
     readonly property string preciseKey: globalKey("precise")
     readonly property string holdKey: globalKey("hold_stick")
-    readonly property var lockRow: (hotwireKey ? [{
+    readonly property string toggleKey: toggleKeyName()
+    readonly property string enterKey: footKey("vehicle")
+    // 115: F (△) режим не перемикає, лише дія в грі; режим міняє автоматика за курками, вручну — U
+    readonly property var modeRow: toggleKey ? [{
+        title: qsTr("Пішки і транспорт"),
+        text: (enterKey ? qsTr("%1 працює як △ у грі: сісти в машину, взяти предмет, відчинити двері. Режим клавіш вона не міняє: ").arg(enterKey)
+                        : qsTr("Режим клавіш "))
+            + qsTr("програма сама вмикає «Транспорт», коли герой сів у машину (приставка дає опір педалям газу й гальма), і «Пішки», коли вийшов. Якщо вона помилилась: %1 перемикає пішки і транспорт, F1, F2, F3 обирають режим.").arg(toggleKey),
+        keys: [toggleKey]
+    }] : []
+    readonly property var lockRow: modeRow.concat(hotwireKey ? [{
         title: qsTr("Злам машини (GTA VI)"),
         text: qsTr("Тримай %1: обидва стіки стають назустріч, а мишею ти крутиш їх разом (правий за мишею, лівий дзеркально). Коліщатко і стрілки ← → докручують дрібно. Відпустив %1 — усе як було. Якщо гра просить просто крутити один стік по колу: лівий клавішами %2, правий клавішами %3.")
             .arg(hotwireKey)

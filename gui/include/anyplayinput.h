@@ -100,10 +100,12 @@ class AnyPlayInput : public QObject
 
 		// Сигнали від приставки для автоматичного «Транспорт» / «Пішки» і для занурення (викликати в потоці об'єкта)
 		void NoteRumble(uint8_t left, uint8_t right);
-		void NoteTriggers(uint8_t type_left, uint8_t type_right);
+		// empty_*: усі 10 байтів параметрів ефекту нульові (гра прибрала ефект, не змінивши тип)
+		void NoteTriggers(uint8_t type_left, uint8_t type_right, bool empty_left = false, bool empty_right = false);
 
-		// «Автоматично визначати транспорт»: режим перемикається сам за ефектами курків і вібрацією
-		// (anyplayvehicle.h); F лишається ручним перемикачем. Типово увімкнено.
+		// «Автоматично визначати транспорт»: режим перемикається сам за ефектами курків, △ і вібрацією
+		// (anyplayvehicle.h, правила окремо для GTA V і GTA VI). 115: F (△) режим не перемикає, лише «можлива подія»;
+		// вручну — клавіша з "profile": "toggle" (U), F1–F3, вкладки. Типово увімкнено.
 		static bool AutoVehicle();
 		static void SetAutoVehicle(bool enabled);
 
@@ -177,7 +179,7 @@ class AnyPlayInput : public QObject
 		void ProfileChanged(const QString &name);
 		// Постріл або удар з клавіатури: віддача на екрані (сила 0..1), якщо увімкнено kick_screen
 		void Kick(float strength);
-		// Автоматика або гравець перемкнули режим; текст для журналу [anyplay-vehicle]
+		// Автоматика або гравець перемкнули режим, або причина, чому не перемкнули; текст для журналу [anyplay-mode]
 		void VehicleLog(const QString &line);
 
 	private:
@@ -197,6 +199,8 @@ class AnyPlayInput : public QObject
 		QList<const APBinding *> Slots(const QString &owner) const;
 		APStep Output() const;
 		void SwitchProfile(const QString &target);
+		QString ToggleKeyName() const;            // клавіша ручного «пішки ↔ транспорт» ("" — нема)
+		QString ModeHint(const QString &id) const; // «🚗 Транспорт. U — назад «🚶 Пішки»»
 		void SetProfile(const QString &id, const QString &hint_text);
 		QString ProfileName(const QString &id) const;
 		void StartMacro(const QList<APStep> &steps);
@@ -231,7 +235,9 @@ class AnyPlayInput : public QObject
 		uint8_t trig_left = 0, trig_right = 0;       // останні типи ефектів курків від приставки
 		uint8_t rumble_left = 0, rumble_right = 0;   // остання вібрація
 		void TickVehicle();
-		void ApplyAuto(bool to_vehicle);
+		void ApplyAuto(bool to_vehicle, const QString &why);
+		void NoteGameEvent(const APBinding &b);   // △ і меню гри для автоматики
+		void FlushVehicleLog();
 
 		// точний режим лівого стіка (тримають клавішу Precise)
 		bool precise_active = false;

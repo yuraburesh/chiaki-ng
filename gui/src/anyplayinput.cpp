@@ -396,8 +396,8 @@ void AnyPlayInput::Load()
 	auto_vehicle = preview ? false : AutoVehicle();
 	hint.clear();
 	ReleaseAll();
-	// автоматика транспорту: з чистого аркуша (приставка про курки ще нічого не казала)
-	vehicle.Reset(current_profile == QLatin1String("vehicle"), clock.elapsed());
+	// автоматика транспорту: з чистого аркуша (приставка про курки ще нічого не казала), правила своєї гри
+	vehicle.Reset(AnyPlayVehicleRulesFor(layout.toStdString()), IsVehicleMode(current_profile), clock.elapsed());
 	bool has_vehicle = false;
 	for(const auto &p : profiles)
 		has_vehicle |= p.id == QLatin1String("vehicle");
@@ -555,6 +555,7 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 	if(!binding)
 		return false;
 	APBinding b = *binding; // копія: перемикання режиму нижче робить вказівник недійсним
+	NoteGameEvent(b);
 	// злам машини: стрілки дрібно докручують стіки (вліво — проти годинникової)
 	if(hotwire_active && (b.id == QLatin1String("nav_left") || b.id == QLatin1String("nav_right")))
 	{
@@ -908,17 +909,33 @@ void AnyPlayInput::NextMacroStep()
 	emit Changed();
 }
 
+// Клавіша ручного перемикання «пішки ↔ транспорт» (дія з "profile": "toggle"; 115: U, а не F)
+QString AnyPlayInput::ToggleKeyName() const
+{
+	for(const auto &p : profiles)
+		for(const auto &b : p.bindings)
+			if(b.profile == QLatin1String("toggle") && !b.key.isEmpty())
+				return DisplayName(b.key);
+	return QString();
+}
+
+// Підказка після перемикання: «🚗 Транспорт. U — назад «🚶 Пішки»» (AnyPlayHud робить з неї «U — пішки»)
+QString AnyPlayInput::ModeHint(const QString &id) const
+{
+	const QString key = ToggleKeyName();
+	if(key.isEmpty() || (id != QLatin1String("foot") && id != QLatin1String("vehicle")))
+		return QString();
+	const QString other = id == QLatin1String("foot") ? QStringLiteral("vehicle") : QStringLiteral("foot");
+	return QStringLiteral("%1. %2 — назад «%3»").arg(ProfileName(id), key, ProfileName(other));
+}
+
 void AnyPlayInput::SwitchProfile(const QString &target)
 {
 	if(target == QLatin1String("toggle"))
 	{
-		if(current_profile == QLatin1String("foot"))
-		{
-			SetProfile(QStringLiteral("vehicle"),
-				QStringLiteral("%1. F — назад «%2»").arg(ProfileName(QStringLiteral("vehicle")), ProfileName(QStringLiteral("foot"))));
-			return;
-		}
-		SetProfile(QStringLiteral("foot"), QString());
+		// ручний перемикач (U): пішки → транспорт, транспорт чи авіація → пішки
+		const QString id = current_profile == QLatin1String("foot") ? QStringLiteral("vehicle") : QStringLiteral("foot");
+		SetProfile(id, ModeHint(id));
 		return;
 	}
 	SetProfile(target, QString());
@@ -928,16 +945,16 @@ void AnyPlayInput::SetProfile(const QString &id, const QString &hint_text)
 {
 	if(id == current_profile && hint_text.isEmpty() && hint.isEmpty())
 		return;
-	const bool was_vehicle = current_profile == QLatin1String("vehicle");
+	const QString was = current_profile;
 	current_profile = id;
 	hint = hint_text;
-	// гравець перемкнув сам (F, F1–F3, вкладка): автоматика приймає це і кілька секунд не сперечається
+	// гравець перемкнув сам (U, F1–F3, вкладка): автоматика приймає це і кілька секунд не сперечається
 	if(auto_vehicle && !preview)
 	{
-		const bool now_vehicle = id == QLatin1String("vehicle");
-		vehicle.Manual(now_vehicle, clock.elapsed());
-		if(now_vehicle != was_vehicle)
-			emit VehicleLog(QStringLiteral("вручну → %1 (L=%2 R=%3)").arg(id).arg(trig_left, 2, 16, QLatin1Char('0')).arg(trig_right, 2, 16, QLatin1Char('0')));
+		vehicle.Manual(IsVehicleMode(id), clock.elapsed());
+		vehicle.TakeLog();
+		if(id != was)
+			emit VehicleLog(QStringLiteral("вручну %1 → %2 (%3)").arg(was, id, QString::fromStdString(vehicle.TrigText())));
 	}
 	emit ProfileChanged(StatusText());
 }
@@ -964,7 +981,7 @@ void AnyPlayInput::NoteRumble(uint8_t left, uint8_t right)
 	rumble_left = left;
 	rumble_right = right;
 	const qint64 now = clock.elapsed();
-	vehicle.Rumble(left || right, now);
+	vehicle.Rumble(left, right, now);
 	// тремор камери: від помітної вібрації правий стік кілька кадрів смикається (гра хитає камеру)
 	const int strength = qMax(left, right);
 	if(strength >= TremorMinRumble && !preview && !gamepad_mode && now - tremor_last >= TremorMinGapMs && Option(QStringLiteral("tremor")).toBool())
@@ -977,11 +994,46 @@ void AnyPlayInput::NoteRumble(uint8_t left, uint8_t right)
 	}
 }
 
-void AnyPlayInput::NoteTriggers(uint8_t type_left, uint8_t type_right)
+void AnyPlayInput::NoteTriggers(uint8_t type_left, uint8_t type_right, bool empty_left, bool empty_right)
 {
 	trig_left = type_left;
 	trig_right = type_right;
-	vehicle.Triggers(type_left, type_right, clock.elapsed());
+	vehicle.Triggers(AnyPlayTriggerClass(type_left, empty_left), AnyPlayTriggerClass(type_right, empty_right),
+		type_left, type_right, clock.elapsed());
+}
+
+// Натиснули клавішу гри: △ — «можливо, сідає чи виходить» (чекаємо підтвердження курками), пауза/мапа — меню гри
+void AnyPlayInput::NoteGameEvent(const APBinding &b)
+{
+	if(!auto_vehicle || preview || !vehicle_timer.isActive())
+		return;
+	const qint64 now = clock.elapsed();
+	const bool global = b.owner == QLatin1String("global");
+	if(global && b.id == QLatin1String("pause"))
+		vehicle.SetMenu(!vehicle.menu, now);
+	else if(global && (b.id == QLatin1String("map") || b.id == QLatin1String("ps")))
+		vehicle.SetMenu(true, now);
+	else if(!global && b.kind != APBinding::Kind::None)
+		vehicle.SetMenu(false, now);   // клавіша дії в грі: меню вже закрите
+	const bool warned = vehicle.warned_no_effects;
+	if(!global && b.kind == APBinding::Kind::Hold && (b.out.buttons & CHIAKI_CONTROLLER_BUTTON_PYRAMID))
+		vehicle.Interact(now);
+	FlushVehicleLog();
+	if(vehicle.warned_no_effects && !warned)
+	{
+		// адаптивні курки в грі вимкнені (або гра їх не має): автоматика сліпа, підказуємо ручну клавішу
+		const QString key = ToggleKeyName();
+		hint = key.isEmpty() ? QStringLiteral("Режим сам не перемкнеться: увімкни адаптивні курки в налаштуваннях гри")
+			: QStringLiteral("Режим сам не перемкнеться: %1 — пішки або транспорт").arg(key);
+		emit ProfileChanged(StatusText());
+	}
+}
+
+void AnyPlayInput::FlushVehicleLog()
+{
+	const std::string line = vehicle.TakeLog();
+	if(!line.empty())
+		emit VehicleLog(QString::fromStdString(line));
 }
 
 // Кілька разів на секунду: чи час перемкнути режим за курками
@@ -989,27 +1041,35 @@ void AnyPlayInput::TickVehicle()
 {
 	if(!auto_vehicle || preview)
 		return;
-	// в авіації автоматика мовчить: літак теж дає ефекти на курки, а «транспорт» був би неправильним режимом
-	if(current_profile == QLatin1String("air"))
-		return;
-	const int verdict = vehicle.Tick(clock.elapsed());
+	const qint64 now = clock.elapsed();
+	// пішки тримають приціл чи постріл: ефекти на курках зараз від зброї, «сів» не рахуємо
+	const bool aiming = current_profile == QLatin1String("foot")
+		&& (Output().buttons & (CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_R2));
+	vehicle.SetAiming(aiming, now);
+	// в «Авіації» автоматика лише виходить (пішки), а не вмикає «Транспорт»: детектор вважає авіацію транспортом
+	const int verdict = vehicle.Tick(now);
+	const QString why = QString::fromStdString(vehicle.TakeLog());
 	if(verdict > 0)
-		ApplyAuto(true);
+		ApplyAuto(true, why);
 	else if(verdict < 0)
-		ApplyAuto(false);
+		ApplyAuto(false, why);
+	else if(!why.isEmpty())
+		emit VehicleLog(why);
 }
 
-void AnyPlayInput::ApplyAuto(bool to_vehicle)
+void AnyPlayInput::ApplyAuto(bool to_vehicle, const QString &why)
 {
 	const QString id = to_vehicle ? QStringLiteral("vehicle") : QStringLiteral("foot");
 	if(id == current_profile)
+	{
+		if(!why.isEmpty())
+			emit VehicleLog(why);
 		return;
-	emit VehicleLog(QStringLiteral("авто → %1 (L=%2 R=%3, вібрація %4/%5)").arg(id)
-		.arg(trig_left, 2, 16, QLatin1Char('0')).arg(trig_right, 2, 16, QLatin1Char('0')).arg(rumble_left).arg(rumble_right));
+	}
+	emit VehicleLog(QStringLiteral("авто %1 → %2: %3").arg(current_profile, id, why));
 	ReleaseAll();
 	current_profile = id;
-	hint = to_vehicle ? QStringLiteral("%1 (сів у транспорт). F — вийти").arg(ProfileName(id))
-		: QStringLiteral("%1 (вийшов з транспорту)").arg(ProfileName(id));
+	hint = ModeHint(id);
 	emit ProfileChanged(StatusText());
 	emit Changed();
 }

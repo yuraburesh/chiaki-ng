@@ -15,6 +15,7 @@
         {"id": "pause", "name": "Пауза / меню", "key": "Esc", "btn": ["OPTIONS"]},
         {"id": "map", "name": "Мапа", "key": "N", "btn": ["TOUCHPAD"]},
         {"id": "ps", "name": "Кнопка PS", "key": "P", "btn": ["PS"]},
+        {"id": "mode_toggle", "name": "Режим: пішки або транспорт", "key": "U", "do": "none", "profile": "toggle"},
         {"id": "mode_foot", "name": "Режим «Пішки»", "key": "F1", "do": "none", "profile": "foot"},
         {"id": "mode_vehicle", "name": "Режим «Транспорт»", "key": "F2", "do": "none", "profile": "vehicle"},
         {"id": "mode_air", "name": "Режим «Авіація»", "key": "F3", "do": "none", "profile": "air"},
@@ -51,7 +52,7 @@
         {"id": "reload", "name": "Перезарядка", "key": "R", "btn": ["MOON"]},
         {"id": "grenade", "name": "Кинути гранату", "key": "G", "do": "macro", "steps": [{"btn": ["L1"], "ms": 200}, {"btn": ["L1"], "r": [-0.71, -0.71], "ms": 340}, {"ms": 80}, {"btn": ["R2"], "ms": 120}, {"ms": 40}]},
         {"id": "interact", "name": "Взаємодія", "key": "E", "btn": ["DPAD_RIGHT"]},
-        {"id": "vehicle", "name": "Сісти в транспорт", "key": "F", "btn": ["PYRAMID"], "profile": "toggle"},
+        {"id": "vehicle", "name": "Сісти в транспорт, взаємодія", "key": "F", "btn": ["PYRAMID"]},
         {"id": "ability", "name": "Особлива здібність", "key": "CapsLock", "btn": ["L3", "R3"]},
         {"id": "camera", "name": "Змінити камеру", "key": "V", "btn": ["SHARE"]},
         {"id": "look_back", "name": "Подивитися назад", "key": "C", "btn": ["R3"]},
@@ -74,7 +75,7 @@
         {"id": "steer_left", "name": "Кермо вліво", "key": "A", "l": [-1, 0]},
         {"id": "steer_right", "name": "Кермо вправо", "key": "D", "l": [1, 0]},
         {"id": "handbrake", "name": "Ручне гальмо", "key": "Space", "btn": ["R1"]},
-        {"id": "exit", "name": "Вийти з транспорту", "key": "F", "btn": ["PYRAMID"], "profile": "foot"},
+        {"id": "exit", "name": "Вийти з транспорту", "key": "F", "btn": ["PYRAMID"]},
         {"id": "horn", "name": "Клаксон", "key": "E", "btn": ["L3"]},
         {"id": "lights", "name": "Фари", "key": "H", "btn": ["DPAD_RIGHT"]},
         {"id": "radio", "name": "Радіо (колесо станцій)", "key": "Q", "btn": ["DPAD_LEFT"]},
@@ -103,7 +104,7 @@
         {"id": "gear", "name": "Шасі", "key": "G", "btn": ["L3"]},
         {"id": "air_fire", "name": "Зброя", "key": "MouseLeft", "btn": ["BOX"]},
         {"id": "air_camera", "name": "Камера зброї", "key": "MouseRight", "btn": ["R3"]},
-        {"id": "exit", "name": "Вийти", "key": "F", "btn": ["PYRAMID"], "profile": "foot"},
+        {"id": "exit", "name": "Вийти", "key": "F", "btn": ["PYRAMID"]},
         {"id": "camera", "name": "Змінити камеру", "key": "V", "btn": ["SHARE"]}
       ]
     }

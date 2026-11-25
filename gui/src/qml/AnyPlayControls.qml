@@ -42,6 +42,10 @@ Item {
     function setSens(v) { if (vehicleSens) Chiaki.settings.anyplayVehicleSensitivity = v; else Chiaki.settings.anyplayMouseSensitivity = v; }
     property var waiting: null              // {p, id, name}: чекаємо нову клавішу для цієї дії
     readonly property var view: buildView(cfg, mode)
+    // 115: пояснення до «Автоматично визначати транспорт» з клавішею ручного перемикання з розкладки (U)
+    readonly property string toggleKey: { const g = profOf(cfg, "global"); const t = g ? g.bindings.find((x) => x.profile === "toggle" && x.key) : null; return t ? kname(t.key) : ""; }
+    readonly property string autoVehicleText: qsTr("«Транспорт» вмикається, коли герой справді сів у машину (приставка дає опір педалям газу й гальма), «Пішки» — коли вийшов. F (△) лише дія в грі: сісти, взяти, відчинити; програма після неї чекає підтвердження курками і без нього режим не міняє.")
+        + (toggleKey ? qsTr(" Якщо помилилась: %1 перемикає вручну.").arg(toggleKey) : "")
     readonly property alias wireData: wires.wd    // лінії (для перевірки)
 
     // ── живий показ: що натиснуто ──
@@ -89,6 +93,7 @@ Item {
             return aimPn(b) ? qsTr("по колу; у прицілі: %1").arg(aimPn(b)) : qsTr("по колу");
         }
         if (b.when) return pn + qsTr(", у прицілі");
+        if (b.profile === "toggle") return qsTr("вручну, якщо програма помилилась");
         if (b.profile && !b.btn) return qsTr("режим");
         return pn;
     }
@@ -113,12 +118,15 @@ Item {
         v.modes = c.profiles.filter((p) => p.id !== "global").map((p) => ({ id: p.id, name: stripIcon(p.name), key: modeKey(p.id) }));
         v.modes.push({ id: "global", name: qsTr("Меню"), key: "" });
         if (c.profiles.length > 2) {
-            const foot = profOf(c, "foot"), ent = foot ? tagged(foot).find((x) => x.profile === "toggle") : null;
+            // 115: F (△) лише дія в грі (сісти, взяти, відчинити); режим міняє автоматика за курками, вручну — окрема клавіша
+            const foot = profOf(c, "foot"), tog = glob.find((x) => x.profile === "toggle" && x.key);
             const keys = ["foot", "vehicle", "air"].map(modeKey).filter((k) => k);
-            v.hint = qsTr("Режим у грі перемикається сам: ")
-                + (ent && ent.key ? qsTr("сів у транспорт або вийшов клавішею %1. ").arg(bold(kname(ent.key))) : "")
-                + (keys.length ? qsTr("Якщо треба вручну: %1 (на MacBook: Fn + F1), або клацни вкладку тут.").arg(keys.map((k) => bold(kname(k))).join(", "))
-                               : qsTr("Клацни вкладку, щоб побачити клавіші."));
+            const ent = foot ? tagged(foot).find((x) => x.id === "vehicle" && x.key) : null;
+            v.hint = qsTr("Режим у грі перемикається сам: сів у машину — «Транспорт», вийшов — «Пішки» (програма бачить опір педалей на курках). ")
+                + (ent ? qsTr("%1 лише дія в грі (△: сісти, взяти, відчинити), режим вона не міняє. ").arg(bold(kname(ent.key))) : "")
+                + (tog ? qsTr("Якщо помилилась: %1 перемикає пішки і транспорт").arg(bold(kname(tog.key))) + (keys.length ? qsTr(", ") : qsTr(". ")) : qsTr("Якщо треба вручну: "))
+                + (keys.length ? qsTr("%1 обирають режим (на MacBook: Fn + F1), або клацни вкладку тут.").arg(keys.map((k) => bold(kname(k))).join(", "))
+                               : qsTr("клацни вкладку тут."));
             // колесо зброї: поки тримаєш його клавішу, сектор обирають ще й клавішами руху
             const wheel = foot ? tagged(foot).find((x) => x.btn && x.btn.length === 1 && x.btn[0] === "L1" && !x["do"]) : null;
             const up = foot ? tagged(foot).find((x) => x.aim && x.aim.when === "L1" && x.aim.r) : null;
@@ -156,14 +164,21 @@ Item {
                 r.name = labels.RS || qsTr("Камера"); r.fixed = qsTr("Миша");
             } else {
                 const b = mainOf(c, m, btn);
-                if (b) { shown[b.p + "/" + b.id] = true; r.name = rowName(c, m, btn, b); r.chips = [chipOf(b)]; }
+                if (b) {
+                    // 115: та сама дія на кількох клавішах (GTA VI: △ — і E, і F) в одному рядку, а не в «Інших діях»
+                    const twins = b.p === m ? own.filter((x) => x.id !== b.id && x.name === b.name && plain(x) && x.btn[0] === btn && !x.x) : [];
+                    const all = [b].concat(twins);
+                    all.forEach((x) => shown[x.p + "/" + x.id] = true);
+                    r.name = rowName(c, m, btn, b); r.chips = all.map(chipOf);
+                }
             }
             return r;
         };
         v.left = sideL.map(rowFor);
         v.right = sideR.map(rowFor);
         // жести стіків зі спільних клавіш (злам машини, точний рух, утримати стік) показуємо в кожному режимі
-        const gestures = glob.filter((b) => b["do"] === "hotwire" || b["do"] === "precise" || b["do"] === "hold_stick");
+        // і ручне «пішки ↔ транспорт» (U): видно в кожному режимі, бо помилку виправляють саме там
+        const gestures = glob.filter((b) => b["do"] === "hotwire" || b["do"] === "precise" || b["do"] === "hold_stick" || b.profile === "toggle");
         const ex = (m === "global" ? glob : own.concat(gestures)).filter((b) => !shown[b.p + "/" + b.id]);
         const groups = [];
         for (const b of ex) {
@@ -367,7 +382,7 @@ Item {
                 return;
             const st = Chiaki.settings.anyplayPreviewState();
             root.engine = st;
-            // режим перемкнула клавіша (F, F1–F3): вкладка йде слідом
+            // режим перемкнула клавіша (U, F1–F3): вкладка йде слідом
             if (st.profile && st.profile !== root.mode && root.prof(st.profile)) {
                 root.mode = st.profile;
                 root.log(qsTr("режим: %1").arg(st.profile === "global" ? qsTr("Меню") : root.stripIcon(root.prof(st.profile).name)) + (root.lastKey ? qsTr(" (клавіша %1)").arg(root.lastKey) : ""));
@@ -500,7 +515,7 @@ Item {
     // AnyPlay 112: у головному вікні все на одній сторінці. Масштаб — за шириною й висотою вікна (менший з двох),
     // розмір геймпада — за місцем, що лишилось після незмінних за висотою частин. Від розкладки й режиму не залежить.
     readonly property real k: big ? Math.max(0.82, Math.min(1.35, page.cw / 1180, flick.height / 690)) : 1   // масштаб кнопок і підписів
-    readonly property int extraMax: 24          // найбільше «Інших дій» серед усіх розкладок і режимів (GTA VI пішки: 23)
+    readonly property int extraMax: 24          // найбільше «Інших дій» серед усіх розкладок і режимів (115: GTA VI пішки — 24, з «Режим: пішки або транспорт»)
     readonly property real bigRigH: Math.max(Math.round(200 * k), flick.height - side.height - extra.height - bottomBox.height - Math.round(36 * k) - 6)
     // головне вікно: схема ширша за інші вкладки (до 1600), щоб не лишалось порожніх полів обабіч
     readonly property real inset: !inGame ? Math.min(sideInset, Math.max(28, (width - 1900) / 2)) : sideInset
@@ -1464,7 +1479,7 @@ Item {
                 Repeater {
                     model: [
                         { name: "auto_vehicle", t: qsTr("Автоматично визначати транспорт"),
-                          d: qsTr("«Транспорт» вмикається, коли герой справді сів у машину (приставка дає опір обом педалям), і «Пішки», коли вийшов. F лишається ручним перемикачем. Перші збірки: пороги підлаштовуємо за журналами.") },
+                          d: root.autoVehicleText },
                         { name: "haptic_strong", t: qsTr("Віддача на екрані: сильно"),
                           d: qsTr("Край екрана від вібрації яскравіший і згасає довше. Саму віддачу вмикає перемикач «Віддача на екрані» в меню гри.") },
                         { name: "kick_screen", t: qsTr("Віддача від пострілів і ударів"),

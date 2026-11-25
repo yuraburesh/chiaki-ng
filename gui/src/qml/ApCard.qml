@@ -35,7 +35,6 @@ Item {
         color: ap.card
         border.width: 1
         border.color: c.hoverable && mouse.containsMouse ? ap.edgeHi : ap.cardEdge
-        Behavior on border.color { ColorAnimation { duration: ap.tHover } }
         Rectangle {   // світла смужка вгорі: скло
             anchors { left: parent.left; right: parent.right; top: parent.top; margins: 1 }
             height: Math.min(60, parent.height * 0.5)

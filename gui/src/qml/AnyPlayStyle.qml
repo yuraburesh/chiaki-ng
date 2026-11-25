@@ -67,9 +67,10 @@ QtObject {
     readonly property int fsButton: 17              // головна кнопка
     readonly property int fsButtonSmall: 14         // мала кнопка
 
-    // ── рух: однаковий відгук усюди ──
+    // ── рух: однаковий відгук усюди (115: анімуємо лише transform і opacity, без кольорів і розмірів) ──
     readonly property int tHover: 150               // наведення: підйом і світіння
-    readonly property int tPress: 90                // натиск: опускання
+    readonly property int tPress: 120               // натиск: опускання (115: 120–180 мс для всіх анімацій)
+    readonly property int tPage: 140                // зміна сторінки, вкладки, обраного рядка: згасання й зсув
     readonly property real lift: 2                  // на скільки піднімається під наведенням, px
     readonly property real pressScale: 0.97         // стискання під натиском
 }

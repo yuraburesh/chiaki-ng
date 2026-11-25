@@ -24,13 +24,20 @@ Item {
     Keys.onEnterPressed: clicked()
     Keys.onSpacePressed: clicked()
 
-    Rectangle {   // підкладка: наведення, фокус, обраний
+    Rectangle {   // підкладка: наведення, фокус, обраний (згасанням: opacity, без анімації кольору)
         anchors { fill: parent; topMargin: 2; bottomMargin: 2 }
         radius: ap.radiusSmall
-        color: o.checked ? "#1fffffff" : (mouse.containsMouse || o.activeFocus ? ap.glass : "transparent")
-        border.width: o.activeFocus ? 2 : 0
+        color: o.checked ? "#1fffffff" : ap.glass
+        opacity: o.checked || mouse.containsMouse || o.activeFocus ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: ap.tHover } }
+    }
+    Rectangle {   // фокус з клавіатури чи геймпада
+        anchors { fill: parent; topMargin: 2; bottomMargin: 2 }
+        radius: ap.radiusSmall
+        visible: o.activeFocus
+        color: "transparent"
+        border.width: 2
         border.color: ap.cyan
-        Behavior on color { ColorAnimation { duration: ap.tHover } }
     }
     Rectangle {   // смужка заходу сонця біля обраного
         visible: o.checked
@@ -51,7 +58,7 @@ Item {
         id: col
         anchors {
             left: logo.visible ? logo.right : parent.left; leftMargin: logo.visible ? 14 : 14
-            right: trail.left; rightMargin: 10
+            right: trail.width > 0 ? trail.left : radioBox.left; rightMargin: 10
             verticalCenter: parent.verticalCenter
         }
         spacing: 3
@@ -75,14 +82,21 @@ Item {
             color: ap.faint
         }
     }
+    // свій вміст праворуч (ціна, позначка «може не встигати») стоїть ЛІВОРУЧ від кружечка: кружечки всіх рядків
+    // в одну лінію (до 115 позначка зсувала кружечок ліворуч, і він «стрибав» відносно сусідніх рядків)
     Row {
         id: trail
-        anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+        anchors { right: radioBox.visible ? radioBox.left : parent.right; rightMargin: radioBox.visible ? 10 : 12; verticalCenter: parent.verticalCenter }
         spacing: 6
+    }
+    Item {
+        id: radioBox
+        visible: o.radio
+        anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+        width: visible ? 20 : 0; height: 20
         Rectangle {   // кружечок вибору
-            visible: o.radio
-            anchors.verticalCenter: parent.verticalCenter
-            width: 20; height: 20; radius: 10
+            anchors.fill: parent
+            radius: 10
             color: "#0dffffff"
             border.width: o.checked ? 0 : 1.5
             border.color: mouse.containsMouse ? ap.edgeHi : "#80ffffff"

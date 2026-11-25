@@ -20,6 +20,5 @@ TextField {
         color: f.activeFocus ? "#1fffffff" : (f.hovered ? ap.glassHi : ap.glass)
         border.width: f.activeFocus ? 2 : 1
         border.color: f.activeFocus ? ap.cyan : (f.hovered ? ap.edgeHi : ap.edge)
-        Behavior on color { ColorAnimation { duration: ap.tHover } }
     }
 }

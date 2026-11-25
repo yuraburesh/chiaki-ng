@@ -44,6 +44,5 @@ AbstractButton {
         color: m.checked ? "#2bffffff" : (m.hovered && m.enabled ? ap.glassHi : ap.glass)
         border.width: m.visualFocus || m.checked ? 2 : 1
         border.color: m.visualFocus ? ap.cyan : (m.checked ? ap.accent : (m.hovered && m.enabled ? ap.edgeHi : ap.edge))
-        Behavior on color { ColorAnimation { duration: ap.tHover } }
     }
 }

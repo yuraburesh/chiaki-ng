@@ -24,16 +24,24 @@ FocusScope {
     property string section: "quality"       // quality | colors | render | screen | live
     property real maxW: 1180
     readonly property Item firstControl: img // з меню паузи: фокус сюди, далі ↓ по вмісту
-    signal qualityPicked(int level)          // рівень обрали (меню паузи робить перепідключення саме)
+    // рівень обрали (меню паузи робить перепідключення саме); from — рівень до вибору; level -1 — «Авто», -2 — нічого не змінилось
+    signal qualityPicked(int level, int from)
+    // AnyPlay 115: звідки брати дані. Типово — справжні; у перегляді меню для адміна (demo) — заглушки меню паузи,
+    // тож вибір тут нічого не змінює на цьому комп'ютері
+    property bool demo: false
+    property var cloud: Chiaki.cloud
+    property var win: Chiaki.window
+    property var sess: Chiaki.session
+    property bool kbd: true                  // останнім керували з клавіатури чи геймпада (рамка фокусу лише тоді)
     AnyPlayStyle { id: ap }
 
     implicitHeight: col.implicitHeight
     readonly property real w: Math.min(width, maxW)
-    readonly property bool admin: Chiaki.cloud.admin === true
-    readonly property bool live: !!Chiaki.session && Chiaki.session.connected
-    readonly property string tier: Chiaki.cloud.pcTier || "ok"
-    readonly property int capFrom: Chiaki.cloud.renderCappedFrom !== undefined ? Chiaki.cloud.renderCappedFrom : -1
-    readonly property int preset: Chiaki.window.videoPreset
+    readonly property bool admin: img.cloud.admin === true
+    readonly property bool live: !!img.sess && img.sess.connected
+    readonly property string tier: img.cloud.pcTier || "ok"
+    readonly property int capFrom: img.cloud.renderCappedFrom !== undefined ? img.cloud.renderCappedFrom : -1
+    readonly property int preset: img.win.videoPreset
 
     // ── дані ──
     readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна"), qsTr("Ультра")]
@@ -56,15 +64,16 @@ FocusScope {
         if (inGame) s.push({ id: "live", text: qsTr("Трансляція зараз") });
         return s;
     }
-    function levelName() { return levelNames[Chiaki.cloud.qualityLevel] || levelNames[1]; }
-    function levelOn(l) { return !Chiaki.cloud.autoQuality && Chiaki.cloud.qualityLevel === l; }
+    function levelName() { return levelNames[img.cloud.qualityLevel] || levelNames[1]; }
+    function levelOn(l) { return !img.cloud.autoQuality && img.cloud.qualityLevel === l; }
     function pickLevel(l) {
-        if (l < 0) { Chiaki.cloud.autoQuality = true; img.qualityPicked(-1); return; }
-        const same = !Chiaki.cloud.autoQuality && Chiaki.cloud.qualityLevel === l;
-        Chiaki.cloud.autoQuality = false;
+        const from = img.cloud.qualityLevel;   // до 115 меню паузи брало рівень уже після зміни (див. AnyPlayStreamMenu.qualityPicked)
+        if (l < 0) { img.cloud.autoQuality = true; img.qualityPicked(-1, from); return; }
+        const same = !img.cloud.autoQuality && from === l;
+        img.cloud.autoQuality = false;
         if (!same)
-            Chiaki.cloud.setQualityLevel(l);
-        img.qualityPicked(same ? -2 : l);   // -2: нічого не змінилось
+            img.cloud.setQualityLevel(l);
+        img.qualityPicked(same ? -2 : l, from);   // -2: нічого не змінилось; з «Авто» на той самий рівень — l == from, без перепідключення
     }
     // позначка біля рівня: чи потягне цей комп'ютер (рівень 3 — ШІ-чіткість, 2 — висока якість)
     function levelMark(l) {
@@ -83,7 +92,7 @@ FocusScope {
     }
     function renderMark(r) {
         if (capFrom === r.id) return { text: qsTr("не потягнув під час гри"), kind: "bad" };
-        if (!Chiaki.cloud.pcCanRender(r.id)) return { text: tier === "weak" ? qsTr("не потягне") : qsTr("може не встигати"), kind: tier === "weak" ? "bad" : "wait" };
+        if (!img.cloud.pcCanRender(r.id)) return { text: tier === "weak" ? qsTr("не потягне") : qsTr("може не встигати"), kind: tier === "weak" ? "bad" : "wait" };
         if (r.need >= 3 && tier === "strong") return { text: qsTr("потягне"), kind: "ok" };
         return null;
     }
@@ -96,13 +105,13 @@ FocusScope {
     }
     function capText() {
         return qsTr("Під час гри цей комп'ютер не встиг з обробкою «%1», тож три дні тримаємо «%2». Якість потоку від цього не змінюється.")
-            .arg(Chiaki.cloud.renderLabel(img.capFrom)).arg(Chiaki.cloud.renderLabel([0, 1, 2, 3][Math.max(0, Chiaki.cloud.renderCap)]));
+            .arg(img.cloud.renderLabel(img.capFrom)).arg(img.cloud.renderLabel(Math.max(0, Math.min(3, img.cloud.renderCap))));
     }
     function num1(x) { return (isFinite(x) ? x : 0).toFixed(1).replace(".", ","); }
     function zoomText(v) { return v <= -1 ? qsTr("без чорних смуг") : qsTr("%1 x").arg((v >= 0 ? v + 1 : v).toFixed(2).replace(".", ",")); }
     function valueText(v) { return v === 0 ? qsTr("типово") : (v > 0 ? "+" : "") + v; }
     function liveChips() {
-        const s = Chiaki.session, win = Chiaki.window;
+        const s = img.sess, win = img.win;
         if (!s) return [];
         const out = [];
         if (s.host && !Chiaki.settings.streamerMode)
@@ -116,7 +125,7 @@ FocusScope {
             out.push({ text: qsTr("пропущено кадрів за секунду: %1").arg(win.droppedFrames), kind: "wait" });
         if (s.framesLost > 0)
             out.push({ text: qsTr("втрачено кадрів у мережі: %1").arg(s.framesLost) });
-        out.push({ text: qsTr("обробка: %1").arg(Chiaki.cloud.renderLabel(img.preset)), kind: Chiaki.cloud.renderCapped ? "wait" : "" });
+        out.push({ text: qsTr("обробка: %1").arg(img.cloud.renderLabel(img.preset)), kind: img.cloud.renderCapped ? "wait" : "" });
         return out;
     }
 
@@ -183,7 +192,11 @@ FocusScope {
     }
     function moveCol(d) {
         const cur = current();
-        if (isTab(cur)) return moveSection(d);
+        if (isTab(cur)) {
+            if (moveSection(d)) return true;
+            if (d < 0 && navLeft) { navLeft.forceActiveFocus(Qt.TabFocusReason); return true; }   // з першої вкладки ← — на пункт ліворуч
+            return false;
+        }
         const f = focusables();
         const i = focusedIn(f, cur);
         if (i >= 0 && f[i].isLevelCard) {
@@ -193,13 +206,14 @@ FocusScope {
         if (d < 0 && navLeft) { navLeft.forceActiveFocus(Qt.TabFocusReason); return true; }
         return false;
     }
-    Keys.onUpPressed: (e) => { moveRow(-1); e.accepted = true; }
-    Keys.onDownPressed: (e) => { moveRow(1); e.accepted = true; }
-    Keys.onLeftPressed: (e) => { e.accepted = moveCol(-1); }
-    Keys.onRightPressed: (e) => { e.accepted = moveCol(1); }
+    Keys.onUpPressed: (e) => { kbd = true; moveRow(-1); e.accepted = true; }
+    Keys.onDownPressed: (e) => { kbd = true; moveRow(1); e.accepted = true; }
+    Keys.onLeftPressed: (e) => { kbd = true; e.accepted = moveCol(-1); }
+    Keys.onRightPressed: (e) => { kbd = true; e.accepted = moveCol(1); }
     Keys.onReturnPressed: (e) => { if (current() === img) { focusTab(); e.accepted = true; } }
     onActiveFocusChanged: if (activeFocus && Window.activeFocusItem === img) focusTab()
-    onSectionChanged: hoverLevel = -1
+    onSectionChanged: { hoverLevel = -1; hoverTile = null; }
+    onVisibleChanged: if (!visible) { hoverLevel = -1; hoverTile = null; }
 
     // ── плитка-приклад: оригінальна сцена (нічна дорога, пальми, авто), детальність за рівнем ──
     property int hoverLevel: -1
@@ -239,6 +253,7 @@ FocusScope {
                     current: img.section
                     compact: img.compact
                     onActivated: (id) => { img.section = id; img.focusTab(); }
+                    onClickedTab: img.kbd = false
                 }
 
                 // ═════ ЯКІСТЬ ═════
@@ -269,7 +284,7 @@ FocusScope {
                             Layout.fillWidth: true
                             text: qsTr("Авто (радимо)")
                             sub: qsTr("Сама знижує якість, коли зв'язок слабшає, і повертає, коли все добре. Зараз: %1.").arg(img.levelName())
-                            checked: Chiaki.cloud.autoQuality
+                            checked: img.cloud.autoQuality
                             onClicked: img.pickLevel(-1)
                         }
                         GridLayout {   // плитки рівнів
@@ -298,12 +313,12 @@ FocusScope {
                             Layout.topMargin: img.compact ? 10 : 16
                             spacing: 8
                             ApText { role: "cap"; text: qsTr("Твій комп'ютер") }
-                            ApChip { text: Chiaki.cloud.pcInfo || qsTr("невідомо") }
+                            ApChip { text: img.cloud.pcInfo || qsTr("невідомо") }
                             ApChip { text: img.tierName(); kind: img.tierKind() }
                             ApText { Layout.fillWidth: true; role: "small"; color: ap.mute; text: img.tierText(); wrapMode: Text.WordWrap }
                         }
                         RowLayout {
-                            visible: !qGrid.wide && Chiaki.cloud.renderCapped
+                            visible: !qGrid.wide && img.cloud.renderCapped
                             Layout.fillWidth: true
                             Layout.topMargin: 6
                             spacing: 10
@@ -313,7 +328,7 @@ FocusScope {
                                 wrapMode: Text.WordWrap
                                 text: img.capText()
                             }
-                            ApButton { small: true; ghost: true; focusPolicy: Qt.StrongFocus; text: qsTr("Спробувати ще раз"); onClicked: Chiaki.cloud.clearRenderCap() }
+                            ApButton { small: true; ghost: true; focusPolicy: Qt.StrongFocus; text: qsTr("Спробувати ще раз"); onClicked: img.cloud.clearRenderCap() }
                         }
                     }
                     ColumnLayout {
@@ -329,12 +344,12 @@ FocusScope {
                             Flow {
                                 Layout.fillWidth: true
                                 spacing: 6
-                                ApChip { text: Chiaki.cloud.pcInfo || qsTr("невідомо") }
+                                ApChip { text: img.cloud.pcInfo || qsTr("невідомо") }
                                 ApChip { text: img.tierName(); kind: img.tierKind() }
                             }
                             ApText { Layout.fillWidth: true; role: "small"; color: ap.mute; text: img.tierText() }
-                            ApText { visible: Chiaki.cloud.renderCapped; Layout.fillWidth: true; role: "small"; color: ap.gold; text: img.capText() }
-                            ApButton { visible: Chiaki.cloud.renderCapped; small: true; ghost: true; focusPolicy: Qt.StrongFocus; text: qsTr("Спробувати ще раз"); onClicked: Chiaki.cloud.clearRenderCap() }
+                            ApText { visible: img.cloud.renderCapped; Layout.fillWidth: true; role: "small"; color: ap.gold; text: img.capText() }
+                            ApButton { visible: img.cloud.renderCapped; small: true; ghost: true; focusPolicy: Qt.StrongFocus; text: qsTr("Спробувати ще раз"); onClicked: img.cloud.clearRenderCap() }
                         }
                         ApOpt {   // у грі цей перемикач у «Трансляції зараз»
                             visible: !img.inGame
@@ -343,9 +358,9 @@ FocusScope {
                             radio: false
                             text: qsTr("Показувати кадри за секунду і зв'язок під час гри")
                             sub: qsTr("Маленький рядок у кутку екрана: кадри за секунду, швидкість, втрати, якість")
-                            checked: Chiaki.cloud.showStats
-                            onClicked: Chiaki.cloud.showStats = !Chiaki.cloud.showStats
-                            ApSwitch { activeFocusOnTab: false; checked: Chiaki.cloud.showStats; onToggled: Chiaki.cloud.showStats = !Chiaki.cloud.showStats }
+                            checked: img.cloud.showStats
+                            onClicked: img.cloud.showStats = !img.cloud.showStats
+                            ApSwitch { activeFocusOnTab: false; checked: img.cloud.showStats; onToggled: img.cloud.showStats = !img.cloud.showStats }
                         }
                         // як це працює (згорнуто)
                         ApRow {
@@ -421,8 +436,8 @@ FocusScope {
                                     id: sl
                                     Layout.fillWidth: true
                                     from: -100; to: 100; stepSize: 5
-                                    value: Chiaki.window[row.modelData.key]
-                                    onMoved: Chiaki.window[row.modelData.key] = Math.round(value)
+                                    value: img.win[row.modelData.key]
+                                    onMoved: img.win[row.modelData.key] = Math.round(value)
                                 }
                                 ApText { role: "small"; color: ap.mute; text: row.modelData.hi; Layout.preferredWidth: 72; horizontalAlignment: Text.AlignRight }
                             }
@@ -433,9 +448,9 @@ FocusScope {
                         Layout.topMargin: 4
                         small: true; ghost: true
                         focusPolicy: Qt.StrongFocus
-                        enabled: !Chiaki.window.picIsDefault
+                        enabled: !img.win.picIsDefault
                         text: qsTr("Як було типово")
-                        onClicked: Chiaki.window.resetPicture()
+                        onClicked: img.win.resetPicture()
                     }
                     ApText {
                         Layout.fillWidth: true; Layout.maximumWidth: 760
@@ -461,9 +476,9 @@ FocusScope {
                         Layout.bottomMargin: 6
                         spacing: 8
                         ApText { role: "cap"; text: qsTr("Зараз") }
-                        ApChip { text: Chiaki.cloud.renderLabel(img.preset); kind: Chiaki.cloud.renderCapped ? "wait" : "ok" }
-                        ApChip { visible: Chiaki.cloud.renderCapped; text: qsTr("спрощено: комп'ютер не встигав"); kind: "wait" }
-                        ApButton { visible: Chiaki.cloud.renderCapped; small: true; ghost: true; focusPolicy: Qt.StrongFocus; text: qsTr("Спробувати ще раз"); onClicked: Chiaki.cloud.clearRenderCap() }
+                        ApChip { text: img.cloud.renderLabel(img.preset); kind: img.cloud.renderCapped ? "wait" : "ok" }
+                        ApChip { visible: img.cloud.renderCapped; text: qsTr("спрощено: комп'ютер не встигав"); kind: "wait" }
+                        ApButton { visible: img.cloud.renderCapped; small: true; ghost: true; focusPolicy: Qt.StrongFocus; text: qsTr("Спробувати ще раз"); onClicked: img.cloud.clearRenderCap() }
                         Item { Layout.fillWidth: true }
                     }
                     Repeater {
@@ -477,7 +492,7 @@ FocusScope {
                             text: modelData.name
                             sub: modelData.sub
                             checked: img.preset === modelData.id
-                            onClicked: Chiaki.cloud.setRenderPreset(modelData.id)
+                            onClicked: img.cloud.setRenderPreset(modelData.id)
                             ApChip { visible: !!ro.mark; text: ro.mark ? ro.mark.text : ""; kind: ro.mark ? ro.mark.kind : "" }
                         }
                     }
@@ -508,18 +523,18 @@ FocusScope {
                         Layout.maximumWidth: 760
                         text: qsTr("Як є")
                         sub: qsTr("уся картинка, з чорними смугами, якщо екран іншої форми")
-                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Normal
-                        onClicked: Chiaki.window.videoMode = ChiakiWindow.VideoMode.Normal
+                        checked: img.win.videoMode == ChiakiWindow.VideoMode.Normal
+                        onClicked: img.win.videoMode = ChiakiWindow.VideoMode.Normal
                     }
                     ApOpt {
                         Layout.maximumWidth: 760
                         text: qsTr("Наблизити")
                         sub: qsTr("збільшує картинку, краї можуть обрізатись")
-                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
-                        onClicked: Chiaki.window.videoMode = ChiakiWindow.VideoMode.Zoom
+                        checked: img.win.videoMode == ChiakiWindow.VideoMode.Zoom
+                        onClicked: img.win.videoMode = ChiakiWindow.VideoMode.Zoom
                     }
                     RowLayout {   // наскільки наблизити (лише в режимі «Наблизити»)
-                        visible: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
+                        visible: img.win.videoMode == ChiakiWindow.VideoMode.Zoom
                         Layout.fillWidth: true
                         Layout.maximumWidth: 760
                         Layout.topMargin: 6
@@ -529,9 +544,14 @@ FocusScope {
                             id: zoomSlider
                             Layout.fillWidth: true
                             from: -1; to: 4; stepSize: 0.01
-                            value: Chiaki.window.ZoomFactor
+                            // у справжнього вікна властивість ZoomFactor (з великої), у заглушки перегляду — zoomFactor
+                            value: img.win.ZoomFactor !== undefined ? img.win.ZoomFactor : (img.win.zoomFactor || 0)
                             mid: false
-                            onMoved: { Chiaki.window.ZoomFactor = value; Chiaki.settings.sZoomFactor = value; }
+                            onMoved: {
+                                if (img.demo) { img.win.zoomFactor = value; return; }
+                                img.win.ZoomFactor = value;
+                                Chiaki.settings.sZoomFactor = value;
+                            }
                         }
                         ApChip { text: img.zoomText(zoomSlider.value) }
                     }
@@ -539,8 +559,8 @@ FocusScope {
                         Layout.maximumWidth: 760
                         text: qsTr("Розтягнути")
                         sub: qsTr("на весь екран без смуг, пропорції можуть змінитись")
-                        checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Stretch
-                        onClicked: Chiaki.window.videoMode = ChiakiWindow.VideoMode.Stretch
+                        checked: img.win.videoMode == ChiakiWindow.VideoMode.Stretch
+                        onClicked: img.win.videoMode = ChiakiWindow.VideoMode.Stretch
                     }
                     ApText { visible: img.inGame; role: "cap"; text: qsTr("Звук"); Layout.topMargin: 18; Layout.bottomMargin: 4 }
                     ApOpt {
@@ -550,9 +570,9 @@ FocusScope {
                         radio: false
                         text: qsTr("Мікрофон")
                         sub: checked ? qsTr("увімкнено: тебе чути в грі й чаті приставки") : qsTr("вимкнено")
-                        checked: !!Chiaki.session && !Chiaki.session.muted
-                        onClicked: if (Chiaki.session) Chiaki.session.muted = !Chiaki.session.muted
-                        ApSwitch { activeFocusOnTab: false; checked: !!Chiaki.session && !Chiaki.session.muted; onToggled: if (Chiaki.session) Chiaki.session.muted = !Chiaki.session.muted }
+                        checked: !!img.sess && !img.sess.muted
+                        onClicked: if (img.sess) img.sess.muted = !img.sess.muted
+                        ApSwitch { activeFocusOnTab: false; checked: !!img.sess && !img.sess.muted; onToggled: if (img.sess) img.sess.muted = !img.sess.muted }
                     }
                     ApText {
                         visible: !img.inGame
@@ -592,17 +612,17 @@ FocusScope {
                         radio: false
                         text: qsTr("Показувати кадри за секунду і зв'язок у кутку екрана")
                         sub: qsTr("Маленький рядок під час гри: кадри за секунду, швидкість, втрати, якість")
-                        checked: Chiaki.cloud.showStats
-                        onClicked: Chiaki.cloud.showStats = !Chiaki.cloud.showStats
-                        ApSwitch { activeFocusOnTab: false; checked: Chiaki.cloud.showStats; onToggled: Chiaki.cloud.showStats = !Chiaki.cloud.showStats }
+                        checked: img.cloud.showStats
+                        onClicked: img.cloud.showStats = !img.cloud.showStats
+                        ApSwitch { activeFocusOnTab: false; checked: img.cloud.showStats; onToggled: img.cloud.showStats = !img.cloud.showStats }
                     }
                     ApText {
                         Layout.fillWidth: true; Layout.maximumWidth: 760
                         Layout.topMargin: 14
                         role: "small"; color: ap.mute
                         wrapMode: Text.WordWrap
-                        text: qsTr("Якість: %1. Обробка: %2. Комп'ютер: %3.").arg(Chiaki.cloud.autoQuality ? qsTr("Авто, зараз %1").arg(img.levelName()) : img.levelName())
-                            .arg(Chiaki.cloud.renderLabel(img.preset)).arg(Chiaki.cloud.pcInfo || qsTr("невідомо"))
+                        text: qsTr("Якість: %1. Обробка: %2. Комп'ютер: %3.").arg(img.cloud.autoQuality ? qsTr("Авто, зараз %1").arg(img.levelName()) : img.levelName())
+                            .arg(img.cloud.renderLabel(img.preset)).arg(img.cloud.pcInfo || qsTr("невідомо"))
                     }
                 }
             }
@@ -652,6 +672,9 @@ FocusScope {
         readonly property bool on: img.levelOn(data_.level)
         readonly property var mark: img.levelMark(data_.level)
         readonly property bool hot: lcMouse.containsMouse
+        property bool byMouse: false             // фокус після клацу мишкою: без блакитної рамки
+        readonly property bool ring: activeFocus && !byMouse && img.kbd
+        onActiveFocusChanged: if (!activeFocus) byMouse = false
         implicitHeight: lcCol.implicitHeight + 20
         activeFocusOnTab: true
         Keys.onReturnPressed: img.pickLevel(data_.level)
@@ -667,10 +690,17 @@ FocusScope {
             id: lcFace
             anchors.fill: parent
             radius: ap.cardRadius
-            color: lc.on ? "#2e1a3a" : (lc.hot ? "#24120a24" : ap.card)
-            border.width: lc.activeFocus ? 2 : 1
-            border.color: lc.activeFocus ? ap.cyan : (lc.on ? ap.accent : (lc.hot ? ap.edgeHi : ap.cardEdge))
-            Behavior on color { ColorAnimation { duration: ap.tHover } }
+            color: lc.on ? "#2e1a3a" : ap.card
+            border.width: lc.ring ? 2 : 1
+            border.color: lc.ring ? ap.cyan : (lc.on ? ap.accent : (lc.hot ? ap.edgeHi : ap.cardEdge))
+            Rectangle {   // підсвітка під наведенням: згасанням, без анімації кольору
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: parent.radius - 1
+                color: "#14ffffff"
+                opacity: lc.hot && !lc.on ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: ap.tHover } }
+            }
             transform: Translate { y: lc.hot && !lcMouse.pressed ? -ap.lift : 0; Behavior on y { NumberAnimation { duration: ap.tHover } } }
             scale: lcMouse.pressed ? ap.pressScale : 1
             Behavior on scale { NumberAnimation { duration: ap.tPress } }
@@ -729,7 +759,7 @@ FocusScope {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: { lc.forceActiveFocus(); img.pickLevel(lc.data_.level); }
+            onClicked: { lc.byMouse = true; lc.forceActiveFocus(); lc.byMouse = true; img.pickLevel(lc.data_.level); }
         }
     }
 
@@ -768,7 +798,7 @@ FocusScope {
         readonly property var sp: Chiaki.speedTest || null
         readonly property bool done: !!sp && sp.stage === "done" && sp.downMbps >= 0
         readonly property int rec: done ? sp.recommendedLevel : -1
-        readonly property int applyLevel: rec === 2 && Chiaki.cloud.qualityLevel === 3 ? 3 : rec   // «Ультра» лишаємо, якщо вже стоїть
+        readonly property int applyLevel: rec === 2 && img.cloud.qualityLevel === 3 ? 3 : rec   // «Ультра» лишаємо, якщо вже стоїть
         spacing: 10
         function fmt(x) { return x >= 100 ? Math.round(x).toString() : x.toFixed(1).replace(".", ","); }
         ApText { role: "cap"; text: qsTr("Перевірити інтернет") }
@@ -813,14 +843,14 @@ FocusScope {
         ApButton {
             visible: speedCol.done
             Layout.topMargin: 6
-            readonly property bool same: !Chiaki.cloud.autoQuality && Chiaki.cloud.qualityLevel === speedCol.applyLevel
+            readonly property bool same: !img.cloud.autoQuality && img.cloud.qualityLevel === speedCol.applyLevel
             enabled: speedCol.rec >= 0 && !same
             focusPolicy: Qt.StrongFocus
             text: same ? qsTr("Застосовано") : qsTr("Застосувати: %1").arg(img.levelNames[Math.max(0, speedCol.applyLevel)])
             onClicked: img.pickLevel(speedCol.applyLevel)
         }
         ApText {
-            visible: speedCol.done && Chiaki.cloud.autoQuality
+            visible: speedCol.done && img.cloud.autoQuality
             Layout.fillWidth: true
             role: "small"
             text: qsTr("Зараз увімкнено «Авто». Якщо застосуєш пораду, якість стане сталою.")

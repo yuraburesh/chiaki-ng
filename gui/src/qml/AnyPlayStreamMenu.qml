@@ -8,6 +8,14 @@
 // з пунктів закриває меню. Геймпад: «Керування» шле ті самі клавіші, поки меню відкрите; меню відкривається ще й за
 // Chiaki.cloud.menuRequested() (кнопка на геймпаді) — див. StreamView.
 // Гість (cloud.guest): без «Продовжити бронювання», угорі замість часу броні — гостьовий доступ.
+// AnyPlay 115 (плавність): сторінки праворуч створюються один раз і лише ховаються; важкі сторінки («Клавіші»,
+// головне вікно поверх гри) вантажаться у фоні (asynchronous), і лише коли на пункті справді зупинились: прохід
+// стрілками повз них більше не підгальмовує. «Головне вікно», «Баланс», «Підтримка» відкриваються Enter / → / клацом,
+// а не самим наведенням фокусу (раніше стрілка на «Головне вікно» одразу відкривала його поверх меню й забирала фокус).
+// Анімації лише transform / opacity, 120–180 мс.
+// AnyPlay 115 (перегляд для адміна): demo: true — те саме меню без гри (панель адміна, «Меню гри: перегляд»): дані —
+// із заглушок нижче (час броні, якість, зв'язок, продовження), нічого не надсилає на сервер і не змінює налаштувань;
+// дії, що в грі щось зробили б (вийти, перепідключити, відкрити головне вікно), лише кажуть про це сигналом demoEvent.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -17,17 +25,24 @@ import org.streetpea.chiaking
 Item {
     id: panel
     property string page: "back"     // back | extend | keys | image | console | home | wallet | support | exit
-    readonly property bool admin: Chiaki.cloud.admin === true
-    readonly property bool guest: !admin && Chiaki.cloud.guest === true
+    property bool demo: false        // перегляд у панелі адміна, без гри
+    property bool demoAdmin: false   // у перегляді: меню адміна замість меню клієнта
+    readonly property bool admin: demo ? demoAdmin : Chiaki.cloud.admin === true
+    readonly property bool guest: !demo && !admin && Chiaki.cloud.guest === true
     readonly property bool canExtend: !admin && !guest   // продовжувати бронювання може лише клієнт зі своєю бронню
     property string openPage: ""     // з якої сторінки відкрити меню (нагадування про кінець гри відкриває «Продовжити гру»)
     property int tick: 0
+    // джерела даних: справжні або заглушки перегляду
+    readonly property var cloud: demo ? demoCloud : Chiaki.cloud
+    readonly property var sess: demo ? demoSession : Chiaki.session
+    readonly property var win: demo ? demoWindow : Chiaki.window
     // меню відкривається клавішею ` (під Esc); Ctrl+O / Cmd+O теж працює, але не показуємо: Ctrl у GTA — «присісти»
     readonly property string menuKey: Chiaki.controllers.length
         ? qsTr("клавіша ` (під Esc) або %1 на геймпаді").arg(Chiaki.settings.stringForStreamMenuShortcut())
         : qsTr("клавіша ` (під Esc)")
     signal resume()   // закрити меню й повернутись у гру
     signal exit()     // завершити трансляцію
+    signal demoEvent(string text)   // перегляд: що сталося б у грі
     // з чого почати фокус, коли меню відкрилось (з нагадування про кінець гри — одразу «Продовжити гру»)
     readonly property Item firstItem: openPage === "extend" && canExtend ? extendBtn : resumeBtn
     AnyPlayStyle { id: ap }
@@ -41,8 +56,30 @@ Item {
     }
     function focusFirst() { itemFor(page).forceActiveFocus(Qt.TabFocusReason); }
     function goMain() { page = "back"; resumeBtn.forceActiveFocus(); }
+    // пункти, що відкривають головне вікно AnyPlay поверх гри (на весь екран)
+    function isOverlayPage(p) { return p === "home" || p === "wallet" || p === "support"; }
+    property string overlay: ""      // яке головне вікно зараз відкрите поверх меню ("" — жодне)
+    function openOverlay(p) {
+        if (panel.demo) {
+            panel.demoEvent(p === "wallet" ? qsTr("У грі тут відкриється баланс поверх гри, гра йде далі.")
+                          : p === "support" ? qsTr("У грі тут відкриється чат з підтримкою поверх гри, гра йде далі.")
+                          : panel.admin ? qsTr("У грі тут відкриється панель адміна поверх гри, гра йде далі.")
+                          : qsTr("У грі тут відкриється головне вікно AnyPlay поверх гри, гра йде далі."));
+            return;
+        }
+        panel.page = p;
+        panel.overlay = p;
+        homeOver.wanted = true;
+        if (homeOver.item) homeOver.show();
+    }
+    function closeOverlay(back) {
+        panel.overlay = "";
+        if (back) panel.page = "back";
+        itemFor(panel.page).forceActiveFocus(Qt.TabFocusReason);
+    }
     // перейти з лівого стовпця у вміст праворуч (Enter або →)
     function enterContent() {
+        if (isOverlayPage(page)) { openOverlay(page); return; }
         const target = page === "exit" ? exitConfirm : (page === "image" ? imagePanel.firstControl : (page === "extend" ? extendPanel.firstOption
                      : (page === "keys" ? keysLoader.item : null)));
         if (target && target.visible && target.enabled)
@@ -54,10 +91,32 @@ Item {
         }
     }
     onVisibleChanged: {
+        overlay = "";
         if (visible)
-            page = openPage !== "" && (openPage !== "extend" || canExtend) ? openPage : "back";
+            page = openPage !== "" && (openPage !== "extend" || canExtend) && !isOverlayPage(openPage) ? openPage : "back";
         else
             page = "back";
+    }
+    // фокус на рядку, якого не видно (низьке вікно, сторінка прокручується): плавно прокрутити до нього
+    readonly property Item focusNow: Window.activeFocusItem
+    onFocusNowChanged: {
+        const f = focusNow;
+        if (!f || !panel.visible) return;
+        const pages = [backPage, extendPage, imagePage, consolePage, overPage, exitPage];
+        for (let i = 0; i < pages.length; i++) {
+            const pf = pages[i];
+            if (!pf.visible || !pf.interactive) continue;
+            let it = f;
+            while (it && it !== pf) it = it.parent;
+            if (!it) continue;
+            const p = f.mapToItem(pf.contentItem, 0, 0);
+            const pad = 24;
+            let y = pf.contentY;
+            if (p.y < pf.contentY + pad) y = p.y - pad;
+            else if (p.y + f.height > pf.contentY + pf.height - pad) y = p.y + f.height - pf.height + pad;
+            pf.scrollTo(y);
+            return;
+        }
     }
     // Esc (○ на геймпаді): з вмісту праворуч — назад на пункти; з пунктів — закрити меню
     Keys.onEscapePressed: {
@@ -72,23 +131,103 @@ Item {
 
     function leftText() {
         tick;
+        const cl = panel.cloud;
         if (panel.admin) {   // адмін грає без броні: показуємо, чий зараз час на приставці
-            const a = Chiaki.cloud.adminInfo || ({});
+            const a = cl.adminInfo || ({});
             if (a.current)
-                return qsTr("Режим адміна. Зараз час броні: %1, до %2").arg(a.current.user).arg(Chiaki.cloud.formatTime(a.current.end));
+                return qsTr("Режим адміна. Зараз час броні: %1, до %2").arg(a.current.user).arg(cl.formatTime(a.current.end));
             const n = a.next || [];
-            return n.length ? qsTr("Режим адміна. Наступна бронь: %1 о %2").arg(n[0].user).arg(Chiaki.cloud.formatTime(n[0].start)) : qsTr("Режим адміна");
+            return n.length ? qsTr("Режим адміна. Наступна бронь: %1 о %2").arg(n[0].user).arg(cl.formatTime(n[0].start)) : qsTr("Режим адміна");
         }
-        const sec = Math.floor(Chiaki.cloud.endTs - Date.now() / 1000 - Chiaki.cloud.clockSkew);
-        if (!(Chiaki.cloud.endTs > 0) || sec <= 0)
+        const sec = Math.floor(cl.endTs - Date.now() / 1000 - cl.clockSkew);
+        if (!(cl.endTs > 0) || sec <= 0)
             return panel.guest ? qsTr("Гостьовий доступ") : "";
         const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60;
         const left = (h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(x).padStart(2, "0");
         if (panel.guest)   // гість грає до початку найближчої чужої гри; якщо броней попереду немає, кінця не показуємо
             return sec > 11 * 3600 ? qsTr("Гостьовий доступ: приставка вільна")
-                                   : qsTr("Гостьовий доступ до %1, лишилось %2").arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs)).arg(left);
-        return qsTr("Лишилось %1, гра до %2").arg(left).arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs));
+                                   : qsTr("Гостьовий доступ до %1, лишилось %2").arg(cl.formatTime(cl.endTs)).arg(left);
+        return qsTr("Лишилось %1, гра до %2").arg(left).arg(cl.formatTime(cl.endTs));
     }
+
+    // ── перегляд без гри (demo): заглушки сесії, вікна й сервера; нічого не пишуть у налаштування й на сервер ──
+    QtObject {
+        id: demoCloud
+        readonly property int t0: Math.floor(Date.now() / 1000)
+        property bool admin: panel.demoAdmin
+        property bool guest: false
+        property int clockSkew: 0
+        property int endTs: t0 + 2 * 3600 + 14 * 60 + 15
+        property bool hasWallet: true
+        property int supportUnread: 1
+        property bool busy: false
+        property bool reconnectOnce: false
+        property var adminInfo: ({ current: { user: "Андрій", start: t0 - 3600, end: t0 + 3 * 3600 } })
+        // «Зображення»: стартуємо з того, що стоїть на цьому комп'ютері, далі міняємо лише тут
+        property bool autoQuality: Chiaki.cloud.autoQuality === true
+        property int qualityLevel: Chiaki.cloud.qualityLevel
+        property bool showStats: Chiaki.cloud.showStats === true
+        property string pcTier: Chiaki.cloud.pcTier || "ok"
+        property string pcInfo: Chiaki.cloud.pcInfo || ""
+        property bool renderCapped: false
+        property int renderCap: -1
+        property int renderCappedFrom: -1
+        // «Продовжити бронювання»: ціни як на сервері (+1/+2/+3 год), оплатити не можна
+        property var extendInfo: ({ active: true, closed: false, end: endTs, method: "uah",
+            methods: [{ code: "uah", label: "🇺🇦 Картка (гривні)" }, { code: "pln", label: "🇵🇱 BLIK / переказ (злоті)" }],
+            options: [{ hours: 1, free: true, price: "75.00 грн", prices: { uah: "75.00 грн", pln: "6.50 zł" } },
+                      { hours: 2, free: true, price: "150.00 грн", prices: { uah: "150.00 грн", pln: "13.00 zł" } },
+                      { hours: 3, free: false, price: "225.00 грн", prices: { uah: "225.00 грн", pln: "19.50 zł" } }] })
+        signal extendResult(bool ok, string text)
+        function formatTime(ts) { return Chiaki.cloud.formatTime(ts); }
+        function renderLabel(p) { return Chiaki.cloud.renderLabel(p); }
+        function pcCanRender(p) { return Chiaki.cloud.pcCanRender(p); }
+        function setQualityLevel(l) {
+            qualityLevel = l;
+            // як у програмі: рівень задає й типову обробку (Ультра — ШІ-чіткість)
+            demoWindow.videoPreset = [ChiakiWindow.VideoPreset.Fast, ChiakiWindow.VideoPreset.Default, ChiakiWindow.VideoPreset.HighQuality, ChiakiWindow.VideoPreset.HighQualitySpatial][Math.max(0, Math.min(3, l))];
+        }
+        function setRenderPreset(p) {
+            demoWindow.videoPreset = p;
+            if (qualityLevel >= 2)   // «Ультра» = «Максимальна» + ШІ-чіткість: рівень іде за обробкою
+                qualityLevel = p === ChiakiWindow.VideoPreset.HighQualitySpatial || p === ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial ? 3 : 2;
+        }
+        function clearRenderCap() { renderCapped = false; renderCap = -1; renderCappedFrom = -1; }
+        function loadExtend() {}
+        function extend(hours, method, how) { extendResult(true, qsTr("Перегляд: тут клієнт закріпив би +%1 год і побачив оплату. Нічого не надіслано.").arg(hours)); }
+        function payExtend() {} function cancelBooking() {} function copyText() {}
+    }
+    QtObject {
+        id: demoWindow
+        property int videoPreset: Chiaki.window ? Chiaki.window.videoPreset : 2
+        property int videoMode: 0
+        property real zoomFactor: 0     // у справжнього вікна ZoomFactor (див. AnyPlayImage)
+        property int streamFps: 60
+        property int shownFps: 58
+        property int droppedFrames: 0
+        property real picBrightness: 0
+        property real picContrast: 0
+        property real picSaturation: 0
+        property real picWarmth: 0
+        readonly property bool picIsDefault: !picBrightness && !picContrast && !picSaturation && !picWarmth
+        function resetPicture() { picBrightness = 0; picContrast = 0; picSaturation = 0; picWarmth = 0; }
+    }
+    QtObject {
+        id: demoSession
+        property bool connected: true
+        property string host: "PS5"
+        property real measuredBitrate: 14.6
+        property bool measuredBitrateReady: true
+        property real averagePacketLoss: 0.001
+        property int framesLost: 0
+        property bool muted: true
+    }
+    QtObject {   // гучність і «віддача на екрані» в перегляді
+        id: demoPrefs
+        property int audioVolume: 100
+        property bool anyplayHapticScreen: false
+    }
+    readonly property var prefs: demo ? demoPrefs : Chiaki.settings
     // головні клавіші: беремо справжні призначення (з урахуванням змін клієнта)
     property int layoutRev: 0
     // чи є клавіші режимів (пішки, транспорт, літак) — для підказки про Fn на MacBook
@@ -125,12 +264,20 @@ Item {
         }
         return rows.concat(modes);
     }
+    // рахуємо раз, коли меню відкрилось (а не щоразу, коли фокус проходить через «Повернутись у гру»)
+    readonly property var keyRowsNow: { layoutRev; return panel.visible ? panel.keyRows() : []; }
 
     // Якість обрали на екрані «Зображення»: «Максимальна» і «Ультра» відрізняються лише обробкою на комп'ютері (без
-    // перепідключення); інший рівень — перепідключення на кілька секунд (головний екран сам натисне «Грати»)
+    // перепідключення); інший рівень — перепідключення на кілька секунд (головний екран сам натисне «Грати»).
+    // from — рівень ДО вибору (до 115 сюди потрапляв уже новий рівень, тож «Оптимальна» → «Максимальна» не
+    // перепідключала гру і потік лишався 720p, хоча на екрані було «Максимальна»).
     function qualityPicked(level, from) {
         if (level === -1 || level === -2) return;   // «Авто» чи той самий рівень: лишаємося в меню
-        if (from >= 2 && level >= 2) return;
+        if (level === from || (from >= 2 && level >= 2)) return;
+        if (panel.demo) {
+            panel.demoEvent(qsTr("У грі тут гра перепідключилась би на кілька секунд з новою якістю (прогрес у грі не зникає)."));
+            return;
+        }
         Chiaki.cloud.reconnectOnce = true;
         panel.page = "back";
         if (panel.admin && Chiaki.session)
@@ -234,12 +381,14 @@ Item {
                     PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: imageBtn; KeyNavigation.down: homeBtn }
                     PauseItem { id: homeBtn; pageId: "home"; text: panel.admin ? qsTr("Панель адміна") : qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: walletBtn }
                     // AnyPlay 110: баланс і підтримка, не виходячи з гри (відкривається головне вікно на потрібній вкладці)
-                    PauseItem { id: walletBtn; pageId: "wallet"; visible: !panel.admin && Chiaki.cloud.hasWallet; text: qsTr("Баланс"); KeyNavigation.up: homeBtn; KeyNavigation.down: supportBtn }
-                    PauseItem { id: supportBtn; pageId: "support"; visible: !panel.admin; text: Chiaki.cloud.supportUnread > 0 ? qsTr("Підтримка (%1)").arg(Chiaki.cloud.supportUnread) : qsTr("Підтримка"); KeyNavigation.up: walletBtn; KeyNavigation.down: exitBtn }
+                    PauseItem { id: walletBtn; pageId: "wallet"; visible: !panel.admin && panel.cloud.hasWallet === true; text: qsTr("Баланс"); KeyNavigation.up: homeBtn; KeyNavigation.down: supportBtn }
+                    PauseItem { id: supportBtn; pageId: "support"; visible: !panel.admin; text: panel.cloud.supportUnread > 0 ? qsTr("Підтримка (%1)").arg(panel.cloud.supportUnread) : qsTr("Підтримка"); KeyNavigation.up: walletBtn; KeyNavigation.down: exitBtn }
                     PauseItem { id: exitBtn; pageId: "exit"; danger: true; text: qsTr("Вийти з гри"); KeyNavigation.up: supportBtn }
                 }
 
                 // ── праворуч: вміст обраного пункту ──
+                // Усі сторінки створені один раз і лише ховаються (без перестворення під час руху стрілками);
+                // нова сторінка з'являється коротким згасанням і зсувом (opacity + transform, без перекомпонування).
                 Item {
                     id: content
                     Layout.fillWidth: true
@@ -257,6 +406,7 @@ Item {
 
                     // повернутись у гру: гра не на паузі, гучність, головні клавіші
                     PageFlick {
+                        id: backPage
                         visible: panel.page === "back"
                         ColumnLayout {
                             width: content.width
@@ -277,8 +427,8 @@ Item {
                                     id: volume
                                     Layout.fillWidth: true
                                     from: 0; to: 128; stepSize: 1
-                                    value: Chiaki.settings.audioVolume
-                                    onMoved: Chiaki.settings.audioVolume = value
+                                    value: panel.prefs.audioVolume
+                                    onMoved: panel.prefs.audioVolume = value
                                     KeyNavigation.left: resumeBtn
                                 }
                                 ApChip { text: ((volume.value / 128.0) * 100).toFixed(0) + "%" }
@@ -290,8 +440,8 @@ Item {
                                 sub: Qt.platform.os === "osx"
                                     ? qsTr("Краї екрана темніють, коли в грі трясе, а трекпад ледь відчутно клацає. Лише для клавіатури й миші: геймпад вібрує сам.")
                                     : qsTr("Краї екрана темніють, коли в грі трясе. Лише для клавіатури й миші: геймпад вібрує сам.")
-                                checked: Chiaki.settings.anyplayHapticScreen === true
-                                onClicked: Chiaki.settings.anyplayHapticScreen = !checked
+                                checked: panel.prefs.anyplayHapticScreen === true
+                                onClicked: panel.prefs.anyplayHapticScreen = !checked
                                 KeyNavigation.left: resumeBtn
                             }
                             ApText { role: "cap"; text: qsTr("Головні клавіші"); Layout.topMargin: 10 }
@@ -299,7 +449,7 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 8
                                 Repeater {
-                                    model: panel.visible && panel.page === "back" ? panel.keyRows() : []
+                                    model: panel.keyRowsNow
                                     Row {
                                         required property var modelData
                                         spacing: 6
@@ -321,6 +471,7 @@ Item {
 
                     // продовжити гру
                     PageFlick {
+                        id: extendPage
                         visible: panel.page === "extend"
                         ColumnLayout {
                             width: content.width
@@ -331,6 +482,7 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.maximumWidth: 720
                                 compact: true
+                                cloud: panel.cloud
                                 visible: panel.visible && panel.page === "extend"
                             }
                         }
@@ -338,14 +490,23 @@ Item {
 
                     // клавіші: екран керування з геймпадом (компактний варіант для гри)
                     // (фокус лишається на пунктах ліворуч; у клавіші — клацом, Enter чи →; Esc там закриває меню, як і всюди)
+                    // Важкий екран: створюється у фоні (asynchronous) і лише коли на пункті «Клавіші» зупинились (140 мс)
+                    // або його відкрили клацом / Enter; прохід стрілками повз «Клавіші» нічого не створює.
                     Loader {
                         id: keysLoader
+                        property bool wanted: false
+                        property bool focusOnLoad: false
                         anchors.fill: parent
                         // вміст — рівно по краях інших сторінок, смуга прокрутки — праворуч за ним, з відступом
                         anchors.leftMargin: -14
                         anchors.rightMargin: -14
-                        active: panel.visible && panel.page === "keys"
-                        visible: active
+                        asynchronous: true
+                        active: panel.visible && wanted && panel.page === "keys"
+                        visible: panel.page === "keys" && status === Loader.Ready
+                        opacity: visible ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: ap.tPage; easing.type: Easing.OutCubic } }
+                        onActiveChanged: if (!active) focusOnLoad = false
+                        onLoaded: if (focusOnLoad) { focusOnLoad = false; item.forceActiveFocus(Qt.TabFocusReason); }
                         sourceComponent: Component {
                             AnyPlayControls {
                                 inGame: true
@@ -354,21 +515,40 @@ Item {
                             }
                         }
                     }
+                    Timer { id: keysDelay; interval: 140; onTriggered: if (panel.page === "keys") keysLoader.wanted = true }
+                    ApText {   // поки екран клавіш вантажиться у фоні
+                        visible: panel.page === "keys" && keysLoader.status !== Loader.Ready
+                        anchors.centerIn: parent
+                        role: "small"; color: ap.faint
+                        text: qsTr("Відкриваю клавіші…")
+                    }
+                    MouseArea {   // у перегляді клавіші лише показуємо: клац по них не змінює налаштувань цього комп'ютера
+                        visible: panel.demo && keysLoader.visible
+                        anchors.fill: keysLoader
+                        acceptedButtons: Qt.AllButtons
+                        onWheel: (wheel) => wheel.accepted = false
+                    }
 
                     // зображення: якість з прикладами, кольори, обробка, екран і звук, трансляція зараз (AnyPlay 113)
                     PageFlick {
+                        id: imagePage
                         visible: panel.page === "image"
                         AnyPlayImage {
                             id: imagePanel
                             width: content.width
                             inGame: true
+                            demo: panel.demo
+                            cloud: panel.cloud
+                            win: panel.win
+                            sess: panel.sess
                             navLeft: imageBtn
-                            onQualityPicked: (level) => panel.qualityPicked(level, Chiaki.cloud.qualityLevel)
+                            onQualityPicked: (level, from) => panel.qualityPicked(level, from)
                         }
                     }
 
                     // керування самою приставкою
                     PageFlick {
+                        id: consolePage
                         visible: panel.page === "console"
                         ColumnLayout {
                             width: content.width
@@ -384,8 +564,50 @@ Item {
                         }
                     }
 
+                    // головне вікно, баланс, підтримка: що відкриється (самим фокусом не відкриваємо)
+                    PageFlick {
+                        id: overPage
+                        visible: panel.isOverlayPage(panel.page)
+                        ColumnLayout {
+                            width: content.width
+                            spacing: 12
+                            ApText {
+                                role: "cap"
+                                text: panel.page === "wallet" ? qsTr("Баланс") : panel.page === "support" ? qsTr("Підтримка")
+                                    : panel.admin ? qsTr("Панель адміна") : qsTr("Головне вікно AnyPlay")
+                            }
+                            ApText {
+                                Layout.fillWidth: true; Layout.maximumWidth: 620
+                                role: "lead"
+                                text: panel.page === "wallet" ? qsTr("Баланс, поповнення й історія, не виходячи з гри. Гра на приставці йде далі.")
+                                    : panel.page === "support" ? (panel.cloud.supportUnread > 0
+                                        ? qsTr("Чат з підтримкою AnyPlay: є нові відповіді (%1). Гра на приставці йде далі.").arg(panel.cloud.supportUnread)
+                                        : qsTr("Чат з підтримкою AnyPlay, не виходячи з гри. Гра на приставці йде далі."))
+                                    : panel.admin ? qsTr("Хто грає, наступні броні, спільний PSN і інструменти, не виходячи з гри. Трансляція йде далі.")
+                                    : qsTr("Броні, баланс, свій PSN і підтримка, не виходячи з гри. Гра на приставці йде далі.")
+                            }
+                            Row {
+                                Layout.topMargin: 6
+                                spacing: 14
+                                ApButton {
+                                    id: overOpen
+                                    focusPolicy: Qt.StrongFocus
+                                    text: panel.overlay !== "" && homeOver.status !== Loader.Ready ? qsTr("Відкриваю…") : qsTr("Відкрити")
+                                    onClicked: panel.openOverlay(panel.page)
+                                    KeyNavigation.left: panel.itemFor(panel.page)
+                                }
+                                ApText {
+                                    anchors.verticalCenter: overOpen.verticalCenter
+                                    role: "small"; color: ap.faint
+                                    text: qsTr("або Enter")
+                                }
+                            }
+                        }
+                    }
+
                     // вийти з гри
                     PageFlick {
+                        id: exitPage
                         visible: panel.page === "exit"
                         ColumnLayout {
                             width: content.width
@@ -395,15 +617,16 @@ Item {
                                 Layout.fillWidth: true; Layout.maximumWidth: 620
                                 role: "lead"; rich: true
                                 text: {
+                                    const cl = panel.cloud;
                                     if (panel.admin) {   // адмін сам вирішує, що буде з приставкою після виходу
-                                        const cur = (Chiaki.cloud.adminInfo || ({})).current;
+                                        const cur = (cl.adminInfo || ({})).current;
                                         return qsTr("Трансляція закриється. Приставку можна лишити ввімкненою або перевести в режим спокою.")
                                             + (cur ? " " + qsTr("Зараз час броні: <b>%1</b>. Режим спокою перерве гру клієнта, тож краще лишити приставку ввімкненою.").arg(cur.user) : "");
                                     }
                                     if (panel.guest)
                                         return qsTr("Трансляція закриється. Повернутись можна з головного екрана кнопкою «Грати», поки приставка вільна.");
-                                    return Chiaki.cloud.endTs > 0
-                                        ? qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до <b>%1</b>.").arg(Chiaki.cloud.formatTime(Chiaki.cloud.endTs))
+                                    return cl.endTs > 0
+                                        ? qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до <b>%1</b>.").arg(cl.formatTime(cl.endTs))
                                         : qsTr("Трансляція закриється, але час гри йде далі. Повернутись можна з головного екрана кнопкою «Грати» до кінця броні.");
                                 }
                             }
@@ -416,18 +639,20 @@ Item {
                                     focusPolicy: Qt.StrongFocus
                                     text: qsTr("Вийти з гри")
                                     // адміну закриття вікна показало б стандартне питання про режим спокою: відповідь уже тут, двома кнопками
-                                    onClicked: panel.admin && Chiaki.session ? Chiaki.stopSession(false) : panel.exit()
+                                    onClicked: panel.demo ? panel.demoEvent(qsTr("У грі тут трансляція закрилась би, час броні йде далі."))
+                                             : panel.admin && Chiaki.session ? Chiaki.stopSession(false) : panel.exit()
                                     KeyNavigation.left: exitBtn
                                     KeyNavigation.right: sleepBtn
                                 }
                                 ApButton {
                                     id: sleepBtn
-                                    visible: panel.admin && !!Chiaki.session
+                                    visible: panel.admin && !!panel.sess
                                     focusPolicy: Qt.StrongFocus
                                     ghost: true
                                     height: exitConfirm.height
                                     text: qsTr("Вийти й приспати приставку")
-                                    onClicked: Chiaki.stopSession(true)
+                                    onClicked: panel.demo ? panel.demoEvent(qsTr("У грі тут трансляція закрилась би, а приставка пішла б у режим спокою."))
+                                             : Chiaki.stopSession(true)
                                     KeyNavigation.left: exitConfirm
                                     KeyNavigation.right: stayBtn
                                 }
@@ -453,14 +678,23 @@ Item {
                 Layout.topMargin: 10
                 spacing: 20
                 FootText {
-                    text: !Chiaki.session ? ""
-                        : Chiaki.session.measuredBitrateReady === false ? qsTr("Зв'язок: вимірюю…")   // перші секунди гри чесного виміру ще немає
-                        : qsTr("Зв'язок %1 Мбіт/с, втрати %2%").arg(Chiaki.session.measuredBitrate.toFixed(1).replace(".", ","))
-                            .arg(((isFinite(Chiaki.session.averagePacketLoss) ? Chiaki.session.averagePacketLoss : 0) * 100).toFixed(1).replace(".", ","))
+                    text: !panel.sess ? ""
+                        : panel.sess.measuredBitrateReady === false ? qsTr("Зв'язок: вимірюю…")   // перші секунди гри чесного виміру ще немає
+                        : qsTr("Зв'язок %1 Мбіт/с, втрати %2%").arg(panel.sess.measuredBitrate.toFixed(1).replace(".", ","))
+                            .arg(((isFinite(panel.sess.averagePacketLoss) ? panel.sess.averagePacketLoss : 0) * 100).toFixed(1).replace(".", ","))
                 }
                 Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
                 FootText { text: qsTr("Esc: назад, з пунктів — закрити меню. Відкрити й закрити: `") }
             }
+        }
+    }
+
+    onPageChanged: {
+        if (page === "keys")
+            keysDelay.restart();
+        else {
+            keysDelay.stop();
+            keysLoader.wanted = false;
         }
     }
 
@@ -491,21 +725,26 @@ Item {
         color: ap.faint
     }
 
-    // сторінка праворуч: прокручується, якщо вікно низьке
     // ── головне вікно AnyPlay поверх гри: бронювання, баланс, PSN, не виходячи з гри (трансляція йде далі) ──
+    // Створюється у фоні, коли його вперше відкрили, і далі лише ховається: наступне відкриття миттєве.
     Loader {
         id: homeOver
+        property bool wanted: false
         anchors.fill: parent
         z: 50
-        active: (panel.page === "home" || panel.page === "wallet" || panel.page === "support") && panel.visible
+        asynchronous: true
+        active: wanted && !panel.demo
+        visible: panel.overlay !== "" && panel.visible && status === Loader.Ready
         sourceComponent: AnyPlayHome {
             overGame: true
-            onBackToGame: { panel.page = "back"; panel.resume(); }
-            onBackToMenu: panel.page = "back"
+            onBackToGame: { panel.closeOverlay(true); panel.resume(); }
+            onBackToMenu: panel.closeOverlay(false)
         }
-        onLoaded: { if (panel.page !== "home") item.view = panel.page; item.forceActiveFocus(); }
+        function show() { if (!item || panel.overlay === "") return; item.view = panel.overlay; item.forceActiveFocus(); }
+        onLoaded: show()
     }
 
+    // сторінка праворуч: прокручується, якщо вікно низьке; з'являється згасанням і коротким зсувом
     component PageFlick: Flickable {
         id: pf
         default property alias body: pfInner.data
@@ -515,6 +754,14 @@ Item {
         contentHeight: pfInner.childrenRect.height + 8
         boundsBehavior: Flickable.StopAtBounds
         interactive: contentHeight > height
+        opacity: visible ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: ap.tPage; easing.type: Easing.OutCubic } }
+        transform: Translate { x: pf.visible ? 0 : 10; Behavior on x { NumberAnimation { duration: ap.tPage; easing.type: Easing.OutCubic } } }
+        function scrollTo(y) {
+            scrollAnim.to = Math.max(0, Math.min(contentHeight - height, y));
+            scrollAnim.restart();
+        }
+        NumberAnimation { id: scrollAnim; target: pf; property: "contentY"; duration: ap.tPage; easing.type: Easing.OutCubic }
         ScrollBar.vertical: ScrollBar {
             policy: pf.interactive ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
             contentItem: Rectangle { implicitWidth: 4; radius: 2; color: "#55ffffff" }
@@ -523,21 +770,28 @@ Item {
     }
 
     // пункт ліворуч: великі літери на склі. Обраний — у градієнті заходу сонця зі світінням; наведення — зсув праворуч
-    // і підсвітка; натиск — стискання; фокус з клавіатури чи геймпада — блакитна рамка
+    // і підсвітка; натиск — стискання; фокус з клавіатури чи геймпада — блакитна рамка (після клацу мишкою рамки немає).
+    // Усі зміни — згасанням (opacity) і зсувом (transform), без анімації кольорів і розмірів.
     component PauseItem: Item {
         id: pi
         property string pageId
         property string text
         property bool danger: false
+        property bool byMouse: false
         readonly property bool current: panel.page === pageId
         readonly property bool hov: piMouse.containsMouse
         Layout.fillWidth: true
         implicitHeight: piText.implicitHeight + (zoom.low ? 16 : 22)
         activeFocusOnTab: true
-        onActiveFocusChanged: if (activeFocus) panel.page = pageId
+        onActiveFocusChanged: { if (activeFocus) panel.page = pageId; else byMouse = false; }
         function activate() {
             if (pageId === "back") panel.resume();
-            else { panel.page = pageId; panel.enterContent(); }
+            else if (panel.isOverlayPage(pageId)) panel.openOverlay(pageId);
+            else {
+                panel.page = pageId;
+                if (pageId === "keys") { keysLoader.wanted = true; if (!keysLoader.item) { keysLoader.focusOnLoad = true; return; } }
+                panel.enterContent();
+            }
         }
         Keys.onReturnPressed: activate()
         Keys.onEnterPressed: activate()
@@ -546,31 +800,33 @@ Item {
         Item {
             id: piBody
             anchors.fill: parent
-            x: 0
             transform: Translate { x: pi.hov && !pi.current ? 6 : 0; Behavior on x { NumberAnimation { duration: ap.tHover; easing.type: Easing.OutCubic } } }
             scale: piMouse.pressed ? ap.pressScale : 1
             Behavior on scale { NumberAnimation { duration: ap.tPress } }
             // тінь під обраним
             Rectangle {
-                visible: pi.current
                 x: 0; y: 4; width: parent.width; height: parent.height
                 radius: ap.radius
                 color: pi.danger ? "#40ff4f4f" : "#55ff4f8b"
-                opacity: 0.6
+                opacity: pi.current ? 0.6 : 0
+                Behavior on opacity { NumberAnimation { duration: ap.tPage } }
             }
-            // скло (наведення) або градієнт (обраний)
+            // скло під наведенням
             Rectangle {
                 anchors.fill: parent
                 radius: ap.radius
-                color: pi.hov ? ap.glassHi : "transparent"
-                border.width: pi.hov && !pi.current ? 1 : 0
+                color: ap.glassHi
+                border.width: 1
                 border.color: ap.edge
-                Behavior on color { ColorAnimation { duration: ap.tHover } }
+                opacity: pi.hov && !pi.current ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: ap.tHover } }
             }
+            // обраний: градієнт заходу сонця
             Rectangle {
                 anchors.fill: parent
                 radius: ap.radius
-                visible: pi.current
+                opacity: pi.current ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: ap.tPage; easing.type: Easing.OutCubic } }
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: pi.danger ? "#e0d94a5a" : ap.accentA }
@@ -583,24 +839,26 @@ Item {
                 anchors { left: parent.left; leftMargin: 16; right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
                 text: pi.text
                 elide: Text.ElideRight
-                font.family: ap.display; font.weight: pi.current ? Font.DemiBold : Font.Medium; font.pixelSize: zoom.low ? 17 : 19
+                font.family: ap.display; font.weight: Font.DemiBold; font.pixelSize: zoom.low ? 17 : 19
                 font.letterSpacing: 1.8; font.capitalization: Font.AllUppercase
                 color: pi.current ? ap.inkAccent : pi.danger ? ap.bad : ap.ink
                 opacity: pi.current || pi.hov || pi.activeFocus ? 1 : 0.72
                 Behavior on opacity { NumberAnimation { duration: ap.tHover } }
             }
             Text {   // стрілка праворуч у обраного: туди йде вміст
-                visible: pi.current && pi.pageId !== "back"
                 anchors { right: parent.right; rightMargin: 14; verticalCenter: parent.verticalCenter }
                 text: "›"
                 color: ap.inkAccent
                 font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: zoom.low ? 18 : 22
+                opacity: pi.current && pi.pageId !== "back" ? 1 : 0
+                transform: Translate { x: pi.current ? 0 : -6; Behavior on x { NumberAnimation { duration: ap.tPage; easing.type: Easing.OutCubic } } }
+                Behavior on opacity { NumberAnimation { duration: ap.tPage } }
             }
             Rectangle {   // фокус з клавіатури чи геймпада
                 anchors.fill: parent
                 anchors.margins: -3
                 radius: ap.radius + 3
-                visible: pi.activeFocus
+                visible: pi.activeFocus && !pi.byMouse
                 color: "transparent"
                 border.width: 2; border.color: ap.cyan
             }
@@ -610,7 +868,17 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: { pi.forceActiveFocus(); if (pi.pageId === "back") panel.resume(); else panel.page = pi.pageId; }
+            onClicked: {
+                pi.byMouse = true;
+                pi.forceActiveFocus();
+                pi.byMouse = true;
+                if (pi.pageId === "back") panel.resume();
+                else if (panel.isOverlayPage(pi.pageId)) panel.openOverlay(pi.pageId);
+                else {
+                    panel.page = pi.pageId;
+                    if (pi.pageId === "keys") keysLoader.wanted = true;
+                }
+            }
         }
     }
 }

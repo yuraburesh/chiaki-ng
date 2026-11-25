@@ -57,14 +57,19 @@ Button {
     background: Item {
         implicitWidth: 80
         implicitHeight: b.small ? 30 : 44
-        // тінь: два шари, під наведенням довша й м'якша, під натиском коротка
+        // тінь: два шари — звичайна і довша м'якша під наведенням; міняються згасанням (opacity), геометрія стала
         Rectangle {
-            anchors { fill: parent; topMargin: b.down ? 1 : (b.hot ? 6 : 3); bottomMargin: b.down ? -1 : (b.hot ? -6 : -3); leftMargin: 2; rightMargin: 2 }
+            anchors { fill: parent; topMargin: 3; bottomMargin: -3; leftMargin: 2; rightMargin: 2 }
             radius: b.r + 2
             color: b.primary ? "#55a01c4a" : ap.shadow
-            opacity: b.enabled ? (b.hot ? 0.85 : 0.55) : 0
-            Behavior on anchors.topMargin { NumberAnimation { duration: ap.tHover } }
-            Behavior on anchors.bottomMargin { NumberAnimation { duration: ap.tHover } }
+            opacity: b.enabled ? (b.hot ? 0 : (b.down ? 0.35 : 0.55)) : 0
+            Behavior on opacity { NumberAnimation { duration: ap.tHover } }
+        }
+        Rectangle {
+            anchors { fill: parent; topMargin: 6; bottomMargin: -6; leftMargin: 2; rightMargin: 2 }
+            radius: b.r + 2
+            color: b.primary ? "#55a01c4a" : ap.shadow
+            opacity: b.enabled && b.hot ? 0.85 : 0
             Behavior on opacity { NumberAnimation { duration: ap.tHover } }
         }
         // світіння акценту під наведенням (головна кнопка)
@@ -91,7 +96,6 @@ Button {
             }
             border.width: b.visualFocus ? 2 : (b.primary ? 0 : 1)
             border.color: b.visualFocus ? ap.cyan : (b.danger ? (b.hot ? ap.bad : "#99ff8f8f") : (b.hot ? ap.edgeHi : ap.edge))
-            Behavior on border.color { ColorAnimation { duration: ap.tHover } }
         }
         // відблиск угорі: «скло» й об'єм
         Rectangle {

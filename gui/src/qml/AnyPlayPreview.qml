@@ -19,6 +19,10 @@ ColumnLayout {
     id: pv
     property var cloud: Chiaki.cloud
     property var bookingId: 0
+    property var userId: 0               // гість без броні (bookingId 0): дивимось за userId
+    // ключ перегляду: номер броні, а для гостя — мінус userId (щоб не плутати з бронями)
+    readonly property var key: Number(bookingId) > 0 ? Number(bookingId) : (Number(userId) > 0 ? -Number(userId) : 0)
+    function load() { cloud.loadPreview(Number(bookingId) > 0 ? Number(bookingId) : 0, Number(userId) > 0 ? Number(userId) : 0); }
     property var live: null              // телеметрія гри клієнта (current.live): платформа, збірка
     property QtObject store: null        // спільний стан перегляду (AnyPlayHome), щоб він переживав перестворення картки
     spacing: 8
@@ -33,7 +37,7 @@ ColumnLayout {
         property real frameSeenAt: 0
     }
     readonly property QtObject st: store || ownStore
-    readonly property bool watching: bookingId > 0 && st.booking === bookingId
+    readonly property bool watching: key !== 0 && st.booking === key
     readonly property bool big: watching && st.big
     property int tick: 0
 
@@ -59,15 +63,16 @@ ColumnLayout {
         : waited >= 40 ? "none" : "wait"
 
     function start() {
-        if (st.booking !== bookingId) cloud.clearPreview();
-        st.booking = bookingId;
+        if (key === 0) return;
+        if (st.booking !== key) cloud.clearPreview();
+        st.booking = key;
         st.since = Date.now();
         st.lastImage = "";
         st.frameSeenAt = 0;
-        cloud.loadPreview(bookingId);
+        load();
     }
     function stop() { st.booking = 0; st.big = false; cloud.clearPreview(); }
-    function retry() { cloud.clearPreview(); st.since = Date.now(); st.lastImage = ""; st.frameSeenAt = 0; cloud.loadPreview(bookingId); }
+    function retry() { cloud.clearPreview(); st.since = Date.now(); st.lastImage = ""; st.frameSeenAt = 0; load(); }
 
     // кадр справді новий (а не той самий, що сервер віддав ще раз): запам'ятати, коли побачили
     Connections {
@@ -81,7 +86,7 @@ ColumnLayout {
     Timer {   // забираємо кадр раз на 1,5 с; кожен запит ще й продовжує прохання до програми клієнта
         interval: 1500; repeat: true; triggeredOnStart: true
         running: pv.visible && pv.watching && !pv.unsupported
-        onTriggered: pv.cloud.loadPreview(pv.bookingId)
+        onTriggered: pv.load()
     }
     Timer { interval: 1000; repeat: true; running: pv.visible && pv.watching; onTriggered: pv.tick++ }
 

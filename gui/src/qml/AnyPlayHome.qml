@@ -1024,6 +1024,7 @@ Rectangle {
                                     Layout.fillWidth: true
                                     Layout.topMargin: 6
                                     bookingId: unitCard.c ? unitCard.c.id : 0
+                                    userId: unitCard.c ? (unitCard.c.userId || 0) : 0
                                     live: unitCard.l
                                     store: previewStore
                                 }

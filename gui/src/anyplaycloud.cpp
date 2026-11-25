@@ -36,6 +36,48 @@
 #endif
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include <dxgi.h>
+#endif
+
+#ifdef Q_OS_WIN
+// Назва відеокарти через DXGI (без лінкування: dxgi.dll вантажимо самі). Потрібно, коли рендер не Vulkan
+// і vk_device_props порожні: інакше в панелі адміна замість відеокарти показувався процесор.
+static QString windowsGpuName()
+{
+	static QString cached;
+	static bool done = false;
+	if(done)
+		return cached;
+	done = true;
+	HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
+	if(!dxgi)
+		return cached;
+	typedef HRESULT (WINAPI *CreateFactoryFn)(REFIID, void **);
+	auto create = reinterpret_cast<CreateFactoryFn>(GetProcAddress(dxgi, "CreateDXGIFactory1"));
+	IDXGIFactory1 *factory = nullptr;
+	if(create && SUCCEEDED(create(__uuidof(IDXGIFactory1), reinterpret_cast<void **>(&factory))) && factory)
+	{
+		IDXGIAdapter1 *adapter = nullptr;
+		for(UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; i++)
+		{
+			DXGI_ADAPTER_DESC1 desc;
+			const bool ok = SUCCEEDED(adapter->GetDesc1(&desc));
+			adapter->Release();
+			if(!ok || (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE))
+				continue;
+			const QString name = QString::fromWCharArray(desc.Description).simplified();
+			// перша апаратна; дискретна (більше власної пам'яті) краща за вбудовану
+			if(cached.isEmpty() || desc.DedicatedVideoMemory > 512ull * 1024 * 1024)
+			{
+				cached = name;
+				if(desc.DedicatedVideoMemory > 512ull * 1024 * 1024)
+					break;
+			}
+		}
+		factory->Release();
+	}
+	return cached;
+}
 #endif
 
 static const char *DEFAULT_SERVER = "https://34-123-25-16.sslip.io";
@@ -2062,6 +2104,10 @@ QString AnyPlayCloud::gpuName() const
 	QString g;
 	if(QmlMainWindow *w = backend->qmlWindow())
 		g = w->gpuName().trimmed();
+#ifdef Q_OS_WIN
+	if(g.isEmpty())
+		g = windowsGpuName();
+#endif
 	// Vulkan лишає в назві дужки й суфікси: «Apple M2 (Apple Silicon)», «NVIDIA GeForce RTX 4060 Laptop GPU» — коротимо
 	g.remove(QRegularExpression(QStringLiteral("\\s*\\(.*\\)$")));
 	g.replace(QStringLiteral("(TM)"), QString()).replace(QStringLiteral("(R)"), QString());

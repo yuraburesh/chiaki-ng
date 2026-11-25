@@ -445,7 +445,7 @@ void VideoPipeline::start(const VideoConfig &cfg, bool allowSoftware, Output out
 		out_ = std::move(out);
 		status_ = std::move(status);
 	}
-	interval_us_.store(1000000 / std::max(1, cfg.fps));
+	interval_us_.store(1000000 / (std::max)(1, cfg.fps));
 	next_due_us_.store(0);
 	want_key_.store(true);
 	frames_encoded.store(0);
@@ -477,7 +477,7 @@ void VideoPipeline::reconfigure(const VideoConfig &cfg)
 		cfg_ = cfg;
 		reconfig_ = true;
 	}
-	interval_us_.store(1000000 / std::max(1, cfg.fps));
+	interval_us_.store(1000000 / (std::max)(1, cfg.fps));
 	cv_.notify_all();
 }
 
@@ -734,7 +734,7 @@ void VoiceMixer::pull(int16_t *out, size_t frames)
 		for(auto &it : voices_)
 		{
 			Voice &v = it.second;
-			const size_t take = std::min(v.pcm.size(), frames * 2);
+			const size_t take = (std::min)(v.pcm.size(), frames * 2);
 			for(size_t i = 0; i < take; i++)
 			{
 				acc[i] += v.pcm.front();

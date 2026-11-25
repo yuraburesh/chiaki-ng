@@ -162,6 +162,10 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			"openTg" -> if(state == "pairing" && pairLink.isNotEmpty()) openLink(pairLink)
 			"cancelLogin" -> cancelLogin()
 			"play" -> if(isAdmin && adminInfo != null) adminPlay() else play()
+			// «Грати тут»: забрати гру з іншого пристрою клієнта (той сам зупинить стрім)
+			"takeover" -> if(!isAdmin) play(true)
+			// «Кнопки на екрані»: редактор розташування без гри
+			"layout" -> PadEditorDialog(this).show()
 			"retry", "refresh" -> if(loggedIn && state != "pairing") lifecycleScope.launch { refresh() }
 			"update" -> updater.updateNow {
 				openBot()
@@ -304,7 +308,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 	}
 
 	// ── гра ──
-	private fun play()
+	private fun play(takeover: Boolean = false)
 	{
 		if(busy)
 			return
@@ -312,8 +316,22 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		render()
 		lifecycleScope.launch {
 			AnyPlayQuality.prepare(this@AnyPlayActivity)
+			var takeoverMs = 0L
+			var offerTakeover = false
 			val target = withContext(Dispatchers.IO) {
-				val r = AnyPlayCloud.session(this@AnyPlayActivity)
+				val r = if(takeover) AnyPlayCloud.request(this@AnyPlayActivity, "POST", "/api/app/session", JSONObject().put("takeover", true))
+					else AnyPlayCloud.session(this@AnyPlayActivity)
+				// сервер дав гру сюди; той пристрій відпустить приставку до waitUntil — доти «приставка зайнята» не помилка
+				r.json.optJSONObject("takeover")?.let { t ->
+					val now = r.json.optLong("now")
+					val until = t.optLong("waitUntil")
+					takeoverMs = if(until > 0 && now > 0) (until - now).coerceIn(5, 120) * 1000L else 30000L
+				}
+				if(r.ok && r.json.optString("state") == "other_device")
+				{
+					session = r.json
+					offerTakeover = r.json.optBoolean("canTakeover")
+				}
 				if(!r.ok)
 					(if(!AnyPlayCloud.online(this@AnyPlayActivity)) PlayError("Немає інтернету на телефоні. Увімкни Wi-Fi або мобільний інтернет і спробуй ще раз.", "NET offline")
 					else PlayError("Немає зв'язку з сервером AnyPlay. Спробуй ще раз за хвилину.", "AP-HTTP ${r.status}"))
@@ -327,10 +345,23 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 					AnyPlayCloud.playTarget(this@AnyPlayActivity, r.json)
 			}
 			busy = false
+			if(target is PlayError && offerTakeover)
+			{
+				// новий сервер: замість «закрий гру там» одразу пропонуємо забрати гру сюди
+				state = "other_device"
+				render()
+				AnyPlayStyle.show(MaterialAlertDialogBuilder(this@AnyPlayActivity)
+					.setMessage("Гра вже йде на «${session.optString("otherDevice").ifEmpty { "іншому пристрої" }}». " +
+						"Продовжити гру на цьому телефоні? Там гра зупиниться, твій час не змінюється.")
+					.setPositiveButton("Грати тут") { _, _ -> play(true) }
+					.setNegativeButton("Скасувати", null))
+				return@launch
+			}
 			when(target)
 			{
 				is PlayReady -> startActivity(Intent(this@AnyPlayActivity, StreamActivity::class.java).also {
 					it.putExtra(StreamActivity.EXTRA_CONNECT_INFO, target.connectInfo)
+					it.putExtra(StreamActivity.EXTRA_ANYPLAY_TAKEOVER_MS, takeoverMs)
 					it.putExtra(StreamActivity.EXTRA_ANYPLAY, true)
 					it.putExtra(StreamActivity.EXTRA_ANYPLAY_ADMIN, isAdmin)   // адміну нагадування про кінець гри не потрібні
 					it.putExtra(StreamActivity.EXTRA_ANYPLAY_GUEST, target.guest)   // гість: без «Продовжити бронювання»
@@ -540,7 +571,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			.put("pairBot", pairBot)
 		// зі стану сервера лише те, що показує сторінка: ключів доступу до PSN тут немає
 		val s = JSONObject()
-		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "guest", "guestAccess", "guestWait", "guestFreeAt"))
+		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt"))
 			session.opt(k)?.let { s.put(k, it) }
 		session.optJSONObject("console")?.let { s.put("console", JSONObject().put("psn", it.optString("psn")).put("own", it.optBoolean("own"))) }
 		// баланс клієнта {balances, primary}: сторінка показує вкладку «Баланс» і оплату з балансу лише коли він є

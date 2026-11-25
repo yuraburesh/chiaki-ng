@@ -9,6 +9,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.metallic.chiaki.common.LogManager
 import com.metallic.chiaki.lib.*
+import com.metallic.chiaki.anyplay.ColorRenderer
 
 sealed class StreamState
 object StreamStateIdle: StreamState()
@@ -143,6 +144,71 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		}
 	}
 
+	// AnyPlay: кольори картинки (AnyPlayPicture). Коли вони не на нулі, декодер пише в ColorRenderer,
+	// а той малює в SurfaceView; інакше декодер пише в SurfaceView напряму, як було завжди.
+	private var viewSurface: Surface? = null
+	private var color: ColorRenderer? = null
+	private var colorParams: FloatArray? = null
+
+	/** null — без обробки кольорів */
+	fun setColor(params: FloatArray?)
+	{
+		colorParams = params
+		color?.let { c -> if(params != null) c.params = params }
+		routeSurface()
+	}
+
+	private fun routeSurface()
+	{
+		val out = viewSurface
+		val want = colorParams
+		val c = color
+		if(c != null && (out == null || want == null || c.output !== out))
+		{
+			// вимикаємо обробку: спершу GL відпускає SurfaceView, потім декодер пише туди напряму
+			color = null
+			c.detachOutput()
+			surface = out
+			session?.setSurface(out)
+			c.release()
+			if(out == null || want == null)
+				return
+		}
+		if(out == null)
+			return
+		if(want == null)
+		{
+			if(surface !== out)
+			{
+				surface = out
+				session?.setSurface(out)
+			}
+			return
+		}
+		if(color != null)
+			return
+		val r = ColorRenderer(out)
+		val input = if(r.start()) r.input else null
+		if(input == null)
+		{
+			Log.e("AnyPlay", "Обробка кольорів недоступна на цьому телефоні: картинка напряму")
+			r.release()
+			return
+		}
+		r.params = want
+		surface = input
+		session?.setSurface(input)
+		if(!r.attachOutput())
+		{
+			Log.e("AnyPlay", "Обробка кольорів не підключилась до екрана: картинка напряму")
+			surface = out
+			session?.setSurface(out)
+			r.release()
+			return
+		}
+		color = r
+	}
+
 	fun attachToSurfaceView(surfaceView: SurfaceView)
 	{
 		surfaceView.holder.addCallback(object: SurfaceHolder.Callback {
@@ -151,14 +217,25 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 			override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int)
 			{
 				val surface = holder.surface
-				this@StreamSession.surface = surface
-				session?.setSurface(surface)
+				viewSurface = surface
+				if(colorParams == null && color == null)
+				{
+					this@StreamSession.surface = surface
+					session?.setSurface(surface)
+				}
+				else
+					routeSurface()
 			}
 
 			override fun surfaceDestroyed(holder: SurfaceHolder)
 			{
+				viewSurface = null
+				val c = color
+				color = null
+				c?.detachOutput()
 				this@StreamSession.surface = null
 				session?.setSurface(null)
+				c?.release()
 			}
 		})
 	}

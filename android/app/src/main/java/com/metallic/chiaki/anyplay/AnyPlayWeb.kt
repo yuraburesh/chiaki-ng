@@ -69,6 +69,9 @@ interface AnyPlayHost
 
 	/** На сторінці змінили якість картинки. Уже в головному потоці. */
 	fun qualityChanged() {}
+
+	/** На сторінці змінили кольори картинки (Зображення). Уже в головному потоці. */
+	fun pictureChanged() {}
 }
 
 /** WebView для сторінки AnyPlay; будь-яке стороннє посилання відкривається в браузері */
@@ -183,6 +186,29 @@ class AnyPlayBridge(private val activity: Activity, private val web: WebView, pr
 	/** Якість картинки: {auto, level, name, levels} */
 	@JavascriptInterface
 	fun quality(): String = AnyPlayQuality.json(activity).toString()
+
+	/** Кольори картинки: {brightness, contrast, saturation, warmth}, кожне -50..50 */
+	@JavascriptInterface
+	fun picture(): String = AnyPlayPicture.json(activity).toString()
+
+	/** Змінити кольори (JSON з тими самими ключами; порожній об'єкт — без змін). Повертає нові значення. */
+	@JavascriptInterface
+	fun setPicture(json: String): String
+	{
+		val o = try { JSONObject(json) } catch(e: Exception) { JSONObject() }
+		AnyPlayPicture.set(activity, o)
+		activity.runOnUiThread { if(alive()) host?.pictureChanged() }
+		return picture()
+	}
+
+	/** Кольори до типових (усе на нулі) */
+	@JavascriptInterface
+	fun resetPicture(): String
+	{
+		AnyPlayPicture.reset(activity)
+		activity.runOnUiThread { if(alive()) host?.pictureChanged() }
+		return picture()
+	}
 
 	/** choice: -1 — «Авто», 0..2 — сталий рівень. Повертає нову якість. */
 	@JavascriptInterface

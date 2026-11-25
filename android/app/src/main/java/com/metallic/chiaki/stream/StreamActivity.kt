@@ -18,6 +18,9 @@ import com.metallic.chiaki.anyplay.AnyPlayHost
 import com.metallic.chiaki.anyplay.AnyPlayStyle
 import com.metallic.chiaki.anyplay.AnyPlayWebDialog
 import com.metallic.chiaki.anyplay.GamepadView
+import com.metallic.chiaki.anyplay.AnyPlayPicture
+import com.metallic.chiaki.anyplay.PadEditor
+import com.metallic.chiaki.anyplay.PadLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.lifecycleScope
@@ -70,6 +73,10 @@ class StreamActivity : AppCompatActivity()
 		const val EXTRA_ANYPLAY = "anyplay"   // гра через сервер AnyPlay: час броні контролює сервер
 		const val EXTRA_ANYPLAY_ADMIN = "anyplay_admin"   // грає адмін: без нагадувань про кінець гри
 		const val EXTRA_ANYPLAY_GUEST = "anyplay_guest"   // гостьовий доступ (К5): без «Продовжити бронювання»
+		// «Грати тут» (гру забрали з іншого пристрою): скільки мс ще пробувати, поки приставка каже «уже зайнята»
+		const val EXTRA_ANYPLAY_TAKEOVER_MS = "anyplay_takeover_ms"
+		private const val TAKEOVER_RETRY_MS = 3000L
+		private const val QUIT_RP_IN_USE = 4   // CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE
 		private const val INPUT_RECENT_MS = 20000L
 		private const val ANYPLAY_BEAT_MS = 20000L
 		private const val ANYPLAY_BANNER_MS = 20000L
@@ -151,10 +158,18 @@ class StreamActivity : AppCompatActivity()
 				anyplayControls = it != false
 				binding.root.post { arrangeForOrientation() }
 			})
+			// у грі AnyPlay свій геймпад; старий шар «лише тачпад» (з chiaki) лежить поверх і забирав би всі дотики
+			if(viewModel.touchpadOnlyEnabled.value == true)
+				viewModel.setTouchpadOnlyEnabled(false)
 			binding.root.post {
-				findViewById<GamepadView>(R.id.gamepadView)?.menuCallback = { showAnyPlayMenu() }
+				gamepad()?.menuCallback = { showAnyPlayMenu() }
 				arrangeForOrientation()
 			}
+			// кольори картинки (Зображення): обробка відеокартою, лише коли не на нулі
+			viewModel.session.setColor(AnyPlayPicture.params(this))
+			val takeoverMs = intent.getLongExtra(EXTRA_ANYPLAY_TAKEOVER_MS, 0L)
+			if(takeoverMs > 0)
+				anyplayTakeoverUntil = SystemClock.elapsedRealtime() + takeoverMs
 		}
 
 		//viewModel.session.attachToTextureView(textureView)
@@ -178,17 +193,23 @@ class StreamActivity : AppCompatActivity()
 		}
 	}
 
-	private var controlsJob: Job? = null
+	// Екранних шарів керування два (геймпад AnyPlay і «лише тачпад»). До 114 тут лишалась підписка лише на
+	// останній приєднаний фрагмент («лише тачпад»), тож натискання екранного геймпада в гру не йшли зовсім.
+	// Тепер стан кожного шару окремо, а в гру — їхнє об'єднання.
+	private val controlsJobs = HashMap<String, Job>()
+	private val controlsStates = HashMap<String, com.metallic.chiaki.lib.ControllerState>()
 
 	override fun onAttachFragment(fragment: Fragment)
 	{
 		super.onAttachFragment(fragment)
 		if(fragment is TouchControlsFragment)
 		{
-			controlsJob?.cancel()
-			controlsJob = fragment.controllerState
+			val key = fragment.javaClass.name
+			controlsJobs.remove(key)?.cancel()
+			controlsJobs[key] = fragment.controllerState
 				.onEach {
-					viewModel.input.touchControllerState = it
+					controlsStates[key] = it
+					viewModel.input.touchControllerState = controlsStates.values.reduce { a, b -> a or b }
 					anyplayTouchAt = SystemClock.elapsedRealtime()
 				}
 				.launchIn(lifecycleScope)
@@ -223,6 +244,13 @@ class StreamActivity : AppCompatActivity()
 	private var anyplayReminded = 0                  // 10 — уже нагадали перед цим кінцем (один раз, за 10 хв), 0 — ще ні
 	private var anyplayBanner: View? = null
 	private var anyplayMenu: AnyPlayWebDialog? = null
+	private var padEditor: PadEditor? = null
+	/** «Грати тут»: до цього часу (elapsedRealtime) «приставка вже зайнята» означає, що інший пристрій ще її відпускає */
+	private var anyplayTakeoverUntil = 0L
+	private var anyplayTakeoverJob: Job? = null
+
+	/** Екранний геймпад AnyPlay (у фрагменті з розмітки; id фрагмента дістається обгортці, тому шукаємо за id самого геймпада) */
+	private fun gamepad(): GamepadView? = findViewById(R.id.gamepadView)
 
 	override fun onResume()
 	{
@@ -260,8 +288,13 @@ class StreamActivity : AppCompatActivity()
 				if(r.status == 401)
 					anyplayEnd("Доступ скасовано адміністратором.")
 				else if(r.status == 200 && !r.json.optBoolean("continue", true))
-					anyplayEnd(if(r.json.optString("reason") == "kicked") "Сеанс завершив адміністратор AnyPlay."
-						else "Час твоєї броні вийшов. Дякуємо за гру! Забронювати ще можна в боті.")
+					anyplayEnd(when(r.json.optString("reason"))
+					{
+						"kicked" -> "Сеанс завершив адміністратор AnyPlay."
+						// гру забрали кнопкою «Грати тут» на іншому пристрої клієнта
+						"other_device" -> r.json.optString("text").ifEmpty { "Гра продовжилась на іншому пристрої." }
+						else -> "Час твоєї броні вийшов. Дякуємо за гру! Забронювати ще можна в боті."
+					})
 				delay(ANYPLAY_BEAT_MS)
 			}
 		}
@@ -567,11 +600,14 @@ class StreamActivity : AppCompatActivity()
 		anyplayQualityJob?.cancel()
 		anyplayRemindJob?.cancel()
 		viewModel.session.pause()
+		anyplayTakeoverJob?.cancel()
+		padEditor?.close(true)
 		if(anyplay)
 			AnyPlayCloud.markLive(this, false)
-		// вийшли з гри: одразу кажемо серверу, що стріму тут більше немає — тоді на іншому пристрої клієнта
-		// одразу з'явиться «Грати» (інакше він чекав би, доки застаріє останній сигнал, до 90 с)
-		if(anyplay && isFinishing)
+		// згорнули чи вийшли з гри: стрім тут зупинено (pause), одразу кажемо це серверу — тоді на іншому пристрої
+		// клієнта одразу з'явиться «Грати» (інакше він чекав би, доки застаріє останній сигнал, до 90 с).
+		// До 115 сигнал ішов лише при виході з гри, і після згортання ноутбук друга кілька хвилин бачив «гра вже йде»
+		if(anyplay)
 		{
 			val ctx = applicationContext
 			Thread { AnyPlayCloud.heartbeat(ctx, false) }.start()
@@ -581,7 +617,8 @@ class StreamActivity : AppCompatActivity()
 	override fun onDestroy()
 	{
 		super.onDestroy()
-		controlsJob?.cancel()
+		controlsJobs.values.forEach { it.cancel() }
+		controlsJobs.clear()
 	}
 
 	private fun reconnect()
@@ -627,7 +664,7 @@ class StreamActivity : AppCompatActivity()
 			lp.topMargin = wantTop
 			binding.aspectRatioLayout.layoutParams = lp
 		}
-		findViewById<GamepadView>(R.id.gamepadView)?.let {
+		gamepad()?.let {
 			it.safeLeft = cut?.left ?: 0
 			it.safeRight = cut?.right ?: 0
 			it.safeBottom = cut?.bottom ?: 0
@@ -636,10 +673,27 @@ class StreamActivity : AppCompatActivity()
 		}
 	}
 
+	/** Редактор «Розташування кнопок» поверх гри: поки він відкритий, екранні кнопки в гру не йдуть */
+	private fun openPadEditor()
+	{
+		if(padEditor?.isOpen == true)
+			return
+		if(!anyplayControls)
+			viewModel.setOnScreenControlsEnabled(true)
+		binding.root.post {
+			val pad = gamepad() ?: return@post
+			anyplayHideBanner()
+			padEditor = PadEditor(this, binding.root, pad) {
+				padEditor = null
+				hideSystemUI()
+			}.also { it.open() }
+		}
+	}
+
 	/** Меню AnyPlay під час гри (кнопка «⋯» на джойстику, «Назад», банер «Продовжити»): сторінка в стилі паузи GTA */
 	private fun showAnyPlayMenu(page: String = "menu")
 	{
-		if(dialogContents != null || anyplayMenu != null)
+		if(dialogContents != null || anyplayMenu != null || padEditor?.isOpen == true)
 			return
 		anyplayHideBanner()
 		val d = AnyPlayWebDialog(this, page, anyplayHost, overGame = true) {
@@ -660,6 +714,7 @@ class StreamActivity : AppCompatActivity()
 			.put("admin", anyplayAdmin)
 			.put("guest", anyplayGuest)
 			.put("quality", AnyPlayQuality.name(this@StreamActivity))
+			.put("autoHide", PadLayout.autoHide(this@StreamActivity))
 			.toString()
 
 		override fun action(name: String, arg: String)
@@ -676,6 +731,12 @@ class StreamActivity : AppCompatActivity()
 					anyplayMenu?.dismiss()
 					finish()
 				}
+				// «Розташування кнопок»: редактор поверх гри
+				"layout" ->
+				{
+					anyplayMenu?.dismiss()
+					openPadEditor()
+				}
 				// гру продовжили й оплатили: новий кінець гри — одразу, не чекаючи наступного сигналу серверу
 				"refresh" -> lifecycleScope.launch {
 					val r = withContext(Dispatchers.IO) { AnyPlayCloud.heartbeat(this@StreamActivity, true) }
@@ -686,6 +747,12 @@ class StreamActivity : AppCompatActivity()
 					}
 				}
 			}
+		}
+
+		override fun pictureChanged()
+		{
+			// кольори змінюються одразу, без перепідключення
+			viewModel.session.setColor(AnyPlayPicture.params(this@StreamActivity))
 		}
 
 		override fun qualityChanged()
@@ -701,7 +768,10 @@ class StreamActivity : AppCompatActivity()
 	@Deprecated("Deprecated in Java")
 	override fun onBackPressed()
 	{
-		if(anyplay)
+		val editor = padEditor
+		if(editor != null && editor.isOpen)
+			editor.close(true)
+		else if(anyplay)
 			showAnyPlayMenu()
 		else
 			super.onBackPressed()
@@ -763,7 +833,26 @@ class StreamActivity : AppCompatActivity()
 	{
 		binding.progressBar.visibility = if(state == StreamStateConnecting) View.VISIBLE else View.GONE
 		if(anyplay && state == StreamStateConnected)
+		{
 			AnyPlayCloud.markLive(this, true)
+			anyplayTakeoverUntil = 0L
+		}
+		// «Грати тут»: інший пристрій ще тримає приставку (відпустить за кілька секунд) — пробуємо знову раз на 3 с
+		if(anyplay && anyplayTakeoverUntil > SystemClock.elapsedRealtime() && !isFinishing &&
+			((state is StreamStateQuit && state.reason.value == QUIT_RP_IN_USE) || state is StreamStatePsnFailed))
+		{
+			if(anyplayTakeoverJob?.isActive != true)
+			{
+				Toast.makeText(this, "Приставка ще зайнята на іншому пристрої. Вона звільниться за кілька секунд, підключаюсь…", Toast.LENGTH_SHORT).show()
+				anyplayTakeoverJob = lifecycleScope.launch {
+					delay(TAKEOVER_RETRY_MS)
+					viewModel.session.shutdown()
+					viewModel.session.resume()
+				}
+			}
+			binding.progressBar.visibility = View.VISIBLE
+			return
+		}
 		if(anyplay && (state is StreamStateQuit || state is StreamStatePsnFailed))
 			AnyPlayCloud.markLive(this, false)
 
@@ -949,7 +1038,11 @@ class StreamActivity : AppCompatActivity()
 		// телеметрія: геймпад чи клавіатура (системні кнопки телефона, як «Назад», не рахуємо)
 		val src = event.source
 		if(src and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || src and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK)
+		{
 			anyplayPadAt = SystemClock.elapsedRealtime()
+			if(anyplay && event.keyCode != KeyEvent.KEYCODE_BACK)
+				gamepad()?.physicalInput()   // грають геймпадом: кнопки на екрані ховаються до першого дотику
+		}
 		else if(event.device?.isVirtual == false && event.device?.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC)
 			anyplayKeysAt = SystemClock.elapsedRealtime()
 		return viewModel.input.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
@@ -958,9 +1051,23 @@ class StreamActivity : AppCompatActivity()
 	override fun onGenericMotionEvent(event: MotionEvent): Boolean
 	{
 		if(event.source and InputDevice.SOURCE_CLASS_JOYSTICK == InputDevice.SOURCE_CLASS_JOYSTICK)
+		{
 			anyplayPadAt = SystemClock.elapsedRealtime()
+			if(anyplay && padMoved(event))
+				gamepad()?.physicalInput()
+		}
 		return viewModel.input.onGenericMotionEvent(event) || super.onGenericMotionEvent(event)
 	}
+}
+
+/** Стік чи курок справді зрушили (а не шум біля нуля): тоді це гра геймпадом */
+private fun padMoved(e: MotionEvent): Boolean
+{
+	for(axis in intArrayOf(MotionEvent.AXIS_X, MotionEvent.AXIS_Y, MotionEvent.AXIS_Z, MotionEvent.AXIS_RZ,
+		MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_HAT_X, MotionEvent.AXIS_HAT_Y))
+		if(kotlin.math.abs(e.getAxisValue(axis)) > 0.35f)
+			return true
+	return false
 }
 
 enum class TransformMode

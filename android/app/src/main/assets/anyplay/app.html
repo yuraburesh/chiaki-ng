@@ -142,6 +142,14 @@ h2{font:600 26px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 .times button.now.on small{color:#221d2eb3}
 .times .note{grid-column:1/-1;color:var(--mute);padding:6px 0}
 .mt{margin-top:18px}
+/* кольори картинки: повзунки -50..50, тонка біла лінія, біла кругла ручка */
+.sl{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 12px;padding:8px 0;border-bottom:1px solid var(--hair)}
+.sl .t{font:500 14px/1.35 var(--body)}
+.sl .v{font:500 13px var(--display);letter-spacing:1px;color:var(--mute);min-width:34px;text-align:right;font-variant-numeric:tabular-nums}
+.sl input{grid-column:1/-1;width:100%;margin:6px 0 2px;-webkit-appearance:none;appearance:none;background:transparent;height:28px}
+.sl input::-webkit-slider-runnable-track{height:2px;background:linear-gradient(90deg,var(--edge),var(--edge))}
+.sl input::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--ink);margin-top:-9px;border:0}
+.sl .s{grid-column:1/-1;font-size:12px;color:var(--faint)}
 .bk{border-bottom:1px solid var(--hair);padding:10px 0 12px}
 .bk .row{border-bottom:0;padding:0;min-height:0}
 .bk .meta{font-size:12.5px;color:var(--mute);margin-top:6px}
@@ -324,7 +332,7 @@ body.wallet #methods{margin-top:6px}
       <button type="button" data-tab="home">Гра</button>
       <button type="button" data-tab="book" class="noadmin">Бронювання</button>
       <button type="button" data-tab="wallet" class="noadmin wonly">Баланс</button>
-      <button type="button" data-tab="quality">Якість</button>
+      <button type="button" data-tab="quality">Зображення</button>
       <button type="button" data-tab="psn" class="noadmin">Мій PSN</button>
       <button type="button" data-tab="help">Як керувати</button>
     </nav>
@@ -428,7 +436,11 @@ body.wallet #methods{margin-top:6px}
     <div id="vQuality" class="hidden">
       <div class="grid2">
         <div><h2 class="vtitle">Якість картинки</h2><p class="hint vtitle lhide">«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш інше, якість буде сталою.</p>
-          <div class="pick mt" id="qList"></div></div>
+          <div class="pick mt" id="qList"></div>
+          <p class="cap mt">Кольори</p>
+          <p class="small">Змінюються одразу, без перепідключення. Обробляє відеокарта телефона: затримка не помітна. Коли все на нулі, картинка йде без обробки.</p>
+          <div id="picList"></div>
+          <div class="actions"><button type="button" class="btn ghost sm" id="picReset">Скинути кольори</button></div></div>
         <div id="netBox"><p class="cap">Перевірити інтернет</p>
           <p class="small">Необов'язково. Перевірка міряє інтернет цього пристрою, а гра ще залежить від того, Wi-Fi це чи кабель. Витрачає до 40 МБ трафіку.</p>
           <div id="netRows"></div>
@@ -543,7 +555,7 @@ const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','q
 document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
 const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality'};
-const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Якість картинки'};
+const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Зображення'};
 let view = null, viewTok = 0, method = null, busy = false;
 
 function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
@@ -656,9 +668,17 @@ function heroUser(){
       + (checking ? '' : bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити бронювання</button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
   }
   // приставка тримає одне підключення: поки клієнт грає на іншому своєму пристрої, тут «Грати» немає (інакше той вибило б)
-  if(st === 'other_device') return '<span class="eyebrow">Гра вже йде</span><p class="big">На іншому пристрої</p>'
-    + '<p class="lead">Зараз ти граєш на «' + esc(s.otherDevice || 'іншому пристрої') + '». Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з\'явиться кнопка «Грати».</p>'
-    + '<div class="actions"><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>';
+  if(st === 'other_device'){
+    const dev = '«' + esc(s.otherDevice || 'іншому пристрої') + '»';
+    // новий сервер (етап 5): гру можна забрати сюди кнопкою «Грати тут», той пристрій зупинить стрім сам
+    if(s.canTakeover) return '<span class="eyebrow">Гра вже йде</span><p class="big">На іншому пристрої</p>'
+      + '<p class="lead">' + (s.otherSeen > 20 ? 'Схоже, на ' + dev + ' гру вже закрили. ' : 'Зараз ти граєш на ' + dev + '. ')
+      + 'Натисни «Грати тут», і гра продовжиться на цьому телефоні, а там зупиниться. Твій час не змінюється.</p>'
+      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="takeover">▶ Грати тут</button><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>');
+    return '<span class="eyebrow">Гра вже йде</span><p class="big">На іншому пристрої</p>'
+      + '<p class="lead">Зараз ти граєш на ' + dev + '. Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з\'явиться кнопка «Грати».</p>'
+      + '<div class="actions"><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>';
+  }
   if(st === 'no_console') return '<span class="eyebrow bad">Приставка</span><p class="big">' + (s.closed ? 'Технічні роботи' : 'Приставка зараз недоступна') + '</p>'
     + '<p class="lead">Ми вже це лагодимо. Твоя бронь і оплата збережені. Якщо є питання, напиши в підтримку.</p>'
     + '<div class="actions"><button type="button" class="btn" data-act="bot">Відкрити бота</button></div>';
@@ -715,7 +735,8 @@ function renderSide(){
       + '<span class="chip balv">' + esc(wText()) + '</span></div>';
   }
   h += '<p class="cap">Налаштування гри</p>'
-    + '<div class="row click" data-tab="quality"><span><span class="t">Якість картинки</span><span class="s">' + (q.auto ? 'сама підлаштовується під інтернет' : 'стала, обрана вручну') + '</span></span><span class="chip">' + esc(q.name || 'Авто') + '</span></div>';
+    + '<div class="row click" data-tab="quality"><span><span class="t">Зображення</span><span class="s">якість і кольори картинки</span></span><span class="chip">' + esc(q.name || 'Авто') + '</span></div>'
+    + '<div class="row click" data-act="layout"><span><span class="t">Кнопки на екрані</span><span class="s">розташування, розмір, додаткові кнопки</span></span><span class="chip">змінити</span></div>';
   if(!H.admin){
     const psn = !s.myPsn ? ['', 'спільний'] : s.myPsnReady ? ['ok', s.myPsn] : ['wait', 'підключається'];
     h += '<div class="row click" data-tab="psn"><span><span class="t">Акаунт PSN</span><span class="s">на якому акаунті грати</span></span><span class="chip ' + psn[0] + '">' + esc(psn[1]) + '</span></div>'
@@ -1420,7 +1441,34 @@ const QDEF = {auto: true, level: 1, name: 'Авто: Оптимальна', leve
 let Q = null;
 function qInfo(){ const x = nativeJson('quality'); return x && x.levels ? x : (Q || QDEF); }
 function loadQuality(){ renderQuality(); show('quality'); }
+// ── кольори картинки (на телефоні: обробка відеокартою, див. AnyPlayPicture.kt) ──
+const PIC = [['brightness', 'Яскравість', 'темніше або світліше, коли гра надто темна'], ['contrast', 'Контраст', 'різниця між світлим і темним'],
+  ['saturation', 'Насиченість', 'від блідих до яскравих кольорів'], ['warmth', 'Тепло', 'ліворуч холодніше (синє), праворуч тепліше (жовте)']];
+let PV = null, picT = 0;
+function picInfo(){ return nativeJson('picture') || PV || {brightness: 0, contrast: 0, saturation: 0, warmth: 0}; }
+function picSign(v){ v = +v || 0; return (v > 0 ? '+' : '') + v; }
+function renderPicture(){
+  PV = picInfo();
+  $('picList').innerHTML = PIC.map(p => '<label class="sl"><span class="t">' + p[1] + '</span><span class="v" id="pv_' + p[0] + '">' + picSign(PV[p[0]]) + '</span>'
+    + '<input type="range" min="-50" max="50" step="1" value="' + (+PV[p[0]] || 0) + '" data-pic="' + p[0] + '" aria-label="' + p[1] + '"><span class="s">' + p[2] + '</span></label>').join('');
+  $('picList').querySelectorAll('[data-pic]').forEach(el => {
+    el.oninput = () => {
+      const k = el.dataset.pic; PV[k] = +el.value; $('pv_' + k).textContent = picSign(el.value);
+      // під час руху повзунка шлемо не частіше ніж раз на 60 мс; останнє значення — при відпусканні
+      const now = Date.now(); if(now - picT > 60){ picT = now; picSend(); }
+    };
+    el.onchange = picSend;
+  });
+}
+function picSend(){ try { native && native.setPicture && native.setPicture(JSON.stringify(PV)); } catch(e) {} }
+$('picReset').onclick = () => {
+  haptic();
+  try { if(native && native.resetPicture) PV = JSON.parse(native.resetPicture()); } catch(e) {}
+  PV = {brightness: 0, contrast: 0, saturation: 0, warmth: 0}; renderPicture();
+  if(MODE !== 'menu') toast('Кольори скинуто');
+};
 function renderQuality(){
+  renderPicture();
   Q = qInfo();
   const items = [{c: -1, t: 'Авто (радимо)', s: 'програма сама підбирає якість під твій інтернет' + (Q.auto ? ', зараз: ' + Q.levels[Q.level].title : '')}]
     .concat(Q.levels.map((l, i) => ({c: i, t: l.title, s: l.hint})));
@@ -1512,7 +1560,7 @@ $('netBtn').onclick = netTest;
 $('netApply').onclick = () => { if(netRec >= 0){ setQuality(netRec, true); $('netApply').classList.add('hidden'); } };
 
 // ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
-const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['quality', 'Якість'], ['console', 'Керування приставкою'], ['controls', 'Кнопки на екрані'], ['exit', 'Вийти з гри']];
+const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['quality', 'Зображення'], ['console', 'Керування приставкою'], ['controls', 'Кнопки на екрані'], ['exit', 'Вийти з гри']];
 let pmSel = 'back', pmDetail = false, G = {};
 function pmInit(){
   $('pm').classList.remove('hidden');
@@ -1537,11 +1585,12 @@ function pmRender(){
   let h = '';
   if(pmSel === 'back') h = '<p class="cap">Гра на паузі не стоїть</p><p class="lead">Поки відкрите це меню, гра на приставці йде далі. Повернись кнопкою ліворуч або кнопкою «Назад».</p>';
   else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити бронювання</p>'; view = 'extend'; loadExtend(); }
-  else if(pmSel === 'quality'){ h = '<p class="cap">Якість картинки</p><p class="lead">Нова якість діє з нового підключення: картинка зникне на кілька секунд.</p>'; view = 'quality'; loadQuality(); }
+  else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="lead">Нова якість діє з нового підключення: картинка зникне на кілька секунд. Кольори змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
   else if(pmSel === 'console'){ h = '<p class="cap">Керування приставкою</p><p class="small">Це працює в будь-якій грі й у меню PS5.</p>'; view = 'help'; loadHelp(); }
   else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="lead">' + (G.controls === false
-      ? 'Зараз кнопки на екрані сховано. Якщо граєш без геймпада, покажи їх знову.' : 'Зараз кнопки на екрані показано. Якщо граєш з геймпадом (Bluetooth чи кабель), їх можна сховати.')
-    + '</p><div class="actions"><button type="button" class="btn" data-act="controls">' + (G.controls === false ? 'Показати кнопки на екрані' : 'Сховати кнопки на екрані') + '</button></div>';
+      ? 'Зараз кнопки на екрані сховано. Якщо граєш без геймпада, покажи їх знову.' : 'Зараз кнопки на екрані показано. Коли граєш геймпадом (Bluetooth чи кабель), вони самі ховаються до першого дотику, а можна сховати й зовсім.')
+    + '</p><p class="small" style="margin-top:6px">У розташуванні можна пересунути кожну кнопку, змінити розмір і прозорість, додати кнопки «Постріл», «Перезарядка», «Сісти в машину» та інші.</p>'
+    + '<div class="actions"><button type="button" class="btn" data-act="layout">Розташування кнопок</button><button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>';
   else if(pmSel === 'exit') h = '<p class="cap bad">Вийти з гри</p><p class="lead">Трансляція закриється, але час гри йде далі.'
     + (until ? ' Повернутись можна з головного екрана кнопкою «Грати» до <b>' + until + '</b>.' : ' Повернутись можна з головного екрана кнопкою «Грати».')
     + '</p><div class="actions"><button type="button" class="btn" data-act="exit">Вийти з гри</button><button type="button" class="btn ghost" id="pmStay">Залишитись</button></div>';

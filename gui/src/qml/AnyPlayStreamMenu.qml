@@ -16,6 +16,10 @@
 // AnyPlay 115 (перегляд для адміна): demo: true — те саме меню без гри (панель адміна, «Меню гри: перегляд»): дані —
 // із заглушок нижче (час броні, якість, зв'язок, продовження), нічого не надсилає на сервер і не змінює налаштувань;
 // дії, що в грі щось зробили б (вийти, перепідключити, відкрити головне вікно), лише кажуть про це сигналом demoEvent.
+// AnyPlay 116: пункт «Друзі й трансляція» (AnyPlayLivePanel): трансляція для друзів, голос і чат, допомога друга.
+// Є лише тоді, коли в програмі є модуль трансляції (Chiaki.live) і власник її не вимкнув. Сторінка створюється у фоні
+// (asynchronous), коли на пункт уперше зайшли, і далі лише ховається: прохід стрілками повз нього не гальмує.
+// Поки керує друг, меню відкривається одразу на цьому пункті: ` і Enter — «Забрати керування».
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -24,7 +28,7 @@ import org.streetpea.chiaking
 
 Item {
     id: panel
-    property string page: "back"     // back | extend | keys | image | console | home | wallet | support | exit
+    property string page: "back"     // back | extend | live | keys | image | console | home | wallet | support | exit
     property bool demo: false        // перегляд у панелі адміна, без гри
     property bool demoAdmin: false   // у перегляді: меню адміна замість меню клієнта
     readonly property bool admin: demo ? demoAdmin : Chiaki.cloud.admin === true
@@ -44,10 +48,19 @@ Item {
     signal exit()     // завершити трансляцію
     signal demoEvent(string text)   // перегляд: що сталося б у грі
     // з чого почати фокус, коли меню відкрилось (з нагадування про кінець гри — одразу «Продовжити гру»)
-    readonly property Item firstItem: openPage === "extend" && canExtend ? extendBtn : resumeBtn
+    // (поки керує друг — одразу «Друзі й трансляція»: там «Забрати керування»)
+    readonly property Item firstItem: liveApi.available && liveApi.friendControls ? liveBtn
+                                    : openPage === "extend" && canExtend ? extendBtn : resumeBtn
     AnyPlayStyle { id: ap }
+    // трансляція для друзів, голос, допомога друга: справжні дані або заглушки перегляду
+    AnyPlayLiveApi { id: liveApi; demo: panel.demo }
+    // друг узяв керування: сторінку з «Забрати керування» готуємо заздалегідь (у фоні), щоб ` і Enter спрацювали одразу
+    Connections {
+        target: liveApi
+        function onFriendControlsChanged() { if (liveApi.friendControls) liveLoader.wanted = true; }
+    }
 
-    readonly property var items: [resumeBtn, extendBtn, keysBtn, imageBtn, consoleBtn, homeBtn, walletBtn, supportBtn, exitBtn]
+    readonly property var items: [resumeBtn, extendBtn, liveBtn, keysBtn, imageBtn, consoleBtn, homeBtn, walletBtn, supportBtn, exitBtn]
     function itemFor(p) {
         for (let i = 0; i < items.length; i++)
             if (items[i].pageId === p)
@@ -81,7 +94,7 @@ Item {
     function enterContent() {
         if (isOverlayPage(page)) { openOverlay(page); return; }
         const target = page === "exit" ? exitConfirm : (page === "image" ? imagePanel.firstControl : (page === "extend" ? extendPanel.firstOption
-                     : (page === "keys" ? keysLoader.item : null)));
+                     : (page === "keys" ? keysLoader.item : (page === "live" && liveLoader.item ? liveLoader.item.firstControl : null))));
         if (target && target.visible && target.enabled)
             target.forceActiveFocus(Qt.TabFocusReason);
         else {
@@ -92,7 +105,9 @@ Item {
     }
     onVisibleChanged: {
         overlay = "";
-        if (visible)
+        if (visible && liveApi.available && liveApi.friendControls)
+            page = "live";
+        else if (visible)
             page = openPage !== "" && (openPage !== "extend" || canExtend) && !isOverlayPage(openPage) ? openPage : "back";
         else
             page = "back";
@@ -102,7 +117,7 @@ Item {
     onFocusNowChanged: {
         const f = focusNow;
         if (!f || !panel.visible) return;
-        const pages = [backPage, extendPage, imagePage, consolePage, overPage, exitPage];
+        const pages = [backPage, extendPage, livePage, imagePage, consolePage, overPage, exitPage];
         for (let i = 0; i < pages.length; i++) {
             const pf = pages[i];
             if (!pf.visible || !pf.interactive) continue;
@@ -375,8 +390,17 @@ Item {
                     Layout.alignment: Qt.AlignTop
                     spacing: zoom.low ? 3 : 6
                     PauseItem { id: resumeBtn; pageId: "back"; text: qsTr("Повернутись у гру"); KeyNavigation.down: extendBtn }
-                    PauseItem { id: extendBtn; pageId: "extend"; visible: panel.canExtend; text: qsTr("Продовжити бронювання"); KeyNavigation.up: resumeBtn; KeyNavigation.down: keysBtn }
-                    PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: extendBtn; KeyNavigation.down: imageBtn }
+                    PauseItem { id: extendBtn; pageId: "extend"; visible: panel.canExtend; text: qsTr("Продовжити бронювання"); KeyNavigation.up: resumeBtn; KeyNavigation.down: liveBtn }
+                    // 116: трансляція для друзів; поки керує друг — блакитне, з позначкою «керує друг»
+                    PauseItem {
+                        id: liveBtn; pageId: "live"
+                        visible: liveApi.available
+                        live: liveApi.on || liveApi.friendControls
+                        text: liveApi.friendControls ? qsTr("Керує друг: забрати")
+                            : liveApi.unread > 0 ? qsTr("Друзі й трансляція (%1)").arg(liveApi.unread) : qsTr("Друзі й трансляція")
+                        KeyNavigation.up: extendBtn; KeyNavigation.down: keysBtn
+                    }
+                    PauseItem { id: keysBtn; pageId: "keys"; text: qsTr("Клавіші"); KeyNavigation.up: liveBtn; KeyNavigation.down: imageBtn }
                     PauseItem { id: imageBtn; pageId: "image"; text: qsTr("Зображення"); KeyNavigation.up: keysBtn; KeyNavigation.down: consoleBtn }
                     PauseItem { id: consoleBtn; pageId: "console"; text: qsTr("Керування приставкою"); KeyNavigation.up: imageBtn; KeyNavigation.down: homeBtn }
                     PauseItem { id: homeBtn; pageId: "home"; text: panel.admin ? qsTr("Панель адміна") : qsTr("Головне вікно AnyPlay"); KeyNavigation.up: consoleBtn; KeyNavigation.down: walletBtn }
@@ -527,6 +551,33 @@ Item {
                         anchors.fill: keysLoader
                         acceptedButtons: Qt.AllButtons
                         onWheel: (wheel) => wheel.accepted = false
+                    }
+
+                    // 116: друзі й трансляція. Створюється у фоні, коли на пункт уперше зайшли, і далі лише ховається
+                    PageFlick {
+                        id: livePage
+                        visible: panel.page === "live"
+                        Loader {
+                            id: liveLoader
+                            property bool wanted: false
+                            property bool focusOnLoad: false
+                            width: content.width
+                            asynchronous: true
+                            active: wanted && liveApi.available
+                            onLoaded: if (focusOnLoad) { focusOnLoad = false; if (panel.page === "live") item.firstControl.forceActiveFocus(Qt.TabFocusReason); }
+                            sourceComponent: Component {
+                                AnyPlayLivePanel {
+                                    api: liveApi
+                                    demo: panel.demo
+                                    navLeft: liveBtn
+                                }
+                            }
+                        }
+                        ApText {   // поки сторінка вантажиться у фоні (перший раз, частки секунди)
+                            visible: liveLoader.status !== Loader.Ready
+                            role: "small"; color: ap.faint
+                            text: qsTr("Відкриваю…")
+                        }
                     }
 
                     // зображення: якість з прикладами, кольори, обробка, екран і звук, трансляція зараз (AnyPlay 113)
@@ -690,6 +741,8 @@ Item {
     }
 
     onPageChanged: {
+        if (page === "live")
+            liveLoader.wanted = true;   // у фоні; далі сторінка лишається створеною
         if (page === "keys")
             keysDelay.restart();
         else {
@@ -777,6 +830,7 @@ Item {
         property string pageId
         property string text
         property bool danger: false
+        property bool live: false         // 116: трансляція йде або керує друг — блакитна позначка зліва
         property bool byMouse: false
         readonly property bool current: panel.page === pageId
         readonly property bool hov: piMouse.containsMouse
@@ -790,6 +844,7 @@ Item {
             else {
                 panel.page = pageId;
                 if (pageId === "keys") { keysLoader.wanted = true; if (!keysLoader.item) { keysLoader.focusOnLoad = true; return; } }
+                if (pageId === "live") { liveLoader.wanted = true; if (!liveLoader.item) { liveLoader.focusOnLoad = true; return; } }
                 panel.enterContent();
             }
         }
@@ -844,6 +899,12 @@ Item {
                 color: pi.current ? ap.inkAccent : pi.danger ? ap.bad : ap.ink
                 opacity: pi.current || pi.hov || pi.activeFocus ? 1 : 0.72
                 Behavior on opacity { NumberAnimation { duration: ap.tHover } }
+            }
+            Rectangle {   // 116: позначка «в ефірі» / «керує друг»: блакитна крапка зліва від назви
+                visible: pi.live && !pi.current
+                anchors { left: parent.left; leftMargin: 5; verticalCenter: parent.verticalCenter }
+                width: 6; height: 6; radius: 3
+                color: ap.cyan
             }
             Text {   // стрілка праворуч у обраного: туди йде вміст
                 anchors { right: parent.right; rightMargin: 14; verticalCenter: parent.verticalCenter }

@@ -592,6 +592,21 @@ Item {
         }
     }
 
+    // AnyPlay 116: трансляція для друзів — «ЕФІР 3 глядачі» / «КЕРУЄ ДРУГ» угорі праворуч і чат у нижній смузі.
+    // Без модуля трансляції (Chiaki.live) нічого не створюється й не показується.
+    AnyPlayLiveApi { id: anyplayLiveApi }
+    Loader {
+        z: 60
+        anchors.fill: parent
+        active: anyplayLiveApi.available
+        sourceComponent: AnyPlayLiveHud {
+            api: anyplayLiveApi
+            fits: view.anyplayHudFits
+            k: view.anyplayHudK
+            hidden: view.anyplayHudHidden
+            onNotice: (label, text, ms) => anyplayHud.show(label, text, ms)
+        }
+    }
 
     Component {
         id: menuContentComponent

@@ -401,6 +401,7 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
 	connect_info.video_profile.codec = (ChiakiCodec)target_value;
 
 	connect_info.video_profile_auto_downgrade = true;
+	connect_info.enable_idr_on_fec_failure = true;   // AnyPlay: після збою FEC просимо ключовий кадр і тримаємо останню добру картинку
 
 	// AnyPlay: гра через інтернет — з'єднання з PS5 пробиває PSN, прив'язка відбувається в тій самій сесії
 	if(psn_token_string)

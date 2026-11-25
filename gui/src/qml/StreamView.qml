@@ -1460,6 +1460,9 @@ Item {
         }
 
         function onSessionError(title, text) {
+            // «Грати тут»: поки інший пристрій відпускає приставку, програма сама повторює підключення — помилок не показуємо
+            if (Chiaki.cloud.takeoverWaiting === true)
+                return;
             sessionError = true;
             sessionLoading = false;
             errorTitleLabel.text = title;

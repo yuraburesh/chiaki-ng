@@ -64,9 +64,25 @@ jobs:
           sudo INSTALL_PREFIX=/usr/local scripts/build-sdl2-compat.sh
           sudo cp /usr/local/lib/pkgconfig/sdl2-compat.pc /usr/local/lib/pkgconfig/sdl2.pc
 
+      # AnyPlay 116: джерела libdatachannel (трансляція друзям) — фіксована версія, з кешу GitHub;
+      # без кешу — клон з повторами й перевіркою коміту (scripts/anyplay-fetch-libdatachannel.sh)
+      - name: Restore libdatachannel sources
+        id: ldc-cache
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: ldc-src
+          key: libdatachannel-v0.24.6-6b1e2e620f1e37f0eafeee702eaea0043cb305fd-v1
+
+      - name: Fetch libdatachannel sources
+        if: ${{ steps.ldc-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: scripts/anyplay-fetch-libdatachannel.sh "$GITHUB_WORKSPACE/ldc-src"
+
       - name: Configure chiaki-ng
         run: |
           cmake -S . -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DANYPLAY_LIVE=ON -DFETCHCONTENT_SOURCE_DIR_LIBDATACHANNEL="$GITHUB_WORKSPACE/ldc-src" \
             -DCHIAKI_ENABLE_CLI=OFF -DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF \
             -DOPENSSL_ROOT_DIR=/opt/local/libexec/openssl3 \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;/opt/local/libexec/openssl3;/opt/local" \

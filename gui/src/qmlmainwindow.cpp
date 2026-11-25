@@ -3325,6 +3325,9 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
     // К12: адмін чекає кадр, а відеокарта його не дала — знімаємо копію цього кадру у фоні (без затримки показу)
     if (!startup_warmup_frame_active && preview_cpu_id.loadRelaxed() > preview_delivered_id)
         capturePreviewFromFrame(frame.frame);
+    // AnyPlay 116: трансляція друзям — посилання на кадр (не частіше 30 за секунду) у потік кодування; зламані кадри не шлемо
+    if (!startup_warmup_frame_active && !frame.corrupt)
+        AnyPlayLive::tapVideoFrame(frame.frame);
 
     if (!startup_warmup_frame_active) {
         // AnyPlay: спокійний старт — рахуємо рівні кадри, поки на екрані ще завантаження

@@ -1,4 +1,5 @@
 #include "anyplaycloud.h"
+#include "anyplaylive.h"
 #include "anyplayupdater.h"
 #include "settings.h"
 #include "qmlbackend.h"
@@ -725,6 +726,23 @@ void AnyPlayCloud::heartbeat()
 		if(status != 200)
 			return; // тимчасові проблеми зі зв'язком не обривають гру
 		applyExtras(o);
+		// 116: «Передати повністю» — власник передав гру другові (reason handoff) або повернув її собі, і тоді
+		// зупиняється друг (handoff_return). Приставку в обох випадках не присипляємо: на ній далі грають
+		if(!o.value("continue").toBool() && (o.value("reason").toString() == QLatin1String("handoff")
+			|| o.value("reason").toString() == QLatin1String("handoff_return")))
+		{
+			QString text = o.value("text").toString();
+			if(text.isEmpty())
+				text = o.value("reason").toString() == QLatin1String("handoff_return")
+					? tr("Гру повернули власникові броні. Дякуємо за допомогу!")
+					: tr("Гру передано другові. Повернути собі можна в розділі «Друзі й трансляція».");
+			qInfo().noquote() << "[anyplay-live] heartbeat:" << o.value("reason").toString();
+			if(AnyPlayLive *live = AnyPlayLive::instance())
+				live->applyServerHint(o);
+			stopPlay(text, false);
+			refresh();
+			return;
+		}
 		if(!o.value("continue").toBool() && o.value("reason").toString() == QLatin1String("other_device"))
 		{
 			// клієнт натиснув «Грати тут» на іншому пристрої: гра йде там, тож приставку не присипляємо
@@ -910,6 +928,13 @@ QJsonObject AnyPlayCloud::takeStats()
 	{
 		o["complaint"] = true;
 		complaint_ = false;
+	}
+	// К14 (116): трансляція друзям — чи йде, скільки глядачів, якість, чи знижувалась і чи ставала на паузу
+	if(AnyPlayLive *live = AnyPlayLive::instance())
+	{
+		const QJsonObject l = live->takeHeartbeatStats();
+		for(auto it = l.begin(); it != l.end(); ++it)
+			o[it.key()] = it.value();
 	}
 	stat_ = StatWindow();
 	stat_sent_ = true;
@@ -2531,6 +2556,9 @@ void AnyPlayCloud::rawRequest(const QString &method, const QString &path, const 
 
 void AnyPlayCloud::applyExtras(const QJsonObject &o)
 {
+	// 116: «Передати повністю» — handoffOffer (другові підготували передачу) і handoff (стан передачі)
+	if(AnyPlayLive *live = AnyPlayLive::instance())
+		live->applyServerHint(o);
 	// підтримка: скільки нових відповідей адміна (крапка на кнопці «Підтримка»)
 	if(o.value("support").isObject())
 	{
@@ -2976,6 +3004,14 @@ bool AnyPlayCloud::webEngine() const
 QString AnyPlayCloud::crmUrl() const
 {
 	return server_ + QStringLiteral("/app/admin.html");
+}
+
+QString AnyPlayCloud::webAppUrl(const QString &page) const
+{
+	QString p = page;
+	while(p.startsWith(QLatin1Char('/')))
+		p.remove(0, 1);
+	return server_ + QStringLiteral("/app/") + p;
 }
 
 bool AnyPlayCloud::isOwnUrl(const QUrl &url) const

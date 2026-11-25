@@ -1,2 +1,4 @@
 /test/*.inl linguist-generated=true
 /lib/*.h linguist-language=C
+# AnyPlay 116: скрипт запускається й у Windows (Git Bash) — рядки мають лишатись LF
+scripts/*.sh text eol=lf

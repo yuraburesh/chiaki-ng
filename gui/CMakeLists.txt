@@ -36,6 +36,8 @@ set(SOURCE_FILES
 	src/anyplayupdater.cpp
 	include/anyplayspeedtest.h
 	src/anyplayspeedtest.cpp
+	include/anyplaylive.h
+	src/anyplaylive.cpp
 	include/sessionlog.h
 	src/sessionlog.cpp
 	include/settings.h
@@ -75,6 +77,14 @@ elseif(WIN32)
 		${CMAKE_CURRENT_SOURCE_DIR}/chiaking.rc
 		@ONLY)
 	list(APPEND RESOURCE_FILES "chiaking.rc")
+endif()
+
+# AnyPlay 116: медіа трансляції (без неї Chiaki.live є, але каже, що в цій збірці трансляції немає)
+if(ANYPLAY_LIVE)
+	list(APPEND SOURCE_FILES
+		include/anyplaylivemedia.h
+		src/anyplaylivemedia.cpp
+	)
 endif()
 
 if(CHIAKI_ENABLE_STEAMDECK_NATIVE AND LINUX)
@@ -146,6 +156,17 @@ if (${Qt6WebEngineQuick_FOUND})
 	target_compile_definitions(chiaki PRIVATE CHIAKI_HAVE_WEBENGINE)
 endif()
 target_link_libraries(chiaki SDL2::SDL2)
+if(ANYPLAY_LIVE)
+	# масштабування кадру гри до 540p/720p (libswscale) і Opus для голосу/звуку гри
+	find_package(FFMPEG REQUIRED COMPONENTS swscale)
+	find_package(Opus REQUIRED)
+	target_link_libraries(chiaki LibDataChannel::LibDataChannelStatic FFMPEG::swscale ${Opus_LIBRARIES})
+	target_include_directories(chiaki PRIVATE ${Opus_INCLUDE_DIRS})
+	target_compile_definitions(chiaki PRIVATE ANYPLAY_HAVE_LIVE)
+	message(STATUS "AnyPlay live: enabled")
+else()
+	message(STATUS "AnyPlay live: disabled (ANYPLAY_LIVE=OFF)")
+endif()
 if(CHIAKI_ENABLE_SPEEX)
   target_link_libraries(chiaki PkgConfig::SpeexDSP)
   target_compile_definitions(chiaki PRIVATE CHIAKI_GUI_ENABLE_SPEEX)

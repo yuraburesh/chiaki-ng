@@ -208,6 +208,21 @@ jobs:
           ninja -C./build
           ninja -C./build install
 
+      # AnyPlay 116: джерела libdatachannel (трансляція друзям) — фіксована версія, з кешу GitHub;
+      # без кешу — клон з повторами й перевіркою коміту (scripts/anyplay-fetch-libdatachannel.sh)
+      - name: Restore libdatachannel sources
+        id: ldc-cache
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: ldc-src
+          key: libdatachannel-v0.24.6-6b1e2e620f1e37f0eafeee702eaea0043cb305fd-v1
+
+      - name: Fetch libdatachannel sources
+        if: ${{ steps.ldc-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: scripts/anyplay-fetch-libdatachannel.sh "$GITHUB_WORKSPACE/ldc-src"
+
       - name: Apply Patches
         run: |
           git apply --ignore-whitespace --verbose --directory=third-party/gf-complete/ scripts/windows-vc/gf-complete.patch
@@ -225,6 +240,8 @@ jobs:
           -DCHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER=ON `
           -DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF `
           -DPYTHON_EXECUTABLE="${{ env.pythonLocation }}\python.exe" `
+          -DANYPLAY_LIVE=ON `
+          -DFETCHCONTENT_SOURCE_DIR_LIBDATACHANNEL="${{ github.workspace }}/ldc-src" `
           -DCMAKE_PREFIX_PATH="${{ github.workspace }}\${{ env.dep_folder }};${{ env.VULKAN_SDK }}"
 
       - name: Build chiaki-ng
@@ -244,6 +261,7 @@ jobs:
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\avcodec-*.dll" chiaki-ng-Win
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\avutil-*.dll" chiaki-ng-Win
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\avformat-*.dll" chiaki-ng-Win
+          cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\swscale-*.dll" chiaki-ng-Win
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\libplacebo-*.dll" chiaki-ng-Win
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\shaderc_shared.dll" chiaki-ng-Win
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\spirv-cross-c-shared.dll" chiaki-ng-Win

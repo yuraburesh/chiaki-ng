@@ -6,13 +6,14 @@ import QtQuick.Controls
 AbstractButton {
     id: m
     property string sub: ""
+    property bool big: false     // 117: більша картка (продовження бронювання): назва 16, підпис 13
     AnyPlayStyle { id: ap }
 
     checkable: false            // обраний стан задає панель через checked
     hoverEnabled: true
     focusPolicy: Qt.TabFocus
-    leftPadding: 14; rightPadding: 14
-    topPadding: 12; bottomPadding: 12
+    leftPadding: big ? 16 : 14; rightPadding: leftPadding
+    topPadding: big ? 14 : 12; bottomPadding: topPadding
     implicitWidth: 160
     implicitHeight: col.implicitHeight + topPadding + bottomPadding
     opacity: enabled ? 1 : 0.45
@@ -26,7 +27,7 @@ AbstractButton {
             width: parent.width
             text: m.text
             wrapMode: Text.WordWrap
-            font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: 14
+            font.family: ap.body; font.weight: Font.DemiBold; font.pixelSize: m.big ? 16 : 14
             color: ap.ink
         }
         Text {
@@ -34,7 +35,7 @@ AbstractButton {
             width: parent.width
             text: m.sub
             wrapMode: Text.WordWrap
-            font.family: ap.body; font.pixelSize: 12
+            font.family: ap.body; font.pixelSize: m.big ? 13 : 12
             color: m.checked ? ap.mute : ap.faint
         }
     }

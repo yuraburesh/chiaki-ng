@@ -94,7 +94,7 @@ Item {
     function enterContent() {
         if (isOverlayPage(page)) { openOverlay(page); return; }
         const target = page === "exit" ? exitConfirm : (page === "image" ? imagePanel.firstControl : (page === "extend" ? extendPanel.firstOption
-                     : (page === "keys" ? keysLoader.item : (page === "live" && liveLoader.item ? liveLoader.item.firstControl : null))));
+                     : (page === "keys" && keysLoader.item ? keysLoader.item.firstControl : (page === "live" && liveLoader.item ? liveLoader.item.firstControl : null))));
         if (target && target.visible && target.enabled)
             target.forceActiveFocus(Qt.TabFocusReason);
         else {
@@ -132,6 +132,19 @@ Item {
             pf.scrollTo(y);
             return;
         }
+    }
+    // 117: W A S D ходять меню так само, як стрілки (на будь-якій розкладці: за місцем клавіші). Не в полі вводу,
+    // не в головному вікні поверх гри і не на екрані клавіш у режимі зміни (там клавіші забирає сам екран).
+    Keys.onPressed: (e) => {
+        if (e.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+            return;
+        const k = String(Chiaki.settings.anyplayKeyName(e.key, e.modifiers, e.text, e.nativeScanCode || 0)).toUpperCase();
+        const to = k === "W" ? Qt.Key_Up : k === "S" ? Qt.Key_Down : k === "A" ? Qt.Key_Left : k === "D" ? Qt.Key_Right : 0;
+        const f = focusNow;
+        if (!to || !f || panel.overlay !== "" || f.cursorPosition !== undefined)
+            return;
+        e.accepted = true;
+        Chiaki.sendNavKey(f, to);
     }
     // Esc (○ на геймпаді): з вмісту праворуч — назад на пункти; з пунктів — закрити меню
     Keys.onEscapePressed: {
@@ -188,11 +201,13 @@ Item {
         property int renderCap: -1
         property int renderCappedFrom: -1
         // «Продовжити бронювання»: ціни як на сервері (+1/+2/+3 год), оплатити не можна
+        // 117: як у клієнта з балансом: три способи переказу (з USDT) і 120 ₴ на балансі
+        property var wallet: ({ balances: [{ currency: "UAH", amount: 120, symbol: "₴" }], primary: "UAH" })
         property var extendInfo: ({ active: true, closed: false, end: endTs, method: "uah",
-            methods: [{ code: "uah", label: "🇺🇦 Картка (гривні)" }, { code: "pln", label: "🇵🇱 BLIK / переказ (злоті)" }],
-            options: [{ hours: 1, free: true, price: "75.00 грн", prices: { uah: "75.00 грн", pln: "6.50 zł" } },
-                      { hours: 2, free: true, price: "150.00 грн", prices: { uah: "150.00 грн", pln: "13.00 zł" } },
-                      { hours: 3, free: false, price: "225.00 грн", prices: { uah: "225.00 грн", pln: "19.50 zł" } }] })
+            methods: [{ code: "uah", label: "🇺🇦 Картка (гривні)" }, { code: "pln", label: "🇵🇱 BLIK / переказ (злоті)" }, { code: "usdt", label: "🪙 USDT (Binance)" }],
+            options: [{ hours: 1, free: true, price: "75.00 грн", prices: { uah: "75.00 грн", pln: "6.50 zł", usdt: "1.70 USDT" } },
+                      { hours: 2, free: true, price: "150.00 грн", prices: { uah: "150.00 грн", pln: "13.00 zł", usdt: "3.40 USDT" } },
+                      { hours: 3, free: false, price: "225.00 грн", prices: { uah: "225.00 грн", pln: "19.50 zł", usdt: "5.10 USDT" } }] })
         signal extendResult(bool ok, string text)
         function formatTime(ts) { return Chiaki.cloud.formatTime(ts); }
         function renderLabel(p) { return Chiaki.cloud.renderLabel(p); }
@@ -501,12 +516,12 @@ Item {
                         ColumnLayout {
                             width: content.width
                             spacing: 12
-                            ApText { role: "cap"; text: qsTr("Продовжити бронювання") }
-                            ExtendPanel {
+                            ExtendPanel {   // 117: заголовок, баланс і картки — у самій панелі
                                 id: extendPanel
                                 Layout.fillWidth: true
-                                Layout.maximumWidth: 720
+                                Layout.maximumWidth: 940
                                 compact: true
+                                navLeft: extendBtn
                                 cloud: panel.cloud
                                 visible: panel.visible && panel.page === "extend"
                             }
@@ -531,12 +546,15 @@ Item {
                         opacity: visible ? 1 : 0
                         Behavior on opacity { NumberAnimation { duration: ap.tPage; easing.type: Easing.OutCubic } }
                         onActiveChanged: if (!active) focusOnLoad = false
-                        onLoaded: if (focusOnLoad) { focusOnLoad = false; item.forceActiveFocus(Qt.TabFocusReason); }
+                        onLoaded: if (focusOnLoad) { focusOnLoad = false; item.firstControl.forceActiveFocus(Qt.TabFocusReason); }
                         sourceComponent: Component {
                             AnyPlayControls {
                                 inGame: true
                                 sideInset: 14
-                                onCloseRequested: panel.resume()
+                                navLeft: keysBtn
+                                // 117: Esc і «Готово» віддають керування пунктам меню (Esc з пунктів закриває меню)
+                                onCloseRequested: keysBtn.forceActiveFocus(Qt.TabFocusReason)
+                                onReleased: keysBtn.forceActiveFocus(Qt.TabFocusReason)
                             }
                         }
                     }
@@ -608,8 +626,7 @@ Item {
                             ApText { role: "cap"; text: qsTr("Керування приставкою") }
                             AnyPlayGuide {
                                 Layout.fillWidth: true
-                                columns: content.width >= 700 ? 2 : 1   // 1280×720 теж у дві колонки: без прокрутки
-                                columnSpacing: 32
+                                columns: content.width >= 820 ? 3 : content.width >= 560 ? 2 : 1   // 117: 1280×720 — три колонки плиток, без прокрутки
                                 compact: true
                                 menuKey: panel.menuKey
                             }

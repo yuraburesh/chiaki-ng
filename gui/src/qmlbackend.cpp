@@ -36,6 +36,9 @@
 #include <QDesktopServices>
 #include <QtConcurrent>
 #include <QTimer>
+#include <QKeyEvent>
+#include <QQuickItem>
+#include <QQuickWindow>
 
 extern "C" {
 #include <chiaki/time.h>
@@ -2631,6 +2634,23 @@ void QmlBackend::activateWindow()
     window->show();
     window->raise();
     window->requestActivate();
+}
+
+// AnyPlay 117: стрілка для меню гри з W A S D. Подія йде у вікно цього елемента (головне чи окреме вікно меню) і
+// доходить до елемента з фокусом так само, як справжня стрілка: KeyNavigation, повзунки й списки працюють як завжди.
+// Одразу, а не відкладено: відкладена подія могла прийти вже після наступної клавіші (перевірено тестом клавіш).
+void QmlBackend::sendNavKey(QObject *item, int key)
+{
+    if (key != Qt::Key_Up && key != Qt::Key_Down && key != Qt::Key_Left && key != Qt::Key_Right)
+        return;
+    auto *target = qobject_cast<QQuickItem *>(item);
+    QQuickWindow *w = target ? target->window() : nullptr;
+    if (!w)
+        return;
+    QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+    QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+    QGuiApplication::sendEvent(w, &press);
+    QGuiApplication::sendEvent(w, &release);
 }
 
 QString QmlBackend::openPlaceboOptionsLink()

@@ -302,6 +302,22 @@ Rectangle {
     property bool menuDemo: false        // «Меню гри: перегляд» (Інструменти): меню паузи як у клієнта, без гри
     // ── адміну: як клієнт грає просто зараз, фішками (пристрій, керування, гра й режим, якість, кадри, швидкість, втрати) ──
     function num1(x) { return (Math.round(Number(x) * 10) / 10).toString().replace(".", ","); }
+    // 117: залізо клієнта однією фішкою «Пристрій: …» і підказка з усім по рядках (старі програми цих полів не шлють — фішки немає)
+    function hwChip(l) {
+        const model = String(l.model || ""), cpu = String(l.cpu || ""), ram = Number(l.ramGb) > 0 ? qsTr("%1 ГБ").arg(l.ramGb) : "";
+        let gpu = String(l.gpu || "");
+        if (gpu === cpu) gpu = "";   // старі збірки без відеокарти слали замість неї процесор
+        const inModel = (x) => x !== "" && model.indexOf(x.replace(/^Apple /, "")) >= 0;   // «MacBook Air 15″ M2» і «Apple M2»
+        // у фішці назви коротші («Ryzen 5 4600H», «GTX 1650 Ti»), повні — у підказці
+        const brief = (x) => x.replace(/\s+with\s+Radeon.*$/i, "").replace(/^NVIDIA\s+(GeForce\s+)?/i, "").replace(/^(AMD|Intel)\s+/i, "")
+                              .replace(/\s+(Laptop GPU|Graphics)$/i, "").trim();
+        const parts = [model, inModel(cpu) ? "" : brief(cpu), ram, inModel(gpu) || gpu === cpu ? "" : brief(gpu)].filter((x) => x !== "");
+        if (!model && !cpu && !ram) return null;
+        const tip = [model ? qsTr("Модель: %1").arg(model) : "", cpu ? qsTr("Процесор: %1").arg(cpu) : "", ram ? qsTr("Пам'ять: %1").arg(ram) : "",
+                     l.gpu && l.gpu !== cpu ? qsTr("Відеокарта: %1").arg(l.gpu) : "", l.device ? qsTr("Ім'я в системі: %1").arg(l.device) : ""]
+            .filter((x) => x !== "").join("\n");
+        return { text: qsTr("Пристрій: %1").arg(parts.join(", ")), tip: tip };
+    }
     function liveChips(l, ageMin) {
         if (!l) return [];
         const out = [];
@@ -313,6 +329,8 @@ Rectangle {
         const platform = ({ windows: "Windows", mac: "Mac", mac_intel: "Mac (Intel)", android: "Android", linux: "Linux" })[l.platform] || "";
         const device = [l.device || "", platform, l.build ? qsTr("збірка %1").arg(l.build) : ""].filter((x) => x !== "").join(", ");
         if (device) out.push({ text: device });
+        const hw = home.hwChip(l);   // 117: модель, процесор, пам'ять, відеокарта
+        if (hw) out.push(hw);
         const input = ({ keyboard: qsTr("клавіатура і миша"), gamepad: qsTr("геймпад"), touch: qsTr("сенсорні кнопки") })[l.input] || "";
         if (input) out.push({ text: input });
         const game = l.layoutName || ({ gta6: "GTA VI", gta5: "GTA V", universal: qsTr("інша гра") })[l.layout] || "";
@@ -1071,6 +1089,10 @@ Rectangle {
                                             text: modelData.text
                                             kind: modelData.kind || ""
                                             icon: modelData.icon || ""
+                                            HoverHandler { id: chipHover }   // 117: підказка (у «Пристрій» — усе залізо по рядках)
+                                            ToolTip.visible: !!modelData.tip && chipHover.hovered
+                                            ToolTip.text: modelData.tip || ""
+                                            ToolTip.delay: 300
                                         }
                                     }
                                 }
@@ -1507,22 +1529,22 @@ Rectangle {
                 ColumnLayout {
                     width: home.cw
                     spacing: 16
-                    ApCard {   // дизайн 112: блок сторінки на скляній панелі
+                    RowLayout {   // 117: заголовок і підказка в один рядок, щоб усі плитки влізли без прокрутки
                         Layout.fillWidth: true
-                        spacing: 6
+                        spacing: 28
                         ApText { role: "h2"; text: qsTr("Як керувати приставкою") }
                         ApText {
                             Layout.fillWidth: true
-                            Layout.maximumWidth: 760
                             role: "hint"
-                            text: (Chiaki.controllers.length ? qsTr("Підключено геймпад, тому нижче кнопки геймпада. Клавіатура й мишка теж працюють: програма сама перемикається на те, чим ти щойно натиснув. ")
-                                                             : qsTr("Тут усе про керування самою приставкою: меню PS5, запуск і закриття ігор, пауза. Праворуч у кожному рядку клавіша на клавіатурі. "))
-                                + qsTr("Це працює в будь-якій грі й у меню PS5. Під час гри ця довідка є в меню AnyPlay (відкривається клавішею ` під Esc), пункт «Керування приставкою».")
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                            text: Chiaki.controllers.length ? qsTr("Підключено геймпад, тому тут його кнопки. Клавіатура й миша теж працюють. Під час гри ця довідка є в меню AnyPlay (` під Esc).")
+                                                            : qsTr("Праворуч у плитці клавіша на клавіатурі. Працює в будь-якій грі й у меню PS5. Під час гри ця довідка є в меню AnyPlay (` під Esc).")
                         }
                     }
                     AnyPlayGuide {
                         Layout.fillWidth: true
-                        columns: home.twoCol ? 2 : 1
+                        columns: home.cw >= 1100 ? 3 : home.twoCol ? 2 : 1
                         menuKey: home.menuKeyText
                     }
                 }

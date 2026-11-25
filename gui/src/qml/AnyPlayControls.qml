@@ -49,7 +49,24 @@ Item {
     readonly property alias wireData: wires.wd    // лінії (для перевірки)
 
     // ── живий показ: що натиснуто ──
-    readonly property bool live: visible && (inGame || !Chiaki.session)   // у меню гри теж: клавіші підсвічують кнопки геймпада
+    // 117: у меню гри екран клавіш не перехоплює клавіатуру й геймпад, доки не натиснеш «Змінити клавіші»
+    // (або не клацнеш по геймпаду чи клавіші). До того стрілки, W A S D і геймпад ходять меню. Esc або «Готово» віддають керування меню.
+    property bool armed: false
+    property Item navLeft: null             // стрілка ← з кнопки «Змінити клавіші» (пункт меню ліворуч)
+    signal released()                       // режим зміни вимкнено: меню забирає фокус собі
+    readonly property Item firstControl: inGame && !armed ? armBtn : root   // куди ставити фокус, коли в екран зайшли з меню
+    function arm() { if (!inGame || armed) return; armed = true; root.forceActiveFocus(); }
+    function disarm() {
+        if (!armed) return;
+        cancelWait();
+        releaseAll();
+        armed = false;
+        armBtn.forceActiveFocus();
+        released();
+    }
+    // фокус після клацу по налаштуваннях: у режимі зміни — на екран (клавіші йдуть сюди), інакше — на кнопку «Змінити клавіші»
+    function focusHome() { if (inGame && !armed) armBtn.forceActiveFocus(); else root.forceActiveFocus(); }
+    readonly property bool live: visible && (inGame ? armed : !Chiaki.session)   // у меню гри теж (у режимі зміни): клавіші підсвічують кнопки геймпада
     property var engine: ({ buttons: [], lx: 0, ly: 0, rx: 0, ry: 0, profile: "" })
     property string clickBtn: ""            // кнопка, яку тиснуть мишею просто на малюнку
     property var rsv: [0, 0]                // правий стік від руху миші (для показу)
@@ -226,6 +243,12 @@ Item {
             o.rx = big(o.rx, st.rx || 0); o.ry = big(o.ry, st.ry || 0);
         }
         const was = pad.buttons || [];
+        // 117: геймпад у режимі зміни не ходить меню; утримай ○ — і керування повернеться меню
+        if (inGame && armed) {
+            const moon = o.buttons.indexOf("MOON") >= 0;
+            if (moon && was.indexOf("MOON") < 0) moonHold.restart();
+            else if (!moon) moonHold.stop();
+        }
         for (const b of o.buttons) {
             if (was.indexOf(b) >= 0 || !padName[b])
                 continue;
@@ -275,6 +298,7 @@ Item {
 
     function startWait(chip) {
         if (waiting && waiting.p === chip.p && waiting.id === chip.id) { cancelWait(); return; }
+        arm();
         releaseAll();
         waiting = { p: chip.p, id: chip.id, name: chip.name };
         root.forceActiveFocus();
@@ -427,6 +451,7 @@ Item {
         }
     }
     Timer { id: toastTimer; interval: 3200; onTriggered: root.toastText = "" }
+    Timer { id: moonHold; interval: 900; onTriggered: root.disarm() }
 
     Component.onCompleted: {
         // сітка зайнятості: які клітинки 4×4 одиниці зайняті якою кнопкою (щоб лінії не перетинали інші кнопки)
@@ -450,7 +475,7 @@ Item {
         fitTimer.restart();
         if (visible && inGame) Chiaki.settings.anyplayPreviewSetProfile(mode);
         if (visible && !inGame) root.forceActiveFocus();
-        else if (!visible) cancelWait();
+        else if (!visible) { cancelWait(); armed = false; }
     }
     Component.onDestruction: {
         Chiaki.settings.anyplayPreviewRelease();
@@ -470,10 +495,18 @@ Item {
             else if (k) assign(k);
             return;
         }
-        if (inGame && e.key === Qt.Key_Escape) { e.accepted = true; closeRequested(); return; }
-        if (!live || !k)
+        if (inGame && !armed) {   // керування в меню: нічого не перехоплюємо (стрілки й W A S D ходять меню)
+            if (e.key === Qt.Key_Escape) { e.accepted = true; closeRequested(); }
             return;
-        e.accepted = !!findActive(k) || k === "`";
+        }
+        if (inGame && e.key === Qt.Key_Escape) { e.accepted = true; disarm(); return; }
+        // режим зміни в меню гри: усе, крім комбінацій з Ctrl і Cmd, лишається тут (W A S D не рухають меню)
+        const keep = inGame && !(e.modifiers & (Qt.ControlModifier | Qt.MetaModifier));
+        if (!live || !k) {
+            e.accepted = keep;
+            return;
+        }
+        e.accepted = !!findActive(k) || k === "`" || keep;
         if (Qt.platform.os === "osx" && k === "CapsLock") { previewTap(k); return; }
         if (!e.isAutoRepeat)
             previewKey(k, true);
@@ -580,7 +613,7 @@ Item {
             acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
             property string down: ""
             onPressed: (m) => {
-                root.forceActiveFocus();
+                root.focusHome();
                 const n = root.mouseName(m.button);
                 if (root.waiting) { if (n) root.assign(n); return; }
                 if (root.live && n) { down = n; root.previewKey(n, true); }
@@ -647,7 +680,7 @@ Item {
                         color: ap.glassHi
                         border.width: 1; border.color: ap.edgeHi
                         // клік по полю розкладки лише скасовує очікування клавіші (не призначає ЛКМ)
-                        MouseArea { anchors.fill: parent; onPressed: { root.cancelWait(); root.forceActiveFocus(); } }
+                        MouseArea { anchors.fill: parent; onPressed: { root.cancelWait(); root.focusHome(); } }
                         Row {
                             id: pickRow
                             x: 12
@@ -702,7 +735,7 @@ Item {
                                         onClicked: {
                                             const n = root.layouts.length, i = (root.layoutIndex() + modelData[0] + n) % n;
                                             root.setLayout(root.layouts[i].id);
-                                            root.forceActiveFocus();
+                                            root.focusHome();
                                         }
                                     }
                                 }
@@ -744,7 +777,7 @@ Item {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 Accessible.name: qsTr("Як перемикаються режими")
-                                onClicked: { helpPop.pinned = !helpPop.pinned; root.forceActiveFocus(); }
+                                onClicked: { helpPop.pinned = !helpPop.pinned; root.focusHome(); }
                             }
                             Rectangle {
                                 id: helpPop
@@ -817,7 +850,7 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: { root.setMode(modelData.id); root.forceActiveFocus(); }
+                                    onClicked: { root.setMode(modelData.id); root.focusHome(); }
                                 }
                             }
                         }
@@ -877,7 +910,7 @@ Item {
                             focusPolicy: Qt.NoFocus
                             value: root.sensNow
                             onMoved: root.setSens(Math.round(value * 10) / 10)
-                            onPressedChanged: if (!pressed) root.forceActiveFocus()
+                            onPressedChanged: if (!pressed) root.focusHome()
                             Accessible.name: qsTr("Чутливість миші")
                             background: Item {
                                 x: sens.leftPadding + 6; y: sens.topPadding + sens.availableHeight / 2 - 1
@@ -927,7 +960,7 @@ Item {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 Accessible.name: qsTr("Інвертувати вертикаль")
-                                onClicked: { root.cancelWait(); Chiaki.settings.anyplayInvertY = !Chiaki.settings.anyplayInvertY; root.forceActiveFocus(); }
+                                onClicked: { root.cancelWait(); Chiaki.settings.anyplayInvertY = !Chiaki.settings.anyplayInvertY; root.focusHome(); }
                             }
                         }
                     }
@@ -1123,6 +1156,7 @@ Item {
                         onPositionChanged: (m) => { tipBtn = hit(m.x, m.y); at = Qt.point(m.x, m.y) }
                         onExited: tipBtn = ""
                         onPressed: (m) => {
+                            root.arm();   // 117: клац по геймпаду в меню гри вмикає режим зміни й перевірки
                             root.forceActiveFocus();
                             if (root.waiting) { const n = root.mouseName(m.button); if (n) root.assign(n); return; }
                             const n = hit(m.x, m.y);
@@ -1351,29 +1385,36 @@ Item {
                 width: page.cw
                 height: visible ? Math.round(40 * root.k) : 0
                 radius: 10
-                color: "#0dffffff"
-                border.width: 1; border.color: "#2effffff"
+                color: root.armed ? "#147fe6ff" : "#0dffffff"
+                border.width: 1; border.color: root.armed ? "#807fe6ff" : "#2effffff"
+                // 117: у меню гри до «Змінити клавіші» клавіатура й геймпад керують меню, тут лише підказка
+                readonly property bool idle: root.inGame && !root.armed
                 Row {
                     x: 14
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 14
-                    Cap { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Перевірка") }
+                    Cap { anchors.verticalCenter: parent.verticalCenter; text: bottomBox.idle ? qsTr("Клавіші") : qsTr("Перевірка") }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         width: bottomBox.width - 160 - tipsRow.width
-                        text: root.logLines.length ? root.logLines[0] : ""
+                        text: bottomBox.idle ? (width >= 620 ? qsTr("Зараз клавіші й геймпад ходять меню. Щоб змінити чи перевірити, натисни кнопку праворуч або клацни по геймпаду.")
+                                                             : qsTr("Зараз клавіші й геймпад ходять меню. Щоб змінити, натисни кнопку праворуч."))
+                            : root.logLines.length ? root.logLines[0] : ""
                         elide: Text.ElideRight
-                        color: ap.cyan
+                        color: bottomBox.idle ? ap.mute : ap.cyan
                         font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k)
                     }
                 }
                 Row {
                     id: tipsRow
-                    anchors.right: parent.right; anchors.rightMargin: 14
+                    anchors.right: parent.right; anchors.rightMargin: root.inGame ? 6 : 14
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Math.round(14 * root.k)
                     Repeater {
-                        model: [[qsTr("Змінити:"), qsTr("клацни клавішу")], [qsTr("Прибрати:"), "Backspace"], [qsTr("Меню AnyPlay:"), "`"]]
+                        model: bottomBox.idle ? []
+                            : root.inGame ? [[qsTr("Змінити:"), qsTr("клацни клавішу")], [qsTr("Прибрати:"), "Backspace"],
+                                             [qsTr("Готово:"), Chiaki.controllers.length ? qsTr("Esc або утримай ○") : "Esc"]]
+                            : [[qsTr("Змінити:"), qsTr("клацни клавішу")], [qsTr("Прибрати:"), "Backspace"], [qsTr("Меню AnyPlay:"), "`"]]
                         Text {
                             required property var modelData
                             anchors.verticalCenter: parent.verticalCenter
@@ -1382,6 +1423,19 @@ Item {
                             color: "#a6ffffff"
                             font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(12 * root.k)
                         }
+                    }
+                    ApButton {   // «Змінити клавіші» / «Готово»: вмикає й вимикає режим зміни й перевірки
+                        id: armBtn
+                        visible: root.inGame
+                        anchors.verticalCenter: parent.verticalCenter
+                        small: true
+                        ghost: root.armed
+                        focusPolicy: Qt.StrongFocus
+                        height: Math.min(implicitHeight, bottomBox.height - 6)
+                        text: root.armed ? qsTr("Готово") : qsTr("Змінити клавіші")
+                        onClicked: root.armed ? root.disarm() : root.arm()
+                        Keys.onSpacePressed: clicked()
+                        KeyNavigation.left: root.navLeft
                     }
                 }
             }
@@ -1461,7 +1515,7 @@ Item {
         radius: ap.radius
         color: "#f51a1226"
         border.width: 1; border.color: "#40ffffff"
-        MouseArea { anchors.fill: parent; onClicked: root.forceActiveFocus() }   // клік по панелі не доходить до схеми
+        MouseArea { anchors.fill: parent; onClicked: root.focusHome() }   // клік по панелі не доходить до схеми
         Flickable {
             anchors.fill: parent; anchors.margins: 18
             contentHeight: moreCol.implicitHeight
@@ -1508,7 +1562,7 @@ Item {
                             id: sw
                             anchors.right: parent.right; anchors.top: parent.top
                             checked: morePanel.opts[modelData.name] === true
-                            onToggled: (on) => { morePanel.set(modelData.name, on); root.forceActiveFocus(); }
+                            onToggled: (on) => { morePanel.set(modelData.name, on); root.focusHome(); }
                         }
                     }
                 }
@@ -1653,7 +1707,7 @@ Item {
             Rectangle { x: 4; y: 1; width: parent.width - 8; height: 1; color: ap.cardTop }
             Text { id: lbText; anchors.centerIn: parent; color: ap.ink; font.family: ap.body; font.weight: Font.Medium; font.pixelSize: Math.round(13 * root.k) }
         }
-        MouseArea { id: lbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.forceActiveFocus(); lb.clicked(); } }   // фокус спершу: кнопка може відкрити вікно, яке забере його собі
+        MouseArea { id: lbArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.focusHome(); lb.clicked(); } }   // фокус спершу: кнопка може відкрити вікно, яке забере його собі
     }
 
     // фішка клавіші — «кейкап» з об'ємом: світліший верх, нижній бортик-тінь, при наведенні трохи піднімається,

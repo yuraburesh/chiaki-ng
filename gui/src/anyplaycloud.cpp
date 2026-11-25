@@ -12,6 +12,7 @@
 #include <QClipboard>
 #include <QDir>
 #include <QFile>
+#include <QHash>
 #include <QFileInfo>
 #include <QHttpMultiPart>
 #include <QMimeDatabase>
@@ -923,6 +924,16 @@ QJsonObject AnyPlayCloud::takeStats()
 			o["gpu"] = gpu.toString().left(40);   // сервер зберігає до 40 символів
 		if(tier.isValid() && !tier.toString().isEmpty())
 			o["pcTier"] = tier.toString();
+	}
+	// 117: залізо клієнта для панелі адміна: модель комп'ютера, процесор, пам'ять (відеокарта — у gpu вище)
+	{
+		const QString model = pcModel(), cpu = pcCpu();
+		if(!model.isEmpty())
+			o["model"] = model.left(60);
+		if(!cpu.isEmpty())
+			o["cpu"] = cpu.left(60);
+		if(pcRamGb() > 0)
+			o["ramGb"] = pcRamGb();
 	}
 	if(complaint_)
 	{
@@ -2175,6 +2186,16 @@ QString AnyPlayCloud::pcMem() const
 {
 	if(!pc_mem_.isNull())
 		return pc_mem_;
+	const int gb = pcRamGb();
+	pc_mem_ = gb > 0 ? tr("%1 ГБ").arg(gb) : QString();
+	return pc_mem_;
+}
+
+int AnyPlayCloud::pcRamGb() const
+{
+	static int cached = -1;
+	if(cached >= 0)
+		return cached;
 	qint64 bytes = 0;
 #ifdef Q_OS_MACOS
 	size_t len = sizeof(bytes);
@@ -2193,8 +2214,132 @@ QString AnyPlayCloud::pcMem() const
 			bytes = m.captured(1).toLongLong() * 1024;
 	}
 #endif
-	pc_mem_ = bytes > 0 ? tr("%1 ГБ").arg(qRound(bytes / 1073741824.0)) : QString();
-	return pc_mem_;
+	cached = bytes > 0 ? qRound(bytes / 1073741824.0) : 0;
+	return cached;
+}
+
+#ifdef Q_OS_MACOS
+// Mac з чипом Apple: ідентифікатор моделі (hw.model) → назва; чип (M2, M3 Pro…) додаємо з назви процесора
+static QString macFamily(const QString &id)
+{
+	static const QHash<QString, QString> names = {
+		{"MacBookAir10,1", "MacBook Air"}, {"MacBookPro17,1", "MacBook Pro 13″"}, {"Macmini9,1", "Mac mini"},
+		{"iMac21,1", "iMac"}, {"iMac21,2", "iMac"},
+		{"MacBookPro18,1", "MacBook Pro 16″"}, {"MacBookPro18,2", "MacBook Pro 16″"},
+		{"MacBookPro18,3", "MacBook Pro 14″"}, {"MacBookPro18,4", "MacBook Pro 14″"},
+		{"Mac13,1", "Mac Studio"}, {"Mac13,2", "Mac Studio"},
+		{"Mac14,2", "MacBook Air 13″"}, {"Mac14,15", "MacBook Air 15″"}, {"Mac14,7", "MacBook Pro 13″"},
+		{"Mac14,3", "Mac mini"}, {"Mac14,12", "Mac mini"},
+		{"Mac14,5", "MacBook Pro 14″"}, {"Mac14,9", "MacBook Pro 14″"}, {"Mac14,6", "MacBook Pro 16″"}, {"Mac14,10", "MacBook Pro 16″"},
+		{"Mac14,13", "Mac Studio"}, {"Mac14,14", "Mac Studio"}, {"Mac14,8", "Mac Pro"},
+		{"Mac15,3", "MacBook Pro 14″"}, {"Mac15,6", "MacBook Pro 14″"}, {"Mac15,8", "MacBook Pro 14″"}, {"Mac15,10", "MacBook Pro 14″"},
+		{"Mac15,7", "MacBook Pro 16″"}, {"Mac15,9", "MacBook Pro 16″"}, {"Mac15,11", "MacBook Pro 16″"},
+		{"Mac15,4", "iMac"}, {"Mac15,5", "iMac"}, {"Mac15,12", "MacBook Air 13″"}, {"Mac15,13", "MacBook Air 15″"}, {"Mac15,14", "Mac Studio"},
+		{"Mac16,1", "MacBook Pro 14″"}, {"Mac16,6", "MacBook Pro 14″"}, {"Mac16,8", "MacBook Pro 14″"},
+		{"Mac16,5", "MacBook Pro 16″"}, {"Mac16,7", "MacBook Pro 16″"}, {"Mac16,2", "iMac"}, {"Mac16,3", "iMac"},
+		{"Mac16,9", "Mac Studio"}, {"Mac16,10", "Mac mini"}, {"Mac16,11", "Mac mini"},
+		{"Mac16,12", "MacBook Air 13″"}, {"Mac16,13", "MacBook Air 15″"},
+	};
+	if(names.contains(id))
+		return names.value(id);
+	// старі Mac з Intel: родина з самого ідентифікатора («MacBookPro16,1» → MacBook Pro)
+	static const QList<QPair<QString, QString>> families = {
+		{"MacBookPro", "MacBook Pro"}, {"MacBookAir", "MacBook Air"}, {"MacBook", "MacBook"}, {"Macmini", "Mac mini"},
+		{"iMacPro", "iMac Pro"}, {"iMac", "iMac"}, {"MacPro", "Mac Pro"},
+	};
+	for(const auto &f : families)
+		if(id.startsWith(f.first) && id.size() > f.first.size() && id.at(f.first.size()).isDigit())
+			return f.second;
+	return QString();
+}
+#endif
+
+#ifdef Q_OS_WIN
+// виробник з SMBIOS коротко: «ASUSTeK COMPUTER INC.» → ASUS
+static QString shortVendor(QString v)
+{
+	v = v.simplified();
+	static const QList<QPair<QString, QString>> known = {
+		{"asustek", "ASUS"}, {"asus", "ASUS"}, {"hewlett", "HP"}, {"hp", "HP"}, {"lenovo", "Lenovo"}, {"dell", "Dell"},
+		{"micro-star", "MSI"}, {"msi", "MSI"}, {"acer", "Acer"}, {"gigabyte", "Gigabyte"}, {"samsung", "Samsung"},
+		{"huawei", "Huawei"}, {"xiaomi", "Xiaomi"}, {"microsoft", "Microsoft"}, {"razer", "Razer"}, {"apple", "Apple"},
+		{"toshiba", "Toshiba"}, {"dynabook", "Dynabook"}, {"lg electronics", "LG"}, {"medion", "Medion"}, {"honor", "Honor"},
+	};
+	const QString l = v.toLower();
+	for(const auto &k : known)
+		if(l.startsWith(k.first))
+			return k.second;
+	v.remove(QRegularExpression(QStringLiteral(",?\\s*(Inc\\.?|Co\\.?,? ?Ltd\\.?|Corporation|Corp\\.?|Technology|International)\\s*$"), QRegularExpression::CaseInsensitiveOption));
+	return v.simplified();
+}
+#endif
+
+#ifndef Q_OS_MACOS
+// «To be filled by O.E.M.», «System Product Name», «Default string» — заглушки виробника плати, не назва
+static bool placeholder(const QString &v)
+{
+	const QString l = v.simplified().toLower();
+	return l.isEmpty() || l.contains(QLatin1String("o.e.m")) || l.contains(QLatin1String("oem")) || l == QLatin1String("default string")
+		|| l.startsWith(QLatin1String("system ")) || l == QLatin1String("not applicable") || l == QLatin1String("none") || l == QLatin1String("to be filled");
+}
+#endif
+
+QString AnyPlayCloud::pcModel() const
+{
+	if(!pc_model_.isNull())
+		return pc_model_;
+	QString m;
+#ifdef Q_OS_MACOS
+	char buf[128] = {};
+	size_t len = sizeof(buf) - 1;
+	QString id;
+	if(sysctlbyname("hw.model", buf, &len, nullptr, 0) == 0)
+		id = QString::fromUtf8(buf).trimmed();
+	const QString family = macFamily(id);
+	const QString cpu = pcCpu();
+	const QString chip = cpu.startsWith(QLatin1String("Apple ")) ? cpu.mid(6) : QString();   // «M2», «M3 Pro»
+	if(!family.isEmpty())
+		m = chip.isEmpty() ? family : family + QLatin1Char(' ') + chip;
+	else if(!id.isEmpty())
+		m = QStringLiteral("Mac (%1)").arg(id);
+#elif defined(Q_OS_WIN)
+	// SMBIOS у реєстрі: виробник і модель ноутбука чи готового ПК; у зібраного ПК там заглушки — тоді материнська плата
+	const QSettings bios(QStringLiteral("HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\BIOS"), QSettings::NativeFormat);
+	const QString vendor = bios.value(QStringLiteral("SystemManufacturer")).toString().simplified();
+	QString product = bios.value(QStringLiteral("SystemProductName")).toString().simplified();
+	const QString version = bios.value(QStringLiteral("SystemVersion")).toString().simplified();
+	const QString family = bios.value(QStringLiteral("SystemFamily")).toString().simplified();
+	if(vendor.toLower().startsWith(QLatin1String("lenovo")))
+	{
+		// у Lenovo ProductName — код типу «82JW», а назва моделі у SystemVersion чи SystemFamily
+		if(!placeholder(version) && version.size() > 4)
+			product = version;
+		else if(!placeholder(family))
+			product = family;
+	}
+	if(!placeholder(vendor) && !placeholder(product))
+	{
+		const QString v = shortVendor(vendor);
+		m = product.startsWith(v, Qt::CaseInsensitive) ? product : v + QLatin1Char(' ') + product;
+	}
+	else
+	{
+		const QString bv = bios.value(QStringLiteral("BaseBoardManufacturer")).toString().simplified();
+		const QString bp = bios.value(QStringLiteral("BaseBoardProduct")).toString().simplified();
+		if(!placeholder(bp))
+			m = tr("ПК, плата %1").arg(placeholder(bv) ? bp : shortVendor(bv) + QLatin1Char(' ') + bp);
+	}
+#else
+	auto read = [](const char *path) {
+		QFile f(QString::fromLatin1(path));
+		return f.open(QIODevice::ReadOnly | QIODevice::Text) ? QString::fromUtf8(f.readAll()).simplified() : QString();
+	};
+	const QString vendor = read("/sys/devices/virtual/dmi/id/sys_vendor"), product = read("/sys/devices/virtual/dmi/id/product_name");
+	if(!placeholder(product))
+		m = placeholder(vendor) || product.startsWith(vendor, Qt::CaseInsensitive) ? product : vendor + QLatin1Char(' ') + product;
+#endif
+	pc_model_ = m.simplified().left(60);
+	return pc_model_;
 }
 
 QString AnyPlayCloud::pcInfo() const

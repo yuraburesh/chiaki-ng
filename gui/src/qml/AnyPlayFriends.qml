@@ -3,7 +3,10 @@
 // список друзів: хто грає зараз і до котрої, хто в ефірі («Дивитись» → watch.html у вбудованому браузері), «Подарунок».
 // Праворуч: «Додати друга» (посилання-запрошення для Telegram, код), «Подарунки» (book.html у вбудованому браузері:
 // поповнити баланс друга, переказати зі свого, забронювати години для друга), де шукати трансляцію й допомогу друга.
-// Дані — через AnyPlayLiveApi. Без даних про друзів від C++ — сторінка друзів з book.html у вбудованому браузері.
+// Дані — через AnyPlayLiveApi. C++ друзів не дає (контракт.md п. 8: «усе в book.html#friends»), тож типово вкладка — це
+// сторінка book.html#friends у вбудованому браузері (той самий список, запити, «Додати друга», подарунки, «Дивитись»),
+// а над нею — картки переданої гри. Рідний список нижче — коли C++ колись дасть friends (і для перегляду на заглушках).
+// Адреси: watch.html?r=<код кімнати, 6 символів>, book.html#friends, book.html#gift=<id друга>.
 // Поверх гри вбудований браузер не відкриваємо (як і CRM): гравцю нічого не має заважати.
 import QtQuick
 import QtQuick.Layouts
@@ -30,18 +33,23 @@ Item {
     property string webTitle: ""
     property bool webMic: false
     readonly property bool canWeb: !overGame && !!cloud && cloud.webEngine === true
+    // сторінка друзів з сервера замість рідного списку
+    readonly property bool embedded: !!api && !api.friendsAvailable && canWeb
+    // код кімнати з адреси watch.html?r=КОД (друг дивиться трансляцію — програма питає, чи не передають йому гру)
+    function codeOf(u) { const m = String(u).match(/watch\.html\?(?:.*&)?r=([A-Za-z0-9]{4,12})/); return m ? m[1] : ""; }
     function openWeb(url, title, mic) {
         if (!url) return;
         if (!canWeb) { fr.toast(overGame ? qsTr("Це відкривається поза грою або в боті") : qsTr("Відкрий це в боті: у цій збірці немає вбудованого браузера")); return; }
         webTitle = title; webMic = !!mic; webUrl = url;
     }
     function watch(f) {
-        const u = f.watchUrl || (api.webUrl("watch.html") + (f.roomId ? "?r=" + encodeURIComponent(f.roomId) : "?friend=" + f.id));
-        openWeb(u, qsTr("Трансляція: %1").arg(f.name), true);
-        if (webUrl !== "") api.setWatching(f.roomId || "");   // поки дивимось, програма питає, чи не передають нам гру
+        const code = f.live && f.live.code ? f.live.code : "";
+        if (!code) return;
+        openWeb(api.webUrl("watch.html?r=" + encodeURIComponent(code)), qsTr("Трансляція: %1").arg(f.name), true);
+        if (webUrl !== "") api.setWatching(code);   // поки дивимось, програма питає, чи не передають нам гру
     }
     function gift(f) { openWeb(api.webUrl("book.html") + (f ? "#gift=" + f.id : "#gift"), f ? qsTr("Подарунок: %1").arg(f.name) : qsTr("Подарунки"), false); }
-    onVisibleChanged: { if (visible) api.loadFriends(); else webUrl = ""; }
+    onVisibleChanged: { if (visible) { api.loadFriends(); api.loadConfig(); } else webUrl = ""; }
     onWebUrlChanged: if (webUrl === "") api.setWatching("")
     Timer { interval: 30000; repeat: true; running: fr.visible && fr.webUrl === ""; onTriggered: fr.api.loadFriends() }
 
@@ -51,6 +59,40 @@ Item {
 
     property var confirmRemove: null
     Timer { id: confirmTimer; interval: 5000; onTriggered: fr.confirmRemove = null }
+
+    // ═════ вкладка = book.html#friends (C++ друзів не дає): картки переданої гри зверху, далі сторінка ═════
+    ColumnLayout {
+        visible: fr.embedded && fr.webUrl === ""
+        anchors.fill: parent
+        anchors.topMargin: 10
+        spacing: 10
+        Item {
+            visible: !!fr.api.incoming || fr.api.handoff !== ""
+            Layout.fillWidth: true
+            Layout.leftMargin: fr.padX; Layout.rightMargin: fr.padX
+            implicitHeight: topCards.implicitHeight
+            ColumnLayout {
+                id: topCards
+                width: parent.width
+                spacing: 10
+                IncomingCard { }
+                LentCard { }
+            }
+        }
+        Loader {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            active: fr.embedded && fr.visible
+            sourceComponent: AnyPlayWebPage {
+                url: fr.api.webUrl("book.html#friends")
+                title: qsTr("Друзі й подарунки")
+                showBack: false
+                allowMic: true          // «Дивитись» відкриває watch.html тут же: голос у трансляції
+                contentWidth: fr.cw
+                onMoved: (u) => fr.api.setWatching(fr.codeOf(u))
+            }
+        }
+    }
 
     // ═════ сторінка сервера у вбудованому браузері ═════
     Loader {
@@ -63,13 +105,14 @@ Item {
             allowMic: fr.webMic
             contentWidth: fr.cw
             onBack: fr.webUrl = ""
+            onMoved: (u) => fr.api.setWatching(fr.codeOf(u))
         }
     }
 
     // ═════ список ═════
     Flickable {
         id: pg
-        visible: fr.webUrl === ""
+        visible: fr.webUrl === "" && !fr.embedded
         anchors.fill: parent
         clip: true
         contentWidth: width
@@ -105,35 +148,9 @@ Item {
                         ApChip { visible: fr.api.friends.length > 0; text: fr.api.friends.length }
                     }
 
-                    // друг передав мені гру («Передати повністю»)
-                    StateCard {
-                        visible: !!fr.api.incoming
-                        edgeColor: ap.cyan
-                        eyebrow: qsTr("Тобі передали гру")
-                        text: fr.api.incoming ? qsTr("Гру тобі передає %1, до %2. Граєш зі своєї програми, без затримки; власник броні може будь-коли повернути її собі.")
-                                                .arg(fr.api.incoming.from).arg(fr.untilText(fr.api.incoming.end)) : ""
-                        ApButton { text: qsTr("▶ Грати"); onClicked: fr.api.acceptHandoff() }
-                    }
-                    // я передав гру другу
-                    StateCard {
-                        visible: fr.api.handoff !== ""
-                        edgeColor: ap.gold
-                        eyebrow: fr.api.handoff === "preparing" ? qsTr("Готуємо гру для друга") : fr.api.handoff === "returning" ? qsTr("Повертаємо гру тобі") : qsTr("Гру передано другу")
-                        text: fr.api.handoff === "returning" ? qsTr("Ще кілька секунд, і можна грати.")
-                            : qsTr("Зараз грає %1. Час броні йде, як і йшов; повернути гру собі можна будь-коли.").arg(fr.api.handoffTo)
-                        ApButton {
-                            visible: fr.api.handoff !== "returning"
-                            text: qsTr("Повернути собі")
-                            onClicked: { fr.api.handoffBack(); fr.toast(qsTr("Повертаємо гру: у друга вона зупиниться за кілька секунд")); }
-                        }
-                        ApButton {
-                            readonly property var f: fr.api.friends.find(x => x.name === fr.api.handoffTo && x.live)
-                            visible: !!f
-                            ghost: true
-                            text: qsTr("Дивитись")
-                            onClicked: fr.watch(f)
-                        }
-                    }
+                    // передана гра («Передати повністю»): мені — або від мене
+                    IncomingCard { }
+                    LentCard { }
 
                     // запити в друзі
                     ColumnLayout {
@@ -238,6 +255,7 @@ Item {
                     }
 
                     ApCard {
+                        visible: fr.api.featGifts
                         title: qsTr("Подарунки")
                         spacing: 4
                         GiftRow { title: qsTr("Поповнити баланс друга"); subtitle: qsTr("оплатою, як звичайне поповнення") }
@@ -342,7 +360,7 @@ Item {
                 onClicked: fr.watch(row.f)
             }
             ApButton {
-                visible: !row.asking
+                visible: !row.asking && fr.api.featGifts
                 small: true; ghost: true
                 text: qsTr("Подарунок")
                 onClicked: fr.gift(row.f)
@@ -363,6 +381,30 @@ Item {
         clickable: true
         onClicked: fr.gift(null)
         Text { text: "›"; font.family: ap.body; font.pixelSize: 22; color: ap.faint }
+    }
+
+    // ── друг передає мені гру ──
+    component IncomingCard: StateCard {
+        visible: !!fr.api.incoming
+        edgeColor: ap.cyan
+        eyebrow: fr.api.incomingTitle
+        text: fr.api.incomingText
+        ApButton { visible: !!fr.api.incoming && !fr.api.incoming.waiting; text: qsTr("▶ Грати"); onClicked: fr.api.acceptHandoff() }
+    }
+    // ── я передав гру другу ──
+    component LentCard: StateCard {
+        visible: fr.api.handoff !== ""
+        edgeColor: ap.gold
+        eyebrow: fr.api.handoff === "preparing" ? qsTr("Готуємо гру для друга") : qsTr("Гру передано другу")
+        text: qsTr("Зараз грає %1. Час броні йде, як і йшов; повернути гру собі можна будь-коли.").arg(fr.api.handoffTo)
+        ApButton {
+            text: fr.api.handoff === "preparing" ? qsTr("Скасувати") : qsTr("Повернути собі")
+            onClicked: {
+                if (fr.api.handoff === "preparing") { fr.api.cancelHandoff(); return; }
+                fr.api.handoffBack();
+                fr.toast(qsTr("Повертаємо гру: у друга вона зупиниться за кілька секунд"));
+            }
+        }
     }
 
     // ── картка стану (передана гра): кольорова смужка зліва, надпис, текст, кнопки ──

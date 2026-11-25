@@ -46,14 +46,24 @@ FocusScope {
 
     // підтвердження «Передати повністю» тим самим натиском удруге (без вікон поверх меню)
     property var confirmId: null
-    Timer { id: confirmTimer; interval: 5000; onTriggered: lp.confirmId = null }
+    // перший натиск «Передати» ще й готує передачу (prepareHandover: друг заздалегідь отримує ключі приставки, тож
+    // після «Так, передати» підключиться одразу); не підтвердили за 8 с — підготовку скасовуємо
+    Timer {
+        id: confirmTimer; interval: 8000
+        onTriggered: lp.dropConfirm()
+    }
+    function dropConfirm() {
+        confirmTimer.stop();
+        if (confirmId !== null && api && api.handoff === "preparing") api.cancelHandoff();
+        confirmId = null;
+    }
 
     Connections { target: lp.api; ignoreUnknownSignals: true; function onMessage(text) { lp.say(text); } }
     onVisibleChanged: {
-        if (visible) { readPrefs(); if (section === "chat" && api) api.markRead(); }
-        else { confirmId = null; note = ""; }
+        if (visible) { readPrefs(); if (api) api.loadConfig(); if (section === "chat" && api) api.markRead(); }
+        else { dropConfirm(); note = ""; }
     }
-    onSectionChanged: { confirmId = null; if (section === "chat" && api) api.markRead(); }
+    onSectionChanged: { dropConfirm(); if (section === "chat" && api) api.markRead(); }
     Component.onCompleted: readPrefs()
 
     function tr2(n) { return n === 1 ? qsTr("глядач") : (n >= 2 && n <= 4) ? qsTr("глядачі") : qsTr("глядачів"); }
@@ -278,9 +288,17 @@ FocusScope {
                             ApButton {
                                 id: startBtn
                                 Layout.topMargin: 14
+                                enabled: !!lp.api && lp.api.featLive
                                 focusPolicy: Qt.StrongFocus
                                 text: qsTr("Почати трансляцію")
                                 onClicked: lp.api.start(startQ.value, startQ.audio)
+                            }
+                            ApText {   // власник вимкнув трансляції в CRM або ще не вписав ключі
+                                visible: !!lp.api && !lp.api.featLive
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                role: "small"; color: ap.gold
+                                text: qsTr("Трансляції зараз вимкнені: їх вмикає власник AnyPlay.")
                             }
                             QtObject { id: startQ; property int value: lp.api ? lp.api.quality : 720; property bool audio: lp.api ? lp.api.gameAudio : true }
                         }
@@ -342,9 +360,16 @@ FocusScope {
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 10
-                                Rectangle {   // QR для телефона поруч
+                                // QR для телефона: сервер картинки не дає, малюємо самі з посилання для браузера
+                                AnyPlayQr {
+                                    visible: !!lp.api && lp.api.qr === "" && valid
+                                    Layout.preferredWidth: 112; Layout.preferredHeight: 112
+                                    Layout.alignment: Qt.AlignTop
+                                    text: lp.api ? lp.api.qrText : ""
+                                }
+                                Rectangle {
                                     visible: !!lp.api && lp.api.qr !== ""
-                                    Layout.preferredWidth: 92; Layout.preferredHeight: 92
+                                    Layout.preferredWidth: 112; Layout.preferredHeight: 112
                                     radius: ap.radiusSmall
                                     color: "#ffffff"
                                     Image { anchors.fill: parent; anchors.margins: 5; source: parent.visible ? lp.api.qr : ""; fillMode: Image.PreserveAspectFit; smooth: false; asynchronous: true }
@@ -354,7 +379,7 @@ FocusScope {
                                     spacing: 6
                                     Text {
                                         Layout.fillWidth: true
-                                        text: lp.api ? lp.api.watchUrl.replace(/^https?:\/\//, "") : ""
+                                        text: lp.api ? (lp.api.webLink || lp.api.watchUrl).replace(/^https?:\/\//, "") : ""
                                         elide: Text.ElideMiddle
                                         font.family: ap.body; font.pixelSize: ap.fsSub
                                         color: ap.mute
@@ -365,11 +390,25 @@ FocusScope {
                                         font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 17; font.letterSpacing: 3
                                         color: ap.gold
                                     }
-                                    ApButton {
-                                        small: true; ghost: true
-                                        focusPolicy: Qt.StrongFocus
-                                        text: qsTr("Копіювати посилання")
-                                        onClicked: { lp.api.copyLink(); lp.say(qsTr("Посилання скопійовано: надішли його другу. Відкривається в Telegram і в браузері.")); }
+                                    Flow {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        ApButton {
+                                            small: true
+                                            focusPolicy: Qt.StrongFocus
+                                            text: qsTr("Надіслати в Telegram")
+                                            onClicked: {
+                                                lp.cloud.openExternal("https://t.me/share/url?url=" + encodeURIComponent(lp.api.watchUrl)
+                                                                      + "&text=" + encodeURIComponent(qsTr("Дивись, як я граю в AnyPlay")));
+                                                lp.say(qsTr("Відкрив Telegram: обери друга. Гра тут іде далі."));
+                                            }
+                                        }
+                                        ApButton {
+                                            small: true; ghost: true
+                                            focusPolicy: Qt.StrongFocus
+                                            text: qsTr("Копіювати посилання")
+                                            onClicked: { lp.api.copyLink(); lp.say(qsTr("Посилання скопійовано: надішли його другу. Відкривається в Telegram і в браузері.")); }
+                                        }
                                     }
                                 }
                             }
@@ -511,6 +550,7 @@ FocusScope {
                         }
                         VolumeRow {
                             visible: !!lp.api && lp.api.mic && lp.api.hasMicVolume
+                            maxValue: 200   // 100 — як є, до 200 — підсилити тихий мікрофон
                             label: qsTr("Гучність мікрофона")
                             value: lp.api ? lp.api.micVolume : 100
                             onMoved: (v) => lp.api.setMicVolume(v)
@@ -559,6 +599,7 @@ FocusScope {
                         rowSpacing: 14
                         // передати керування (через трансляцію)
                         HelpCard {
+                            visible: !!lp.api && lp.api.featHelper
                             title: qsTr("Передати керування")
                             lead: qsTr("Друг дивиться трансляцію і керує твоєю грою: геймпадом, клавіатурою чи кнопками на телефоні. Без перепідключень, забрати можна будь-коли.")
                             hint: qsTr("Чесно: у друга затримка 0,3–0,6 с. Для перестрілок і гонок краще «Передати повністю».")
@@ -591,17 +632,18 @@ FocusScope {
                         }
                         // передати повністю (друг підключається своєю програмою)
                         HelpCard {
+                            visible: !!lp.api && lp.api.featHandoff
                             title: qsTr("Передати повністю")
                             lead: qsTr("Друг підключається до приставки своєю програмою AnyPlay, без затримки. Твоя гра тут м'яко зупиниться, а ти дивитимешся трансляцію друга, якщо він її ввімкне.")
                             hint: qsTr("Другу потрібна програма AnyPlay на комп'ютері чи Android. Повернути гру собі можна будь-коли: «Повернути собі» в головному вікні, на вкладці «Гра» чи «Друзі».")
                             ApText {
-                                visible: !!lp.api && lp.api.handoff === "preparing"
+                                visible: !!lp.api && lp.api.handoff === "preparing" && lp.confirmId === null
                                 Layout.fillWidth: true
                                 role: "small"; color: ap.cyan
                                 text: qsTr("Готуємо приставку, грати буде %1. Гра тут зупиниться за кілька секунд.").arg(lp.api ? lp.api.handoffTo : "")
                             }
                             ApButton {
-                                visible: !!lp.api && lp.api.handoff === "preparing"
+                                visible: !!lp.api && lp.api.handoff === "preparing" && lp.confirmId === null
                                 small: true; ghost: true
                                 focusPolicy: Qt.StrongFocus
                                 text: qsTr("Скасувати")
@@ -614,7 +656,7 @@ FocusScope {
                                 text: qsTr("Друг має дивитись твою трансляцію: почни її і запроси друга в розділі «Трансляція».")
                             }
                             Repeater {
-                                model: lp.api && lp.api.handoff === "" ? lp.handoffTo() : []
+                                model: lp.api && (lp.api.handoff === "" || lp.confirmId !== null) ? lp.handoffTo() : []
                                 ApRow {
                                     id: fr
                                     required property var modelData
@@ -629,8 +671,8 @@ FocusScope {
                                         focusPolicy: Qt.StrongFocus
                                         text: fr.asking ? qsTr("Так, передати") : qsTr("Передати")
                                         onClicked: {
-                                            if (lp.confirmId === modelData.id) { lp.confirmId = null; lp.api.handoffFull(modelData.id); }
-                                            else { lp.confirmId = modelData.id; confirmTimer.restart(); }
+                                            if (lp.confirmId === modelData.id) { confirmTimer.stop(); lp.confirmId = null; lp.api.handoffFull(modelData.id); }
+                                            else { lp.confirmId = modelData.id; confirmTimer.restart(); lp.api.prepareHandoff(modelData.id); }
                                         }
                                     }
                                 }
@@ -730,6 +772,7 @@ FocusScope {
         id: vr
         property string label
         property int value: 100
+        property int maxValue: 100
         signal moved(int v)
         Layout.fillWidth: true
         Layout.leftMargin: 14
@@ -740,7 +783,7 @@ FocusScope {
         Slider {
             id: vs
             Layout.fillWidth: true
-            from: 0; to: 100; stepSize: 5
+            from: 0; to: vr.maxValue; stepSize: 5
             value: vr.value
             focusPolicy: Qt.StrongFocus
             activeFocusOnTab: true

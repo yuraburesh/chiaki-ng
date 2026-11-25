@@ -394,7 +394,8 @@ Item {
                     // 116: трансляція для друзів; поки керує друг — блакитне, з позначкою «керує друг»
                     PauseItem {
                         id: liveBtn; pageId: "live"
-                        visible: liveApi.available
+                        // власник вимкнув у CRM і трансляцію, і допомогу друга — пункту немає (якщо трансляція вже йде — є)
+                        visible: liveApi.available && (liveApi.featLive || liveApi.featHelper || liveApi.featHandoff || liveApi.on)
                         live: liveApi.on || liveApi.friendControls
                         text: liveApi.friendControls ? qsTr("Керує друг: забрати")
                             : liveApi.unread > 0 ? qsTr("Друзі й трансляція (%1)").arg(liveApi.unread) : qsTr("Друзі й трансляція")

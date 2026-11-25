@@ -19,11 +19,13 @@ Item {
     property string title: ""                 // підпис зліва вгорі («Трансляція Андрія», «Подарунок»)
     property string backText: qsTr("← Друзі")
     property bool allowMic: false             // watch.html: голос у трансляції
+    property bool showBack: true              // вкладка «Друзі» з book.html#friends: сторінка й є вкладкою, «назад» не треба
     property real contentWidth: width
     property var web: null
     property string failure: ""
     readonly property bool available: !!cloud && cloud.webEngine === true && web !== null
     signal back()
+    signal moved(string address)              // сторінка перейшла на іншу адресу (book.html → watch.html?r=КОД і назад)
     AnyPlayStyle { id: ap }
 
     function reload() { failure = ""; if (web) web.reload(); }
@@ -39,7 +41,7 @@ Item {
             Layout.topMargin: 6
             Layout.bottomMargin: 8
             spacing: 12
-            ApButton { small: true; ghost: true; text: wp.backText; onClicked: wp.back() }
+            ApButton { visible: wp.showBack; small: true; ghost: true; text: wp.backText; onClicked: wp.back() }
             ApText { role: "eyebrow"; text: wp.title; elide: Text.ElideRight; Layout.maximumWidth: 420; wrapMode: Text.NoWrap }
             ApText {
                 Layout.fillWidth: true
@@ -94,6 +96,8 @@ Item {
                     property var cloud
                     property bool allowMic: false
                     signal failed(string text)
+                    signal moved(string address)
+                    onUrlChanged: v.moved(v.url.toString())
                     profile: WebEngineProfile { offTheRecord: true }
                     settings.javascriptCanOpenWindows: true
                     settings.localStorageEnabled: true
@@ -159,6 +163,7 @@ Item {
                 wp.web.allowMic = wp.allowMic;
                 wp.web.anchors.fill = holder;
                 wp.web.failed.connect((t) => wp.failure = t);
+                wp.web.moved.connect((u) => wp.moved(u));
                 wp.web.visible = Qt.binding(() => wp.failure === "");
                 const code = wp.cloud.webAppScript();
                 if (!code) {

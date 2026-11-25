@@ -82,7 +82,7 @@ Rectangle {
     readonly property var mine: (cloud.bookInfo && cloud.bookInfo.mine) || []
     // 116: друзі, трансляція, передана гра (усе з C++ через один адаптер)
     AnyPlayLiveApi { id: homeLive }
-    readonly property bool friendsOn: !home.isAdmin && (homeLive.friendsAvailable || homeLive.available)
+    readonly property bool friendsOn: !home.isAdmin && (homeLive.friendsAvailable || (homeLive.available && (homeLive.featFriends || homeLive.featGifts)))
     readonly property bool lentAway: homeLive.handoff === "away" || homeLive.handoff === "preparing" || homeLive.handoff === "returning"
     // overGame: це вікно відкрите з меню гри поверх трансляції: гра йде далі, «Грати» повертає в неї
     property bool overGame: false
@@ -830,19 +830,19 @@ Rectangle {
                                 ApText {
                                     role: "cap"
                                     color: homeLive.incoming ? ap.cyan : ap.gold
-                                    text: homeLive.incoming ? qsTr("Тобі передали гру") : qsTr("Гру передано другу")
+                                    text: homeLive.incoming ? homeLive.incomingTitle : qsTr("Гру передано другу")
                                 }
                                 ApText {
                                     Layout.fillWidth: true
                                     role: "body"
                                     text: homeLive.incoming
-                                        ? qsTr("Гру тобі передає %1, до %2. Граєш зі своєї програми, без затримки.").arg(homeLive.incoming.from).arg(home.cloud.formatTime(homeLive.incoming.end))
+                                        ? homeLive.incomingText
                                         : homeLive.handoff === "preparing" ? qsTr("Готуємо приставку, грати буде %1…").arg(homeLive.handoffTo)
                                         : qsTr("Зараз грає %1. Повернути гру собі можна будь-коли.").arg(homeLive.handoffTo)
                                 }
                             }
                             ApButton {
-                                visible: !!homeLive.incoming
+                                visible: !!homeLive.incoming && !homeLive.incoming.waiting
                                 text: qsTr("▶ Грати")
                                 onClicked: homeLive.acceptHandoff()
                             }

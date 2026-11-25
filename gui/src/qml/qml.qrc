@@ -33,6 +33,7 @@
         <file>AnyPlayLiveHud.qml</file>
         <file>AnyPlayFriends.qml</file>
         <file>AnyPlayWebPage.qml</file>
+        <file>AnyPlayQr.qml</file>
         <file>AnyPlayGuide.qml</file>
         <file>AnyPlayUpdateDialog.qml</file>
         <file>AnyPlayControls.qml</file>

@@ -40,6 +40,10 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		private const val POLL_MS = 8000L
 		private const val PAIR_MS = 2000L
 		private const val PAIR_MAX_TRIES = 150
+		private const val HANDOFF_POLL_MS = 1500L
+		private const val HANDOFF_TARGET_MS = 4 * 60_000L   // ключі PSN для передачі оновлюємо, якщо їм більше 4 хв
+		/** Команда з іншого екрана (сторінка сервера): play — грати (друг передав гру), home — просто головний екран */
+		const val EXTRA_ACTION = "anyplay_action"
 	}
 
 	private lateinit var web: WebView
@@ -88,8 +92,25 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			}
 		})
 		updater.onCreate()
+		// відкрили зі сторінки сервера з командою «грати» (друг передав гру, а цього екрана вже не було)
+		if(savedInstanceState == null && intent.getStringExtra(EXTRA_ACTION) == "play" && loggedIn)
+		{
+			intent.removeExtra(EXTRA_ACTION)
+			play()
+		}
 		if(savedInstanceState == null)
 			AnyPlayCloud.reportCrashIfAny(this)   // минулого разу гра обірвалась падінням — журнал для підтримки
+	}
+
+	/** Повернулись зі сторінки сервера (AnyPlayPageActivity) з командою */
+	override fun onNewIntent(intent: Intent)
+	{
+		super.onNewIntent(intent)
+		setIntent(intent)
+		val a = intent.getStringExtra(EXTRA_ACTION) ?: return
+		intent.removeExtra(EXTRA_ACTION)
+		if(a == "play" && loggedIn)
+			play()
 	}
 
 	override fun onDestroy()
@@ -145,6 +166,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		super.onPause()
 		web.onPause()
 		pollJob?.cancel()
+		handoffJob?.cancel()
 		updater.onPause()
 	}
 
@@ -185,6 +207,8 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			"adminShared" -> showSharedPsn()
 			"adminKick" -> adminKick()
 			"adminToggle" -> adminToggleClosed()
+			// «Передати повністю» (етап 7): друг відмовився від гри або повернув її власнику — оновити стан
+			"handoffChanged" -> lifecycleScope.launch { handoffInfo = null; refresh() }
 		}
 	}
 
@@ -218,6 +242,9 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		}
 		else
 			adminInfo = null
+		// друг готує передати нам свою гру: стежимо частіше, ключі готуємо заздалегідь, щоб почати одразу
+		if(!r.json.optBoolean("admin") && (r.json.has("handoffOffer") || handoffInfo != null))
+			watchHandoff()
 		state = when(r.json.optString("state"))
 		{
 			"play" -> "play"
@@ -318,6 +345,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			AnyPlayQuality.prepare(this@AnyPlayActivity)
 			var takeoverMs = 0L
 			var offerTakeover = false
+			var helperOf = ""
 			val target = withContext(Dispatchers.IO) {
 				val r = if(takeover) AnyPlayCloud.request(this@AnyPlayActivity, "POST", "/api/app/session", JSONObject().put("takeover", true))
 					else AnyPlayCloud.session(this@AnyPlayActivity)
@@ -326,6 +354,14 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 					val now = r.json.optLong("now")
 					val until = t.optLong("waitUntil")
 					takeoverMs = if(until > 0 && now > 0) (until - now).coerceIn(5, 120) * 1000L else 30000L
+				}
+				// «Передати повністю»: друг грає в бронь власника; щойно передали — приставку ще кілька секунд відпускають
+				r.json.optJSONObject("handoff")?.takeIf { it.optString("role") == "friend" }?.let { h ->
+					helperOf = h.optJSONObject("owner")?.optString("name") ?: ""
+					val now = r.json.optLong("now")
+					val until = h.optLong("waitUntil")
+					if(takeoverMs == 0L && until > now && now > 0)
+						takeoverMs = (until - now).coerceIn(5, 120) * 1000L
 				}
 				if(r.ok && r.json.optString("state") == "other_device")
 				{
@@ -359,13 +395,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			}
 			when(target)
 			{
-				is PlayReady -> startActivity(Intent(this@AnyPlayActivity, StreamActivity::class.java).also {
-					it.putExtra(StreamActivity.EXTRA_CONNECT_INFO, target.connectInfo)
-					it.putExtra(StreamActivity.EXTRA_ANYPLAY_TAKEOVER_MS, takeoverMs)
-					it.putExtra(StreamActivity.EXTRA_ANYPLAY, true)
-					it.putExtra(StreamActivity.EXTRA_ANYPLAY_ADMIN, isAdmin)   // адміну нагадування про кінець гри не потрібні
-					it.putExtra(StreamActivity.EXTRA_ANYPLAY_GUEST, target.guest)   // гість: без «Продовжити бронювання»
-				})
+				is PlayReady -> startGame(target, takeoverMs, helperOf)
 				is PlayError ->
 				{
 					render()
@@ -373,6 +403,84 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 						.setMessage(AnyPlayStyle.errorMessage(target.text, target.code))
 						.setPositiveButton("Зрозуміло", null))
 				}
+			}
+		}
+	}
+
+	private fun startGame(target: PlayReady, takeoverMs: Long, helperOf: String)
+	{
+		startActivity(Intent(this, StreamActivity::class.java).also {
+			it.putExtra(StreamActivity.EXTRA_CONNECT_INFO, target.connectInfo)
+			it.putExtra(StreamActivity.EXTRA_ANYPLAY_TAKEOVER_MS, takeoverMs)
+			it.putExtra(StreamActivity.EXTRA_ANYPLAY, true)
+			it.putExtra(StreamActivity.EXTRA_ANYPLAY_ADMIN, isAdmin)   // адміну нагадування про кінець гри не потрібні
+			it.putExtra(StreamActivity.EXTRA_ANYPLAY_GUEST, target.guest)   // гість: без «Продовжити бронювання»
+			it.putExtra(StreamActivity.EXTRA_ANYPLAY_HELPER_OF, helperOf)   // гра друга («Передати повністю»)
+		})
+	}
+
+	// ── «Передати повністю» (етап 7), бік друга ──
+	// Власник готує передачу (стан ready): сервер уже дає нам ключі його приставки, і ми заздалегідь шукаємо її в PSN.
+	// Щойно він натисне «Передати» (active) — гра тут починається сама, без пошуку приставки; поки його програма
+	// відпускає приставку (до waitUntil), «приставка зайнята» не помилка, а повтори раз на 3 с, як у «Грати тут».
+	private var handoffJob: Job? = null
+	private var handoffInfo: JSONObject? = null   // стан передачі для сторінки (без ключів)
+	private var handoffTarget: PlayReady? = null
+	private var handoffTargetAt = 0L
+	private var handoffTargetId = 0L
+	private var handoffLaunched = 0L
+
+	private fun watchHandoff()
+	{
+		if(handoffJob?.isActive == true)
+			return
+		handoffJob = lifecycleScope.launch {
+			while(isActive)
+			{
+				val r = withContext(Dispatchers.IO) { AnyPlayCloud.request(this@AnyPlayActivity, "GET", "/api/live/handoff") }
+				val ho = if(r.ok) r.json.optJSONObject("handoff") else null
+				if(r.status != 0 && (ho == null || ho.optString("role") != "friend" || ho.optString("state") !in setOf("ready", "active")))
+				{
+					// передачу скасували, повернули або сервер її не знає (старий сервер) — звичайний головний екран
+					handoffInfo = null
+					handoffTarget = null
+					render()
+					break
+				}
+				if(ho != null)
+				{
+					val id = ho.optLong("id")
+					handoffInfo = JSONObject(ho.toString()).also { it.remove("console") }
+					val console = ho.optJSONObject("console")
+					if(console != null && !busy && (handoffTarget == null || handoffTargetId != id ||
+							System.currentTimeMillis() - handoffTargetAt > HANDOFF_TARGET_MS))
+					{
+						val t = withContext(Dispatchers.IO) { AnyPlayCloud.playTarget(this@AnyPlayActivity, JSONObject().put("console", console)) }
+						if(t is PlayReady)
+						{
+							handoffTarget = t
+							handoffTargetAt = System.currentTimeMillis()
+							handoffTargetId = id
+						}
+					}
+					if(ho.optString("state") == "active" && handoffLaunched != id && !busy)
+					{
+						handoffLaunched = id
+						val target = handoffTarget?.takeIf { handoffTargetId == id }
+						if(target != null)
+						{
+							val until = ho.optLong("waitUntil")
+							val now = System.currentTimeMillis() / 1000 + skew
+							startGame(target, if(until > now) (until - now).coerceIn(5, 120) * 1000L else 30000L,
+								ho.optJSONObject("owner")?.optString("name") ?: "")
+						}
+						else
+							play()   // ключів наперед не отримали: звичайний шлях через сервер
+						break
+					}
+					render()
+				}
+				delay(HANDOFF_POLL_MS)
 			}
 		}
 	}
@@ -571,7 +679,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			.put("pairBot", pairBot)
 		// зі стану сервера лише те, що показує сторінка: ключів доступу до PSN тут немає
 		val s = JSONObject()
-		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt"))
+		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt", "handoff", "handoffOffer"))
 			session.opt(k)?.let { s.put(k, it) }
 		session.optJSONObject("console")?.let { s.put("console", JSONObject().put("psn", it.optString("psn")).put("own", it.optBoolean("own"))) }
 		// баланс клієнта {balances, primary}: сторінка показує вкладку «Баланс» і оплату з балансу лише коли він є
@@ -579,6 +687,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		if(!isAdmin)
 			session.optJSONObject("wallet")?.let { s.put("wallet", it) }
 		o.put("session", s)
+		handoffInfo?.let { o.put("handoffLive", it) }   // «Передати повністю»: свіжіший стан, ніж у session
 		if(isAdmin)
 			adminInfo?.let { o.put("adminView", adminView(it)) }
 		homeJson = o.toString()

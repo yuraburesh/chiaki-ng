@@ -75,7 +75,10 @@ class StreamActivity : AppCompatActivity()
 		const val EXTRA_ANYPLAY_GUEST = "anyplay_guest"   // гостьовий доступ (К5): без «Продовжити бронювання»
 		// «Грати тут» (гру забрали з іншого пристрою): скільки мс ще пробувати, поки приставка каже «уже зайнята»
 		const val EXTRA_ANYPLAY_TAKEOVER_MS = "anyplay_takeover_ms"
+		// «Передати повністю» (етап 7): граємо в бронь друга — його ім'я (порожньо — своя гра)
+		const val EXTRA_ANYPLAY_HELPER_OF = "anyplay_helper_of"
 		private const val TAKEOVER_RETRY_MS = 3000L
+		private const val HANDOFF_CHECK_MS = 3000L
 		private const val QUIT_RP_IN_USE = 4   // CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE
 		private const val INPUT_RECENT_MS = 20000L
 		private const val ANYPLAY_BEAT_MS = 20000L
@@ -225,6 +228,7 @@ class StreamActivity : AppCompatActivity()
 	private var anyplayResumeJob: Job? = null
 	private var anyplayQualityJob: Job? = null
 	private var anyplayRemindJob: Job? = null
+	private var anyplayHandoffJob: Job? = null
 	private val anyplayAdmin get() = intent.getBooleanExtra(EXTRA_ANYPLAY_ADMIN, false)
 	// кінець гри (усієї, разом із бронями впритул) за SystemClock.elapsedRealtime(), 0 — ще не знаємо
 	@Volatile private var anyplayEndAt = 0L
@@ -232,6 +236,7 @@ class StreamActivity : AppCompatActivity()
 	@Volatile private var anyplayLoss = 0.0
 	@Volatile private var anyplayControls = true
 	@Volatile private var anyplayGuest = false        // гостьовий доступ: граємо, поки приставка вільна
+	@Volatile private var anyplayHelperOf = ""        // граємо в бронь друга (він передав гру повністю): його ім'я
 	// телеметрія (К1): коли востаннє керували екранними кнопками, геймпадом, клавіатурою; лічильники відео з минулого сигналу
 	@Volatile private var anyplayTouchAt = 0L
 	@Volatile private var anyplayPadAt = 0L
@@ -265,6 +270,7 @@ class StreamActivity : AppCompatActivity()
 		{
 			anyplayFirstResume = false
 			anyplayGuest = intent.getBooleanExtra(EXTRA_ANYPLAY_GUEST, false)
+			anyplayHelperOf = intent.getStringExtra(EXTRA_ANYPLAY_HELPER_OF) ?: ""
 			viewModel.session.resume()
 		}
 		else
@@ -282,6 +288,7 @@ class StreamActivity : AppCompatActivity()
 					anyplayEndAt = SystemClock.elapsedRealtime() + r.json.optLong("left") * 1000
 					anyplayContinues = r.json.optBoolean("continues")
 					anyplayGuest = r.json.optBoolean("guest")
+					anyplayHelperOf = r.json.optJSONObject("handoff")?.optString("owner") ?: ""
 				}
 				if(r.status == 200 && r.json.optBoolean("sendLog"))
 					AnyPlayCloud.uploadLog(this@StreamActivity, "request", "Адміністратор попросив журнал")
@@ -293,9 +300,34 @@ class StreamActivity : AppCompatActivity()
 						"kicked" -> "Сеанс завершив адміністратор AnyPlay."
 						// гру забрали кнопкою «Грати тут» на іншому пристрої клієнта
 						"other_device" -> r.json.optString("text").ifEmpty { "Гра продовжилась на іншому пристрої." }
-						else -> "Час твоєї броні вийшов. Дякуємо за гру! Забронювати ще можна в боті."
+						// етап 7 «Допомога друга»: власник броні повернув гру собі або передав іншому (текст дає сервер)
+						"handoff" -> r.json.optString("text").ifEmpty { "Гру передано другу. Повернути її собі можна будь-коли на головному екрані." }
+						"handoff_return" -> r.json.optString("text").ifEmpty { "Власник броні повернув гру собі. Дякуємо за допомогу!" }
+						else -> r.json.optString("text").ifEmpty { "Час твоєї броні вийшов. Дякуємо за гру! Забронювати ще можна в боті." }
 					})
 				delay(ANYPLAY_BEAT_MS)
+			}
+		}
+		// гра друга («Передати повністю»): раз на 3 с питаємо, чи власник не повернув її собі — зупиняємось одразу,
+		// а не на наступному сигналі (до 20 с), щоб не заважати йому підключитись
+		anyplayHandoffJob?.cancel()
+		anyplayHandoffJob = lifecycleScope.launch {
+			while(isActive)
+			{
+				delay(HANDOFF_CHECK_MS)
+				val owner = anyplayHelperOf
+				if(owner.isEmpty())
+					continue
+				val r = withContext(Dispatchers.IO) { AnyPlayCloud.request(this@StreamActivity, "GET", "/api/live/handoff") }
+				if(r.status != 200 || !r.json.optBoolean("ok"))
+					continue
+				val h = r.json.optJSONObject("handoff")
+				if(h != null && h.optString("role") == "friend" && h.optString("state") == "active")
+					continue
+				val who = h?.optJSONObject("owner")?.optString("name")?.ifEmpty { null } ?: owner
+				anyplayEnd(if(h?.optString("endReason") == "time_over") "Бронь $who закінчилась. Дякуємо за гру!"
+					else "$who повернув гру собі. Дякуємо за допомогу!")
+				break
 			}
 		}
 		anyplayRemindJob?.cancel()
@@ -575,6 +607,7 @@ class StreamActivity : AppCompatActivity()
 		anyplayQualityJob?.cancel()
 		anyplayResumeJob?.cancel()
 		anyplayRemindJob?.cancel()
+		anyplayHandoffJob?.cancel()
 		anyplayHideBanner()
 		anyplayMenu?.dismiss()
 		viewModel.session.shutdown()
@@ -599,6 +632,7 @@ class StreamActivity : AppCompatActivity()
 		anyplayResumeJob?.cancel()
 		anyplayQualityJob?.cancel()
 		anyplayRemindJob?.cancel()
+		anyplayHandoffJob?.cancel()
 		viewModel.session.pause()
 		anyplayTakeoverJob?.cancel()
 		padEditor?.close(true)
@@ -713,6 +747,7 @@ class StreamActivity : AppCompatActivity()
 			.put("controls", anyplayControls)
 			.put("admin", anyplayAdmin)
 			.put("guest", anyplayGuest)
+			.put("helperOf", anyplayHelperOf)
 			.put("quality", AnyPlayQuality.name(this@StreamActivity))
 			.put("autoHide", PadLayout.autoHide(this@StreamActivity))
 			.toString()
@@ -729,6 +764,17 @@ class StreamActivity : AppCompatActivity()
 				"exit" ->
 				{
 					anyplayMenu?.dismiss()
+					finish()
+				}
+				// «Передати повністю» (етап 7): гру віддали другу або повернули власнику — м'яко зупиняємо свою
+				// трансляцію (приставку не присипляємо: на ній зараз почне грати інший) і йдемо на головний екран
+				"handedOff", "handedBack" ->
+				{
+					anyplayMenu?.dismiss()
+					anyplayBeatJob?.cancel()
+					viewModel.session.shutdown()
+					Toast.makeText(this@StreamActivity, if(name == "handedOff") "Гру передано другу. Повернути її собі можна на головному екрані."
+						else "Гру повернуто власнику броні. Дякуємо за допомогу!", Toast.LENGTH_LONG).show()
 					finish()
 				}
 				// «Розташування кнопок»: редактор поверх гри

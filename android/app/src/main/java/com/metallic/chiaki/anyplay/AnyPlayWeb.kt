@@ -46,6 +46,16 @@ private val anyplayIo = Executors.newCachedThreadPool()
 
 const val ANYPLAY_PAGE = "file:///android_asset/anyplay/app.html"
 
+/** Чи підключено справжній геймпад (Bluetooth чи кабель) */
+fun hasGamepad(): Boolean = android.view.InputDevice.getDeviceIds().any { id ->
+	val d = android.view.InputDevice.getDevice(id)
+	d != null && !d.isVirtual && (d.sources and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD ||
+		d.sources and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK)
+}
+
+/** Що сторінка програми може питати в сервера через міст (з токеном пристрою) */
+private val ANYPLAY_REQ_PATHS = arrayOf("/api/app/", "/api/miniapp/friends", "/api/live/handoff")
+
 private fun openExternal(context: Context, url: String)
 {
 	try
@@ -128,10 +138,14 @@ class AnyPlayBridge(private val activity: Activity, private val web: WebView, pr
 {
 	private val haptics = ButtonHaptics(activity)
 
+	/**
+	 * Запити сторінки до сервера з токеном пристрою. Дозволені лише API програми, друзі й подарунки (етап 7)
+	 * і «Передати повністю» — нічого іншого сторінка від імені пристрою не просить.
+	 */
 	@JavascriptInterface
 	fun req(id: Int, method: String, path: String, body: String)
 	{
-		if(!path.startsWith("/api/app/"))
+		if(!ANYPLAY_REQ_PATHS.any { path.startsWith(it) } || path.contains(".."))
 			return
 		anyplayIo.execute {
 			val json = if(body.isEmpty()) null else try { JSONObject(body) } catch(e: Exception) { null }
@@ -160,6 +174,38 @@ class AnyPlayBridge(private val activity: Activity, private val web: WebView, pr
 
 	@JavascriptInterface
 	fun close() = activity.runOnUiThread { if(alive()) onClose() }
+
+	/** Поділитися текстом (запрошення в друзі): системне вікно «Надіслати» — Telegram, Viber тощо */
+	@JavascriptInterface
+	fun share(text: String) = activity.runOnUiThread {
+		if(!alive())
+			return@runOnUiThread
+		try
+		{
+			activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Надіслати запрошення"))
+		}
+		catch(e: ActivityNotFoundException)
+		{
+			copy(text)
+			Toast.makeText(activity, "Посилання скопійовано", Toast.LENGTH_LONG).show()
+		}
+	}
+
+	/** «Дивитись»: трансляція друга (код кімнати) на сторінці сервера watch.html — відео, голос, чат, керування помічника */
+	@JavascriptInterface
+	fun watch(code: String) = activity.runOnUiThread {
+		if(alive() && Regex("[A-Za-z0-9]{1,12}").matches(code))
+			// без геймпада помічнику потрібні екранні кнопки (на планшеті сторінка сама їх не показує)
+			AnyPlayPageActivity.open(activity, "/app/watch.html?r=" + code.uppercase() + if(hasGamepad()) "" else "&pad=1",
+				AnyPlayPageActivity.KIND_WATCH)
+	}
+
+	/** Сторінка сервера в програмі: друзі й подарунки (book.html, лише вона) */
+	@JavascriptInterface
+	fun page(path: String) = activity.runOnUiThread {
+		if(alive() && path.startsWith("/app/book.html") && !path.contains(".."))
+			AnyPlayPageActivity.open(activity, path)
+	}
 
 	@JavascriptInterface
 	fun haptic() = activity.runOnUiThread { haptics.trigger() }

@@ -1,115 +1,366 @@
-// AnyPlay: герой справді сів у транспорт чи вийшов? Визначаємо за ефектами курків і вібрацією від приставки
-// (без Qt, щоб логіку перевіряв окремий тест).
+// AnyPlay: герой справді сів у транспорт чи вийшов? Визначаємо за ефектами курків DualSense, які шле приставка,
+// за натисканням △ (F з клавіатури) і вібрацією. Без Qt, щоб логіку перевіряв окремий тест.
 //
-// Гіпотеза (журнали [anyplay-triggers] / [anyplay-rumble] збірки 110+; справжнього журналу GTA VI ще немає):
-//  - у транспорті гра ставить ефект (опір) на ОБИДВА курки: R2 газ і L2 гальмо, і тримає його, поки сидиш;
-//  - пішки зі зброєю ефект лише на R2 (спуск), L2 без ефекту; без зброї обидва без ефекту.
-// Тож «у транспорті» = обидва курки з ефектом стабільно ≥ 1,5 с (з вібрацією двигуна поруч — швидше),
-// «пішки» = обидва без ефекту ≥ 2 с. Вихід «пішки» рахуємо лише якщо гра взагалі хоч раз давала ефекти на обидва
-// курки: якщо адаптивні курки в грі вимкнені, автоматика мовчить і працює лише F.
-// F лишається ручним перемикачем: після нього автоматика кілька секунд не сперечається (герой ще йде до машини).
+// 115: F (△) більше НЕ перемикає режим сам. У GTA △ — це і «сісти в машину», і «підняти предмет», і «відчинити двері»,
+// тож натискання лише «можлива подія»: після △ чекаємо підтвердження курками до 4 с, без підтвердження нічого не міняємо.
+// Ручне перемикання — окрема клавіша (U, див. розкладки), F1–F3 і вкладки на екрані клавіш.
+//
+// Як гра задає ефекти курків (DualSense, байт режиму в пакеті Remote Play = тип у CHIAKI_EVENT_TRIGGER_EFFECTS):
+//   0x00, 0x05             — без ефекту (вимкнено / скинуто), або всі 10 байтів параметрів нульові;
+//   0x01, 0x21             — опір (Feedback: суцільний опір від певної точки ходу) — педалі газу й гальма, приціл;
+//   0x02, 0x25, 0x22       — «зброя» (Weapon / Bow: тугий хід і клацання спуску) — постріл;
+//   0x06, 0x26, 0x23, 0x27 — вібрація курка (Vibration / Galloping / Machine) — черга, двигун, пошкоджене авто;
+//   решта — «інше».
+// GTA V на PS5 (Sony: «адаптивні курки дають відчуття ваги й контролю зброї і транспорту»): у машині опір на газі (R2)
+// і гальмі (L2), поки сидиш; пішки зі зброєю L2 (приціл) може мати легкий опір, а R2 — ефект «зброя»; без зброї обидва
+// без ефекту. Тому «сів» для GTA V = опір (саме Feedback) на ОБОХ курках. Для GTA VI справжнього журналу ще немає:
+// правило ширше (опір або вібрація на обох), а від помилки зі зброєю захищає «тримаєш приціл/постріл — не рахуємо».
+// Усі рішення пишуться в журнал [anyplay-mode] з причиною і типами курків — пороги підлаштовуємо за журналами (К13).
 #ifndef ANYPLAY_VEHICLE_H
 #define ANYPLAY_VEHICLE_H
 
 #include <cstdint>
+#include <cstdio>
+#include <string>
 
-constexpr int64_t AnyPlayVehicleEnterMs = 1500;        // обидва курки з ефектом стільки → транспорт
-constexpr int64_t AnyPlayVehicleEnterRumbleMs = 1000;  // ... а якщо при цьому була вібрація (двигун) — швидше
-constexpr int64_t AnyPlayVehicleExitMs = 2000;         // обидва курки без ефекту стільки → пішки
-constexpr int64_t AnyPlayVehicleManualGraceMs = 8000;  // після F автоматика мовчить (герой іде до машини, анімація посадки)
-constexpr int64_t AnyPlayVehicleRumbleRecentMs = 1500; // вібрація вважається «щойно» стільки
+enum AnyPlayTrig : uint8_t
+{
+	AnyPlayTrigOff = 0,
+	AnyPlayTrigResist,    // опір (педалі, приціл)
+	AnyPlayTrigWeapon,    // спуск зброї
+	AnyPlayTrigVibrate,   // вібрація курка
+	AnyPlayTrigOther,
+};
 
-// 0x00 і 0x05 — «без ефекту» (DualSense: off / reset); решта — опір, спуск, вібрація курка тощо
+constexpr unsigned AnyPlayTrigBit(AnyPlayTrig c) { return 1u << c; }
+
+// 0x00 і 0x05 — «без ефекту»; також нульові параметри (гра «вимкнула» ефект, не змінюючи режим)
 inline bool AnyPlayTriggerEffectOn(uint8_t type)
 {
 	return type != 0x00 && type != 0x05;
 }
 
+inline bool AnyPlayTriggerDataEmpty(const uint8_t *data)
+{
+	if(!data)
+		return false;
+	for(int i = 0; i < 10; i++)
+		if(data[i])
+			return false;
+	return true;
+}
+
+inline AnyPlayTrig AnyPlayTriggerClass(uint8_t type, bool data_empty = false)
+{
+	if(!AnyPlayTriggerEffectOn(type) || data_empty)
+		return AnyPlayTrigOff;
+	switch(type)
+	{
+		case 0x01: case 0x21:
+			return AnyPlayTrigResist;
+		case 0x02: case 0x25: case 0x22:
+			return AnyPlayTrigWeapon;
+		case 0x06: case 0x26: case 0x23: case 0x27:
+			return AnyPlayTrigVibrate;
+		default:
+			return AnyPlayTrigOther;
+	}
+}
+
+inline const char *AnyPlayTrigName(AnyPlayTrig c)
+{
+	switch(c)
+	{
+		case AnyPlayTrigOff: return "немає";
+		case AnyPlayTrigResist: return "опір";
+		case AnyPlayTrigWeapon: return "зброя";
+		case AnyPlayTrigVibrate: return "вібрація";
+		default: return "інше";
+	}
+}
+
+// Правила окремо для кожної гри (розкладки)
+struct AnyPlayVehicleRules
+{
+	const char *game = "gta5";
+	unsigned enter_left = AnyPlayTrigBit(AnyPlayTrigResist);   // який ефект на L2 (гальмо) означає «сів»
+	unsigned enter_right = AnyPlayTrigBit(AnyPlayTrigResist);  // ... і на R2 (газ) — потрібні обидва
+	unsigned keep = AnyPlayTrigBit(AnyPlayTrigResist) | AnyPlayTrigBit(AnyPlayTrigVibrate); // хоч один курок з таким — ще в транспорті
+	int64_t f_window_ms = 4000;          // після △ чекаємо підтвердження курками стільки
+	int64_t enter_after_f_ms = 300;      // після △: «сів»-ефект тримається стільки → транспорт
+	int64_t enter_alone_ms = 2500;       // без △ (місія почалась у машині, катсцена): стільки
+	int64_t enter_alone_rumble_ms = 1500;// ... а якщо поруч вібрація (двигун) — швидше
+	int64_t exit_after_f_ms = 300;       // після △: ефектів транспорту нема стільки → пішки
+	int64_t exit_alone_ms = 2500;        // без △ (викинуло з машини, загинув): стільки без ефектів транспорту → пішки
+	int64_t manual_grace_ms = 5000;      // після ручного перемикання (U, F1–F3, вкладка) автоматика мовчить
+	int64_t rumble_recent_ms = 1500;     // вібрація вважається «щойно» стільки
+	int64_t no_effects_warn_ms = 60000;  // стільки гри без жодного ефекту курків — підказати, що автоматика не працюватиме
+};
+
+// GTA V на PS5: «сів» = опір на обох педалях; зброя пішки (R2 «зброя») ніколи не вмикає транспорт
+inline AnyPlayVehicleRules AnyPlayVehicleRulesGta5()
+{
+	return AnyPlayVehicleRules();
+}
+
+// GTA VI: журналу ще немає — опір або вібрація на обох курках (двигун на високих обертах може дати вібрацію на газі)
+inline AnyPlayVehicleRules AnyPlayVehicleRulesGta6()
+{
+	AnyPlayVehicleRules r;
+	r.game = "gta6";
+	r.enter_left = AnyPlayTrigBit(AnyPlayTrigResist) | AnyPlayTrigBit(AnyPlayTrigVibrate);
+	r.enter_right = AnyPlayTrigBit(AnyPlayTrigResist) | AnyPlayTrigBit(AnyPlayTrigVibrate);
+	return r;
+}
+
+inline AnyPlayVehicleRules AnyPlayVehicleRulesFor(const std::string &layout)
+{
+	return layout == "gta6" ? AnyPlayVehicleRulesGta6() : AnyPlayVehicleRulesGta5();
+}
+
 struct AnyPlayVehicleDetector
 {
-	bool in_vehicle = false;       // що ми зараз вважаємо (режим клавіш)
-	bool left_on = false, right_on = false;
-	bool seen_both = false;        // гра хоч раз давала ефект на обидва курки (адаптивні курки увімкнені)
-	int64_t both_on_since = -1;    // відколи обидва з ефектом (-1: не обидва)
-	int64_t both_off_since = -1;   // відколи обидва без ефекту
+	AnyPlayVehicleRules rules;
+	bool in_vehicle = false;       // що ми зараз вважаємо (режим клавіш); «Авіація» теж true
+	AnyPlayTrig left = AnyPlayTrigOff, right = AnyPlayTrigOff;
+	uint8_t type_left = 0, type_right = 0;
+	bool aiming = false;           // пішки тримають приціл або постріл з клавіатури: ефекти зброї, не транспорт
+	bool menu = false;             // відкрита пауза чи мапа гри: вихід «за часом» вимкнено
+	bool seen_any = false;         // гра хоч раз давала будь-який ефект (адаптивні курки увімкнені)
+	bool confirmed = false;        // у транспорті: ефект транспорту хоч раз був (інакше «за часом» не виходимо)
+	bool block_enter = false;      // гравець сам обрав «пішки», а ефект ще той самий: чекаємо, поки зникне
+	bool warned_no_effects = false;
+	bool aim_noted = false;        // у журналі вже сказано «ефект є, але тримаєш приціл»
+	int64_t start_at = 0;
+	int64_t enter_since = -1;      // відколи на курках «сів»-ефект (-1: нема)
+	int64_t keep_lost_since = -1;  // відколи нема жодного ефекту транспорту (-1: є)
+	int64_t f_at = -1;             // коли натиснули △ (-1: нема відкритого вікна)
 	int64_t manual_until = 0;      // до цієї миті автоматика мовчить
 	int64_t last_rumble = -1;      // коли востаннє була вібрація (-1: ніколи)
+	uint8_t rumble_l = 0, rumble_r = 0;
+	std::string log;               // причина останнього рішення чи події для журналу; викликач забирає і чистить
 
-	// Початок гри: приставка ще нічого не казала, вважаємо, що курки без ефекту від цієї миті
-	void Reset(bool vehicle, int64_t now)
+	bool EnterSig() const
 	{
-		in_vehicle = vehicle;
-		left_on = right_on = false;
-		seen_both = false;
-		both_on_since = -1;
-		both_off_since = now;
-		manual_until = 0;
-		last_rumble = -1;
+		return (rules.enter_left & AnyPlayTrigBit(left)) && (rules.enter_right & AnyPlayTrigBit(right));
+	}
+	bool KeepSig() const
+	{
+		return (rules.keep & AnyPlayTrigBit(left)) || (rules.keep & AnyPlayTrigBit(right));
+	}
+	std::string TrigText() const
+	{
+		char buf[96];
+		std::snprintf(buf, sizeof(buf), "L=%02x %s, R=%02x %s", type_left, AnyPlayTrigName(left), type_right, AnyPlayTrigName(right));
+		return buf;
+	}
+	static std::string Sec(int64_t ms)
+	{
+		char buf[32];
+		std::snprintf(buf, sizeof(buf), "%lld,%lld с", (long long)(ms / 1000), (long long)((ms % 1000) / 100));
+		return buf;
+	}
+	void Note(const std::string &line)
+	{
+		if(!log.empty())
+			log += "; ";
+		log += line;
 	}
 
-	// Гравець натиснув F (чи F1/F2): приймаємо його вибір і не сперечаємось кілька секунд
+	// Початок гри або нова розкладка: приставка ще нічого не казала
+	void Reset(const AnyPlayVehicleRules &r, bool vehicle, int64_t now)
+	{
+		const bool keep_seen = seen_any;   // розкладку міняють посеред гри: курки вже працювали
+		const bool keep_warned = warned_no_effects;
+		*this = AnyPlayVehicleDetector();
+		rules = r;
+		in_vehicle = vehicle;
+		seen_any = keep_seen;
+		warned_no_effects = keep_warned;
+		start_at = now;
+		keep_lost_since = now;
+	}
+
+	// Гравець перемкнув сам (U, F1–F3, вкладка): приймаємо і кілька секунд не сперечаємось
 	void Manual(bool vehicle, int64_t now)
 	{
 		in_vehicle = vehicle;
-		manual_until = now + AnyPlayVehicleManualGraceMs;
-		// відлік «стабільно» починається заново, інакше старий стан спрацював би одразу після паузи
-		if(both_on_since >= 0)
-			both_on_since = now;
-		if(both_off_since >= 0)
-			both_off_since = now;
-	}
-
-	// Приставка надіслала типи ефектів курків
-	void Triggers(uint8_t type_left, uint8_t type_right, int64_t now)
-	{
-		left_on = AnyPlayTriggerEffectOn(type_left);
-		right_on = AnyPlayTriggerEffectOn(type_right);
-		const bool both_on = left_on && right_on;
-		const bool both_off = !left_on && !right_on;
-		if(both_on)
+		manual_until = now + rules.manual_grace_ms;
+		f_at = -1;
+		aim_noted = false;
+		if(vehicle)
 		{
-			seen_both = true;
-			if(both_on_since < 0)
-				both_on_since = now;
+			// без ефектів транспорту (човен, гра без адаптивних курків) «за часом» не виходимо, доки ефект не з'явиться
+			confirmed = KeepSig();
+			keep_lost_since = KeepSig() ? -1 : now;
+			block_enter = false;
 		}
 		else
-			both_on_since = -1;
-		if(both_off)
 		{
-			if(both_off_since < 0)
-				both_off_since = now;
+			// гравець каже «пішки», хоча ефект ще є: нове «сів» лише після того, як ефект зникне
+			block_enter = EnterSig();
+			enter_since = EnterSig() ? now : -1;
 		}
-		else
-			both_off_since = -1;
 	}
 
-	void Rumble(bool on, int64_t now)
+	// Натиснули △ (F чи будь-яка клавіша, що дає △): можливо, сідає в машину або виходить
+	void Interact(int64_t now)
 	{
-		if(on)
+		const bool reopen = f_at >= 0;
+		f_at = now;
+		if(!reopen)
+			Note(std::string("△: ") + (in_vehicle ? "можливо, виходить" : "можливо, сідає")
+				+ ", чекаю підтвердження курками до " + Sec(rules.f_window_ms) + " (" + TrigText() + ")");
+		if(!seen_any && !warned_no_effects && now - start_at >= rules.no_effects_warn_ms)
+		{
+			warned_no_effects = true;
+			Note("гра не надсилає ефектів курків: автоматика не бачить транспорту, перемикай вручну");
+		}
+	}
+
+	// Приставка надіслала ефекти курків
+	void Triggers(AnyPlayTrig l, AnyPlayTrig r, uint8_t tl, uint8_t tr, int64_t now)
+	{
+		left = l;
+		right = r;
+		type_left = tl;
+		type_right = tr;
+		if(l != AnyPlayTrigOff || r != AnyPlayTrigOff)
+			seen_any = true;
+		if(EnterSig())
+		{
+			if(enter_since < 0)
+				enter_since = now;
+		}
+		else
+		{
+			enter_since = -1;
+			block_enter = false;
+			aim_noted = false;
+		}
+		if(KeepSig())
+		{
+			keep_lost_since = -1;
+			if(in_vehicle)
+				confirmed = true;
+		}
+		else if(keep_lost_since < 0)
+			keep_lost_since = now;
+	}
+
+	void Rumble(uint8_t l, uint8_t r, int64_t now)
+	{
+		rumble_l = l;
+		rumble_r = r;
+		if(l || r)
 			last_rumble = now;
+	}
+
+	// Пішки тримають приціл/постріл (L2/R2 з клавіатури): ефекти зараз від зброї
+	void SetAiming(bool on, int64_t now)
+	{
+		aiming = on;
+		if(on && enter_since >= 0)
+		{
+			enter_since = now;   // рахуємо заново після того, як відпустить
+			if(!in_vehicle && !aim_noted)
+			{
+				aim_noted = true;
+				Note("ефект на обох курках, але тримаєш приціл чи постріл: це зброя, не транспорт (" + TrigText() + ")");
+			}
+		}
+	}
+
+	// Пауза, мапа, кнопка PS: гра могла прибрати ефекти, бо меню; вихід «за часом» не рахуємо
+	void SetMenu(bool on, int64_t now)
+	{
+		if(on == menu)
+			return;
+		menu = on;
+		// повернулись у гру: ефекти можуть з'явитися не одразу, тож відлік «без ефектів» починаємо заново
+		if(!on && keep_lost_since >= 0)
+			keep_lost_since = now;
+		Note(on ? "меню гри відкрите: вихід за часом вимкнено" : "меню гри закрите");
 	}
 
 	// Перевірка (кілька разів на секунду). +1 — перемкнути на транспорт, -1 — на пішки, 0 — нічого
 	int Tick(int64_t now)
 	{
+		const bool fwin = f_at >= 0 && now - f_at <= rules.f_window_ms;
 		if(now < manual_until)
-			return 0;
-		if(!in_vehicle && both_on_since >= 0)
 		{
-			const bool rumble_recent = last_rumble >= 0 && now - last_rumble <= AnyPlayVehicleRumbleRecentMs;
-			const int64_t need = rumble_recent ? AnyPlayVehicleEnterRumbleMs : AnyPlayVehicleEnterMs;
-			if(now - both_on_since >= need)
+			f_at = -1;
+			return 0;
+		}
+		if(!in_vehicle)
+		{
+			if(aiming && enter_since >= 0)
+				enter_since = now;
+			if(enter_since >= 0 && !block_enter && !aiming)
 			{
-				in_vehicle = true;
-				return +1;
+				const int64_t dur = now - enter_since;
+				if(fwin && dur >= rules.enter_after_f_ms)
+				{
+					Note("сів у транспорт: △ і ефект на обох курках " + Sec(dur) + " (" + TrigText() + ")");
+					return Switch(true);
+				}
+				const bool rumble_recent = last_rumble >= 0 && now - last_rumble <= rules.rumble_recent_ms;
+				const int64_t need = rumble_recent ? rules.enter_alone_rumble_ms : rules.enter_alone_ms;
+				if(dur >= need)
+				{
+					char buf[64];
+					std::snprintf(buf, sizeof(buf), ", вібрація %u/%u", rumble_l, rumble_r);
+					Note("сів у транспорт без △: ефект на обох курках " + Sec(dur) + " (" + TrigText() + (rumble_recent ? std::string(buf) : std::string()) + ")");
+					return Switch(true);
+				}
 			}
 		}
-		if(in_vehicle && seen_both && both_off_since >= 0 && now - both_off_since >= AnyPlayVehicleExitMs)
+		else if(keep_lost_since >= 0)
 		{
-			in_vehicle = false;
-			return -1;
+			const int64_t dur = now - keep_lost_since;
+			// △ натиснули незадовго до того, як ефекти зникли (вікно ще відкрите), або вже після
+			if(fwin && dur >= rules.exit_after_f_ms)
+			{
+				Note("вийшов: △ і ефекти транспорту зникли " + Sec(dur) + " (" + TrigText() + ")");
+				return Switch(false);
+			}
+			if(confirmed && !menu && dur >= rules.exit_alone_ms)
+			{
+				Note("вийшов без △: " + Sec(dur) + " без ефектів транспорту (" + TrigText() + ")");
+				return Switch(false);
+			}
+		}
+		if(f_at >= 0 && !fwin)
+		{
+			Note(std::string("△ без підтвердження курками за ") + Sec(rules.f_window_ms) + ": режим «"
+				+ (in_vehicle ? "транспорт" : "пішки") + "» лишається (" + TrigText() + ")");
+			f_at = -1;
 		}
 		return 0;
+	}
+
+	// Забрати текст для журналу (порожній — нічого не сталося)
+	std::string TakeLog()
+	{
+		std::string out;
+		out.swap(log);
+		return out;
+	}
+
+private:
+	int Switch(bool vehicle)
+	{
+		in_vehicle = vehicle;
+		f_at = -1;
+		aim_noted = false;
+		if(vehicle)
+		{
+			confirmed = true;
+			keep_lost_since = -1;   // «сів»-ефект завжди й ефект транспорту
+		}
+		else
+			block_enter = false;
+		return vehicle ? +1 : -1;
 	}
 };
 

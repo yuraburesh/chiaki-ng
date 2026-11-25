@@ -534,15 +534,16 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		anyplay = new AnyPlayInput(this);
 		anyplay->Load();
 		connect(anyplay, &AnyPlayInput::Changed, this, &StreamSession::SendFeedbackState);
-		// підказка про режим на екрані — лише коли грають клавіатурою (геймпадисту «сів у транспорт, F — вийти» ні до чого)
+		// підказка про режим на екрані — лише коли грають клавіатурою (геймпадисту «Транспорт. U — пішки» ні до чого)
 		connect(anyplay, &AnyPlayInput::ProfileChanged, this, [this]() { if(!gamepad_mode) emit ControlProfileChanged(); });
 		// AnyPlay 110: у журнал — зміна режиму (для автоматичного «Транспорт» / «Пішки» за сигналами гри)
 		connect(anyplay, &AnyPlayInput::ProfileChanged, this, [this](const QString &status) {
 			CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-mode] %s", status.toUtf8().constData());
 		});
-		// AnyPlay 113: чому автоматика перемкнула режим (або гравець вручну) — щоб підлаштувати пороги за журналами
+		// AnyPlay 115: чому автоматика перемкнула режим (або не перемкнула після △, або гравець вручну) —
+		// щоб підлаштувати правила за журналом клієнта (К13)
 		connect(anyplay, &AnyPlayInput::VehicleLog, this, [this](const QString &line) {
-			CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-vehicle] %s", line.toUtf8().constData());
+			CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-mode] %s", line.toUtf8().constData());
 		});
 		// AnyPlay 113: постріл чи удар з клавіатури → віддача на екрані (якщо вона ввімкнена)
 		connect(anyplay, &AnyPlayInput::Kick, this, [this](float strength) {
@@ -3002,25 +3003,34 @@ void StreamSession::Event(ChiakiEvent *event)
 			{
 				// AnyPlay 110: які ефекти курків надсилає гра (пішки, транспорт, зброя) — щоб навчити програму
 				// саму вмикати «Транспорт», коли герой сів у машину, і «Пішки», коли вийшов
+				// 115: ще й клас ефекту (опір / зброя / вібрація / немає, див. anyplayvehicle.h) і коли параметри обнулились
 				static uint8_t logged_l = 0xff, logged_r = 0xff;
+				static int logged_cl = -1, logged_cr = -1;
 				const uint8_t tl = event->trigger_effects.type_left, tr = event->trigger_effects.type_right;
-				if(tl != logged_l || tr != logged_r)
+				const int cl = AnyPlayTriggerClass(tl, AnyPlayTriggerDataEmpty(event->trigger_effects.left));
+				const int cr = AnyPlayTriggerClass(tr, AnyPlayTriggerDataEmpty(event->trigger_effects.right));
+				if(tl != logged_l || tr != logged_r || cl != logged_cl || cr != logged_cr)
 				{
 					logged_l = tl;
 					logged_r = tr;
+					logged_cl = cl;
+					logged_cr = cr;
 					char hex_l[21], hex_r[21];
 					for(int i = 0; i < 10; i++)
 					{
 						snprintf(hex_l + i * 2, 3, "%02x", event->trigger_effects.left[i]);
 						snprintf(hex_r + i * 2, 3, "%02x", event->trigger_effects.right[i]);
 					}
-					CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-triggers] L=%02x %s R=%02x %s", tl, hex_l, tr, hex_r);
+					CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-triggers] L=%02x %s (%s) R=%02x %s (%s)", tl, hex_l,
+						AnyPlayTrigName(static_cast<AnyPlayTrig>(cl)), tr, hex_r, AnyPlayTrigName(static_cast<AnyPlayTrig>(cr)));
 				}
 			}
 			if(anyplay)
 			{
 				const uint8_t tl = event->trigger_effects.type_left, tr = event->trigger_effects.type_right;
-				QMetaObject::invokeMethod(anyplay, [this, tl, tr]() { anyplay->NoteTriggers(tl, tr); }, Qt::QueuedConnection);
+				const bool el = AnyPlayTriggerDataEmpty(event->trigger_effects.left);
+				const bool er = AnyPlayTriggerDataEmpty(event->trigger_effects.right);
+				QMetaObject::invokeMethod(anyplay, [this, tl, tr, el, er]() { anyplay->NoteTriggers(tl, tr, el, er); }, Qt::QueuedConnection);
 			}
 			if(ps5_trigger_intensity < 0)
 				return;

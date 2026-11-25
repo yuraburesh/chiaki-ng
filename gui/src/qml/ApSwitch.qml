@@ -30,8 +30,9 @@ Item {
     Rectangle {
         width: parent.height - 6; height: width; radius: width / 2
         y: 3
-        x: s.checked ? parent.width - width - 3 : 3
-        Behavior on x { NumberAnimation { duration: ap.tHover; easing.type: Easing.OutCubic } }
+        x: 3
+        // рух кружечка — зсувом (transform), без зміни геометрії
+        transform: Translate { x: s.checked ? s.width - s.height : 0; Behavior on x { NumberAnimation { duration: ap.tHover; easing.type: Easing.OutCubic } } }
         color: "#ffffff"
         scale: mouse.pressed ? 0.9 : 1
         Behavior on scale { NumberAnimation { duration: ap.tPress } }

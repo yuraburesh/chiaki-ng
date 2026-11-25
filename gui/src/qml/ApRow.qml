@@ -27,10 +27,10 @@ Item {
         anchors { fill: parent; leftMargin: -10; rightMargin: -10; topMargin: 2; bottomMargin: 2 }
         radius: ap.radiusSmall
         visible: r.clickable
-        color: mouse.containsMouse || r.activeFocus ? ap.glass : "transparent"
-        border.width: r.activeFocus ? 2 : 0
-        border.color: ap.cyan
-        Behavior on color { ColorAnimation { duration: ap.tHover } }
+        color: ap.glass
+        opacity: mouse.containsMouse || r.activeFocus ? 1 : 0   // згасанням (opacity), без анімації кольору
+        Behavior on opacity { NumberAnimation { duration: ap.tHover } }
+        Rectangle { anchors.fill: parent; radius: parent.radius; visible: r.activeFocus; color: "transparent"; border.width: 2; border.color: ap.cyan }
     }
     activeFocusOnTab: clickable
     Keys.onReturnPressed: if (clickable) clicked()

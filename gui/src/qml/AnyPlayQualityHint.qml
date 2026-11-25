@@ -16,7 +16,7 @@ Item {
 
     visible: opacity > 0
     opacity: shown ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: 250 } }
+    Behavior on opacity { NumberAnimation { duration: ap.tHover + 30 } }   // 180 мс, як усі анімації 115
     implicitWidth: row.implicitWidth + 32
     implicitHeight: row.implicitHeight + 22
     width: implicitWidth; height: implicitHeight

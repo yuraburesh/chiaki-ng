@@ -281,6 +281,17 @@ Rectangle {
         return t;
     }
     readonly property var levelNames: [qsTr("Економна"), qsTr("Оптимальна"), qsTr("Максимальна"), qsTr("Ультра")]
+    readonly property var renderNames: ({ fast: qsTr("проста"), default: qsTr("стандартна"), high: qsTr("висока якість"), ai: qsTr("ШІ-чіткість"), ai2: qsTr("посилена ШІ-чіткість"), custom: qsTr("своя") })
+    // перегляд екрана клієнта (AnyPlayPreview): стан тут, бо картки приставок перестворюються з кожним оновленням панелі
+    QtObject {
+        id: previewStore
+        property var booking: 0
+        property bool big: false
+        property real since: 0
+        property string lastImage: ""
+        property real frameSeenAt: 0
+    }
+    property bool menuDemo: false        // «Меню гри: перегляд» (Інструменти): меню паузи як у клієнта, без гри
     // ── адміну: як клієнт грає просто зараз, фішками (пристрій, керування, гра й режим, якість, кадри, швидкість, втрати) ──
     function num1(x) { return (Math.round(Number(x) * 10) / 10).toString().replace(".", ","); }
     function liveChips(l, ageMin) {
@@ -301,6 +312,11 @@ Rectangle {
         if (game) out.push({ text: game + (mode ? ", " + mode : ""), icon: home.gameLogo(l.layout) });
         const quality = l.qualityName || home.levelNames[l.quality] || "";
         if (quality) out.push({ text: quality + (l.height > 0 ? " " + l.height + "p" : "") });
+        // К18 (115): яку обробку картинки вмикає комп'ютер клієнта і чи встигає (сервер дає готовий рядок renderText;
+        // старий сервер — лише render / renderName)
+        const slow = l.pcSlow === true || l.renderCapped === true;
+        const render = l.renderText || (l.render ? qsTr("обробка: %1").arg(l.renderName || home.renderNames[l.render] || l.render) : "");
+        if (render) out.push({ text: render, kind: slow ? "wait" : "" });
         if (l.fpsShown !== undefined) {
             const target = l.quality === 0 ? 30 : 60;
             out.push({ text: l.fpsStream > 0 && l.fpsStream - l.fpsShown >= 2 ? qsTr("%1 з %2 кадр/с").arg(l.fpsShown).arg(l.fpsStream) : qsTr("%1 кадр/с").arg(l.fpsShown),
@@ -336,6 +352,15 @@ Rectangle {
     readonly property string psnChipText: !home.cloud.myPsn ? qsTr("спільний")
         : (home.cloud.myPsnStatus === "ready" ? (home.cloud.myPsn.indexOf("PSN-") === 0 ? qsTr("свій") : home.cloud.myPsn) : qsTr("підключається"))
 
+    // ── 115: «Грати тут» — гра йде на іншому пристрої клієнта (часто той уже закрили, а сервер ще чекає його сигналу):
+    // забрати гру на цей пристрій. Там гра зупиниться після найближчого сигналу (до 20 с). Потрібне Chiaki.cloud.takeover()
+    // (C++, роль «Відео»); поки його немає — лишається «Перевірити ще раз», як у 114.
+    readonly property bool canTakeover: home.st === "other_device" && typeof home.cloud.takeover === "function" && home.cloud.canTakeover !== false
+    function takeover() {
+        home.cloud.takeover();
+        toast.show(qsTr("Забираємо гру сюди: на «%1» вона зупиниться за кілька секунд.").arg(home.cloud.otherDevice || qsTr("іншому пристрої")));
+    }
+
     // ── головна дія екрана (Enter) ──
     function primaryAction() {
         if (home.gated || home.gameGate || home.view === "home") {
@@ -344,7 +369,9 @@ Rectangle {
             case "login": home.cloud.login(); break;
             case "pairing": home.cloud.cancelLogin(); break;
             case "offline": home.cloud.refresh(); break;
-            case "other_device": home.cloud.refresh(); toast.show(qsTr("Перевіряємо… «Грати» з'явиться, щойно на іншому пристрої вийдуть з гри")); break;
+            case "other_device":
+                if (home.canTakeover) { home.takeover(); break; }
+                home.cloud.refresh(); toast.show(qsTr("Перевіряємо… «Грати» з'явиться, щойно на іншому пристрої вийдуть з гри")); break;
             case "no_console": home.cloud.openBot(); break;
             case "update":
                 if (home.updater && home.updater.available) home.updater.show(); else home.cloud.openBot();
@@ -686,7 +713,9 @@ Rectangle {
                                 ? qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Натисни «Оновити програму»: AnyPlay завантажить нову версію, ненадовго закриється і відкриється знову. Вхід і броні збережуться.")
                                 : qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Завантаж нову в боті: кнопка «Програма». Встановлюється поверх старої, вхід і броні зберігаються.");
                             // приставка тримає одне підключення: другий пристрій вибив би перший
-                            case "other_device": return qsTr("Зараз ти граєш на «%1». Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з'явиться кнопка «Грати».").arg(home.cloud.otherDevice);
+                            case "other_device": return home.canTakeover
+                                ? qsTr("Гра йде на іншому пристрої: %1. Грати тут? Там гра зупиниться за кілька секунд і продовжиться тут, з того самого місця. Час броні не зміниться.").arg(home.cloud.otherDevice || qsTr("інший пристрій"))
+                                : qsTr("Зараз ти граєш на «%1». Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з'явиться кнопка «Грати».").arg(home.cloud.otherDevice);
                             default: return qsTr("Вхід через Telegram, без паролів. Приставка відкриється сама в час твоєї оплаченої броні.");
                             }
                         }
@@ -729,18 +758,26 @@ Rectangle {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.topMargin: 10
                         minWidth: 260
-                        ghost: home.st === "other_device" || (home.st === "pairing" && home.cloud.pairShort !== "")   // тут нічого не треба робити: «Грати» з'явиться саме
+                        ghost: (home.st === "other_device" && !home.canTakeover) || (home.st === "pairing" && home.cloud.pairShort !== "")   // тут нічого не треба робити: «Грати» з'явиться саме
                         text: {
                             switch (home.st) {
                             case "pairing": return qsTr("Скасувати");
                             case "offline": return qsTr("Спробувати ще");
                             case "no_console": return qsTr("Відкрити бота");
                             case "update": return home.updater && home.updater.available ? qsTr("Оновити програму") : qsTr("Завантажити нову версію");
-                            case "other_device": return qsTr("Перевірити ще раз");
+                            case "other_device": return home.canTakeover ? qsTr("▶ Грати тут") : qsTr("Перевірити ще раз");
                             default: return qsTr("Увійти через Telegram");
                             }
                         }
                         onClicked: home.primaryAction()
+                    }
+                    ApButton {   // 115: «Грати тут» є, але можна й просто дочекатись, поки там вийдуть з гри
+                        visible: home.canTakeover
+                        Layout.alignment: Qt.AlignHCenter
+                        minWidth: 260
+                        ghost: true
+                        text: qsTr("Перевірити ще раз")
+                        onClicked: { home.cloud.refresh(); toast.show(qsTr("Перевіряємо… «Грати» з'явиться, щойно на іншому пристрої вийдуть з гри")); }
                     }
                     ApButton {   // Telegram на телефоні, а не на цьому комп'ютері
                         visible: home.st === "login"
@@ -983,10 +1020,12 @@ Rectangle {
                                 }
                                 // що зараз бачить клієнт: маленьке вікно, оновлюється раз на ~1,5 с (лише поки відкрите)
                                 AnyPlayPreview {
-                                    visible: !!unitCard.c && !!unitCard.l
+                                    visible: !!unitCard.c
                                     Layout.fillWidth: true
                                     Layout.topMargin: 6
                                     bookingId: unitCard.c ? unitCard.c.id : 0
+                                    live: unitCard.l
+                                    store: previewStore
                                 }
                                 Flow {
                                     Layout.fillWidth: true
@@ -1092,6 +1131,14 @@ Rectangle {
                                     : (home.adm.ownPsn || []).length ? qsTr("зі своїм: %1").arg(home.adm.ownPsn.length) : qsTr("немає заявок")
                                 kind: (home.adm.psnClients || []).length ? "wait" : ""
                             }
+                        }
+                        ApRow {   // 115: меню паузи клієнта без гри — подивитись і поклацати, нічого не змінюючи
+                            visible: !home.overGame
+                            title: qsTr("Меню гри: перегляд")
+                            subtitle: qsTr("як клієнт бачить меню паузи, без гри; нічого не змінює")
+                            clickable: true
+                            onClicked: home.menuDemo = true
+                            ApChip { text: qsTr("відкрити") }
                         }
                         ApRow {
                             title: qsTr("CRM")
@@ -1996,6 +2043,18 @@ Rectangle {
         }
     }
 
+    // ── 115: «Меню гри: перегляд» — справжнє меню паузи (AnyPlayStreamMenu, demo: true) на заглушках, на весь екран ──
+    Loader {
+        id: menuDemoLoader
+        anchors.fill: parent
+        z: 650
+        active: home.menuDemo && home.isAdmin && !home.overGame
+        visible: active
+        sourceComponent: MenuDemo { onClosed: home.menuDemo = false }
+        onLoaded: item.forceActiveFocus()
+        onActiveChanged: if (!active && home.visible) home.restoreFocus()
+    }
+
     // ── «У що граєш?» перед грою: розкладка клавіш під гру (на все вікно) ──
     AnyPlayGamePicker {
         id: gamePicker
@@ -2003,6 +2062,119 @@ Rectangle {
         z: 700
         onPicked: (layoutId) => home.pickedGame(layoutId)
         onDismissed: home.pickerDismissed()
+    }
+
+    // ── 115: «Меню гри: перегляд» (адмін, Інструменти) — справжнє меню паузи клієнта без гри ──
+    // Екран клієнта обраного розміру (1280×720, MacBook Air 1512×982, 1920×1080) зменшений під це вікно: картинка гри 16:9
+    // з чорними смугами, як у грі, меню поверх неї. Меню вантажимо за адресою (Loader.source), а не як тип: AnyPlayStreamMenu
+    // сам відкриває AnyPlayHome поверх гри, і пряме посилання тут дало б коло між файлами. demo: true — дані з заглушок,
+    // нічого не надсилається на сервер і не змінюється в налаштуваннях; що сталося б у грі, пишемо рядком унизу.
+    component MenuDemo: FocusScope {
+        id: md
+        signal closed()
+        property string size: "1512"
+        property bool asAdmin: false
+        property string note: ""
+        readonly property var dims: ({ "1280": [1280, 720], "1512": [1512, 982], "1920": [1920, 1080] })
+        readonly property real sw: dims[size][0]
+        readonly property real sh: dims[size][1]
+        function say(t) { note = t; noteTimer.restart(); }
+        Timer { id: noteTimer; interval: 6000; onTriggered: md.note = "" }
+
+        Rectangle { anchors.fill: parent; color: ap.bg1 }
+        MouseArea {   // нічого не проходить до панелі під переглядом
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+            onWheel: (wheel) => wheel.accepted = true
+        }
+        ColumnLayout {
+            anchors { fill: parent; leftMargin: 24; rightMargin: 24; topMargin: 16; bottomMargin: 14 }
+            spacing: 10
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 18
+                ApText { role: "cap"; text: qsTr("Меню гри: перегляд") }
+                ApTabs {
+                    compact: true
+                    model: [{ id: "1280", text: "1280×720" }, { id: "1512", text: "1512×982" }, { id: "1920", text: "1920×1080" }]
+                    current: md.size
+                    onActivated: (id) => md.size = id
+                }
+                ApTabs {
+                    compact: true
+                    model: [{ id: "client", text: qsTr("Клієнт") }, { id: "admin", text: qsTr("Адмін") }]
+                    current: md.asAdmin ? "admin" : "client"
+                    onActivated: (id) => md.asAdmin = id === "admin"
+                }
+                Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
+                ApButton { small: true; ghost: true; text: qsTr("Закрити"); onClicked: md.closed() }
+            }
+            ApText {
+                Layout.fillWidth: true
+                role: "small"; color: ap.mute
+                text: qsTr("Так меню паузи бачить %1 на екрані %2×%3: картинка гри 16:9, чорні смуги як у грі. Клацай і ходи стрілками: нічого не надсилається і не зберігається.")
+                    .arg(md.asAdmin ? qsTr("адмін") : qsTr("клієнт")).arg(md.sw).arg(md.sh)
+            }
+            Item {
+                id: stage
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                Item {
+                    id: screen
+                    width: md.sw; height: md.sh
+                    readonly property real k: Math.min(stage.width / md.sw, stage.height / md.sh)
+                    scale: k
+                    transformOrigin: Item.TopLeft
+                    x: Math.round((stage.width - md.sw * k) / 2)
+                    y: Math.round((stage.height - md.sh * k) / 2)
+                    Rectangle { anchors.fill: parent; color: "black" }
+                    Image {   // «гра»: оригінальна сцена AnyPlay (не кадр з гри), вписана 16:9
+                        readonly property real gw: Math.min(md.sw, md.sh * 16 / 9)
+                        width: gw; height: gw * 9 / 16
+                        anchors.centerIn: parent
+                        source: "qrc:/anyplay-quality/q2.jpg"
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                    }
+                    Loader {
+                        id: menuL
+                        anchors.fill: parent
+                        focus: true
+                        Component.onCompleted: setSource(Qt.resolvedUrl("AnyPlayStreamMenu.qml"), { demo: true, demoAdmin: md.asAdmin })
+                        onLoaded: { item.demoAdmin = Qt.binding(() => md.asAdmin); item.focusFirst(); }
+                    }
+                    Connections {
+                        target: menuL.item
+                        ignoreUnknownSignals: true
+                        function onResume() { md.say(qsTr("У грі тут меню закрилось би і гра продовжилась (те саме робить Esc на пунктах ліворуч).")); }
+                        function onExit() { md.say(qsTr("У грі тут трансляція закрилась би, час броні йде далі.")); }
+                        function onDemoEvent(text) { md.say(text); }
+                    }
+                }
+                Rectangle {   // рамка «екрана»
+                    x: screen.x - 1; y: screen.y - 1
+                    width: md.sw * screen.k + 2; height: md.sh * screen.k + 2
+                    color: "transparent"
+                    border.width: 1; border.color: ap.edge
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 28
+                spacing: 10
+                ApChip { visible: md.note !== ""; kind: "live"; text: qsTr("у грі") }
+                ApText {
+                    Layout.fillWidth: true
+                    role: "small"
+                    wrapMode: Text.NoWrap
+                    elide: Text.ElideRight
+                    text: md.note !== "" ? md.note : qsTr("Розмір і роль перемикаються вгорі. Закрити: кнопка «Закрити».")
+                    color: md.note !== "" ? ap.ink : ap.faint
+                }
+            }
+        }
     }
 
     // ── сторінка вкладки: прокручується, якщо вміст вищий за вікно; вміст по центру з полями ──

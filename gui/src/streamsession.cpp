@@ -367,6 +367,7 @@ static void SessionSetsuCb(SetsuEvent *event, void *user);
 static void SessionSDeckCb(SDeckEvent *event, void *user);
 #endif
 static void FfmpegFrameCb(ChiakiFfmpegDecoder *decoder, void *user);
+static void FfmpegCorruptCb(ChiakiFfmpegDecoder *decoder, const char *reason, void *user);
 
 StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObject *parent)
 	: QObject(parent),
@@ -442,6 +443,9 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		}
 		chiaki_log_sniffer_fini(&sniffer);
 		ffmpeg_decoder->log = GetChiakiLog();
+		// AnyPlay: помилка декодера чи зламаний кадр → ключовий кадр від приставки
+		ffmpeg_decoder->corrupt_cb_user = this;
+		ffmpeg_decoder->corrupt_cb = FfmpegCorruptCb;
 #if CHIAKI_LIB_ENABLE_PI_DECODER
 	}
 #endif
@@ -3402,6 +3406,65 @@ void StreamSession::TickScreenRumble()
 #endif
 }
 
+quint32 StreamSession::GetIdrRequestsTotal()
+{
+	quint32 r = 0;
+	if(chiaki_mutex_trylock(&session.stream_connection.state_mutex) != CHIAKI_ERR_SUCCESS)
+		return last_idr_requests_total;
+	if(session.stream_connection.video_receiver)
+		r = chiaki_video_receiver_get_idr_requests_total(session.stream_connection.video_receiver);
+	chiaki_mutex_unlock(&session.stream_connection.state_mutex);
+	if(r > last_idr_requests_total)
+		last_idr_requests_total = r;
+	return last_idr_requests_total;
+}
+
+quint32 StreamSession::GetDecodeErrorsTotal()
+{
+	// кадри, які декодер не зміг розібрати чи позначив зламаними (після першого ключового кадру)
+	if(!ffmpeg_decoder)
+		return 0;
+	chiaki_mutex_lock(&ffmpeg_decoder->mutex);
+	const quint32 r = ffmpeg_decoder->decode_failures + ffmpeg_decoder->corrupt_frames;
+	chiaki_mutex_unlock(&ffmpeg_decoder->mutex);
+	return r;
+}
+
+void StreamSession::ReportVideoCorrupt(const char *reason, bool decoder_error)
+{
+	const bool flagged = reason && strcmp(reason, "frame_flagged_corrupt") == 0;
+	if(flagged)
+	{
+		// Запобіжник: якщо декодер позначає зламаними майже всі кадри (буває з окремими апаратними декодерами),
+		// ключовий кадр щосекунди лише марнує інтернет. Понад 15 випадків за 20 с — далі ці позначки не слухаємо
+		// (втрати в мережі й помилки декодера, як і раніше, просять ключовий кадр).
+		// Рахуємо випадки (не частіше одного за секунду: після однієї втрати зламаними бувають кілька кадрів поспіль).
+		if(corrupt_flag_ignored.loadRelaxed())
+			return;
+		const qint64 now_ms = static_cast<qint64>(chiaki_time_now_monotonic_ms());
+		if(now_ms - corrupt_flag_last_ms.loadRelaxed() < 1000)
+			return;   // цей випадок уже передано, запит ключового кадру повторюється сам
+		corrupt_flag_last_ms.storeRelaxed(now_ms);
+		if(now_ms - corrupt_flag_window_start_ms.loadRelaxed() > 20000)
+		{
+			corrupt_flag_window_start_ms.storeRelaxed(now_ms);
+			corrupt_flag_window_count.storeRelaxed(0);
+		}
+		if(corrupt_flag_window_count.fetchAndAddRelaxed(1) + 1 > 15)
+		{
+			corrupt_flag_ignored.storeRelaxed(1);
+			CHIAKI_LOGW(log.GetChiakiLog(), "[anyplay-video] decoder flags too many frames as broken, ignoring these flags for this game");
+			return;
+		}
+	}
+	// try-lock: цей виклик іде з потоку декодування, а потік з'єднання може тримати state_mutex довго
+	if(chiaki_mutex_trylock(&session.stream_connection.state_mutex) != CHIAKI_ERR_SUCCESS)
+		return;   // наступна ознака (чи повтор запиту) спрацює
+	if(session.stream_connection.video_receiver)
+		chiaki_video_receiver_report_corrupt(session.stream_connection.video_receiver, reason, decoder_error);
+	chiaki_mutex_unlock(&session.stream_connection.state_mutex);
+}
+
 bool StreamSession::RequestIDR()
 {
 	ChiakiErrorCode err = chiaki_session_request_idr(&session);
@@ -3497,6 +3560,12 @@ static void SessionSDeckCb(SDeckEvent *event, void *user)
 	StreamSessionPrivate::HandleSDeckEvent(session, event);
 }
 #endif
+
+static void FfmpegCorruptCb(ChiakiFfmpegDecoder *decoder, const char *reason, void *user)
+{
+	(void)decoder;
+	reinterpret_cast<StreamSession *>(user)->ReportVideoCorrupt(reason, true);
+}
 
 static void FfmpegFrameCb(ChiakiFfmpegDecoder *decoder, void *user)
 {

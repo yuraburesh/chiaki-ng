@@ -3282,6 +3282,9 @@ bool QmlMainWindow::configuredFrameMixerEnabledForScheduling() const
     return frame_mixer_config(settings) != nullptr;
 }
 
+// AnyPlay 115: зламані кадри на старті (до ключового) не показуємо не довше цього, далі показуємо що є
+static const int kStartupCorruptHoldMs = 5000;
+
 void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, qint64 decoder_delivery_us)
 {
     const qint64 present_entry_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
@@ -3300,10 +3303,33 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
         return;
     stream_frames_current.fetchAndAddRelaxed(1);
 
+    // AnyPlay 115: поки гра ще не з'явилась на екрані, зламаний кадр (декодер позначив його або ключового кадру ще
+    // не було) не показуємо: лишається екран завантаження, а приймач уже попросив у приставки ключовий кадр.
+    // Під час гри такі кадри показуємо (інакше картинка стояла б), ключовий кадр виправляє їх за частку секунди.
+    if (frame.corrupt && !has_video && !startup_warmup_frame_active) {
+        if (!startup_corrupt_clock.isValid())
+            startup_corrupt_clock.start();
+        if (startup_corrupt_clock.elapsed() < kStartupCorruptHoldMs) {
+            if (startup_corrupt_dropped++ == 0)
+                qCInfo(chiakiGui) << "AnyPlay startup: holding back broken frames until a key frame arrives";
+            av_frame_free(&frame.frame);
+            return;
+        }
+    }
+    if (startup_corrupt_dropped > 0 && !frame.corrupt && !startup_warmup_frame_active) {
+        qCInfo(chiakiGui).nospace() << "AnyPlay startup: clean frame after " << startup_corrupt_dropped
+                                    << " broken ones, ms=" << (startup_corrupt_clock.isValid() ? startup_corrupt_clock.elapsed() : 0);
+        startup_corrupt_dropped = 0;
+    }
+
+    // К12: адмін чекає кадр, а відеокарта його не дала — знімаємо копію цього кадру у фоні (без затримки показу)
+    if (!startup_warmup_frame_active && preview_cpu_id.loadRelaxed() > preview_delivered_id)
+        capturePreviewFromFrame(frame.frame);
+
     if (!startup_warmup_frame_active) {
         // AnyPlay: спокійний старт — рахуємо рівні кадри, поки на екрані ще завантаження
         if (startup_settle_state != 2)
-            noteStartupFrame(frame.recovered, frames_lost);
+            noteStartupFrame(frame.recovered || frame.corrupt, frames_lost);
         // AnyPlay: «віддача на екрані» оновлюється разом з кадром гри (вимкнена — одна перевірка прапорця)
         if (session)
             session->TickScreenRumble();
@@ -5484,6 +5510,7 @@ renderer_backend_ready:
         stream_session_active.storeRelease(s ? 1 : 0);
         startup_video_visible_generation.fetchAndAddRelaxed(1);
         resetStartupSettle();
+        preview_gpu_broken.storeRelease(0);   // К12: у новій грі знову пробуємо спершу через відеокарту
         grab_input = 0;
         if (session)
             session->BlockInput(0);
@@ -6213,6 +6240,8 @@ static const int kStartupSettleLimitMs = 3000;     // довше екран за
 
 void QmlMainWindow::resetStartupSettle()
 {
+    startup_corrupt_clock.invalidate();
+    startup_corrupt_dropped = 0;
     startup_settle_state = 0;
     startup_settle_streak = 0;
     startup_settle_frames = 0;
@@ -8147,7 +8176,7 @@ void QmlMainWindow::render()
     }
     close_started_frame(true);
     // AnyPlay К12: зменшений кадр для адміна — уже після показу, щоб не затримувати кадр гри
-    if (preview_request_width.loadAcquire() > 0 && stream_session_active.loadAcquire() != 0)
+    if ((preview_request_width.loadAcquire() > 0 || preview_download_pending) && stream_session_active.loadAcquire() != 0)
         renderPreviewIfRequested(bypass_frame_queue ? &direct_render_frame : hint_frame);
 
     if (startup_video_visible_refresh_pending.loadAcquire() != 0) {
@@ -8461,11 +8490,295 @@ void QmlMainWindow::resetPicture()
     savePicture();
 }
 
-void QmlMainWindow::requestPreviewFrame(int maxWidth)
+void QmlMainWindow::requestPreviewFrame(int maxWidth, int quality)
 {
-    if (stream_session_active.loadAcquire() == 0 || preview_encoding.loadAcquire() != 0)
+    const quint32 id = preview_request_id.fetchAndAddOrdered(1) + 1;
+    preview_quality.storeRelaxed(quality > 0 ? qBound(20, quality, 90) : 60);
+    preview_cpu_width = qBound(64, maxWidth, 960);
+    if (stream_session_active.loadAcquire() == 0) {
+        // відповідь іде через чергу подій: той, хто питав, устигає позначити запит як «у дорозі»
+        QMetaObject::invokeMethod(this, [this, id]() { failPreviewFrame(id, QStringLiteral("гра не йде")); }, Qt::QueuedConnection);
         return;
-    preview_request_width.testAndSetRelease(0, qBound(64, maxWidth, 960));
+    }
+    if (preview_gpu_broken.loadAcquire() != 0 || preview_encoding.loadAcquire() != 0) {
+        armPreviewCpuFallback(id, preview_gpu_broken.loadAcquire() != 0 ? QStringLiteral("відеокарта раніше не дала кадр")
+                                                                          : QStringLiteral("відеокарта ще зайнята попереднім кадром"));
+    } else {
+        preview_request_width.storeRelease(preview_cpu_width);
+        QTimer::singleShot(900, this, [this, id]() {
+            if (preview_delivered_id < id && preview_cpu_id.loadAcquire() < id)
+                armPreviewCpuFallback(id, QStringLiteral("відеокарта не дала кадр за 0,9 с"));
+        });
+    }
+    QTimer::singleShot(4000, this, [this, id]() {
+        if (preview_delivered_id < id)
+            failPreviewFrame(id, preview_cpu_busy ? QStringLiteral("кадр не стиснувся за 4 с")
+                                                  : QStringLiteral("за 4 с не прийшло жодного кадру гри"));
+    });
+}
+
+void QmlMainWindow::deliverPreviewFrame(quint32 id, const QByteArray &jpeg, const char *path)
+{
+    if (id <= preview_delivered_id || id < preview_request_id.loadAcquire())
+        return;   // на цей запит уже відповіли або є новіший
+    preview_delivered_id = id;
+    const QString p = QString::fromLatin1(path);
+    if (p != preview_last_path) {
+        qCInfo(chiakiGui).nospace() << "[anyplay-preview] frame ready via " << p << ", bytes=" << jpeg.size();
+        preview_last_path = p;
+    }
+    emit previewFrameReady(jpeg);
+}
+
+void QmlMainWindow::failPreviewFrame(quint32 id, const QString &reason)
+{
+    if (id <= preview_delivered_id || id < preview_request_id.loadAcquire())
+        return;
+    preview_delivered_id = id;
+    qCWarning(chiakiGui).nospace() << "[anyplay-preview] no frame: " << reason;
+    emit previewFrameFailed(reason);
+}
+
+void QmlMainWindow::armPreviewCpuFallback(quint32 id, const QString &why)
+{
+    if (id <= preview_delivered_id || preview_cpu_id.loadAcquire() >= id)
+        return;
+    if (preview_last_path != QLatin1String("cpu"))
+        qCInfo(chiakiGui).nospace() << "[anyplay-preview] taking the frame from decoded video: " << why;
+    // шлях через відеокарту для цього запиту більше не потрібен (копію, що вже йде з відеокарти, потік малювання дозабере сам)
+    preview_request_width.storeRelease(0);
+    preview_cpu_id.storeRelease(id);
+}
+
+// К12: програмно з декодованого кадру. Без libswscale: кадр маленький і рідкий, тож простий перерахунок
+// YUV → RGB з усередненням 2×2 точок займає кілька мілісекунд у фоновому потоці.
+static QImage previewImageFromAVFrame(const AVFrame *in, int max_w, QString *err)
+{
+    AVFrame *sw = nullptr;
+    const AVFrame *src = in;
+    if (in->hw_frames_ctx) {
+        sw = av_frame_alloc();
+        const int r = sw ? av_hwframe_transfer_data(sw, in, 0) : AVERROR(ENOMEM);
+        if (r < 0) {
+            char buf[128] = {};
+            av_make_error_string(buf, sizeof(buf), r);
+            *err = QStringLiteral("копія з апаратного декодера не вдалась: %1").arg(QString::fromLatin1(buf));
+            av_frame_free(&sw);
+            return QImage();
+        }
+        src = sw;
+    }
+    struct FreeFrame { AVFrame *f; ~FreeFrame() { if (f) av_frame_free(&f); } } free_sw{sw};
+
+    const AVPixelFormat fmt = static_cast<AVPixelFormat>(src->format);
+    int kind = -1;   // 0 NV12, 1 P010, 2 YUV420P 8 біт, 3 YUV420P 10 біт
+    switch (fmt) {
+    case AV_PIX_FMT_NV12: kind = 0; break;
+    case AV_PIX_FMT_P010LE: kind = 1; break;
+    case AV_PIX_FMT_YUV420P: case AV_PIX_FMT_YUVJ420P: kind = 2; break;
+    case AV_PIX_FMT_YUV420P10LE: kind = 3; break;
+    default: break;
+    }
+    if (kind < 0) {
+        const char *name = av_get_pix_fmt_name(fmt);
+        *err = QStringLiteral("формат кадру %1 не підтримано").arg(QString::fromLatin1(name ? name : "?"));
+        return QImage();
+    }
+    const int x0 = static_cast<int>(in->crop_left), y0 = static_cast<int>(in->crop_top);
+    int src_w = src->width - static_cast<int>(in->crop_left + in->crop_right);
+    int src_h = src->height - static_cast<int>(in->crop_top + in->crop_bottom);
+    int ox = x0, oy = y0;
+    if (src_w < 16 || src_h < 16 || x0 + src_w > src->width || y0 + src_h > src->height) {
+        src_w = src->width;
+        src_h = src->height;
+        ox = 0;
+        oy = 0;
+    }
+    if (src_w < 16 || src_h < 16) {
+        *err = QStringLiteral("порожній кадр");
+        return QImage();
+    }
+    const int w = qMax(64, qMin(max_w, src_w)) & ~1;
+    const int h = qMax(36, static_cast<int>(static_cast<double>(w) * src_h / src_w + 0.5)) & ~1;
+    const bool full = in->color_range == AVCOL_RANGE_JPEG || fmt == AV_PIX_FMT_YUVJ420P;
+    float kr = 0.2126f, kb = 0.0722f;   // BT.709 — так шле PS5
+    if (in->colorspace == AVCOL_SPC_BT470BG || in->colorspace == AVCOL_SPC_SMPTE170M) { kr = 0.299f; kb = 0.114f; }
+    else if (in->colorspace == AVCOL_SPC_BT2020_NCL || in->colorspace == AVCOL_SPC_BT2020_CL) { kr = 0.2627f; kb = 0.0593f; }
+    const float kg = 1.0f - kr - kb;
+
+    auto lumaAt = [&](int x, int y) -> float {
+        x = qBound(0, x, src->width - 1);
+        y = qBound(0, y, src->height - 1);
+        const uint8_t *row = src->data[0] + static_cast<ptrdiff_t>(y) * src->linesize[0];
+        switch (kind) {
+        case 1: return static_cast<float>(reinterpret_cast<const uint16_t *>(row)[x] >> 6) / 4.0f;
+        case 3: return static_cast<float>(reinterpret_cast<const uint16_t *>(row)[x] & 0x3ff) / 4.0f;
+        default: return row[x];
+        }
+    };
+    auto chromaAt = [&](int cx, int cy, float &u, float &v) {
+        cx = qBound(0, cx, (src->width + 1) / 2 - 1);
+        cy = qBound(0, cy, (src->height + 1) / 2 - 1);
+        switch (kind) {
+        case 0: {
+            const uint8_t *r = src->data[1] + static_cast<ptrdiff_t>(cy) * src->linesize[1];
+            u = r[2 * cx];
+            v = r[2 * cx + 1];
+            break;
+        }
+        case 1: {
+            const uint16_t *r = reinterpret_cast<const uint16_t *>(src->data[1] + static_cast<ptrdiff_t>(cy) * src->linesize[1]);
+            u = static_cast<float>(r[2 * cx] >> 6) / 4.0f;
+            v = static_cast<float>(r[2 * cx + 1] >> 6) / 4.0f;
+            break;
+        }
+        case 2:
+            u = (src->data[1] + static_cast<ptrdiff_t>(cy) * src->linesize[1])[cx];
+            v = (src->data[2] + static_cast<ptrdiff_t>(cy) * src->linesize[2])[cx];
+            break;
+        default:
+            u = static_cast<float>(reinterpret_cast<const uint16_t *>(src->data[1] + static_cast<ptrdiff_t>(cy) * src->linesize[1])[cx] & 0x3ff) / 4.0f;
+            v = static_cast<float>(reinterpret_cast<const uint16_t *>(src->data[2] + static_cast<ptrdiff_t>(cy) * src->linesize[2])[cx] & 0x3ff) / 4.0f;
+            break;
+        }
+    };
+    QImage img(w, h, QImage::Format_RGB888);
+    if (img.isNull()) {
+        *err = QStringLiteral("немає пам'яті під кадр");
+        return QImage();
+    }
+    const float sx = static_cast<float>(src_w) / w, sy = static_cast<float>(src_h) / h;
+    for (int y = 0; y < h; y++) {
+        uchar *out = img.scanLine(y);
+        const int ya = oy + static_cast<int>((y + 0.25f) * sy), yb = oy + static_cast<int>((y + 0.75f) * sy);
+        for (int x = 0; x < w; x++) {
+            const int xa = ox + static_cast<int>((x + 0.25f) * sx), xb = ox + static_cast<int>((x + 0.75f) * sx);
+            float Y = (lumaAt(xa, ya) + lumaAt(xb, ya) + lumaAt(xa, yb) + lumaAt(xb, yb)) * 0.25f;
+            float U = 128.0f, V = 128.0f;
+            chromaAt((ox + static_cast<int>((x + 0.5f) * sx)) / 2, (oy + static_cast<int>((y + 0.5f) * sy)) / 2, U, V);
+            if (full) { Y /= 255.0f; U = (U - 128.0f) / 255.0f; V = (V - 128.0f) / 255.0f; }
+            else { Y = (Y - 16.0f) / 219.0f; U = (U - 128.0f) / 224.0f; V = (V - 128.0f) / 224.0f; }
+            const float R = Y + 2.0f * (1.0f - kr) * V;
+            const float G = Y - 2.0f * kb * (1.0f - kb) / kg * U - 2.0f * kr * (1.0f - kr) / kg * V;
+            const float B = Y + 2.0f * (1.0f - kb) * U;
+            out[3 * x + 0] = static_cast<uchar>(qBound(0.0f, R * 255.0f + 0.5f, 255.0f));
+            out[3 * x + 1] = static_cast<uchar>(qBound(0.0f, G * 255.0f + 0.5f, 255.0f));
+            out[3 * x + 2] = static_cast<uchar>(qBound(0.0f, B * 255.0f + 0.5f, 255.0f));
+        }
+    }
+    return img;
+}
+
+// К12: JPEG через Qt; якщо модуля JPEG у збірці немає — кодером MJPEG з FFmpeg (avcodec уже в програмі).
+// Не більше max_bytes: якщо більше, якість знижується.
+static QByteArray encodePreviewJpeg(const QImage &image, int quality, int max_bytes, QString *how)
+{
+    const QImage rgb = image.convertToFormat(QImage::Format_RGB888);
+    for (int q = quality; q >= 20; q -= 15) {
+        QByteArray jpeg;
+        QBuffer out(&jpeg);
+        out.open(QIODevice::WriteOnly);
+        if (!rgb.save(&out, "JPEG", q))
+            break;   // модуля JPEG немає — нижче FFmpeg
+        *how = QStringLiteral("qt q=%1").arg(q);
+        if (jpeg.size() <= max_bytes || q - 15 < 20)
+            return jpeg;
+    }
+    const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
+    if (!codec) {
+        *how = QStringLiteral("немає кодера JPEG (ні Qt, ні FFmpeg)");
+        return QByteArray();
+    }
+    const int w = rgb.width() & ~1, h = rgb.height() & ~1;
+    QByteArray result;
+    for (int qscale = qBound(2, (100 - quality) / 8 + 2, 31); qscale <= 31 && result.isEmpty(); qscale += 6) {
+        AVCodecContext *ctx = avcodec_alloc_context3(codec);
+        AVFrame *f = av_frame_alloc();
+        AVPacket *pkt = av_packet_alloc();
+        bool opened = false;
+        if (ctx && f && pkt) {
+            ctx->width = w;
+            ctx->height = h;
+            ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
+            ctx->time_base = AVRational{1, 25};
+            ctx->flags |= AV_CODEC_FLAG_QSCALE;
+            ctx->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL;
+            f->format = AV_PIX_FMT_YUVJ420P;
+            f->width = w;
+            f->height = h;
+            opened = avcodec_open2(ctx, codec, nullptr) >= 0 && av_frame_get_buffer(f, 0) >= 0;
+            if (opened) {
+                for (int y = 0; y < h; y++) {
+                    const uchar *in = rgb.constScanLine(y);
+                    uint8_t *yo = f->data[0] + static_cast<ptrdiff_t>(y) * f->linesize[0];
+                    for (int x = 0; x < w; x++) {
+                        const float r = in[3 * x], g = in[3 * x + 1], b = in[3 * x + 2];
+                        yo[x] = static_cast<uint8_t>(qBound(0.0f, 0.299f * r + 0.587f * g + 0.114f * b + 0.5f, 255.0f));
+                    }
+                }
+                for (int y = 0; y < h / 2; y++) {
+                    const uchar *in = rgb.constScanLine(2 * y);
+                    uint8_t *uo = f->data[1] + static_cast<ptrdiff_t>(y) * f->linesize[1];
+                    uint8_t *vo = f->data[2] + static_cast<ptrdiff_t>(y) * f->linesize[2];
+                    for (int x = 0; x < w / 2; x++) {
+                        const float r = in[6 * x], g = in[6 * x + 1], b = in[6 * x + 2];
+                        uo[x] = static_cast<uint8_t>(qBound(0.0f, -0.168736f * r - 0.331264f * g + 0.5f * b + 128.5f, 255.0f));
+                        vo[x] = static_cast<uint8_t>(qBound(0.0f, 0.5f * r - 0.418688f * g - 0.081312f * b + 128.5f, 255.0f));
+                    }
+                }
+                f->quality = FF_QP2LAMBDA * qscale;
+                f->pts = 0;
+                if (avcodec_send_frame(ctx, f) >= 0 && avcodec_send_frame(ctx, nullptr) >= 0
+                    && avcodec_receive_packet(ctx, pkt) >= 0) {
+                    if (pkt->size <= max_bytes || qscale + 6 > 31)
+                        result = QByteArray(reinterpret_cast<const char *>(pkt->data), pkt->size);
+                    *how = QStringLiteral("ffmpeg mjpeg qscale=%1").arg(qscale);
+                }
+            }
+        }
+        av_packet_free(&pkt);
+        av_frame_free(&f);
+        avcodec_free_context(&ctx);
+        if (!opened)
+            break;
+    }
+    if (result.isEmpty())
+        *how = QStringLiteral("JPEG не вдалося стиснути (%1)").arg(*how);
+    return result;
+}
+
+void QmlMainWindow::capturePreviewFromFrame(const AVFrame *frame)
+{
+    const quint32 id = preview_cpu_id.loadAcquire();
+    if (id <= preview_delivered_id || preview_cpu_busy || !frame)
+        return;
+    AVFrame *copy = av_frame_clone(frame);   // лише нове посилання на ті самі дані: гра далі йде без чекання
+    if (!copy)
+        return;
+    preview_cpu_busy = true;
+    const int max_w = preview_cpu_width;
+    const int quality = preview_quality.loadRelaxed();
+    QPointer<QmlMainWindow> self(this);
+    QThreadPool::globalInstance()->start([self, copy, id, max_w, quality]() mutable {
+        QString err, how;
+        const QImage image = previewImageFromAVFrame(copy, max_w, &err);
+        av_frame_free(&copy);
+        QByteArray jpeg;
+        if (!image.isNull()) {
+            jpeg = encodePreviewJpeg(image, quality, 150 * 1024, &how);
+            if (jpeg.isEmpty())
+                err = how;
+        }
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, id, jpeg, err]() {
+            if (!self)
+                return;
+            self->preview_cpu_busy = false;
+            if (!jpeg.isEmpty())
+                self->deliverPreviewFrame(id, jpeg, "cpu");
+            else
+                self->failPreviewFrame(id, err.isEmpty() ? QStringLiteral("невідома помилка") : err);
+        }, Qt::QueuedConnection);
+    });
 }
 
 void QmlMainWindow::destroyPreviewResources()
@@ -8488,28 +8801,40 @@ void QmlMainWindow::pollPreviewDownload()
         return;   // відеокарта ще копіює: перевіримо при наступному показі
     preview_download_pending = false;
     const int w = preview_w, h = preview_h;
+    const quint32 id = preview_gpu_id.loadAcquire();
     QImage image(w, h, QImage::Format_RGBA8888);
     const bool read_ok = !image.isNull() && pl_buf_read(gpu, preview_buf, 0, image.bits(), static_cast<size_t>(w) * h * 4);
-    preview_request_width.storeRelease(0);
-    if (!read_ok)
+    if (preview_request_id.loadAcquire() == id)
+        preview_request_width.storeRelease(0);
+    if (!read_ok) {
+        previewGpuFailed(id, "pl_buf_read");
         return;
+    }
     preview_encoding.storeRelease(1);
+    const int quality = preview_quality.loadRelaxed();
     QPointer<QmlMainWindow> self(this);
-    QThreadPool::globalInstance()->start([self, image]() {
-        QByteArray jpeg;
-        {
-            QBuffer out(&jpeg);
-            out.open(QIODevice::WriteOnly);
-            image.convertToFormat(QImage::Format_RGB888).save(&out, "JPEG", 60);
-        }
-        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, jpeg]() {
+    QThreadPool::globalInstance()->start([self, image, id, quality]() {
+        QString how;
+        const QByteArray jpeg = encodePreviewJpeg(image, quality, 150 * 1024, &how);
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, jpeg, id, how]() {
             if (!self)
                 return;
             self->preview_encoding.storeRelease(0);
             if (!jpeg.isEmpty())
-                emit self->previewFrameReady(jpeg);
+                self->deliverPreviewFrame(id, jpeg, "gpu");
+            else
+                self->armPreviewCpuFallback(id, QStringLiteral("стиснення не вдалось: %1").arg(how));
         }, Qt::QueuedConnection);
     });
+}
+
+// потік малювання: шлях через відеокарту не спрацював — запам'ятовуємо на цю гру й переходимо на програмний
+void QmlMainWindow::previewGpuFailed(quint32 id, const char *step)
+{
+    preview_request_width.storeRelease(0);
+    preview_gpu_broken.storeRelease(1);
+    const QString why = QStringLiteral("відеокарта: помилка на кроці %1").arg(QString::fromLatin1(step));
+    QMetaObject::invokeMethod(this, [this, id, why]() { armPreviewCpuFallback(id, why); }, Qt::QueuedConnection);
 }
 
 void QmlMainWindow::renderPreviewIfRequested(const struct pl_frame *source)
@@ -8526,6 +8851,8 @@ void QmlMainWindow::renderPreviewIfRequested(const struct pl_frame *source)
     const int max_w = preview_request_width.loadAcquire();
     if (max_w <= 0 || !source || source->num_planes <= 0)
         return;
+    const quint32 id = preview_request_id.loadAcquire();
+    preview_gpu_id.storeRelease(id);
     // розмір з пропорціями кадру гри (зазвичай 16:9), парні сторони
     float src_w = source->crop.x1 - source->crop.x0;
     float src_h = source->crop.y1 - source->crop.y0;
@@ -8537,7 +8864,7 @@ void QmlMainWindow::renderPreviewIfRequested(const struct pl_frame *source)
     const int h = qMax(36, static_cast<int>(w * src_h / qMax(1.0f, src_w))) & ~1;
     pl_fmt fmt = pl_find_named_fmt(gpu, "rgba8");
     if (!fmt || !(fmt->caps & PL_FMT_CAP_RENDERABLE) || !(fmt->caps & PL_FMT_CAP_HOST_READABLE)) {
-        preview_request_width.storeRelease(0);
+        previewGpuFailed(id, "rgba8 format");
         return;
     }
     if (!preview_renderer)
@@ -8549,7 +8876,7 @@ void QmlMainWindow::renderPreviewIfRequested(const struct pl_frame *source)
     tex_params.renderable = true;
     tex_params.host_readable = true;
     if (!preview_renderer || !pl_tex_recreate(gpu, &preview_tex, &tex_params)) {
-        preview_request_width.storeRelease(0);
+        previewGpuFailed(id, "texture");
         return;
     }
     const size_t bytes = static_cast<size_t>(w) * h * 4;
@@ -8561,7 +8888,7 @@ void QmlMainWindow::renderPreviewIfRequested(const struct pl_frame *source)
         preview_buf = pl_buf_create(gpu, &buf_params);
     }
     if (!preview_buf) {
-        preview_request_width.storeRelease(0);
+        previewGpuFailed(id, "buffer");
         return;
     }
     struct pl_frame target = {};
@@ -8581,7 +8908,7 @@ void QmlMainWindow::renderPreviewIfRequested(const struct pl_frame *source)
     struct pl_render_params params = pl_render_fast_params;   // найпростіша обробка: кадр маленький і рідкий
     params.color_adjustment = &anyplay_color_adj;              // адмін бачить ті самі кольори, що й клієнт
     if (!pl_render_image(preview_renderer, source, &target, &params)) {
-        preview_request_width.storeRelease(0);
+        previewGpuFailed(id, "pl_render_image");
         return;
     }
     struct pl_tex_transfer_params transfer = {};
@@ -8589,7 +8916,7 @@ void QmlMainWindow::renderPreviewIfRequested(const struct pl_frame *source)
     transfer.buf = preview_buf;
     transfer.row_pitch = static_cast<size_t>(w) * 4;
     if (!pl_tex_download(gpu, &transfer)) {
-        preview_request_width.storeRelease(0);
+        previewGpuFailed(id, "pl_tex_download");
         return;
     }
     preview_w = w;

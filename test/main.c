@@ -17,6 +17,7 @@ extern MunitTest tests_regist[];
 extern MunitTest tests_aia[];
 #endif
 extern MunitTest tests_bitstream[];
+extern MunitTest tests_idrpolicy[];
 #if CHIAKI_LIB_ENABLE_FFMPEG_DECODER
 extern MunitTest tests_ffmpegdecoder[];
 #endif
@@ -104,6 +105,13 @@ static MunitSuite suites[] = {
 	{
 		"/bitstream",
 		tests_bitstream,
+		NULL,
+		1,
+		MUNIT_SUITE_OPTION_NONE
+	},
+	{
+		"/idrpolicy",
+		tests_idrpolicy,
 		NULL,
 		1,
 		MUNIT_SUITE_OPTION_NONE

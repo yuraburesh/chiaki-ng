@@ -240,7 +240,10 @@ static bool slice_h265(ChiakiBitstream *bitstream, uint8_t *data, unsigned size,
 	vl_vlc_eatbits(&vlc, 6); // nuh_layer_id
 	vl_vlc_eatbits(&vlc, 3); // nuh_temporal_id_plus1
 
-	if(nal_unit_type != 1 && nal_unit_type != 20)
+	// AnyPlay: besides TRAIL_R (1) and IDR_N_LP (20) also TRAIL_N (0) and the other key frame types
+	// (BLA 16-18, IDR_W_RADL 19, CRA 21), so a key frame is recognised however the encoder labels it
+	const bool irap = nal_unit_type >= 16 && nal_unit_type <= 21;
+	if(nal_unit_type != 0 && nal_unit_type != 1 && !irap)
 	{
 		CHIAKI_LOGW(bitstream->log, "parse_slice_h265: Unexpected NAL unit type %u", nal_unit_type);
 		return false;
@@ -249,7 +252,7 @@ static bool slice_h265(ChiakiBitstream *bitstream, uint8_t *data, unsigned size,
 	struct vl_rbsp rbsp;
 	vl_rbsp_init(&rbsp, &vlc, ~0);
 	unsigned first_slice_segment_in_pic_flag = vl_rbsp_u(&rbsp, 1);
-	if(nal_unit_type == 20)
+	if(irap)
 		vl_rbsp_u(&rbsp, 1); // no_output_of_prior_pics_flag
 
 	vl_rbsp_ue(&rbsp); // slice_pic_parameter_set_id
@@ -269,7 +272,7 @@ static bool slice_h265(ChiakiBitstream *bitstream, uint8_t *data, unsigned size,
 			break;
 	}
 
-	if(nal_unit_type == 1)
+	if(!irap)
 	{
 		slice->reference_frame = 0xff;
 		vl_rbsp_u(&rbsp, bitstream->h265.sps.log2_max_pic_order_cnt_lsb_minus4 + 4); // slice_pic_order_cnt_lsb
@@ -389,8 +392,82 @@ bool chiaki_bitstream_header(ChiakiBitstream *bitstream, uint8_t *data, unsigned
 	}
 }
 
+// AnyPlay: NAL unit type at a start code (3 or 4 bytes) beginning at data[i]; -1 if there is none
+static int nal_type_at(ChiakiCodec codec, const uint8_t *data, unsigned size, unsigned i, unsigned *payload)
+{
+	unsigned p;
+	if(i + 4 < size && data[i] == 0 && data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1)
+		p = i + 4;
+	else if(i + 3 < size && data[i] == 0 && data[i+1] == 0 && data[i+2] == 1)
+		p = i + 3;
+	else
+		return -1;
+	*payload = p;
+	return codec == CHIAKI_CODEC_H264 ? (data[p] & 0x1f) : ((data[p] >> 1) & 0x3f);
+}
+
+static bool nal_is_vcl(ChiakiCodec codec, int type)
+{
+	if(codec == CHIAKI_CODEC_H264)
+		return type >= 1 && type <= 5;
+	return type >= 0 && type <= 31;
+}
+
+/**
+ * AnyPlay: if the frame starts with parameter sets, SEI or an access unit delimiter (or with a 3-byte start
+ * code), copy the start of the first slice NAL with a 4-byte start code to buf so the slice header can be parsed.
+ * Returns the number of bytes in buf, or 0 if the frame already starts with a slice or none was found.
+ */
+static unsigned first_slice_copy(ChiakiCodec codec, const uint8_t *data, unsigned size, uint8_t *buf, unsigned buf_size)
+{
+	unsigned payload = 0;
+	int type = nal_type_at(codec, data, size, 0, &payload);
+	if(type < 0)
+		return 0;
+	if(nal_is_vcl(codec, type))
+	{
+		if(payload == 4)
+			return 0;   // the usual case: the frame starts with the slice and a 4-byte start code
+		// a 3-byte start code: the slice parser expects 4 bytes
+		unsigned n = size - payload;
+		if(n > buf_size - 4)
+			n = buf_size - 4;
+		buf[0] = 0; buf[1] = 0; buf[2] = 0; buf[3] = 1;
+		memcpy(buf + 4, data + payload, n);
+		return n + 4;
+	}
+	unsigned limit = size < 4096 ? size : 4096; // parameter sets are small; never scan a whole frame
+	for(unsigned i = payload; i + 3 < limit; i++)
+	{
+		if(data[i] != 0 || data[i+1] != 0)
+			continue;
+		type = nal_type_at(codec, data, size, i, &payload);
+		if(type < 0)
+			continue;
+		if(!nal_is_vcl(codec, type))
+		{
+			i = payload;
+			continue;
+		}
+		unsigned n = size - payload;
+		if(n > buf_size - 4)
+			n = buf_size - 4;
+		buf[0] = 0; buf[1] = 0; buf[2] = 0; buf[3] = 1;
+		memcpy(buf + 4, data + payload, n);
+		return n + 4;
+	}
+	return 0;
+}
+
 bool chiaki_bitstream_slice(ChiakiBitstream *bitstream, uint8_t *data, unsigned size, ChiakiBitstreamSlice *slice)
 {
+	uint8_t first_slice[512];
+	unsigned first_slice_size = first_slice_copy(bitstream->codec, data, size, first_slice, sizeof(first_slice));
+	if(first_slice_size)
+	{
+		data = first_slice;
+		size = first_slice_size;
+	}
 	if(bitstream->codec == CHIAKI_CODEC_H264)
 		return slice_h264(bitstream, data, size, slice);
 	else

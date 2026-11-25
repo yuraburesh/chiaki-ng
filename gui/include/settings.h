@@ -328,7 +328,9 @@ class Settings : public QObject
 		bool GetFullscreenDoubleClickEnabled() const	   { return settings.value("settings/fullscreen_doubleclick", false).toBool(); }
 		void SetFullscreenDoubleClickEnabled(bool enabled) { settings.setValue("settings/fullscreen_doubleclick", enabled); }
 
-		bool GetIDROnFECFailureEnabled() const	   { return settings.value("settings/idr_on_fec_failure", false).toBool(); }
+		// AnyPlay 115: типово увімкнено. Ключовий кадр після втрати тепер просимо завжди; цей прапорець означає
+		// «до його приходу тримати останню добру картинку» (інакше видно розмазані клини, див. lib/include/chiaki/idrpolicy.h)
+		bool GetIDROnFECFailureEnabled() const	   { return settings.value("settings/idr_on_fec_failure", true).toBool(); }
 		void SetIDROnFECFailureEnabled(bool enabled) { settings.setValue("settings/idr_on_fec_failure", enabled); }
 
 		float GetHapticOverride() const 			{ return settings.value("settings/haptic_override", 1.0).toFloat(); }

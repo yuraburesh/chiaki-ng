@@ -17,6 +17,7 @@
 #include <QSet>
 #include <algorithm>
 #include <QDateTime>
+#include <QEventLoop>
 #include <QDebug>
 #include <QGuiApplication>
 #include <QDesktopServices>
@@ -81,6 +82,8 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 		stat_ = StatWindow();
 		stat_connected_ms_ = 0;
 		stat_sent_ = false;
+		idr_sent_ = 0;
+		decode_errors_sent_ = 0;
 		if(this->backend->qmlSession())
 			stat_timer.start();
 		else
@@ -179,6 +182,31 @@ AnyPlayCloud::AnyPlayCloud(Settings *settings, QmlBackend *backend, QObject *par
 	// за іменем: вікно дає кадри для перегляду, лише якщо вміє (сигнал previewFrameReady)
 	if(backend->qmlWindow() && backend->qmlWindow()->metaObject()->indexOfSignal("previewFrameReady(QByteArray)") >= 0)
 		connect(backend->qmlWindow(), SIGNAL(previewFrameReady(QByteArray)), this, SLOT(onPreviewFrame(QByteArray)));
+	// 115: вікно каже й про невдачу (інакше один невдалий кадр зупиняв перегляд до кінця гри)
+	if(backend->qmlWindow() && backend->qmlWindow()->metaObject()->indexOfSignal("previewFrameFailed(QString)") >= 0)
+		connect(backend->qmlWindow(), SIGNAL(previewFrameFailed(QString)), this, SLOT(onPreviewFailed(QString)));
+	// «Грати тут»: приставку ще тримає інший пристрій — підключаємось знову раз на 3 с
+	takeover_timer.setSingleShot(true);
+	takeover_timer.setInterval(3000);
+	connect(&takeover_timer, &QTimer::timeout, this, &AnyPlayCloud::takeoverConnect);
+	connect(backend, &QmlBackend::sessionError, this, [this](const QString &, const QString &text) {
+		if(!takeover_until_ms_)
+			return;
+		const bool in_use = text.contains(QLatin1String("already in use"), Qt::CaseInsensitive);
+		if(in_use && QDateTime::currentMSecsSinceEpoch() + 3000 < takeover_until_ms_)
+		{
+			qInfo().noquote() << "[anyplay-takeover] console still busy with" << takeover_from_ << ", retry in 3 s, try" << takeover_tries_;
+			takeover_timer.start();
+			emit takeoverChanged();
+			return;
+		}
+		qWarning().noquote() << "[anyplay-takeover] gave up:" << text.simplified();
+		takeoverFinish(in_use
+			? tr("«%1» ще не відпустив приставку. Спробуй «Грати тут» ще раз за хвилину.").arg(takeover_from_)
+			: QString());   // інша помилка: її вже показує екран гри
+	});
+	// програму закривають посеред гри: одразу кажемо серверу, що стрім не йде (інший пристрій отримає «Грати» без чекання)
+	connect(qApp, &QCoreApplication::aboutToQuit, this, &AnyPlayCloud::sendStoppedBeat);
 	// К13: після помилки підключення програма сама шле журнал підтримці (не частіше разу на 10 хв)
 	connect(backend, &QmlBackend::sessionError, this, [this](const QString &, const QString &) {
 		const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -407,6 +435,11 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	payment_checking_ = o.value("paymentChecking").toBool() || booking.value("paymentChecking").toBool();
 	QString st = o.value("state").toString();
 	other_device_ = st == "other_device" ? o.value("otherDevice").toString() : QString();
+	// «Грати тут» (сервер етапу 5; старий сервер цих полів не шле — кнопки немає)
+	can_takeover_ = st == "other_device" && o.value("canTakeover").toBool();
+	other_seen_ = st == "other_device" && o.contains("otherSeen") ? o.value("otherSeen").toInt(-1) : -1;
+	if(st == "play")
+		moved_text_.clear();
 
 	if(st == "play")
 	{
@@ -463,6 +496,155 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	emit changed();
 }
 
+// ── «Грати тут» (115) ──
+
+bool AnyPlayCloud::takeoverWaiting() const
+{
+	return takeover_busy_ || takeover_until_ms_ > 0;
+}
+
+QString AnyPlayCloud::takeoverText() const
+{
+	if(takeover_busy_)
+		return tr("Забираємо гру на цей пристрій…");
+	if(takeover_until_ms_ > 0)
+		return takeover_from_.isEmpty()
+			? tr("Чекаємо, поки інший пристрій відпустить приставку…")
+			: tr("Чекаємо, поки «%1» відпустить приставку…").arg(takeover_from_);
+	return QString();
+}
+
+void AnyPlayCloud::takeover()
+{
+	if(takeover_busy_ || !loggedIn())
+		return;
+	takeover_busy_ = true;
+	emit takeoverChanged();
+	QJsonObject body;
+	body["takeover"] = true;
+	request("POST", "/api/app/session", body, [this](int status, const QJsonObject &o) {
+		takeover_busy_ = false;
+		if(status == 401)
+		{
+			emit takeoverChanged();
+			logout();
+			emit message(tr("Доступ цього комп'ютера скасовано — увійди через Telegram знову."));
+			return;
+		}
+		if(status != 200 || !o.value("ok").toBool())
+		{
+			qWarning() << "[anyplay-takeover] server refused, status" << status << o.value("error").toString();
+			emit takeoverChanged();
+			emit takeoverFailed(tr("Не вдалося перенести гру на цей пристрій. Перевір інтернет і спробуй ще раз."));
+			return;
+		}
+		applySession(o);
+		if(state_ != "play")
+		{
+			// сервер не віддав гру (бронь скінчилась, сервер старий і не знає «Грати тут»): стан уже показано
+			emit takeoverChanged();
+			if(state_ == "other_device")
+				emit takeoverFailed(tr("Сервер поки не вміє переносити гру. Закрий гру на «%1», і тут з'явиться «Грати».").arg(other_device_));
+			return;
+		}
+		const QJsonObject t = o.value("takeover").toObject();
+		takeover_from_ = t.value("from").toString();
+		const qint64 wait_until = t.value("waitUntil").toVariant().toLongLong();
+		const qint64 now = QDateTime::currentMSecsSinceEpoch();
+		takeover_until_ms_ = wait_until > 0 ? (wait_until - skew_) * 1000 : now + 45000;
+		if(takeover_until_ms_ < now + 10000)
+			takeover_until_ms_ = now + 10000;
+		takeover_tries_ = 0;
+		qInfo().noquote() << "[anyplay-takeover] taking the game over from" << takeover_from_
+		                  << ", retrying until" << (takeover_until_ms_ - now) / 1000 << "s from now";
+		emit takeoverChanged();
+		// ключі приставки щойно прийшли: список PS5 у програмі оновлюється, тож підключаємось за мить
+		QTimer::singleShot(1500, this, &AnyPlayCloud::takeoverConnect);
+	});
+}
+
+void AnyPlayCloud::takeoverConnect()
+{
+	if(!takeover_until_ms_)
+		return;
+	if(!playing_)
+	{
+		takeoverFinish(QString());   // гру вже зупинено (час вийшов, адмін): показуємо те, що сказав сервер
+		return;
+	}
+	if(StreamSession *s = backend->qmlSession())
+	{
+		if(s->GetConnected())
+			takeoverFinish(QString());
+		else
+			takeover_timer.start();   // попередня спроба ще йде
+		return;
+	}
+	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	if(now >= takeover_until_ms_)
+	{
+		takeoverFinish(tr("«%1» ще не відпустив приставку. Спробуй «Грати тут» ще раз за хвилину.").arg(takeover_from_));
+		return;
+	}
+	// та сама приставка, що й у «Грати» на головному екрані: перша зареєстрована зі списку
+	const QVariantList hosts = backend->hosts();
+	int index = -1;
+	QString name;
+	bool discovered = false;
+	for(int i = 0; i < hosts.size(); i++)
+	{
+		const QVariantMap h = hosts[i].toMap();
+		if(h.value("display").toBool() && h.value("registered").toBool())
+		{
+			index = i;
+			name = h.value("name").toString();
+			discovered = h.value("discovered").toBool();
+			break;
+		}
+	}
+	if(index < 0)
+	{
+		backend->refreshPsnToken();
+		takeover_timer.start();   // приставка ще не з'явилась у списку
+		return;
+	}
+	takeover_tries_++;
+	qInfo() << "[anyplay-takeover] connecting, try" << takeover_tries_;
+	prepareAutoQuality();
+	if(discovered)
+		backend->connectToHost(index, name);
+	else
+		backend->connectToHost(index);
+	emit takeoverChanged();
+}
+
+void AnyPlayCloud::takeoverFinish(const QString &failText)
+{
+	takeover_timer.stop();
+	if(!takeover_until_ms_ && failText.isEmpty())
+		return;
+	if(takeover_until_ms_)
+		qInfo().noquote() << "[anyplay-takeover] finished after" << takeover_tries_ << "tries" << (failText.isEmpty() ? QString() : QStringLiteral(": ") + failText);
+	takeover_until_ms_ = 0;
+	emit takeoverChanged();
+	if(!failText.isEmpty())
+		emit takeoverFailed(failText);
+}
+
+void AnyPlayCloud::sendStoppedBeat()
+{
+	if(!playing_ || !loggedIn() || !backend->qmlSession())
+		return;
+	// програма закривається: чекаємо відповідь не довше 1,5 с, щоб закриття не гальмувало
+	QJsonObject body;
+	body["streaming"] = false;
+	QEventLoop loop;
+	QTimer::singleShot(1500, &loop, &QEventLoop::quit);
+	request("POST", "/api/app/heartbeat", body, [&loop](int, const QJsonObject &) { loop.quit(); });
+	loop.exec(QEventLoop::ExcludeUserInputEvents);
+	qInfo() << "[anyplay] app closing during a game: told the server the stream stopped";
+}
+
 void AnyPlayCloud::scheduleStartRefresh()
 {
 	if(state_ == "play" || next_start_ <= 0 || !loggedIn())
@@ -501,6 +683,19 @@ void AnyPlayCloud::heartbeat()
 		if(status != 200)
 			return; // тимчасові проблеми зі зв'язком не обривають гру
 		applyExtras(o);
+		if(!o.value("continue").toBool() && o.value("reason").toString() == QLatin1String("other_device"))
+		{
+			// клієнт натиснув «Грати тут» на іншому пристрої: гра йде там, тож приставку не присипляємо
+			QString text = o.value("text").toString();
+			if(text.isEmpty())
+				text = tr("Гра продовжилась на іншому пристрої: «%1».").arg(o.value("otherDevice").toString());
+			qInfo().noquote() << "[anyplay-takeover] this device was replaced by" << o.value("otherDevice").toString();
+			moved_text_ = text;
+			stopPlay(text, false);
+			emit playMoved(text);
+			refresh();
+			return;
+		}
 		if(!o.value("continue").toBool())
 		{
 			QString reason = o.value("reason").toString() == "kicked"
@@ -567,6 +762,8 @@ void AnyPlayCloud::sampleStats()
 		return;
 	}
 	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	if(takeover_until_ms_)
+		takeoverFinish(QString());   // «Грати тут»: підключились
 	if(!stat_connected_ms_)
 		stat_connected_ms_ = now;
 	// перші секунди після підключення кадри ще не порахувались; згорнуте вікно кадрів не малює, і це не «погана картинка»
@@ -639,6 +836,15 @@ QJsonObject AnyPlayCloud::takeStats()
 		if(p.contains(QStringLiteral("vrr")) && p.value(QStringLiteral("vrr")).isValid())
 			o["vrr"] = p.value(QStringLiteral("vrr")).toBool();
 	}
+	// К14 (115): скільки разів за проміжок просили в приставки ключовий кадр (картинка ламалась) і скільки кадрів
+	// декодер не зміг розібрати чи позначив зламаними
+	{
+		const quint32 idr = s->GetIdrRequestsTotal(), errs = s->GetDecodeErrorsTotal();
+		o["idrRequests"] = static_cast<int>(idr >= idr_sent_ ? idr - idr_sent_ : idr);
+		o["decodeErrors"] = static_cast<int>(errs >= decode_errors_sent_ ? errs - decode_errors_sent_ : errs);
+		idr_sent_ = idr;
+		decode_errors_sent_ = errs;
+	}
 	// К18: яка обробка картинки діє і чи встигає комп'ютер (властивості виставляє код екрана «Зображення»; без них поля пропускаємо)
 	{
 		QmlMainWindow *w = backend->qmlWindow();
@@ -654,7 +860,7 @@ QJsonObject AnyPlayCloud::takeStats()
 		if(capped.isValid() && capped.toBool())
 			o["renderCapped"] = true;
 		if(gpu.isValid() && !gpu.toString().isEmpty())
-			o["gpu"] = gpu.toString();
+			o["gpu"] = gpu.toString().left(40);   // сервер зберігає до 40 символів
 		if(tier.isValid() && !tier.toString().isEmpty())
 			o["pcTier"] = tier.toString();
 	}
@@ -668,15 +874,18 @@ QJsonObject AnyPlayCloud::takeStats()
 	return o;
 }
 
-void AnyPlayCloud::stopPlay(const QString &reason)
+void AnyPlayCloud::stopPlay(const QString &reason, bool sleep)
 {
 	beat_timer.stop();
+	beat_timer.setInterval(BEAT_MS);
+	preview_until_ms_ = 0;
+	preview_timer.stop();
 	bool was = playing_;
 	playing_ = false;
 	if(!admin_)
 	{
 		if(was && backend->qmlSession())
-			backend->stopSession(true); // приставку — у режим спокою
+			backend->stopSession(sleep); // зазвичай приставку — у режим спокою; якщо гра пішла на інший пристрій — ні
 		settings->ClearAnyPlayEphemeral();
 	}
 	if(!reason.isEmpty())
@@ -2303,9 +2512,19 @@ void AnyPlayCloud::applyExtras(const QJsonObject &o)
 			// ноутбук не встигає малювати (обробку спрощено): кадри вдвічі рідше
 			const bool weak = QSettings().contains(QStringLiteral("anyplay/render_cap"));
 			preview_timer.setInterval(qBound(500, int(interval * 1000.0 * (weak ? 2 : 1)), 10000));
-			preview_width_ = qBound(160, pv.value("width").toInt(480), 960);
+			const int width = qBound(160, pv.value("width").toInt(480), 960);
+			if(!preview_timer.isActive())
+			{
+				// новий перегляд: починаємо з якості й ширини, які просить сервер (після 413 вони могли зменшитись)
+				preview_width_ = width;
+				preview_quality_ = 60;
+				preview_errors_ = 0;
+			}
+			else
+				preview_width_ = qMin(preview_width_, width);
 			if(!preview_timer.isActive() && QDateTime::currentMSecsSinceEpoch() < preview_until_ms_)
 			{
+				qInfo().nospace() << "[anyplay-preview] admin is watching, sending frames until " << preview_until_ms_ << " (local ms), width " << preview_width_;
 				preview_timer.start();
 				previewTick();
 			}
@@ -2315,6 +2534,7 @@ void AnyPlayCloud::applyExtras(const QJsonObject &o)
 			preview_until_ms_ = 0;
 			preview_timer.stop();
 		}
+		updateBeatInterval();
 	}
 	// адмін попросив журнал програми (CRM → «Отримати журнал»)
 	if(o.value("sendLog").toBool())
@@ -2479,62 +2699,165 @@ void AnyPlayCloud::reportPicture(const QString &note)
 
 // ── перегляд гри клієнта (К12) ──
 
+void AnyPlayCloud::updateBeatInterval()
+{
+	// К12: про запит адміна програма дізнається лише з відповіді на heartbeat, тож поки він дивиться — сигнал раз на 5 с
+	const bool watching = playing_ && preview_until_ms_ > QDateTime::currentMSecsSinceEpoch();
+	const int want = watching ? 5000 : BEAT_MS;
+	if(beat_timer.interval() != want)
+	{
+		beat_timer.setInterval(want);   // на запущеному таймері це й перезапуск з новим проміжком
+		if(playing_ && !beat_timer.isActive())
+			beat_timer.start();
+	}
+}
+
 void AnyPlayCloud::previewTick()
 {
 	QmlMainWindow *w = backend->qmlWindow();
 	if(!playing_ || !w || !backend->qmlSession() || QDateTime::currentMSecsSinceEpoch() >= preview_until_ms_)
 	{
 		preview_timer.stop();
+		updateBeatInterval();
 		return;
 	}
+	const qint64 now = QDateTime::currentMSecsSinceEpoch();
 	if(preview_busy_)
-		return;   // попередній кадр ще готується або летить: не накопичуємо
-	if(w->metaObject()->indexOfMethod("requestPreviewFrame(int)") >= 0
-		&& QMetaObject::invokeMethod(w, "requestPreviewFrame", Qt::QueuedConnection, Q_ARG(int, preview_width_)))
+	{
+		if(now - preview_busy_since_ms_ < 8000)
+			return;   // попередній кадр ще готується або летить: не накопичуємо
+		qWarning() << "[anyplay-preview] no answer for the previous frame in 8 s, asking again";
+		preview_busy_ = false;
+	}
+	bool asked = false;
+	if(w->metaObject()->indexOfMethod("requestPreviewFrame(int,int)") >= 0)
+		asked = QMetaObject::invokeMethod(w, "requestPreviewFrame", Qt::QueuedConnection, Q_ARG(int, preview_width_), Q_ARG(int, preview_quality_));
+	else if(w->metaObject()->indexOfMethod("requestPreviewFrame(int)") >= 0)
+		asked = QMetaObject::invokeMethod(w, "requestPreviewFrame", Qt::QueuedConnection, Q_ARG(int, preview_width_));
+	if(asked)
+	{
 		preview_busy_ = true;
+		preview_busy_since_ms_ = now;
+	}
 	else
+	{
+		qWarning() << "[anyplay-preview] the window can't make preview frames";
 		preview_timer.stop();   // вікно не вміє давати кадри
+	}
+}
+
+void AnyPlayCloud::onPreviewFailed(const QString &reason)
+{
+	preview_busy_ = false;
+	if(preview_errors_++ % 10 == 0)
+		qWarning().noquote() << "[anyplay-preview] frame not taken:" << reason;
 }
 
 void AnyPlayCloud::onPreviewFrame(const QByteArray &jpeg)
 {
-	if(jpeg.isEmpty() || jpeg.size() > 200 * 1024 || !playing_)
+	if(jpeg.isEmpty() || !playing_)
 	{
 		preview_busy_ = false;
 		return;
 	}
-	rawRequest("POST", "/api/app/preview", "image/jpeg", jpeg, [this](int status, const QByteArray &, const QByteArray &) {
+	if(jpeg.size() > 190 * 1024)
+	{
+		// сервер приймає до 200 КБ: такий кадр не надсилаємо, наступний буде менший
 		preview_busy_ = false;
+		preview_quality_ = qMax(25, preview_quality_ - 15);
+		preview_width_ = qMax(240, preview_width_ * 3 / 4);
+		qWarning().nospace() << "[anyplay-preview] frame too big (" << jpeg.size() << " bytes), next: width " << preview_width_ << " quality " << preview_quality_;
+		return;
+	}
+	const int bytes = jpeg.size();
+	rawRequest("POST", "/api/app/preview", "image/jpeg", jpeg, [this, bytes](int status, const QByteArray &, const QByteArray &) {
+		preview_busy_ = false;
+		if(status == 200 || status == 204)
+		{
+			if(preview_errors_ > 0)
+				qInfo().nospace() << "[anyplay-preview] frame accepted again (" << bytes << " bytes)";
+			preview_errors_ = 0;
+			return;
+		}
 		if(status == 404 || status == 410)
 		{
+			qInfo().nospace() << "[anyplay-preview] server stopped wanting frames (" << status << ")";
 			preview_until_ms_ = 0;   // сервер не хоче кадрів (адмін закрив перегляд або сервер старий)
 			preview_timer.stop();
+			updateBeatInterval();
+			return;
 		}
+		if(status == 413)
+		{
+			// кадр завеликий для сервера: менша ширина й якість, наступний кадр за звичайним розкладом
+			preview_quality_ = qMax(25, preview_quality_ - 15);
+			preview_width_ = qMax(240, preview_width_ * 3 / 4);
+			qWarning().nospace() << "[anyplay-preview] server said 413 for " << bytes << " bytes, next: width " << preview_width_ << " quality " << preview_quality_;
+			preview_errors_++;
+			return;
+		}
+		if(preview_errors_++ % 10 == 0)
+			qWarning().nospace() << "[anyplay-preview] upload failed, status " << status << ", bytes " << bytes;
 	});
 }
 
-void AnyPlayCloud::loadPreview(qint64 bookingId)
+void AnyPlayCloud::loadPreview(qint64 bookingId, qint64 userId)
 {
-	if(!admin_ || preview_loading_ || bookingId <= 0)
+	if(!admin_ || preview_loading_ || (bookingId <= 0 && userId <= 0))
 		return;
 	preview_loading_ = true;
-	rawRequest("GET", QStringLiteral("/api/app/admin/preview?bookingId=%1").arg(bookingId), QByteArray(), QByteArray(),
-		[this](int status, const QByteArray &data, const QByteArray &type) {
+	const QString path = bookingId > 0
+		? QStringLiteral("/api/app/admin/preview?bookingId=%1").arg(bookingId)
+		: QStringLiteral("/api/app/admin/preview?userId=%1").arg(userId);
+	QNetworkRequest req(QUrl(server_ + path));
+	req.setTransferTimeout(15000);
+	req.setRawHeader("X-AnyPlay-Build", QByteArray::number(ANYPLAY_BUILD));
+	req.setRawHeader("X-AnyPlay-Platform", anyplayPlatform());
+	if(!token_.isEmpty())
+		req.setRawHeader("Authorization", "Bearer " + token_.toUtf8());
+	QNetworkReply *reply = nam.get(req);
+	connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+		reply->deleteLater();
 		preview_loading_ = false;
-		if(status != 200 || data.isEmpty() || !type.startsWith("image/"))
-			return;
-		preview_image_ = QStringLiteral("data:image/jpeg;base64,") + QString::fromLatin1(data.toBase64());
-		preview_at_ = QDateTime::currentSecsSinceEpoch() + skew_;
+		const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+		const QByteArray data = reply->readAll();
+		const QByteArray type = reply->header(QNetworkRequest::ContentTypeHeader).toByteArray();
+		// заголовки сервера етапу 5 (старий сервер їх не шле — тоді стан порожній, а кадр як і раніше)
+		const QString state = QString::fromLatin1(reply->rawHeader("X-Preview-State")).trimmed();
+		const qint64 next = reply->rawHeader("X-Preview-Next").trimmed().toLongLong();
+		const qint64 at = reply->rawHeader("X-Preview-At").trimmed().toLongLong();
+		if(status == 200 || status == 204)
+		{
+			preview_state_ = state;
+			preview_next_ = next;
+			if(at > 0)
+				preview_frame_at_ = at;
+		}
+		else
+		{
+			preview_state_ = QStringLiteral("error");
+			qWarning() << "[anyplay-preview] admin preview request failed, status" << status;
+		}
+		if(status == 200 && !data.isEmpty() && type.startsWith("image/"))
+		{
+			preview_image_ = QStringLiteral("data:image/jpeg;base64,") + QString::fromLatin1(data.toBase64());
+			preview_at_ = QDateTime::currentSecsSinceEpoch() + skew_;
+			if(!preview_frame_at_)
+				preview_frame_at_ = preview_at_;
+		}
 		emit previewChanged();
 	});
 }
 
 void AnyPlayCloud::clearPreview()
 {
-	if(preview_image_.isEmpty() && !preview_at_)
+	if(preview_image_.isEmpty() && !preview_at_ && preview_state_.isEmpty() && !preview_next_ && !preview_frame_at_)
 		return;
 	preview_image_.clear();
 	preview_at_ = 0;
+	preview_state_.clear();
+	preview_next_ = 0;
+	preview_frame_at_ = 0;
 	emit previewChanged();
 }
 

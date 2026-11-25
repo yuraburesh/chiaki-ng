@@ -191,8 +191,11 @@ public:
 
     // AnyPlay К12: зменшений кадр гри для перегляду адміном. Асинхронно: кадр малюється окремо на відеокарті
     // при наступному показі, копіюється без очікування і стискається в JPEG у фоновому потоці → previewFrameReady.
-    // Повторний запит, поки попередній не готовий, ігнорується. Без гри сигналу не буде.
-    Q_INVOKABLE void requestPreviewFrame(int maxWidth = 480);
+    // 115: якщо відеокарта не дала кадр за 0,9 с або не вміє (помилка libplacebo, нема формату), кадр знімається
+    // програмно з наступного декодованого кадру (копія з апаратного декодера, перерахунок YUV → RGB у фоні).
+    // На кожен запит рівно одна відповідь: previewFrameReady або previewFrameFailed (не пізніше ніж за 4 с).
+    // quality — якість JPEG (20–90), 0 — звичайна; програма зменшує її, якщо сервер відповів 413.
+    Q_INVOKABLE void requestPreviewFrame(int maxWidth = 480, int quality = 0);
     void armVerbosePlaceboQuietWindow();
     bool startupWarmupFrameActive() const { return startup_warmup_frame_active; }
 
@@ -225,6 +228,7 @@ signals:
     void streamFpsChanged();
     void pictureChanged();
     void previewFrameReady(const QByteArray &jpeg);
+    void previewFrameFailed(const QString &reason);   // К12: кадр не вдалося зняти (причина для журналу)
 
 private:
     friend class BufferedPlaybackPacerThread;
@@ -422,6 +426,21 @@ private:
     pl_tex preview_tex = {};
     pl_buf preview_buf = {};
     QAtomicInteger<int> preview_encoding = 0;
+    // К12 (115): номери запитів, щоб відповідь була одна, і запасний шлях — програмно з декодованого кадру
+    QAtomicInteger<quint32> preview_request_id = 0;   // останній запит (головний потік пише, потік малювання читає)
+    QAtomicInteger<quint32> preview_gpu_id = 0;       // для якого запиту працює шлях через відеокарту
+    QAtomicInteger<quint32> preview_cpu_id = 0;       // > preview_delivered_id — знімаємо з наступного кадру гри
+    QAtomicInteger<int> preview_gpu_broken = 0;       // шлях через відеокарту в цій грі не спрацював — одразу програмно
+    QAtomicInteger<int> preview_quality = 60;
+    quint32 preview_delivered_id = 0;                 // лише головний потік
+    int preview_cpu_width = 480;                      // лише головний потік
+    bool preview_cpu_busy = false;                    // лише головний потік
+    QString preview_last_path;                        // лише головний потік: gpu | cpu (для журналу)
+    void deliverPreviewFrame(quint32 id, const QByteArray &jpeg, const char *path);
+    void failPreviewFrame(quint32 id, const QString &reason);
+    void armPreviewCpuFallback(quint32 id, const QString &why);
+    void capturePreviewFromFrame(const AVFrame *frame);
+    void previewGpuFailed(quint32 id, const char *step);
 
     std::atomic<double> queue_depth_average{0.0};
     QAtomicInteger<int> queue_depth_cached = 0;
@@ -514,6 +533,10 @@ private:
     int startup_settle_net_lost = 0;         // лічильник загублених у мережі кадрів на минулому кадрі
     qint64 startup_settle_last_frame_ms = 0;
     QElapsedTimer startup_settle_clock;      // від першого кадру гри
+    // AnyPlay 115: на старті кадри, які декодер позначив зламаними (або до першого ключового), на екран не йдуть,
+    // доки не прийде рівний (не довше kStartupCorruptHoldMs від першого такого кадру)
+    QElapsedTimer startup_corrupt_clock;
+    int startup_corrupt_dropped = 0;
     // AnyPlay: колірний простір вікна під час гри (лише потік малювання), див. render()
     struct pl_color_space stream_hint_last = {};
     bool stream_hint_last_valid = false;

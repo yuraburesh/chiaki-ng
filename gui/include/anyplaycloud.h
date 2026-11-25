@@ -329,9 +329,11 @@ private:
 	// вимір обробки під час гри (renderCheck): скільки тиків поспіль кадри на екрані < 80% потоку, перевірка після спрощення
 	struct { int slow = 0; int ticks = 0; int check = 0; int before = 0; int sum = 0; bool gaveUp = false; qint64 hintAt = 0; int hintSlow = 0; } rc_;
 	bool quality_hint_shown_ = false;
-	mutable QString pc_cpu_, pc_mem_;
+	mutable QString pc_cpu_, pc_mem_, pc_model_;
 	QString pcCpu() const;
 	QString pcMem() const;
+	int pcRamGb() const;        // 117: оперативна пам'ять, ГБ (0 — невідомо)
+	QString pcModel() const;    // 117: модель комп'ютера: «MacBook Air 15″ M2», «Lenovo Legion 5 15ACH6H»
 	qint64 link_job_user_ = 0;   // прив'язка за кодом, який адмін написав у боті: кому звітувати
 	void setBusy(bool b) { if(busy_ != b) { busy_ = b; emit busyChanged(); } }
 	// ── баланс ──

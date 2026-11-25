@@ -217,6 +217,8 @@ public:
     Q_INVOKABLE bool psnRedirectAuto() const;       // на цій системі адресу підхоплюємо самі
     Q_INVOKABLE bool psnRedirectDenied() const;     // користувач не дав на це дозволу
     Q_INVOKABLE void activateWindow();
+    // AnyPlay 117: у меню гри W A S D ходять як стрілки (QML передає сюди, яку стрілку «натиснути» на елементі з фокусом)
+    Q_INVOKABLE void sendNavKey(QObject *item, int key);
     QString discoveredPs5Address() const;           // AnyPlay: адреса PS5, знайденої в локальній мережі ("" — не знайдено)
     Q_INVOKABLE QString openPlaceboOptionsLink();
     Q_INVOKABLE void initPsnAuth(const QUrl &url, const QJSValue &callback);

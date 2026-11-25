@@ -46,6 +46,11 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_ffmpeg_decoder_init(ChiakiFfmpegDecoder *de
 	decoder->synthetic_candidate_duration_us = decoder->synthetic_frame_duration_us;
 	decoder->synthetic_last_sample_time_us = 0;
 	decoder->synthetic_candidate_count = 0;
+	decoder->corrupt_cb = NULL;
+	decoder->corrupt_cb_user = NULL;
+	decoder->seen_key_frame = false;
+	decoder->corrupt_frames = 0;
+	decoder->decode_failures = 0;
 
 	decoder->hw_device_ctx = hw_device_ctx ? av_buffer_ref(hw_device_ctx) : NULL;
 	decoder->hw_pix_fmt = AV_PIX_FMT_NONE;
@@ -226,6 +231,8 @@ send_packet:
 			char errbuf[128];
 			av_make_error_string(errbuf, sizeof(errbuf), r);
 			CHIAKI_LOGE(decoder->log, "Failed to push frame: %s", errbuf);
+			decoder->decode_failures++;
+			// the video receiver reports this one itself (the callback returns false)
 			goto hell;
 		}
 	}
@@ -239,9 +246,35 @@ hell:
 	return false;
 }
 
+// AnyPlay: key frame flag across FFmpeg versions (AVFrame.key_frame is gone in FFmpeg 7+)
+static bool chiaki_ffmpeg_frame_is_key(const AVFrame *frame)
+{
+#ifdef AV_FRAME_FLAG_KEY
+	if(frame->flags & AV_FRAME_FLAG_KEY)
+		return true;
+#else
+	if(frame->key_frame)
+		return true;
+#endif
+	return frame->pict_type == AV_PICTURE_TYPE_I;
+}
+
+// AnyPlay: checked before the "recovered" marker below is put into decode_error_flags
+static bool chiaki_ffmpeg_frame_flagged_corrupt(const AVFrame *frame)
+{
+	if(frame->decode_error_flags)
+		return true;
+#ifdef AV_FRAME_FLAG_CORRUPT
+	if(frame->flags & AV_FRAME_FLAG_CORRUPT)
+		return true;
+#endif
+	return false;
+}
+
 CHIAKI_EXPORT ChiakiFfmpegFrame chiaki_ffmpeg_decoder_pull_frame(ChiakiFfmpegDecoder *decoder, int32_t *frames_lost)
 {
 	chiaki_mutex_lock(&decoder->mutex);
+	const char *corrupt_reason = NULL;
 	double synthetic_duration = decoder->synthetic_frame_duration_us / 1000000.0;
 	// always try to pull as much as possible and return only the very last frame
 	AVFrame *frame_last = NULL;
@@ -265,13 +298,33 @@ CHIAKI_EXPORT ChiakiFfmpegFrame chiaki_ffmpeg_decoder_pull_frame(ChiakiFfmpegDec
 		int r = avcodec_receive_frame(decoder->codec_context, frame);
 		if(r)
 		{
-			if(r != AVERROR(EAGAIN))
-				CHIAKI_LOGE(decoder->log, "Decoding with FFMPEG failed");
+			if(r != AVERROR(EAGAIN) && r != AVERROR_EOF)
+			{
+				char errbuf[128];
+				av_make_error_string(errbuf, sizeof(errbuf), r);
+				CHIAKI_LOGE(decoder->log, "Decoding with FFMPEG failed: %s", errbuf);
+				decoder->decode_failures++;
+				corrupt_reason = "decode_failed";
+			}
 			av_frame_free(&frame);
 			frame = frame_last;
 			break;
 		}
+		// AnyPlay: a frame the decoder itself marks as broken (missing reference, bitstream error,
+		// hardware decoder trouble), or anything before the first key frame
+		if(chiaki_ffmpeg_frame_is_key(frame))
+			decoder->seen_key_frame = true;
+		if(chiaki_ffmpeg_frame_flagged_corrupt(frame))
+		{
+			if(decoder->seen_key_frame)
+				decoder->corrupt_frames++;
+			if(!corrupt_reason)
+				corrupt_reason = "frame_flagged_corrupt";
+		}
 	}
+	bool frame_corrupt = false;
+	if(frame)
+		frame_corrupt = chiaki_ffmpeg_frame_flagged_corrupt(frame) || !decoder->seen_key_frame;
 	*frames_lost = decoder->frames_lost;
 	bool recovered = false;
 	if(frame && decoder->frame_recovered)
@@ -284,11 +337,17 @@ CHIAKI_EXPORT ChiakiFfmpegFrame chiaki_ffmpeg_decoder_pull_frame(ChiakiFfmpegDec
 	AVRational pkt_timebase = decoder->codec_context->pkt_timebase;
 	AVRational ctx_timebase = decoder->codec_context->time_base;
 	AVRational framerate = decoder->codec_context->framerate;
+	ChiakiFfmpegCorrupt corrupt_cb = decoder->corrupt_cb;
+	void *corrupt_cb_user = decoder->corrupt_cb_user;
 	chiaki_mutex_unlock(&decoder->mutex);
+
+	if(corrupt_reason && corrupt_cb)
+		corrupt_cb(decoder, corrupt_reason, corrupt_cb_user);
 
 	ChiakiFfmpegFrame frame_plus_stats = {};
 	frame_plus_stats.frame = frame;
 	frame_plus_stats.recovered = recovered;
+	frame_plus_stats.corrupt = frame_corrupt;
 	if(frame)
 	{
 		chiaki_ffmpeg_frame_get_timing(

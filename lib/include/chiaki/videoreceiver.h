@@ -10,6 +10,7 @@
 #include "frameprocessor.h"
 #include "bitstream.h"
 #include "thread.h"
+#include "idrpolicy.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,9 +36,13 @@ typedef struct chiaki_video_receiver_t
 	int32_t frames_lost_total;
 	int32_t reference_frames[16];
 	ChiakiBitstream bitstream;
-	ChiakiMutex waiting_for_idr_mutex;
-	bool waiting_for_idr;
-	uint64_t idr_request_last_ms; // when the IDR being waited for was last requested
+	ChiakiMutex waiting_for_idr_mutex; // guards idr, idr_wait_since_ms and the two counters below
+	bool waiting_for_idr; // unused, kept for source compatibility (see idr)
+	uint64_t idr_request_last_ms; // unused, kept for source compatibility (see idr)
+	ChiakiIdrPolicy idr; // AnyPlay: when to ask for a key frame and which frames to hold back until it comes
+	uint64_t idr_wait_since_ms; // when the key frame currently wanted was first asked for (for the log)
+	uint32_t idr_requests_total; // IDR requests sent (with repeats)
+	uint32_t decode_errors_total; // decoder errors and frames the decoder flagged as broken
 	ChiakiMutex frames_lost_mutex;
 } ChiakiVideoReceiver;
 
@@ -57,6 +62,16 @@ CHIAKI_EXPORT void chiaki_video_receiver_av_packet(ChiakiVideoReceiver *video_re
 CHIAKI_EXPORT void chiaki_video_receiver_set_waiting_for_idr(ChiakiVideoReceiver *video_receiver, bool waiting_for_idr);
 CHIAKI_EXPORT bool chiaki_video_receiver_get_waiting_for_idr(ChiakiVideoReceiver *video_receiver);
 CHIAKI_EXPORT int32_t chiaki_video_receiver_get_frames_lost_total(ChiakiVideoReceiver *video_receiver);
+
+/**
+ * AnyPlay: the picture is broken (decoder error, frame flagged corrupt, hardware decoder reset...).
+ * Asks the console for a key frame (repeated once per second until it comes). Thread-safe.
+ * @param reason short word for the log, e.g. "decoder"
+ * @param decoder_error count it in decode_errors_total
+ */
+CHIAKI_EXPORT void chiaki_video_receiver_report_corrupt(ChiakiVideoReceiver *video_receiver, const char *reason, bool decoder_error);
+CHIAKI_EXPORT uint32_t chiaki_video_receiver_get_idr_requests_total(ChiakiVideoReceiver *video_receiver);
+CHIAKI_EXPORT uint32_t chiaki_video_receiver_get_decode_errors_total(ChiakiVideoReceiver *video_receiver);
 
 static inline ChiakiVideoReceiver *chiaki_video_receiver_new(struct chiaki_session_t *session, ChiakiPacketStats *packet_stats)
 {

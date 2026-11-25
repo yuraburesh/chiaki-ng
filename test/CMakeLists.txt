@@ -22,6 +22,7 @@ set(CHIAKI_UNIT_SOURCES
 				test_log.c
 				test_log.h
 				bitstream.c
+				idrpolicy.c
 				regist.c)
 
 if(NOT CHIAKI_LIB_ENABLE_MBEDTLS)

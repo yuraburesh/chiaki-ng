@@ -23,6 +23,13 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(QString pairQr MEMBER pair_qr_ NOTIFY changed)
 	Q_PROPERTY(QString pairBot MEMBER pair_bot_ NOTIFY changed)          // login | pairing | wait | play | no_console | offline | update | other_device
 	Q_PROPERTY(QString otherDevice READ otherDevice NOTIFY changed)   // other_device: на якому пристрої клієнт зараз грає
+	// «Грати тут» (115): сервер у стані other_device дозволяє забрати гру на цей пристрій
+	Q_PROPERTY(bool canTakeover READ canTakeover NOTIFY changed)
+	Q_PROPERTY(int otherSeen READ otherSeen NOTIFY changed)               // секунд від останнього сигналу того пристрою, -1 — невідомо
+	Q_PROPERTY(bool takeoverWaiting READ takeoverWaiting NOTIFY takeoverChanged)   // після «Грати тут»: забираємо гру або чекаємо, поки той пристрій відпустить приставку
+	Q_PROPERTY(QString takeoverText READ takeoverText NOTIFY takeoverChanged)      // напис на цей час («Чекаємо, поки «…» відпустить приставку…»), інакше ""
+	Q_PROPERTY(QString takeoverFrom READ takeoverFrom NOTIFY takeoverChanged)      // з якого пристрою забрали гру
+	Q_PROPERTY(QString movedText READ movedText NOTIFY changed)           // гру забрав інший пристрій: «Гра продовжилась на іншому пристрої…» (до наступної гри тут)
 	Q_PROPERTY(bool paymentChecking READ paymentChecking NOTIFY changed)  // гра в кредит: оплату продовження ще перевіряють, endTs — кінець кредиту
 	Q_PROPERTY(bool loggedIn READ loggedIn NOTIFY changed)
 	Q_PROPERTY(bool admin READ admin NOTIFY changed)
@@ -72,6 +79,11 @@ class AnyPlayCloud : public QObject
 	// ── перегляд гри клієнта адміном (К12): останній кадр як data:-адреса ──
 	Q_PROPERTY(QString previewImage READ previewImage NOTIFY previewChanged)
 	Q_PROPERTY(qint64 previewAt READ previewAt NOTIFY previewChanged)
+	// 115: стан перегляду з відповіді сервера (оновлюється і на 204): ok | wait | offline | unsupported; "" — старий сервер;
+	// error — запит не вдався (немає броні, немає права, немає зв'язку)
+	Q_PROPERTY(QString previewState READ previewState NOTIFY previewChanged)
+	Q_PROPERTY(qint64 previewNext READ previewNext NOTIFY previewChanged)        // X-Preview-Next: коли програма клієнта найпізніше дізнається про запит (час сервера, 0 — невідомо)
+	Q_PROPERTY(qint64 previewFrameAt READ previewFrameAt NOTIFY previewChanged)  // X-Preview-At: коли сервер отримав останній кадр (час сервера, 0 — кадру ще не було)
 	// ── CRM усередині програми (К10) ──
 	Q_PROPERTY(bool webEngine READ webEngine CONSTANT)
 	// AnyPlay 113, екран «Зображення» (К18): яка обробка картинки діє, чи обмежено її через слабкий ноутбук, оцінка комп'ютера
@@ -99,6 +111,12 @@ public:
 	bool continues() const { return continues_; }
 	bool guest() const { return guest_; }
 	QString otherDevice() const { return other_device_; }
+	bool canTakeover() const { return can_takeover_; }
+	int otherSeen() const { return other_seen_; }
+	bool takeoverWaiting() const;
+	QString takeoverText() const;
+	QString takeoverFrom() const { return takeover_from_; }
+	QString movedText() const { return moved_text_; }
 	bool paymentChecking() const { return payment_checking_; }
 	qint64 clockSkew() const { return skew_; }
 	QString consoleName() const { return console_; }
@@ -124,6 +142,9 @@ public:
 	Q_INVOKABLE void cancelLogin();
 	Q_INVOKABLE void logout();
 	Q_INVOKABLE void refresh();
+	// «Грати тут»: POST /api/app/session {takeover:true}, далі підключення до приставки з повторами раз на 3 с,
+	// поки вона відповідає «вже зайнято» (до takeover.waitUntil від сервера). Підсумок: takeoverChanged / takeoverFailed
+	Q_INVOKABLE void takeover();
 	Q_INVOKABLE void openBot();
 	Q_INVOKABLE void uploadConsole(const QString &mac = QString());   // адмін: передати свою прив'язку PS5 і вхід PSN на сервер (mac — яка PS5, якщо прив'язано кілька)
 	Q_INVOKABLE void setMyPsn(const QString &psn);   // клієнт: додати/прибрати свій акаунт PSN
@@ -206,7 +227,10 @@ public:
 	// перегляд гри клієнта (К12)
 	QString previewImage() const { return preview_image_; }
 	qint64 previewAt() const { return preview_at_; }
-	Q_INVOKABLE void loadPreview(qint64 bookingId);          // адмін: забрати останній кадр гри клієнта
+	QString previewState() const { return preview_state_; }
+	qint64 previewNext() const { return preview_next_; }
+	qint64 previewFrameAt() const { return preview_frame_at_; }
+	Q_INVOKABLE void loadPreview(qint64 bookingId, qint64 userId = 0);   // адмін: забрати останній кадр гри клієнта (гість без броні — за userId)
 	Q_INVOKABLE void clearPreview();
 	// CRM у програмі (К10)
 	bool webEngine() const;
@@ -241,9 +265,13 @@ signals:
 	void supportResult(bool ok, const QString &text);
 	void supportImage(const QString &fileUrl, const QString &dataUrl);
 	void previewChanged();
+	void takeoverChanged();
+	void takeoverFailed(const QString &text);   // «Грати тут» не вийшло (текст для людини)
+	void playMoved(const QString &text);        // гру зупинено, бо клієнт продовжив на іншому пристрої (текст для людини)
 
 private slots:
 	void onPreviewFrame(const QByteArray &jpeg);             // кадр від QmlMainWindow::previewFrameReady (К12)
+	void onPreviewFailed(const QString &reason);             // QmlMainWindow::previewFrameFailed (115)
 
 private:
 	void request(const QString &method, const QString &path, const QJsonObject &body,
@@ -254,7 +282,7 @@ private:
 	void saveClientLink(const QJsonObject &body, int attempt);
 	void heartbeat();
 	void setState(const QString &s);
-	void stopPlay(const QString &reason);
+	void stopPlay(const QString &reason, bool sleep = true);   // sleep=false: приставку не присипляти (на ній уже грають з іншого пристрою)
 
 	Settings *settings;
 	QmlBackend *backend;
@@ -333,10 +361,29 @@ private:
 	QString preview_image_;
 	qint64 preview_at_ = 0;
 	bool preview_loading_ = false;
+	QString preview_state_;
+	qint64 preview_next_ = 0, preview_frame_at_ = 0;
 	qint64 preview_until_ms_ = 0;                            // до коли надсилати кадри (час цього комп'ютера)
 	int preview_width_ = 480;
 	bool preview_busy_ = false;                              // кадр уже готується або летить на сервер
 	QTimer preview_timer;
+	int preview_quality_ = 60;                               // якість JPEG; сервер відповів 413 — знижуємо разом із шириною
+	qint64 preview_busy_since_ms_ = 0;                       // запобіжник: вікно не відповіло — через 8 с питаємо знову
+	int preview_errors_ = 0;                                 // помилок надсилання поспіль (для журналу)
+	quint32 idr_sent_ = 0, decode_errors_sent_ = 0;          // К14: лічильники трансляції на момент минулого heartbeat
+	void updateBeatInterval();                               // поки адмін дивиться гру, heartbeat раз на 5 с (щоб швидше дізнаватись про запити)
+	// «Грати тут»
+	bool can_takeover_ = false;
+	int other_seen_ = -1;
+	bool takeover_busy_ = false;                             // запит на сервер іще йде
+	QString takeover_from_;
+	qint64 takeover_until_ms_ = 0;                           // до коли повторювати підключення (час цього комп'ютера)
+	int takeover_tries_ = 0;
+	QTimer takeover_timer;
+	QString moved_text_;
+	void takeoverConnect();
+	void takeoverFinish(const QString &failText);
+	void sendStoppedBeat();                                  // програма закривається посеред гри: «стрім не йде» одразу
 	qint64 log_sent_ms_ = 0, log_admin_ms_ = 0;              // журнал: коли надсилали після помилки і на прохання адміна
 	bool complaint_ = false;                                 // клієнт натиснув «Картинка глючить» (піде в наступні stats)
 };

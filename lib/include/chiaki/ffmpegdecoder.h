@@ -20,12 +20,19 @@ typedef struct chiaki_ffmpeg_frame_t ChiakiFfmpegFrame;
 
 typedef void (*ChiakiFfmpegFrameAvailable)(ChiakiFfmpegDecoder *decover, void *user);
 
+/**
+ * AnyPlay: the decoder failed or produced a broken frame (reason is a short word for the log).
+ * Called with the decoder mutex released, from the receiving or the presenting thread.
+ */
+typedef void (*ChiakiFfmpegCorrupt)(ChiakiFfmpegDecoder *decoder, const char *reason, void *user);
+
 struct chiaki_ffmpeg_frame_t
 {
 	AVFrame *frame;
 	double pts;
 	double duration;
 	bool recovered;
+	bool corrupt; // AnyPlay: decoder flagged it broken, or no key frame was decoded yet
 };
 
 struct chiaki_ffmpeg_decoder_t
@@ -50,6 +57,12 @@ struct chiaki_ffmpeg_decoder_t
 	double synthetic_candidate_duration_us;
 	uint64_t synthetic_last_sample_time_us;
 	uint8_t synthetic_candidate_count;
+	// AnyPlay: broken picture detection (set corrupt_cb after init; NULL = off)
+	ChiakiFfmpegCorrupt corrupt_cb;
+	void *corrupt_cb_user;
+	bool seen_key_frame;
+	uint32_t corrupt_frames; // frames the decoder flagged broken (after the first key frame)
+	uint32_t decode_failures; // packets refused and frames that failed to decode
 };
 
 CHIAKI_EXPORT ChiakiErrorCode chiaki_ffmpeg_decoder_init(ChiakiFfmpegDecoder *decoder, ChiakiLog *log,

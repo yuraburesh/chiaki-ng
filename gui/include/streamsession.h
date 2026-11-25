@@ -213,6 +213,12 @@ class StreamSession : public QObject
 		double average_packet_loss = 0;
 		int32_t frames_lost = 0;
 		int32_t pending_frames_lost = 0;
+		// AnyPlay: «кадр позначено зламаним» від декодера — запобіжник, якщо декодер позначає так усе підряд
+		QAtomicInteger<qint64> corrupt_flag_window_start_ms = 0;
+		QAtomicInteger<qint64> corrupt_flag_last_ms = 0;
+		QAtomicInteger<int> corrupt_flag_window_count = 0;
+		QAtomicInteger<int> corrupt_flag_ignored = 0;
+		quint32 last_idr_requests_total = 0;
 		double packet_loss_max = 0;
 		QList<double> packet_loss_history;
 		QAtomicInteger<quint64> decoder_flush_generation{0};
@@ -404,6 +410,11 @@ class StreamSession : public QObject
 		double GetAveragePacketLoss()	{ return average_packet_loss; }
 		quint64 DecoderFlushGeneration() const { return decoder_flush_generation.loadRelaxed(); }
 		int GetFramesLost()		{ return frames_lost; }
+		// AnyPlay К14: скільки разів просили ключовий кадр і скільки помилок декодера (від початку гри)
+		quint32 GetIdrRequestsTotal();
+		quint32 GetDecodeErrorsTotal();
+		// AnyPlay: декодер зламав картинку — просимо ключовий кадр (з будь-якого потоку)
+		void ReportVideoCorrupt(const char *reason, bool decoder_error);
 		bool GetMuted()	{ return muted; }
 		void SetMuted(bool enable)	{ if (enable != muted) ToggleMute(); }
 		void SetAudioVolume(int volume) { audio_volume = volume; }

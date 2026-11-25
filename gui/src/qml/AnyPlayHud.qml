@@ -14,7 +14,7 @@ Item {
     AnyPlayStyle { id: ap }
 
     property string edge: "top"          // "top" — у верхній смузі, "bottom" — у нижній
-    property string align: "center"      // "center" або "left"
+    property string align: "center"      // "center", "left" або "right" (116: «в ефірі» праворуч угорі)
     property bool fits: true             // відео вписане з чорними смугами (режим «Normal»); інакше смуг немає
     property bool hidden: false          // тимчасово сховати (відкрите меню тощо), стан показу не губиться
     property real k: 1                   // масштаб від висоти вікна (1 на 1000 рядках, до 2)
@@ -49,7 +49,7 @@ Item {
         ? (edge === "top" ? (band - height) / 2 : parent.height - band + (band - height) / 2)
         : (edge === "top" ? margin * s : parent.height - height - margin * s)
     property real drift: active ? 0 : (edge === "top" ? -7 : 7)
-    x: parent ? (align === "left" ? margin * s : Math.round((parent.width - width) / 2)) : 0
+    x: parent ? (align === "left" ? margin * s : align === "right" ? Math.round(parent.width - width - margin * s) : Math.round((parent.width - width) / 2)) : 0
     y: Math.round(restY) + offsetY + drift
     opacity: active && !hidden ? 1 : 0
     visible: opacity > 0

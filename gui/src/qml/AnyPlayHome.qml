@@ -5,6 +5,9 @@
 // «CRM» (повна CRM усередині програми; поверх гри її немає), «Спільний PSN», «Свої PSN», а також «Зображення», «Як керувати», «Клавіші».
 // Клієнт: ще «Підтримка» — чат з адміном просто в програмі, і поверх гри теж (число нових відповідей на вкладці).
 // Гість (cloud.guest): грає, поки приставка вільна; замість тексту про бронь — про гостьовий доступ, продовження немає.
+// AnyPlay 116: вкладка «Друзі» (AnyPlayFriends: друзі, хто грає, «Дивитись», подарунки, додати друга), коли програма
+// вміє друзів (AnyPlayLiveApi). «Передати повністю»: поки грає друг — «Повернути собі» на «Гра» і на екрані
+// «Гра вже йде»; другу, якому передали гру, — «Тобі передали гру» з «Грати».
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -77,6 +80,10 @@ Rectangle {
     // гра вже йде на іншому його пристрої) — замість вкладки «Гра»
     readonly property bool gameGate: !isAdmin && (st === "update" || st === "no_console" || st === "other_device")
     readonly property var mine: (cloud.bookInfo && cloud.bookInfo.mine) || []
+    // 116: друзі, трансляція, передана гра (усе з C++ через один адаптер)
+    AnyPlayLiveApi { id: homeLive }
+    readonly property bool friendsOn: !home.isAdmin && (homeLive.friendsAvailable || homeLive.available)
+    readonly property bool lentAway: homeLive.handoff === "away" || homeLive.handoff === "preparing" || homeLive.handoff === "returning"
     // overGame: це вікно відкрите з меню гри поверх трансляції: гра йде далі, «Грати» повертає в неї
     property bool overGame: false
     signal backToGame()
@@ -129,6 +136,7 @@ Rectangle {
         if (view === "shared") { sharedPage.rev++; home.cloud.refreshAdmin(); }
         if (view === "clients") { clientsPage.result = ""; home.cloud.refreshAdmin(); }
         if (view === "crm") crmOpened = true;
+        if (view === "friends") friendsLoader.wanted = true;
         if (view === "crm" && home.overGame) view = "home";   // поверх гри CRM немає (вбудований браузер лише поза грою)
     }
     // ── повний екран (дизайн 112): кнопка «Весь екран» у шапці, F11 або Ctrl+Cmd+F; програма пам'ятає вибір
@@ -365,11 +373,15 @@ Rectangle {
     function primaryAction() {
         if (home.gated || home.gameGate || home.view === "home") {
             switch (home.st) {
-            case "play": home.isAdmin ? adminConnect() : home.play(); break;
+            case "play":
+                // 116: гру передано другу («Передати повністю»): головна кнопка повертає її, а не підключає вдруге
+                if (!home.isAdmin && home.lentAway && !home.overGame) { homeLive.handoffBack(); toast.show(qsTr("Повертаємо гру: у друга вона зупиниться за кілька секунд")); break; }
+                home.isAdmin ? adminConnect() : home.play(); break;
             case "login": home.cloud.login(); break;
             case "pairing": home.cloud.cancelLogin(); break;
             case "offline": home.cloud.refresh(); break;
             case "other_device":
+                if (home.lentAway) { homeLive.handoffBack(); toast.show(qsTr("Повертаємо гру: у друга вона зупиниться за кілька секунд")); break; }
                 if (home.canTakeover) { home.takeover(); break; }
                 home.cloud.refresh(); toast.show(qsTr("Перевіряємо… «Грати» з'явиться, щойно на іншому пристрої вийдуть з гри")); break;
             case "no_console": home.cloud.openBot(); break;
@@ -546,11 +558,12 @@ Rectangle {
                 ? [{ id: "home", text: qsTr("Панель") }, ...(home.overGame ? [] : [{ id: "crm", text: qsTr("CRM") }]),
                    { id: "shared", text: qsTr("Спільний PSN") }, { id: "clients", text: qsTr("Свої PSN") },
                    { id: "quality", text: qsTr("Зображення") }, { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }]
-                : clientTabs(home.walletOn, home.cloud.supportUnread)
+                : clientTabs(home.walletOn, home.cloud.supportUnread, home.friendsOn, homeLive.friendRequests.length + (homeLive.incoming ? 1 : 0))
             // вкладки клієнта; «Баланс» — лише коли сервер його вміє
-            function clientTabs(withWallet, unread) {
+            function clientTabs(withWallet, unread, withFriends, friendBadge) {
                 return [{ id: "home", text: qsTr("Гра") }, { id: "book", text: qsTr("Бронювання") },
                         ...(withWallet ? [{ id: "wallet", text: qsTr("Баланс") }] : []),
+                        ...(withFriends ? [{ id: "friends", text: qsTr("Друзі"), badge: friendBadge }] : []),
                         { id: "support", text: qsTr("Підтримка"), badge: unread },
                         { id: "quality", text: qsTr("Зображення") }, { id: "psn", text: qsTr("Мій PSN") },
                         { id: "guide", text: qsTr("Як керувати") }, { id: "keys", text: qsTr("Клавіші") }];
@@ -678,7 +691,7 @@ Rectangle {
                             case "offline": return qsTr("Немає зв'язку");
                             case "no_console": return qsTr("Приставка недоступна");
                             case "update": return qsTr("Вийшла нова версія");
-                            case "other_device": return qsTr("Гра вже йде");
+                            case "other_device": return home.lentAway ? qsTr("Гру передано другу") : qsTr("Гра вже йде");
                             default: return home.cloud.loggedIn ? "" : qsTr("Ласкаво просимо");
                             }
                         }
@@ -693,7 +706,7 @@ Rectangle {
                             case "offline": return qsTr("Перевір інтернет");
                             case "no_console": return qsTr("Напиши нам у бот");
                             case "update": return qsTr("Онови програму");
-                            case "other_device": return qsTr("На іншому пристрої");
+                            case "other_device": return home.lentAway ? qsTr("Грає друг") : qsTr("На іншому пристрої");
                             default: return qsTr("Увійди, щоб грати");
                             }
                         }
@@ -713,7 +726,9 @@ Rectangle {
                                 ? qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Натисни «Оновити програму»: AnyPlay завантажить нову версію, ненадовго закриється і відкриється знову. Вхід і броні збережуться.")
                                 : qsTr("Ця версія програми застаріла, і грати з неї вже не можна. Завантаж нову в боті: кнопка «Програма». Встановлюється поверх старої, вхід і броні зберігаються.");
                             // приставка тримає одне підключення: другий пристрій вибив би перший
-                            case "other_device": return home.canTakeover
+                            case "other_device": return home.lentAway
+                                ? qsTr("Зараз грає %1. Час броні йде, як і йшов. Повернути гру собі можна будь-коли, у друга вона зупиниться за кілька секунд.").arg(homeLive.handoffTo || qsTr("друг"))
+                                : home.canTakeover
                                 ? qsTr("Гра йде на іншому пристрої: %1. Грати тут? Там гра зупиниться за кілька секунд і продовжиться тут, з того самого місця. Час броні не зміниться.").arg(home.cloud.otherDevice || qsTr("інший пристрій"))
                                 : qsTr("Зараз ти граєш на «%1». Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з'явиться кнопка «Грати».").arg(home.cloud.otherDevice);
                             default: return qsTr("Вхід через Telegram, без паролів. Приставка відкриється сама в час твоєї оплаченої броні.");
@@ -758,21 +773,21 @@ Rectangle {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.topMargin: 10
                         minWidth: 260
-                        ghost: (home.st === "other_device" && !home.canTakeover) || (home.st === "pairing" && home.cloud.pairShort !== "")   // тут нічого не треба робити: «Грати» з'явиться саме
+                        ghost: (home.st === "other_device" && !home.canTakeover && !home.lentAway) || (home.st === "pairing" && home.cloud.pairShort !== "")   // тут нічого не треба робити: «Грати» з'явиться саме
                         text: {
                             switch (home.st) {
                             case "pairing": return qsTr("Скасувати");
                             case "offline": return qsTr("Спробувати ще");
                             case "no_console": return qsTr("Відкрити бота");
                             case "update": return home.updater && home.updater.available ? qsTr("Оновити програму") : qsTr("Завантажити нову версію");
-                            case "other_device": return home.canTakeover ? qsTr("▶ Грати тут") : qsTr("Перевірити ще раз");
+                            case "other_device": return home.lentAway ? qsTr("Повернути собі") : home.canTakeover ? qsTr("▶ Грати тут") : qsTr("Перевірити ще раз");
                             default: return qsTr("Увійти через Telegram");
                             }
                         }
                         onClicked: home.primaryAction()
                     }
                     ApButton {   // 115: «Грати тут» є, але можна й просто дочекатись, поки там вийдуть з гри
-                        visible: home.canTakeover
+                        visible: home.canTakeover && !home.lentAway
                         Layout.alignment: Qt.AlignHCenter
                         minWidth: 260
                         ghost: true
@@ -798,6 +813,46 @@ Rectangle {
                     columns: home.twoCol ? 2 : 1
                     columnSpacing: home.colGap
                     rowSpacing: 28
+                    // 116: передана гра — другові («Тобі передали гру») або власнику броні, поки грає друг
+                    ApCard {
+                        visible: !!homeLive.incoming || home.lentAway
+                        Layout.columnSpan: home.twoCol ? 2 : 1
+                        Layout.topMargin: 8
+                        Layout.bottomMargin: -14
+                        accentEdge: homeLive.incoming ? ap.cyan : ap.gold
+                        padding: 18
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 18
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
+                                ApText {
+                                    role: "cap"
+                                    color: homeLive.incoming ? ap.cyan : ap.gold
+                                    text: homeLive.incoming ? qsTr("Тобі передали гру") : qsTr("Гру передано другу")
+                                }
+                                ApText {
+                                    Layout.fillWidth: true
+                                    role: "body"
+                                    text: homeLive.incoming
+                                        ? qsTr("Гру тобі передає %1, до %2. Граєш зі своєї програми, без затримки.").arg(homeLive.incoming.from).arg(home.cloud.formatTime(homeLive.incoming.end))
+                                        : homeLive.handoff === "preparing" ? qsTr("Готуємо приставку, грати буде %1…").arg(homeLive.handoffTo)
+                                        : qsTr("Зараз грає %1. Повернути гру собі можна будь-коли.").arg(homeLive.handoffTo)
+                                }
+                            }
+                            ApButton {
+                                visible: !!homeLive.incoming
+                                text: qsTr("▶ Грати")
+                                onClicked: homeLive.acceptHandoff()
+                            }
+                            ApButton {   // у грі «Повернути собі» — головна кнопка нижче; тут — коли її немає (не «play»)
+                                visible: !homeLive.incoming && homeLive.handoff !== "returning" && home.st !== "play"
+                                text: qsTr("Повернути собі")
+                                onClicked: { homeLive.handoffBack(); toast.show(qsTr("Повертаємо гру: у друга вона зупиниться за кілька секунд")); }
+                            }
+                        }
+                    }
                     // ліворуч: таймер і головна кнопка
                     ApCard {   // дизайн 112: блок сторінки на скляній панелі
                         id: hero
@@ -856,6 +911,7 @@ Rectangle {
                                 id: primaryBtn
                                 minWidth: 260
                                 text: home.overGame ? qsTr("▶ Повернутись у гру")
+                                    : home.st === "play" && home.lentAway ? qsTr("Повернути собі")
                                     : home.st === "play" ? (home.consoleIndex() >= 0 ? qsTr("▶ Грати") : qsTr("Підключаємо приставку…"))
                                     : (home.cloud.nextStart ? qsTr("Забронювати ще") : qsTr("Забронювати час"))
                                 onClicked: home.primaryAction()
@@ -1179,6 +1235,28 @@ Rectangle {
                 sourceComponent: AnyPlayCrm {
                     contentWidth: home.cw
                     onBack: home.view = "home"
+                }
+            }
+
+            // ═════════ ДРУЗІ (116): друзі, хто грає, «Дивитись», подарунки ═════════
+            // створюємо, коли вкладку вперше відкрили (головне вікно поверх гри відкривається так само швидко, як у 115)
+            Loader {
+                id: friendsLoader
+                property bool wanted: false
+                anchors.fill: parent
+                active: wanted && home.friendsOn
+                visible: home.friendsOn && !home.gated && home.view === "friends"
+                sourceComponent: AnyPlayFriends {
+                    visible: friendsLoader.visible
+                    api: homeLive
+                    overGame: home.overGame
+                    padX: home.padX
+                    cw: home.cw
+                    twoCol: home.twoCol
+                    colGap: home.colGap
+                    leftW: home.leftW
+                    rightW: home.rightW
+                    onToast: (t) => toast.show(t)
                 }
             }
 

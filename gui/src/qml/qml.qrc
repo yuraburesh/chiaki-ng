@@ -28,6 +28,11 @@
         <file>AnyPlayPreview.qml</file>
         <file>AnyPlayPsnLogin.qml</file>
         <file>AnyPlayStreamMenu.qml</file>
+        <file>AnyPlayLiveApi.qml</file>
+        <file>AnyPlayLivePanel.qml</file>
+        <file>AnyPlayLiveHud.qml</file>
+        <file>AnyPlayFriends.qml</file>
+        <file>AnyPlayWebPage.qml</file>
         <file>AnyPlayGuide.qml</file>
         <file>AnyPlayUpdateDialog.qml</file>
         <file>AnyPlayControls.qml</file>

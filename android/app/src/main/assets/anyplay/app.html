@@ -175,6 +175,17 @@ input.field:focus{border-bottom-color:var(--ink)}
 
 /* ── баланс: передоплата за гру; без балансу на сервері (стара версія) або в адміна все це сховано ── */
 body:not(.wallet) .wonly{display:none!important}
+body:not(.friends) .fonly{display:none!important}
+/* друзі (етап 7) */
+.fr .row{cursor:pointer}
+.fr .row .t small{font:400 12px var(--body);color:var(--faint);margin-left:6px}
+.fr-acts{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0 12px;border-bottom:1px solid var(--hair)}
+.fr-acts .lead{flex:1 1 100%;font-size:13.5px}
+.fr-chips{display:flex;gap:6px;align-items:center}
+.handbox{border-left:2px solid var(--cyan);padding:2px 0 2px 14px;margin:4px 0 6px}
+.handbox.wait{border-left-color:var(--gold)}
+.fr-acts .btn,.fr-chips .btn,.handbox .btn,#frIn .btn{width:auto;min-width:0;flex:0 0 auto}
+#frIn>div+div{margin-top:20px}
 .bal{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--edge);border-radius:2px;padding:4px 10px;background:#ffffff0a;
   font:600 13px/1.3 var(--body);color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
 .bal small{font:500 10.5px/1 var(--display);letter-spacing:1.4px;text-transform:uppercase;color:var(--mute)}
@@ -333,6 +344,7 @@ body.wallet #methods{margin-top:6px}
       <button type="button" data-tab="book" class="noadmin">Бронювання</button>
       <button type="button" data-tab="wallet" class="noadmin wonly">Баланс</button>
       <button type="button" data-tab="quality">Зображення</button>
+      <button type="button" data-tab="friends" class="noadmin fonly">Друзі</button>
       <button type="button" data-tab="psn" class="noadmin">Мій PSN</button>
       <button type="button" data-tab="help">Як керувати</button>
     </nav>
@@ -417,6 +429,26 @@ body.wallet #methods{margin-top:6px}
       <div id="extPick" class="steps mt">
         <div><p class="cap">1. На скільки продовжити</p><div class="pick" id="extHours"></div></div>
         <div id="extMethodsWrap"><p class="cap">2. Оплата</p><div class="pick" id="extMethods"></div></div>
+      </div>
+    </div>
+
+    <!-- друзі (етап 7): хто грає й транслює, запити, запросити, передати гру, подарунки -->
+    <div id="vFriends" class="hidden grid2">
+      <div class="wcol">
+        <div><h2 class="vtitle">Друзі</h2><p class="hint vtitle lhide">Дивись, як грають друзі, говори з ними й підказуй. Передай гру другу на складну місію або подаруй йому години й баланс.</p></div>
+        <div id="frHand"></div>
+        <div class="fr"><p class="cap">Друзі</p><div id="frList"></div></div>
+      </div>
+      <div class="wcol">
+        <div id="frIn"></div>
+        <div><p class="cap">Додати друга</p>
+          <p class="small">Надішли другу посилання-запрошення або продиктуй свій код. Можна й навпаки: впиши його код чи нік у Telegram.</p>
+          <div class="actions"><button type="button" class="btn" id="frShare">Запросити друга</button><button type="button" class="btn ghost" id="frCopy">Мій код</button></div>
+          <div class="own"><input class="field" id="frAdd" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Код друга або @нік" aria-label="Код друга або нік у Telegram"><button type="button" class="btn sm" id="frAddGo">Додати</button></div>
+        </div>
+        <div class="fgift"><p class="cap">Подарунки</p>
+          <p class="small">Поповни баланс друга, переказуй йому зі свого балансу або забронюй години для друга. Друг отримає повідомлення в боті.</p>
+          <div class="actions"><button type="button" class="btn ghost" id="frGifts">Подарувати</button></div></div>
       </div>
     </div>
 
@@ -554,8 +586,8 @@ const ROUTE = HASH.split(':')[0], ARG = HASH.split(':')[1] || '';
 const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','quality','wallet'].includes(ROUTE) ? 'single' : 'home';
 document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
-const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality'};
-const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Зображення'};
+const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality', friends: 'vFriends'};
+const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Зображення', friends: 'Друзі'};
 let view = null, viewTok = 0, method = null, busy = false;
 
 function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
@@ -581,13 +613,14 @@ function go(v){
   $('subTitle').textContent = TITLES[v] || 'AnyPlay';
   markNav();
   if(v === 'gate'){ renderGate(); show('gate'); }
-  else if(v === 'home'){ renderHome(true); show('home'); loadHomeMine(true); }
+  else if(v === 'home'){ renderHome(true); show('home'); loadHomeMine(true); fLoad(false); }
   else if(v === 'book'){ loadBook(false); }
   else if(v === 'wallet'){ loadWallet(false); }
   else if(v === 'extend'){ loadExtend(); }
   else if(v === 'psn'){ psnKey = ''; loadPsn(); }
   else if(v === 'help'){ loadHelp(); }
   else if(v === 'quality'){ loadQuality(); }
+  else if(v === 'friends'){ fConfirm = ''; fOpen = 0; renderFriends(); show('friends'); fLoad(true); }
 }
 function markNav(){
   const on = view === 'extend' ? 'home' : view;
@@ -617,9 +650,11 @@ function homeChanged(){
   $('ver').textContent = 'AnyPlay для Android, збірка ' + (H.build || '');
   if(gated){ if(view !== 'gate') go('gate'); else renderGate(); return; }
   if(view === 'gate' || view == null){ go('home'); return; }
-  if((H.admin && (view === 'book' || view === 'psn')) || (view === 'wallet' && !walletOn())){ go('home'); return; }
+  if((H.admin && (view === 'book' || view === 'psn' || view === 'friends')) || (view === 'wallet' && !walletOn())){ go('home'); return; }
+  fLoad(false);
   if(view === 'home'){ renderHome(false); loadHomeMine(false); }
   if(view === 'quality') renderQuality();
+  if(view === 'friends') renderFriends();
 }
 function renderGate(){
   const pairing = H.state === 'pairing';
@@ -645,6 +680,7 @@ function renderHome(force){
 }
 function heroUser(){
   const s = H.session || {}, st = H.state, nx = s.next || {}, bk = s.booking;
+  const hh = heroHandoff(s, st); if(hh) return hh;
   if(st === 'play'){
     const end = bk ? bk.end : 0, c = s.console || {};
     // гостьовий доступ (К5): граєш, поки приставка вільна; кінець — початок чужої броні, продовжувати нічого
@@ -692,6 +728,30 @@ function heroUser(){
     + '<div class="actions"><button type="button" class="btn" data-tab="book" data-sub="mine">Мої броні</button><button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати ще</button></div>';
   return '<span class="eyebrow">Бронювання</span><p class="big">Броні поки немає</p><p class="lead">Забронюй час прямо тут. Коли він настане, з\'явиться кнопка «Грати».</p>'
     + '<div class="actions"><button type="button" class="btn" data-tab="book" data-sub="new">Забронювати</button></div>';
+}
+// «Передати повністю» (етап 7): друг передає мені гру; я граю в бронь друга; я віддав свою гру другові
+function heroHandoff(s, st){
+  const ho = H.handoffLive || s.handoffOffer || s.handoff;
+  if(!ho || !ho.owner || !ho.friend) return '';
+  const owner = esc(ho.owner.name || 'друг'), friend = esc(ho.friend.name || 'друг'), until = ho.end > 0 ? esc(fmtTime(ho.end)) : '';
+  if(ho.role === 'friend' && ho.state === 'ready' && st !== 'play')
+    return '<span class="eyebrow">Гра від друга</span><p class="big">' + owner + ' передає тобі гру</p>'
+      + '<p class="lead">Щойно ' + owner + ' натисне «Передати», гра почнеться тут сама: тримай програму відкритою. Приставку вже знайдено, тож підключення займе кілька секунд.'
+      + (until ? ' Грати можна до <b>' + until + '</b>: це час його броні.' : '') + '</p><div class="spin"></div>'
+      + '<div class="actions"><button type="button" class="btn ghost" data-hand="decline">Відмовитись</button></div>';
+  if(ho.role === 'friend' && st === 'play')
+    return '<span class="eyebrow">Гра друга</span>' + (ho.end > 0 ? '<div class="timer play" id="tick" data-to="' + ho.end + '">' + dur(ho.end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>')
+      + '<p class="lead">' + owner + ' передав тобі свою гру' + (until ? ' до <b>' + until + '</b>' : '') + '. Він може повернути її собі будь-коли, тоді гра тут зупиниться.</p>'
+      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button><button type="button" class="btn ghost" data-hand="giveback">Повернути гру</button></div>');
+  if(ho.role === 'owner' && ho.state === 'active' && st === 'other_device'){
+    const fr = F && F.friends ? F.friends.find(f => f.id === ho.friend.id) : null, live = fr && fr.live;
+    return '<span class="eyebrow">Гра в друга</span><p class="big">Зараз грає ' + friend + '</p>'
+      + '<p class="lead">Ти передав гру другу. Час броні йде як завжди' + (until ? ', до <b>' + until + '</b>' : '') + '. Повернути гру собі можна будь-коли: у друга вона зупиниться, а тут почнеться твоя.</p>'
+      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="takeover">▶ Повернути собі</button>'
+        + (live ? '<button type="button" class="btn ghost" data-watch="' + esc(live.code) + '">Дивитись</button>' : '') + '</div>')
+      + (live ? '' : '<p class="small" style="margin-top:10px">Дивитись гру друга можна, коли він увімкне трансляцію в програмі на комп\'ютері.</p>');
+  }
+  return '';
 }
 function heroAdmin(a){
   return '<span class="eyebrow' + (a.closed ? ' bad' : '') + '">' + (a.closed ? 'Доступ клієнтам закрито' : 'Панель адміна') + '</span>'
@@ -1559,22 +1619,163 @@ async function netUp(signal){
 $('netBtn').onclick = netTest;
 $('netApply').onclick = () => { if(netRec >= 0){ setQuality(netRec, true); $('netApply').classList.add('hidden'); } };
 
+// ── друзі (етап 7): список, запити, запросити, передати гру; подарунки — на сторінці бронювання сервера ──
+let F = null, fAt = 0, fLoading = false, fOpen = 0, fConfirm = '', fBusy = false, OH = null;   // OH — моя передача гри (власник)
+function fSet(on){ document.body.classList.toggle('friends', !!on); }
+const fFeat = k => !F || !F.features || F.features[k] !== false;
+/** Список друзів з сервера; старий сервер (без друзів) — вкладки «Друзі» немає */
+async function fLoad(force){
+  if(MODE === 'single' || fLoading || (MODE === 'menu' ? G.admin || G.helperOf : H.admin || !H.loggedIn)) return;
+  const handing = H.state === 'other_device' || (H.session && (H.session.handoff || H.session.handoffOffer));
+  if(!force && Date.now() - fAt < (view === 'friends' || handing ? 15000 : 120000)) return;
+  fLoading = true; fAt = Date.now();
+  const r = await api('POST', '/api/miniapp/friends', {});
+  if(r.status === 200 && r.json.ok){ F = r.json; fSet(fFeat('friends')); }
+  else if(r.status === 404 || r.status === 405 || (r.status === 403 && r.json.error === 'disabled')){ F = null; fSet(false); if(view === 'friends'){ fLoading = false; go('home'); return; } }
+  if(MODE === 'menu' || H.state === 'play' || H.state === 'other_device'){
+    const h = await api('GET', '/api/live/handoff');
+    OH = h.status === 200 && h.json.ok && h.json.handoff && h.json.handoff.role === 'owner' ? h.json.handoff : null;
+  } else OH = null;
+  fLoading = false;
+  if(view === 'friends') renderFriends();
+  if(view === 'home') renderHome(false);
+  if(MODE === 'menu' && pmSel === 'friends') pmRender();
+}
+function fStatus(f){
+  if(f.live) return '<span class="chip live">' + (f.live.paused ? 'трансляція на паузі' : 'транслює') + '</span>';
+  if(f.playing) return '<span class="chip">грає</span>';
+  return '';
+}
+/** Чи можу я зараз передати свою гру (йде моя бронь і функцію увімкнено) */
+function canHand(){ return fFeat('handoff') && (MODE === 'menu' ? !G.guest && !G.helperOf && !G.admin : H.state === 'play' && !(H.session && (H.session.guest || H.session.handoff))); }
+function handBox(){
+  const o = OH; if(!o || o.role !== 'owner') return '';
+  const fr = esc((o.friend || {}).name || 'друг');
+  if(o.state === 'ready') return '<div class="handbox wait"><p class="cap">Передача гри</p><p class="lead">Усе готово, щоб передати гру. ' + fr + ' отримав повідомлення в боті; коли друг відкриє програму AnyPlay, натисни «Передати зараз».'
+    + (MODE === 'menu' ? ' Твоя гра тут зупиниться, а в друга почнеться за кілька секунд.' : '') + '</p>'
+    + '<div class="actions"><button type="button" class="btn sm" data-hand="start">Передати зараз</button><button type="button" class="btn ghost sm" data-hand="cancel">Скасувати</button></div></div>';
+  if(o.state === 'active') return '<div class="handbox"><p class="cap">Передача гри</p><p class="lead">Зараз грає ' + fr + '. Повернути гру собі можна будь-коли.</p>'
+    + '<div class="actions"><button type="button" class="btn sm" data-act="takeover">Повернути собі</button></div></div>';
+  return '';
+}
+function friendRow(f){
+  const open = fOpen === f.id, nm = esc(f.name);
+  let h = '<div class="row" data-fr="' + f.id + '"><span><span class="t">' + nm + (f.username ? '<small>@' + esc(f.username) + '</small>' : '') + '</span>'
+    + '<span class="s">' + (f.live ? 'дивись разом і говори голосом' : f.playing ? 'зараз грає' : 'не грає') + '</span></span><span class="fr-chips">' + fStatus(f) + '</span></div>';
+  if(!open) return h;
+  h += '<div class="fr-acts">';
+  if(fConfirm === 'hand:' + f.id)
+    return h + '<p class="lead">Передати гру? ' + nm + ' підключиться до приставки своєю програмою й гратиме в твій час броні. Повернути гру собі можна будь-коли, час броні не змінюється.</p>'
+      + '<button type="button" class="btn sm" data-hand="prepare" data-id="' + f.id + '"' + (fBusy ? ' disabled' : '') + '>Так, підготувати</button><button type="button" class="btn ghost sm" data-fc="">Скасувати</button></div>';
+  if(fConfirm === 'rm:' + f.id)
+    return h + '<p class="lead">Прибрати ' + nm + ' з друзів? Ви більше не бачитимете ігор одне одного.</p>'
+      + '<button type="button" class="btn bad sm" data-fdo="remove" data-id="' + f.id + '">Прибрати</button><button type="button" class="btn ghost sm" data-fc="">Скасувати</button></div>';
+  if(f.live && MODE !== 'menu') h += '<button type="button" class="btn sm" data-watch="' + esc(f.live.code) + '">Дивитись</button>';
+  if(canHand() && !f.playing && !(OH && OH.state === 'active')) h += '<button type="button" class="btn ' + (f.live ? 'ghost ' : '') + 'sm" data-fc="hand:' + f.id + '">Передати гру</button>';
+  if(fFeat('gifts') && MODE !== 'menu') h += '<button type="button" class="btn ghost sm" data-gift="' + f.id + '">Подарувати</button>';
+  if(MODE !== 'menu') h += '<button type="button" class="btn ghost bad sm" data-fc="rm:' + f.id + '">Прибрати з друзів</button>';
+  return h + '</div>';
+}
+function friendsList(){
+  if(!F) return '<p class="small" style="padding:10px 0">Завантажуємо…</p>';
+  if(!F.friends.length) return '<p class="small" style="padding:10px 0">Друзів поки немає. Запроси друга посиланням або кодом.</p>';
+  return F.friends.map(friendRow).join('');
+}
+function renderFriends(){
+  if(view !== 'friends') return;
+  $('frHand').innerHTML = handBox();
+  $('frList').innerHTML = friendsList();
+  let h = '';
+  if(F && F.incoming && F.incoming.length) h += '<div><p class="cap">Хочуть дружити</p>' + F.incoming.map(q => '<div class="row"><span><span class="t">' + esc(q.from.name)
+    + (q.from.username ? '<small style="margin-left:6px;color:var(--faint)">@' + esc(q.from.username) + '</small>' : '') + '</span></span><span class="fr-chips">'
+    + '<button type="button" class="btn sm" data-fdo="accept" data-id="' + q.id + '">Прийняти</button><button type="button" class="btn ghost sm" data-fdo="decline" data-id="' + q.id + '">Ні</button></span></div>').join('') + '</div>';
+  if(F && F.outgoing && F.outgoing.length) h += '<div><p class="cap">Чекають відповіді</p>' + F.outgoing.map(q => '<div class="row"><span><span class="t">' + esc(q.to.name)
+    + '</span><span class="s">запит надіслано</span></span><button type="button" class="btn ghost sm" data-fdo="unask" data-id="' + q.id + '">Скасувати</button></div>').join('') + '</div>';
+  $('frIn').innerHTML = h;
+  $('frCopy').textContent = F && F.me && F.me.code ? 'Мій код: ' + F.me.code : 'Мій код';
+  document.querySelectorAll('#vFriends .fgift').forEach(e => e.classList.toggle('hidden', !fFeat('gifts')));
+}
+function fRender(){ if(MODE === 'menu') pmRender(); else renderFriends(); }
+async function fPost(path, body, okText){
+  if(fBusy) return null; fBusy = true; haptic();
+  const r = await api('POST', path, body); fBusy = false;
+  if(r.status === 200 && r.json.ok){ if(r.json.state) F = r.json.state; if(okText) toast(okText); fConfirm = ''; fRender(); return r; }
+  toast(errText(r)); fRender(); return null;
+}
+async function fAdd(){
+  let v = $('frAdd').value.trim(); if(!v) return;
+  const m = v.match(/fr_([A-Za-z0-9]+)/);
+  const code = m ? m[1] : (/^[A-HJ-NP-Za-hj-np-z2-9]{6}$/.test(v) && !v.startsWith('@') ? v : '');
+  const r = await fPost('/api/miniapp/friends/add', code ? {code: code.toUpperCase()} : {username: v.replace(/^@/, '')});
+  if(!r) return;
+  $('frAdd').value = '';
+  toast(r.json.already ? 'Ви вже друзі.' : r.json.requested ? 'Запит надіслано: друг підтвердить його в боті.' : 'Друга додано ✓');
+}
+function fShare(){
+  const me = F && F.me; if(!me) return;
+  const link = me.link || me.appLink || '';
+  const t = 'Додай мене в друзі в AnyPlay' + (link ? ': ' + link : '') + (me.code ? '\nАбо впиши мій код: ' + me.code : '');
+  if(native && native.share) native.share(t); else copy(link || me.code);
+}
+/** Передача гри (власник і друг) */
+async function fHand(what, id){
+  if(fBusy) return; fBusy = true; haptic();
+  const path = {prepare: '/api/live/handoff/prepare', start: '/api/live/handoff/start', cancel: '/api/live/handoff/return', decline: '/api/live/handoff/return', giveback: '/api/live/handoff/return'}[what];
+  const r = await api('POST', path, what === 'prepare' ? {friendId: id} : what === 'start' && OH ? {id: OH.id} : {});
+  fBusy = false;
+  if(!(r.status === 200 && r.json.ok)){ toast(errText(r)); fLoad(true); return; }
+  const ho = r.json.handoff || null;
+  if(what === 'prepare'){ OH = ho; fOpen = 0; fConfirm = ''; toast('Готово. Друг отримав повідомлення в боті.'); fRender(); return; }
+  if(what === 'start'){
+    OH = ho;
+    if(MODE === 'menu'){ act('handedOff'); return; }   // гра на цьому телефоні: зупиняємо її, друг підключається
+    toast('Гру передано. Повернути її собі можна будь-коли.'); act('refresh'); fRender(); return;
+  }
+  if(what === 'giveback' && MODE === 'menu'){ act('handedBack'); return; }
+  OH = null; toast(what === 'cancel' ? 'Передачу скасовано.' : what === 'decline' ? 'Добре, гра лишається в друга.' : 'Гру повернуто другові.');
+  act('handoffChanged'); fRender();
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-fr],[data-fc],[data-fdo],[data-hand],[data-watch],[data-gift]'); if(!t) return;
+  if(t.dataset.watch){ haptic(); if(native && native.watch) native.watch(t.dataset.watch); else openUrl((window.ANYPLAY_API || '') + '/app/watch.html?r=' + t.dataset.watch); return; }
+  if(t.dataset.gift){ haptic(); if(native && native.page) native.page('/app/book.html#friends'); return; }
+  if(t.dataset.hand){ fHand(t.dataset.hand, +t.dataset.id || 0); return; }
+  if(t.dataset.fdo){
+    const id = +t.dataset.id, d = t.dataset.fdo;
+    if(d === 'accept') fPost('/api/miniapp/friends/answer', {requestId: id, accept: true}, 'Тепер ви друзі ✓');
+    else if(d === 'decline') fPost('/api/miniapp/friends/answer', {requestId: id, accept: false});
+    else if(d === 'unask') fPost('/api/miniapp/friends/remove', {requestId: id});
+    else if(d === 'remove'){ fOpen = 0; fPost('/api/miniapp/friends/remove', {friendId: id}, 'Прибрано з друзів'); }
+    return;
+  }
+  if(t.dataset.fc !== undefined){ haptic(); fConfirm = t.dataset.fc; fRender(); return; }
+  if(t.dataset.fr){ haptic(); const id = +t.dataset.fr; fOpen = fOpen === id ? 0 : id; fConfirm = ''; fRender(); }
+});
+$('frShare').onclick = () => { haptic(); fShare(); };
+$('frCopy').onclick = () => { if(F && F.me && F.me.code) copy(F.me.code); };
+$('frAddGo').onclick = fAdd;
+$('frAdd').addEventListener('keydown', e => { if(e.key === 'Enter') fAdd(); });
+$('frGifts').onclick = () => { haptic(); if(native && native.page) native.page('/app/book.html#friends'); };
+
 // ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
-const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['quality', 'Зображення'], ['console', 'Керування приставкою'], ['controls', 'Кнопки на екрані'], ['exit', 'Вийти з гри']];
+const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['console', 'Керування приставкою'], ['controls', 'Кнопки на екрані'], ['exit', 'Вийти з гри']];
+// розділ меню прихований: гостю й тому, хто грає в бронь друга, продовжувати нічого
+const pmHidden = p => ((G.guest || G.helperOf) && p === 'extend') || (G.admin && p === 'friends');
 let pmSel = 'back', pmDetail = false, G = {};
 function pmInit(){
   $('pm').classList.remove('hidden');
   ['loading', 'vExtend', 'vQuality', 'vHelp', 'bar'].forEach(id => $('pmSlot').appendChild($(id)));
   G = nativeJson('info') || G;
-  $('pmNav').innerHTML = PM.filter(p => !(G.guest && p[0] === 'extend')).map(p => '<button type="button" data-p="' + p[0] + '"' + (p[0] === 'exit' ? ' class="exit"' : '') + '>' + p[1] + '</button>').join('');
+  $('pmNav').innerHTML = PM.filter(p => !pmHidden(p[0])).map(p => '<button type="button" data-p="' + p[0] + '"' + (p[0] === 'exit' ? ' class="exit"' : '') + '>' + (p[0] === 'friends' && G.helperOf ? 'Гра друга' : p[1]) + '</button>').join('');
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
     if(b.dataset.p === 'back'){ closeApp(); return; }
     pmSel = b.dataset.p; pmDetail = true; haptic(); pmRender();
   });
   $('pmBack').onclick = () => { pmDetail = false; pmRender(); };
-  pmSel = PM.some(p => p[0] === ARG) && !(G.guest && ARG === 'extend') ? ARG : 'back'; pmDetail = pmSel !== 'back' && !!ARG;
+  pmSel = PM.some(p => p[0] === ARG) && !pmHidden(ARG) ? ARG : 'back'; pmDetail = pmSel !== 'back' && !!ARG;
   pmTick(); pmRender();
-  wFetch();   // баланс для «Продовжити гру»: з балансу чи переказом (у адміна й на старому сервері його немає)
+  wFetch();
+  fLoad(true);   // друзі й моя передача гри (якщо сервер це вміє)   // баланс для «Продовжити гру»: з балансу чи переказом (у адміна й на старому сервері його немає)
 }
 function pmRender(){
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === pmSel));
@@ -1585,6 +1786,7 @@ function pmRender(){
   let h = '';
   if(pmSel === 'back') h = '<p class="cap">Гра на паузі не стоїть</p><p class="lead">Поки відкрите це меню, гра на приставці йде далі. Повернись кнопкою ліворуч або кнопкою «Назад».</p>';
   else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити бронювання</p>'; view = 'extend'; loadExtend(); }
+  else if(pmSel === 'friends') h = pmFriends();
   else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="lead">Нова якість діє з нового підключення: картинка зникне на кілька секунд. Кольори змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
   else if(pmSel === 'console'){ h = '<p class="cap">Керування приставкою</p><p class="small">Це працює в будь-якій грі й у меню PS5.</p>'; view = 'help'; loadHelp(); }
   else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="lead">' + (G.controls === false
@@ -1600,6 +1802,19 @@ function pmRender(){
 }
 // кінець гри за годинником телефона; програма дає «лишилось» цілими секундами (з обрізанням), тож округлюємо
 // до хвилини — броні закінчуються рівно на хвилині, інакше часто видно «гра до 00:44» замість «00:45»
+/** Меню гри → «Друзі»: передати гру другу (власник броні) або повернути її (друг) */
+function pmFriends(){
+  if(G.helperOf) return '<p class="cap">Гра друга</p><p class="lead">Цю гру тобі передав ' + esc(G.helperOf) + ', час броні його. Він може повернути гру собі будь-коли, тоді вона тут зупиниться. Пройшов складне місце? Поверни гру сам.</p>'
+    + '<div class="actions"><button type="button" class="btn" data-hand="giveback">Повернути гру</button></div>';
+  if(!F && !fLoading){ fAt = 0; fLoad(true); }
+  let h = '<p class="cap">Друзі</p>';
+  if(F && !fFeat('friends')) return h + '<p class="lead">Друзі зараз вимкнені.</p>';
+  h += handBox();
+  if(canHand() && !OH) h += '<p class="small">Складна місія? Передай гру другові: він підключиться до приставки своєю програмою й пограє в твій час. Повернути гру собі можна будь-коли. Обери друга:</p>';
+  h += '<div class="fr">' + friendsList() + '</div>';
+  h += '<p class="small" style="margin-top:6px">Трансляції для друзів (дивитись твою гру, голос і чат) поки працюють у програмі на комп\'ютері. Додати друзів і подарувати години можна на головному екрані, вкладка «Друзі».</p>';
+  return h;
+}
 function pmEnd(){ return Math.round((Date.now() / 1000 + G.left) / 60) * 60; }
 function pmTick(){
   const g = nativeJson('info'); if(g) G = g;

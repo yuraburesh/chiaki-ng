@@ -3,6 +3,7 @@
 #include <streamsession.h>
 #include <settings.h>
 #include <controllermanager.h>
+#include "anyplaylive.h"
 
 #include <chiaki/base64.h>
 #include <chiaki/streamconnection.h>
@@ -1722,6 +1723,9 @@ void StreamSession::DpadSendFeedbackState()
 			dpad_touch_stop_timer->start(NEW_DPAD_TOUCH_INTERVAL_MS);
 	}
 	chiaki_controller_state_or(&state, &state, &dpad_touch_state);
+	// AnyPlay 116: «Передати керування» — поки керує друг, на приставку йде його стан (PS гравця забирає керування)
+	if(AnyPlayLive *live = AnyPlayLive::instance())
+		live->filterControllerState(&state);
 	chiaki_session_set_controller_state(&session, &state);
 }
 
@@ -1785,6 +1789,9 @@ void StreamSession::SendFeedbackState()
 			dpad_touch_stop_timer->start(NEW_DPAD_TOUCH_INTERVAL_MS);
 	}
 	chiaki_controller_state_or(&state, &state, &dpad_touch_state);
+	// AnyPlay 116: «Передати керування» — поки керує друг, на приставку йде його стан (PS гравця забирає керування)
+	if(AnyPlayLive *live = AnyPlayLive::instance())
+		live->filterControllerState(&state);
 	chiaki_session_set_controller_state(&session, &state);
 }
 
@@ -2370,6 +2377,8 @@ void StreamSession::StopSdeckHaptics()
 
 void StreamSession::PushAudioFrame(int16_t *og_buf, size_t samples_count)
 {
+	// AnyPlay 116: звук гри для трансляції друзям — копія до гучності гравця (вимкнена трансляція: одна перевірка)
+	AnyPlayLive::tapGameAudio(og_buf, samples_count, audio_out_sample_size >= 2 ? audio_out_sample_size / sizeof(int16_t) : 2);
 	if(!audio_out || !audio_volume)
 		return;
 

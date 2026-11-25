@@ -37,6 +37,13 @@ tri_option(CHIAKI_USE_SYSTEM_NANOPB "Use system-provided nanopb instead of submo
 tri_option(CHIAKI_USE_SYSTEM_CURL "Use system-provided curl instead of submodule. Has to be built with experimental WebSocket support!" OFF)
 option(CHIAKI_LIB_JSONC_EXTERNAL_PROJECT "Build json-c from source via FetchContent" OFF)
 option(CHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT "Build miniupnpc from source via FetchContent" OFF)
+# AnyPlay 116: трансляція друзям (WebRTC через libdatachannel, апаратне кодування FFmpeg). Типово — для Windows і Mac
+if(WIN32 OR APPLE)
+	set(ANYPLAY_LIVE_DEFAULT ON)
+else()
+	set(ANYPLAY_LIVE_DEFAULT OFF)
+endif()
+option(ANYPLAY_LIVE "AnyPlay: broadcast to friends (libdatachannel, hardware H.264)" ${ANYPLAY_LIVE_DEFAULT})
 
 set(CHIAKI_VERSION_MAJOR 1)
 set(CHIAKI_VERSION_MINOR 10)
@@ -284,6 +291,10 @@ if(CHIAKI_ENABLE_SETSU)
 	message(STATUS "Setsu enabled")
 else()
 	message(STATUS "Setsu disabled")
+endif()
+
+if(CHIAKI_ENABLE_GUI AND ANYPLAY_LIVE)
+	include(AnyPlayLibDataChannel)
 endif()
 
 if(CHIAKI_ENABLE_GUI)

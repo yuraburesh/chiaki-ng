@@ -296,6 +296,7 @@ QmlBackend::QmlBackend(Settings *settings, QmlMainWindow *window)
     anyplay_cloud = new AnyPlayCloud(settings, this, this);
     anyplay_updater = new AnyPlayUpdater(anyplay_cloud, this, this);   // AnyPlay: оновлення програми прямо в ній
     anyplay_speedtest = new AnyPlaySpeedTest(this);   // AnyPlay: необов'язкова перевірка інтернету
+    anyplay_live = new AnyPlayLive(anyplay_cloud, this, this);   // AnyPlay 116: трансляція друзям
 
     const char *uri = "org.streetpea.chiaking";
     qmlRegisterSingletonInstance(uri, 1, 0, "Chiaki", this);
@@ -305,6 +306,7 @@ QmlBackend::QmlBackend(Settings *settings, QmlMainWindow *window)
     qmlRegisterUncreatableType<AnyPlayCloud>(uri, 1, 0, "AnyPlayCloud", {});
     qmlRegisterUncreatableType<AnyPlayUpdater>(uri, 1, 0, "AnyPlayUpdater", {});
     qmlRegisterUncreatableType<AnyPlaySpeedTest>(uri, 1, 0, "AnyPlaySpeedTest", {});
+    qmlRegisterUncreatableType<AnyPlayLive>(uri, 1, 0, "AnyPlayLive", {});
 
     QObject *frame_obj = new QObject();
     frame_thread = new QThread(frame_obj);

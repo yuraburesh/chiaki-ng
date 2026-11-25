@@ -138,6 +138,9 @@ public:
 	bool busy() const { return busy_; }
 
 	Q_INVOKABLE void login(bool openTelegram = true);
+	// 116: запит до нашого сервера з токеном цього пристрою (для трансляції, AnyPlayLive); method: GET або POST
+	void apiRequest(const QString &method, const QString &path, const QJsonObject &body,
+	                std::function<void(int, const QJsonObject &)> done) { request(method, path, body, std::move(done)); }
 	Q_INVOKABLE void openPairLink();
 	Q_INVOKABLE void cancelLogin();
 	Q_INVOKABLE void logout();
@@ -234,7 +237,8 @@ public:
 	Q_INVOKABLE void clearPreview();
 	// CRM у програмі (К10)
 	bool webEngine() const;
-	Q_INVOKABLE QString crmUrl() const;                      // сторінка CRM на нашому сервері
+	Q_INVOKABLE QString crmUrl() const;
+	Q_INVOKABLE QString webAppUrl(const QString &page) const;   // 116: сторінка міні-застосунку на нашому сервері (watch.html?r=…, book.html#friends)                      // сторінка CRM на нашому сервері
 	Q_INVOKABLE QString webAppScript() const;                // скрипт window.AnyPlayApp (лише для нашого домену)
 	Q_INVOKABLE bool isOwnUrl(const QUrl &url) const;        // сторінка нашого сервера (інше відкриваємо зовні)
 	Q_INVOKABLE void openExternal(const QUrl &url);

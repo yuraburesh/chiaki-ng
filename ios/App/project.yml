@@ -45,6 +45,12 @@ targets:
         AnyPlayBuild: "$(ANYPLAY_BUILD)"
         UILaunchScreen:
           UIColorName: ""
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default
+                UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).SceneDelegate"
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: true

@@ -362,13 +362,13 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		val shown = HashMap<String, Boolean>()
 		for(id in PadLayout.STANDARD)
 			shown[id] = pad.profile.find(id)?.on != false
-		var game = PadLayout.game(activity)
+		val game = "other"   // 126: готові кнопки під окрему гру прибрано: геймпад той самий, що на приставці
 		val presetsOn = HashMap<String, Boolean>()
 		for(pr in PadLayout.PRESETS)
 			presetsOn[pr.id] = pad.profile.find("x_" + pr.id) != null
 		// кнопки іншої гри, що вже стоять на екрані, показуємо як свої (їх можна прибрати)
 		fun customsFor(g: String) = pad.extras().filter { e -> PadLayout.presets(g).none { "x_" + it.id == e.id } }
-		var customs = customsFor(game).toMutableList()
+		val customs = customsFor(game).toMutableList()
 		val removed = HashSet<String>()
 		val added = ArrayList<Pair<String, String>>()   // підпис, код кнопки
 
@@ -415,7 +415,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 			{
 				map.picking && pickCode == null -> "Своя кнопка: торкнись на джойстику кнопки, яку вона натискатиме."
 				map.picking -> "Кнопка ${PadLayout.buttonMark(pickCode!!)}. Підпиши її і натисни «Додати»."
-				else -> "Світяться кнопки, що є на екрані. Торкнись, щоб сховати чи показати."
+				else -> "Світяться кнопки, що є на екрані. Торкнись, щоб сховати чи показати. Своя кнопка: копія будь-якої кнопки там, де зручно."
 			}
 		}
 		val addBtn = smallButton("Додати", true) {
@@ -443,9 +443,8 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		map.onTap = { n ->
 			if(!map.picking)
 			{
-				val act = PadLayout.action(game, n)
 				val on = shown[PadMapView.idOf(n)] != false
-				sub.text = PadMapView.markOf(n) + (if(act.isNotEmpty()) ": $act" else "") + (if(on) ". На екрані." else ". Сховано з екрана.")
+				sub.text = PadMapView.markOf(n) + (if(on) ": на екрані." else ": сховано з екрана.")
 			}
 		}
 		map.onPick = { code ->
@@ -456,26 +455,18 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 
 		renderExtras = {
 			extrasBox.removeAllViews()
-			// гра: готові кнопки саме під неї (як розкладки на комп'ютері)
-			extrasBox.addView(label("Гра", 12f, AnyPlayStyle.MUTE, true).apply { setPadding(0, px(4f), 0, px(6f)) })
+			extrasBox.addView(label("Кнопки L3 і R3", 12f, AnyPlayStyle.MUTE, true).apply { setPadding(0, px(4f), 0, px(6f)) })
 			extrasBox.addView(LinearLayout(activity).apply {
 				orientation = LinearLayout.HORIZONTAL
-				PadLayout.GAMES.forEachIndexed { i, g ->
-					addView(chip(g.second, g.first == game) {
-						if(game != g.first)
-						{
-							game = g.first
-							PadLayout.setGame(activity, game)
-							customs = customsFor(game).toMutableList()
-							renderExtras()
-						}
-					}, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { if(i > 0) marginStart = px(5f) })
+				listOf("l3" to "L3 окремо", "r3" to "R3 окремо").forEachIndexed { i, (id, t) ->
+					addView(chip(t, shown[id] != false) { shown[id] = shown[id] == false; renderExtras() },
+						LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { if(i > 0) marginStart = px(5f) })
 				}
 			})
-			extrasBox.addView(label(if(game == "other") "Додаткові кнопки" else "Додаткові кнопки для " + PadLayout.GAMES.first { it.first == game }.second,
-				12f, AnyPlayStyle.MUTE, true).apply { setPadding(0, px(10f), 0, px(6f)) })
+			extrasBox.addView(label("Також: двічі торкнись стіка й тримай.", 11f, AnyPlayStyle.MUTE).apply { setPadding(0, px(4f), 0, 0) })
+			extrasBox.addView(label("Додаткові кнопки", 12f, AnyPlayStyle.MUTE, true).apply { setPadding(0, px(10f), 0, px(6f)) })
 			val all = ArrayList<View>()
-			for(pr in PadLayout.presets(game))
+			for(pr in emptyList<PadPreset>())
 				all.add(chip(pr.label + "  " + PadLayout.buttonMark(pr.button), presetsOn[pr.id] == true) {
 					presetsOn[pr.id] = presetsOn[pr.id] != true
 					renderExtras()
@@ -516,7 +507,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 			for(id in PadLayout.STANDARD)
 				if(id != "menu")
 					pad.setElementOn(id, shown[id] != false)
-			for(pr in PadLayout.presets(game))
+			for(pr in emptyList<PadPreset>())
 			{
 				val id = "x_" + pr.id
 				if(presetsOn[pr.id] == true) pad.addExtra(id, pr.label, pr.button) else pad.removeElement(id)

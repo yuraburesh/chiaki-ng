@@ -45,12 +45,13 @@ object PadLayout
 	const val MAX_SCALE = 2.2f
 
 	/** Стандартні кнопки DualSense (меню «⋯» завжди є, його можна лише пересунути) */
-	val STANDARD = listOf("l2", "l1", "r2", "r1", "touchpad", "dpad", "face", "lstick", "rstick", "create", "ps", "options", "menu")
+	val STANDARD = listOf("l2", "l1", "r2", "r1", "touchpad", "dpad", "face", "lstick", "rstick", "l3", "r3", "create", "ps", "options", "menu")
 
 	val TITLES = mapOf(
 		"l2" to "L2", "l1" to "L1", "r2" to "R2", "r1" to "R1", "touchpad" to "Тачпад", "dpad" to "Хрестовина (стрілки)",
 		"face" to "Кнопки ✕ ○ □ △", "lstick" to "Лівий стік", "rstick" to "Правий стік", "create" to "Create",
-		"ps" to "PS", "options" to "Options", "menu" to "Меню AnyPlay ⋯")
+		"ps" to "PS", "options" to "Options", "menu" to "Меню AnyPlay ⋯",
+		"l3" to "L3 (лівий стік)", "r3" to "R3 (правий стік)")
 
 	/** Кнопки геймпада, на які можна повісити додаткову кнопку: код і назва */
 	val BUTTONS = listOf(
@@ -152,12 +153,14 @@ object PadLayout
 			e("touchpad", 0.5f, 0.075f),
 			e("dpad", 0.11f, 0.52f), e("face", 0.89f, 0.52f),
 			e("lstick", 0.29f, 0.77f), e("rstick", 0.71f, 0.77f),
+			e("l3", 0.12f, 0.9f), e("r3", 0.88f, 0.9f),
 			e("create", 0.41f, 0.92f), e("ps", 0.5f, 0.92f), e("options", 0.59f, 0.92f), e("menu", 0.965f, 0.92f))
 		else mutableListOf(
 			e("l2", 0.13f, 0.07f), e("l1", 0.13f, 0.17f), e("r2", 0.87f, 0.07f), e("r1", 0.87f, 0.17f),
 			e("touchpad", 0.5f, 0.08f),
 			e("dpad", 0.22f, 0.42f), e("face", 0.78f, 0.42f),
 			e("lstick", 0.28f, 0.72f), e("rstick", 0.72f, 0.72f),
+			e("l3", 0.08f, 0.6f), e("r3", 0.92f, 0.6f),
 			e("create", 0.37f, 0.91f), e("ps", 0.5f, 0.91f), e("options", 0.63f, 0.91f), e("menu", 0.08f, 0.91f))
 		return PadProfile(list, 1f)
 	}

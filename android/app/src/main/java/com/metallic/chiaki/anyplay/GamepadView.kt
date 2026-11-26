@@ -43,7 +43,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 
 	private val state = ControllerState()
 
-	private enum class Kind { SHOULDER, TOUCHPAD, DPAD, FACE, STICK, SMALL, PS, MENU, EXTRA }
+	private enum class Kind { SHOULDER, TOUCHPAD, DPAD, FACE, STICK, SMALL, PS, MENU, EXTRA, CLICK }
 
 	private class Item(val el: PadElement, val kind: Kind)
 	{
@@ -93,6 +93,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		const val G_PS = 7
 		const val G_MENU = 8
 		const val G_EXTRA = 9
+		const val G_CLICK = 10   // 126: окремі кнопки L3/R3 (натиснути стік)
 		const val TRIGGER_L2 = 1
 		const val TRIGGER_R2 = 2
 		const val ANALOG_START = 0.45f     // аналоговий курок: сила одразу після дотику
@@ -108,6 +109,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			"create", "options" -> Kind.SMALL
 			"ps" -> Kind.PS
 			"menu" -> Kind.MENU
+			"l3", "r3" -> Kind.CLICK
 			else -> Kind.EXTRA
 		}
 
@@ -115,7 +117,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		fun baseW(kind: Kind): Float = when(kind)
 		{
 			Kind.SHOULDER -> 60f; Kind.TOUCHPAD -> 112f; Kind.DPAD -> 92f; Kind.FACE -> 108f; Kind.STICK -> 88f
-			Kind.SMALL -> 30f; Kind.PS -> 32f; Kind.MENU -> 34f; Kind.EXTRA -> 54f
+			Kind.SMALL -> 30f; Kind.PS -> 32f; Kind.MENU -> 34f; Kind.EXTRA -> 54f; Kind.CLICK -> 40f
 		}
 
 		fun baseH(kind: Kind): Float = when(kind)
@@ -276,6 +278,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 				Kind.SMALL -> keys.add(if(el.id == "create") Key(it, G_CREATE, ControllerState.BUTTON_SHARE, 0)
 					else Key(it, G_OPTIONS, ControllerState.BUTTON_OPTIONS, 0))
 				Kind.PS -> keys.add(Key(it, G_PS, ControllerState.BUTTON_PS, 0))
+				Kind.CLICK -> keys.add(Key(it, G_CLICK, if(el.id == "l3") ControllerState.BUTTON_L3 else ControllerState.BUTTON_R3, 0))
 				Kind.MENU -> keys.add(Key(it, G_MENU, 0U, 0))
 				Kind.EXTRA ->
 				{
@@ -482,6 +485,17 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 				text.textSize = r * 0.8f
 				centeredText(canvas, "PS", cx, cy)
 			}
+			G_CLICK ->
+			{
+				// як ковпачок стіка: коло з кільцем усередині і підписом
+				circle(canvas, cx, cy, r, k.pressed)
+				val a = glyph.alpha
+				glyph.alpha = al(110)
+				canvas.drawCircle(cx, cy, r * 0.72f, glyph)
+				glyph.alpha = a
+				text.textSize = r * 0.62f
+				centeredText(canvas, if(k.item.el.id == "l3") "L3" else "R3", cx, cy)
+			}
 			G_MENU ->
 			{
 				circle(canvas, cx, cy, r, k.pressed)
@@ -672,7 +686,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		when
 		{
 			k.trigger != 0 -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TRIGGER_DOWN, k.trigger)
-			k.glyph == G_TEXT || k.glyph == G_CREATE || k.glyph == G_OPTIONS || k.glyph == G_PS -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.CLICK)
+			k.glyph == G_TEXT || k.glyph == G_CREATE || k.glyph == G_OPTIONS || k.glyph == G_PS || k.glyph == G_CLICK -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.CLICK)
 			k.glyph == G_MENU -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.UI)
 			else -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TICK)
 		}

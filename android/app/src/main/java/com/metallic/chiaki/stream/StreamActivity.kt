@@ -865,7 +865,7 @@ class StreamActivity : AppCompatActivity()
 				busyRetry && anyplayRetrySelf -> "Приставка ще закриває попереднє підключення. Пробую ще раз, це кілька секунд."
 				busyRetry -> "Приставка ще зайнята на іншому пристрої. Вона звільниться за кілька секунд."
 				s == null || anyplayConnecting -> "Отримую доступ до приставки від сервера AnyPlay."
-				s.connectInfo.psnToken == null -> "Приставка поруч, у твоїй мережі: підключаюсь напряму."
+				vs.connectInfo.psnToken == null -> "Приставка поруч, у твоїй мережі: підключаюсь напряму."
 				else -> psnStepText(s.psnStep())
 			}
 			val waited = now - loadSince

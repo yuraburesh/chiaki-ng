@@ -329,12 +329,14 @@ private:
 	QTimer psn_wait_timer, pay_timer, admin_timer;
 	QJsonObject admin_cmp_;
 	bool reconnect_once_ = false;
-	struct { int preset = -1; QVariant cap, until; } render_undo_;   // що було до останнього спрощення обробки
-	// вимір обробки під час гри (renderCheck): скільки тиків поспіль кадри на екрані < 80% потоку, перевірка після спрощення.
-	// 118: частки показаних кадрів у тисячних (ratioSum/ratioN — за повільні тики до спрощення, before — їхнє середнє,
-	// sum/n — після); тики, коли картинку ламала мережа (запит ключового кадру, помилка декодера), не рахуються (calm)
+	struct { int preset = -1; QVariant cap, until, v; } render_undo_;   // що було до останнього спрощення обробки
+	// вимір обробки під час гри (renderCheck), тик 2 с. 121: частка показаних кадрів серед тих, що прийшли рівно (кадри,
+	// загублені в мережі чи прийшли пачкою після затримки, не рахуються), у тисячних; повільний тик — менше 950 (57 з 60).
+	// ratioSum/ratioN — за повільні тики до спрощення, before — їхнє середнє, sum/n — після спрощення; settle — тики після
+	// зміни обробки, які пропускаємо (відеокарта збирає нові шейдери)
 	struct { int slow = 0; int ticks = 0; int check = 0; int before = 0; int sum = 0; int n = 0; int ratioSum = 0; int ratioN = 0;
-		quint32 idr = 0; quint32 errs = 0; int calm = 0; bool gaveUp = false; qint64 hintAt = 0; int hintSlow = 0; } rc_;
+		int settle = 0; quint32 idr = 0; quint32 errs = 0; int calm = 0; bool gaveUp = false; qint64 hintAt = 0; int hintSlow = 0; } rc_;
+	void renderConfirm();   // 121: спрощення допомогло — запам'ятати для цього комп'ютера (на тиждень, з новими версіями теж)
 	bool renderTickDisturbed(bool networkOk);   // 118: чи цей тик зіпсувала мережа, а не обробка
 	bool quality_hint_shown_ = false;
 	mutable QString pc_cpu_, pc_mem_, pc_model_;

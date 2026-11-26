@@ -1876,11 +1876,16 @@ static const int QUALITY_TOP = 3;
 static const QmlMainWindow::VideoPreset QUALITY_RENDER[] = { QmlMainWindow::VideoPreset::Fast, QmlMainWindow::VideoPreset::Default,
 	QmlMainWindow::VideoPreset::HighQuality, QmlMainWindow::VideoPreset::HighQualitySpatial };
 // 118: скільки тримаємо простішу обробку після «не встигає»: добу і лише в цій версії програми (нова версія може малювати
-// швидше, а до 118 обмеження ставилось і хибно: через короткі зупинки картинки на запит ключового кадру)
+// швидше, а до 118 обмеження ставилось і хибно: через короткі зупинки картинки на запит ключового кадру).
+// 121: це лише поки спрощення перевіряється. Перевірене (стало плавно, вимір відрізняє мережу від комп'ютера) тримаємо
+// тиждень і в нових версіях теж (позначка render_cap_v = 2): інакше кожна нова версія знову починала б гру з
+// ШІ-чіткістю, яку MacBook Air на Retina-екрані не тягне, і перші 20 с гра йшла б на 40–50 кадр/с
 static const qint64 RENDER_CAP_SECS = 24 * 3600;
+static const qint64 RENDER_CAP_CONFIRMED_SECS = 7 * 24 * 3600;
 static void dropRenderCapKeys(QSettings &s)
 {
-	for(const char *k : { "anyplay/render_cap", "anyplay/render_cap_until", "anyplay/render_cap_from", "anyplay/render_cap_build" })
+	for(const char *k : { "anyplay/render_cap", "anyplay/render_cap_until", "anyplay/render_cap_from", "anyplay/render_cap_build",
+			"anyplay/render_cap_v" })
 		s.remove(QString::fromLatin1(k));
 }
 
@@ -2033,15 +2038,18 @@ bool AnyPlayCloud::renderLighter()
 	QSettings s;
 	const bool had = renderCap() >= 0;   // старе обмеження ще діє: після відкату повертаємо саме його
 	render_undo_ = { static_cast<int>(p), had ? s.value(QStringLiteral("anyplay/render_cap")) : QVariant(),
-		had ? s.value(QStringLiteral("anyplay/render_cap_until")) : QVariant() };
+		had ? s.value(QStringLiteral("anyplay/render_cap_until")) : QVariant(), had ? s.value(QStringLiteral("anyplay/render_cap_v")) : QVariant() };
 	w->setVideoPreset(next);
 	s.setValue(QStringLiteral("anyplay/render_cap"), next == QmlMainWindow::VideoPreset::HighQuality ? 2 : next == QmlMainWindow::VideoPreset::Default ? 1 : 0);
 	s.setValue(QStringLiteral("anyplay/render_cap_until"), QDateTime::currentSecsSinceEpoch() + RENDER_CAP_SECS);
 	s.setValue(QStringLiteral("anyplay/render_cap_build"), ANYPLAY_BUILD);
-	s.setValue(QStringLiteral("anyplay/render_cap_from"), static_cast<int>(p));   // яка обробка не потягнулась: позначка на екрані «Зображення»
-	// повідомлення показує сам екран гри (тост головного екрана тут не видно, а після гри він уже застарів):
-	// людською мовою, що саме сталось, а не мовчки
-	emit renderNotice(tr("Цей комп'ютер не встигає з обробкою «%1»: повернули «%2». Так гра йде плавно; змінити можна в меню AnyPlay, «Зображення».")
+	s.remove(QStringLiteral("anyplay/render_cap_v"));   // ще не перевірено: до renderConfirm діє лише в цій версії й добу
+	// яка обробка не потягнулась: позначка на екрані «Зображення». Якщо спрощуємо вдруге, лишаємо першу (найважчу)
+	if(!had || !s.contains(QStringLiteral("anyplay/render_cap_from")))
+		s.setValue(QStringLiteral("anyplay/render_cap_from"), static_cast<int>(p));
+	// повідомлення показує сам екран гри у верхній чорній смузі (тост головного екрана тут не видно): людською мовою,
+	// що саме сталось, а не мовчки. Рядок до \n — головний текст пігулки, після — блідіший додаток
+	emit renderNotice(tr("«%1» не встигала, тепер «%2»\nтак плавніше, змінити: меню ` (під Esc), «Зображення»")
 		.arg(renderLabel(static_cast<int>(p))).arg(renderLabel(static_cast<int>(next))));
 	emit renderChanged();
 	return true;
@@ -2059,13 +2067,29 @@ void AnyPlayCloud::renderUndo()
 		s.setValue(QStringLiteral("anyplay/render_cap"), render_undo_.cap);
 		s.setValue(QStringLiteral("anyplay/render_cap_until"), render_undo_.until);
 		s.setValue(QStringLiteral("anyplay/render_cap_build"), ANYPLAY_BUILD);
-		s.remove(QStringLiteral("anyplay/render_cap_from"));
+		if(render_undo_.v.isValid())
+			s.setValue(QStringLiteral("anyplay/render_cap_v"), render_undo_.v);   // 121: перевірене раніше лишається перевіреним
 	}
 	else
 		dropRenderCapKeys(s);
-	emit renderNotice(tr("Простіша обробка не допомогла, тож повернули «%1». Якщо картинка смикається, знизь якість: меню AnyPlay, «Зображення».")
+	emit renderNotice(tr("Простіша обробка не допомогла, повернули «%1»\nякщо смикається, знизь якість: меню ` (під Esc)")
 		.arg(renderLabel(render_undo_.preset)));
 	render_undo_.preset = -1;
+	emit renderChanged();
+}
+
+// 121: після спрощення кадрів на екрані стало досить — це справді обробка, а не мережа. Запам'ятовуємо для цього
+// комп'ютера на тиждень (і в нових версіях): наступні ігри одразу йдуть плавно, без 20 с ривків на старті.
+void AnyPlayCloud::renderConfirm()
+{
+	render_undo_.preset = -1;
+	QSettings s;
+	if(!s.contains(QStringLiteral("anyplay/render_cap")))
+		return;
+	s.setValue(QStringLiteral("anyplay/render_cap_until"), QDateTime::currentSecsSinceEpoch() + RENDER_CAP_CONFIRMED_SECS);
+	s.setValue(QStringLiteral("anyplay/render_cap_build"), ANYPLAY_BUILD);
+	s.setValue(QStringLiteral("anyplay/render_cap_v"), 2);
+	qInfo().noquote() << "[anyplay-render] спрощення допомогло, запам'ятали для цього комп'ютера на 7 днів:" << renderName();
 	emit renderChanged();
 }
 
@@ -2080,9 +2104,11 @@ int AnyPlayCloud::renderCap() const
 	QSettings s;
 	if(!s.contains(QStringLiteral("anyplay/render_cap")))
 		return -1;
-	// 118: обмеження сходить саме — через добу або з новою версією програми (до 118: 3 дні, будь-яка версія)
+	// 118: обмеження сходить саме — через добу або з новою версією програми (до 118: 3 дні, будь-яка версія).
+	// 121: перевірене новим виміром (render_cap_v = 2) — через тиждень, і нова версія його не скидає
 	const qint64 until = s.value(QStringLiteral("anyplay/render_cap_until"), 0).toLongLong();
-	if(QDateTime::currentSecsSinceEpoch() >= until || s.value(QStringLiteral("anyplay/render_cap_build"), 0).toInt() != ANYPLAY_BUILD)
+	const bool confirmed = s.value(QStringLiteral("anyplay/render_cap_v"), 0).toInt() >= 2;
+	if(QDateTime::currentSecsSinceEpoch() >= until || (!confirmed && s.value(QStringLiteral("anyplay/render_cap_build"), 0).toInt() != ANYPLAY_BUILD))
 		return -1;
 	return qBound(0, s.value(QStringLiteral("anyplay/render_cap"), QUALITY_TOP).toInt(), QUALITY_TOP);
 }
@@ -2392,11 +2418,16 @@ QString AnyPlayCloud::pcTier() const
 	// не піднімало його до «Ультра». Графіка M3 і новіших (і M2 з вентилятором) рахує ШІ-чіткість 1080p на Retina з
 	// запасом; базовий M1 і M2 в MacBook Air без вентилятора лишаються «середніми». Якщо під час гри все ж не встигне,
 	// вимір нижче (renderCap) важить більше за назву.
+	// 121: MacBook Air (без вентилятора) — «середній» на будь-якому базовому чипі. Справжній журнал власника (M4 Air,
+	// 26.11): ШІ-чіткість на Retina-екрані (вікно 3420×2208 пікселів, збільшення 1,78) дає 46 кадр/с замість 60. Тож «Авто»
+	// не піднімає Air до «Ультра» сам, а якщо «Ультра» обрали вручну, вимір на перших 20 с гри спростить обробку
+	// й запам'ятає це для цього комп'ютера (renderCheck/renderConfirm)
 	const int gen = appleBaseGen(g);
+	const bool air = pcModel().contains(QLatin1String("MacBook Air"));
 	if(strong.match(g).hasMatch())
 		tier = QStringLiteral("strong");
 	else if(gen > 0)
-		tier = gen >= 3 || (gen == 2 && !pcModel().contains(QLatin1String("MacBook Air"))) ? QStringLiteral("strong") : QStringLiteral("ok");
+		tier = gen >= 2 && !air ? QStringLiteral("strong") : QStringLiteral("ok");
 	else if(weak.match(g).hasMatch())
 		tier = QStringLiteral("weak");
 	// вимір сильніший за назву: якщо ШІ-чіткість не потягнулась, це не «потужний»; якщо навіть «Висока якість» — слабкий
@@ -2441,60 +2472,88 @@ bool AnyPlayCloud::renderTickDisturbed(bool networkOk)
 	return rc_.calm < 2;
 }
 
-// Під час гри раз на 2 с (StreamView): кадрів на екрані помітно менше, ніж приходить з приставки, а мережа в порядку —
-// це ноутбук не встигає малювати. Спрощуємо обробку й дивимось, чи стало краще; якщо ні — повертаємо (екран 50 Гц, декодер).
-// Якщо спрощувати нема куди або не допомагає, радимо знизити якість (раз на 5 хв). streamFps < 0 — нова трансляція, скинути лічильники.
+// Під час гри раз на 2 с (StreamView). 121: комп'ютер «не встигає», коли кадри приходять рівно, а на екран доходить
+// менше 57 з 60 (95%). Кадри, що не прийшли з мережі, тут не рахуються зовсім, а ті, що прийшли пачкою після затримки
+// в мережі, рахуються окремо (late_burst) і теж не йдуть у провину комп'ютеру. Тому вимір працює й тоді, коли Wi-Fi
+// постійно губить дрібні шматки (до 121 такі тики відкидались цілком, і перевірка на Wi-Fi не спрацьовувала ніколи),
+// а поріг 95% замість 80% ловить і 46–50 кадр/с. Екран 50 Гц: очікуємо не більше кадрів, ніж екран може показати.
+// Перші 6 с не міряємо (старт, перший ключовий кадр); рішення — через 5 повільних тиків, тобто приблизно на 16-й секунді
+// гри. Спрощення перевіряємо: допомогло — запам'ятовуємо для цього комп'ютера (renderConfirm), ні — повертаємо.
+// Якщо спрощувати нема куди або не допомагає, радимо знизити якість (раз на 5 хв). streamFps < 0 — нова гра.
 int AnyPlayCloud::renderCheck(int streamFps, int shownFps, bool networkOk)
 {
+	QmlMainWindow *w = backend->qmlWindow();
 	if(streamFps < 0)
 	{
 		rc_ = {};
 		if(StreamSession *s = backend->qmlSession())
 			rc_.idr = s->GetIdrRequestsTotal();
+		if(w)
+			w->takeRenderTick();   // почати лічильники з нуля
 		quality_hint_shown_ = false;
 		emit renderChanged();
 		return 0;
 	}
 	rc_.ticks++;
-	const bool disturbed = renderTickDisturbed(networkOk);
-	QmlMainWindow *w = backend->qmlWindow();
-	// перші 10 с після підключення та згорнуте вікно: кадри відкидаються не через обробку
-	if(rc_.ticks <= 5 || !w || w->visibility() == QWindow::Minimized || w->visibility() == QWindow::Hidden)
+	const bool disturbed = renderTickDisturbed(networkOk);   // стан запитів ключового кадру ведемо завжди
+	// перші 6 с після підключення та згорнуте вікно: кадри відкидаються не через обробку
+	if(rc_.ticks <= 3 || !w || w->visibility() == QWindow::Minimized || w->visibility() == QWindow::Hidden)
 	{
+		if(w)
+			w->takeRenderTick();
 		rc_.slow = 0;
 		rc_.ratioSum = rc_.ratioN = 0;
 		return 0;
 	}
-	// частка показаних кадрів у тисячних; 50 Гц екран показує 50 з 60 — це ще не «не встигає» (менше 80% — уже так)
-	const bool measurable = streamFps >= 20 && shownFps > 0 && !disturbed;
-	const int ratio = measurable ? qMin(1000, shownFps * 1000 / streamFps) : 0;
+	const QmlMainWindow::RenderTick t = w->takeRenderTick();
+	const double secs = t.span_us / 1e6;
+	const double screenFrames = w->displayRefreshRate() * secs * 1.02;   // скільки кадрів екран може показати (з запасом)
+	const int nominal = qRound((qualityLevel() == 0 ? 30 : 60) * secs);
+	// «мав показати»: показані плюс ті, що прийшли рівно, але комп'ютер не встиг; не більше, ніж може екран
+	const double due = qMin<double>(t.shown + t.late_slow, screenFrames);
+	// тик щось каже про обробку, лише якщо кадри справді йшли (не велика зупинка мережі). У черзі кадрів (прямий показ
+	// вимкнено) пачку видно гірше, тож там, як у 118, ще й пропускаємо тики з втратами і запитами ключового кадру
+	const bool measurable = secs >= 1.0 && due >= 0.5 * qMin<double>(nominal, screenFrames) && t.shown > 0
+		&& (w->directFrameMapping() || !disturbed);
+	Q_UNUSED(shownFps);
+	const int ratio = measurable ? qMin(1000, qRound(t.shown * 1000.0 / due)) : 0;
+	if(rc_.settle > 0)
+	{
+		rc_.settle--;   // щойно змінили обробку: відеокарта збирає нові шейдери, цей тик не показовий
+		return 0;
+	}
 	if(rc_.check > 0)
 	{
-		// після спрощення: до 10 тиків (20 с), рішення — щойно є 5 чистих вимірів
+		// після спрощення: до 8 тиків (16 с), рішення — щойно є 4 чисті виміри
 		if(measurable)
 		{
 			rc_.sum += ratio;
 			rc_.n++;
 		}
-		if(--rc_.check == 0 || rc_.n >= 5)
+		if(--rc_.check == 0 || rc_.n >= 4)
 		{
 			rc_.check = 0;
 			const int after = rc_.n > 0 ? rc_.sum / rc_.n : 0;
-			// спрощення лишаємо, лише якщо воно справді допомогло: на екрані стало майже стільки ж кадрів, скільки приходить
-			// (від 90%), і помітно більше, ніж у середньому до нього. До 118 порівнювали з одним найгіршим тиком, тож
-			// будь-яке коротке просідання через мережу «підтверджувалось», і обробку спрощувало на 3 дні
-			if(rc_.n < 3 || after < 900 || after < rc_.before + 100)
+			qInfo().noquote().nospace() << "[anyplay-render] після спрощення: показано " << after / 10.0 << "% (до " << rc_.before / 10.0
+				<< "%), вимірів " << rc_.n;
+			// спрощення лишаємо, якщо стало плавно (від 95%) або хоч трохи краще, ніж до нього (+4 пункти, це більше за
+			// розкид вимірів); якщо краще, але ще не плавно, наступні повільні тики спростять ще на крок. Відкат — лише коли
+			// простіша обробка не дала нічого: тоді кадри губляться не через неї (процесор, декодер), і далі — порада
+			// знизити якість. До 121 вимагали +10 пунктів і 90%, тож 46 → 50 кадр/с вважалось «не допомогло»
+			if(rc_.n < 3 || (after < 950 && after < rc_.before + 40))
 			{
 				renderUndo();   // не допомогло або не вдалося виміряти: кадри губляться не через обробку
 				rc_.gaveUp = true;
+				rc_.settle = 1;
 				return 2;
 			}
+			renderConfirm();
 		}
 		return 0;
 	}
 	if(!measurable)
 		return 0;   // тик нічого не каже про обробку: лічильник не чіпаємо
-	if(ratio < 800)
+	if(ratio < 950)
 	{
 		rc_.slow++;
 		rc_.ratioSum += ratio;
@@ -2506,14 +2565,19 @@ int AnyPlayCloud::renderCheck(int streamFps, int shownFps, bool networkOk)
 		if(rc_.slow == 0)
 			rc_.ratioSum = rc_.ratioN = 0;
 	}
-	if(rc_.slow < 5)   // 10 с чистих вимірів
+	if(rc_.slow < 5)   // 10 с повільних вимірів
 		return 0;
 	const int before = rc_.ratioN > 0 ? rc_.ratioSum / rc_.ratioN : ratio;
 	rc_.slow = 0;
 	rc_.ratioSum = rc_.ratioN = 0;
+	qInfo().noquote().nospace() << "[anyplay-render] не встигає: показано " << before / 10.0 << "% кадрів, що прийшли рівно; обробка "
+		<< renderNameOf(static_cast<int>(w->videoPreset())) << ", останній тик: показано " << t.shown << ", не встиг " << t.late_slow
+		<< ", пачкою " << t.late_burst << ", втрачено в мережі " << t.lost
+		<< (t.gpu_frames > 0 ? QStringLiteral(", відеокарта %1 мс на кадр").arg(t.gpu_ms_sum / t.gpu_frames, 0, 'f', 1) : QString());
 	if(!rc_.gaveUp && renderLighter())
 	{
-		rc_.check = 10;
+		rc_.check = 8;
+		rc_.settle = 1;
 		rc_.sum = 0;
 		rc_.n = 0;
 		rc_.before = before;

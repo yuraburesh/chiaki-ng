@@ -3154,6 +3154,91 @@ void QmlMainWindow::setVideoPreset(VideoPreset preset)
     emit videoPresetChanged();
 }
 
+// ── AnyPlay 121: вимір обробки картинки ──
+void QmlMainWindow::noteShownFrame()
+{
+    shown_frames_current.fetchAndAddRelaxed(1);
+    withRenderStats([](RenderTick &t) { t.shown++; });
+}
+
+// libplacebo кличе це для кожного проходу шейдера під час pl_render_image(_mix): pass->last — останній виміряний час
+// цього проходу на відеокарті (нс). Якщо драйвер не дає таймерів (буває на MoltenVK), там нулі: тоді «н/д» у журналі.
+void QmlMainWindow::renderPassInfo(void *priv, const struct pl_render_info *info)
+{
+    auto *self = static_cast<QmlMainWindow *>(priv);
+    if (!self || !info || !info->pass || info->pass->last == 0)
+        return;
+    self->frame_gpu_ns += static_cast<double>(info->pass->last);
+    self->frame_gpu_passes++;
+}
+
+QmlMainWindow::RenderTick QmlMainWindow::takeRenderTick()
+{
+    const qint64 now_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+    QMutexLocker locker(&render_stats_mutex);
+    RenderTick t = render_tick_check;
+    render_tick_check = RenderTick();
+    t.span_us = render_tick_check_mark_us > 0 ? now_us - render_tick_check_mark_us : 0;
+    render_tick_check_mark_us = now_us;
+    // у черзі кадрів (не прямий показ) заміну кадру не видно: «не встиг» — це ті, що прийшли рівно, але не показані
+    if (!bypass_frame_queue)
+        t.late_slow = qMax(0, t.arrived - t.late_burst - t.shown);
+    return t;
+}
+
+double QmlMainWindow::displayRefreshRate() const
+{
+    const double hz = screen() ? screen()->refreshRate() : 60.0;
+    return hz > 1.0 ? hz : 60.0;
+}
+
+// Раз на 10 с під час гри: один рядок у журнал, щоб з журналу клієнта було видно, чому кадрів на екрані менше.
+// Обробка, скільки кадрів прийшло й показано, скільки не встигли (комп'ютер) і скільки прийшли пачкою (мережа),
+// час відеокарти й процесора на кадр, скільки разів перемальовано інтерфейс поверх гри, розмір вікна.
+void QmlMainWindow::logRenderStats()
+{
+    const qint64 now_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+    RenderTick t;
+    QSize px;
+    float upscale = 0.0f;
+    int hook = 0;
+    {
+        QMutexLocker locker(&render_stats_mutex);
+        t = render_tick_log;
+        render_tick_log = RenderTick();
+        t.span_us = render_tick_log_mark_us > 0 ? now_us - render_tick_log_mark_us : 0;
+        render_tick_log_mark_us = now_us;
+        px = render_log_window;
+        upscale = render_log_upscale;
+        hook = render_log_hook;
+    }
+    if (stream_session_active.loadAcquire() == 0 || t.span_us <= 0)
+        return;
+    if (!bypass_frame_queue)
+        t.late_slow = qMax(0, t.arrived - t.late_burst - t.shown);
+    static const char *const preset_names[] = { "fast", "default", "high", "ai", "ai2", "custom" };
+    const int preset = static_cast<int>(video_preset);
+    static const char *const hook_names[] = { "немає", "fsr", "fsrcnnx8", "fsrcnnx16" };
+    const double secs = t.span_us / 1e6;
+    auto ms = [](double v) { return QString::number(v, 'f', 1); };
+    const QString gpu = t.gpu_frames > 0 ? ms(t.gpu_ms_sum / t.gpu_frames) + QLatin1Char('/') + ms(t.gpu_ms_max) : QStringLiteral("н/д");
+    const QString cpu = t.render_frames > 0 ? ms(t.render_ms_sum / t.render_frames) + QLatin1Char('/') + ms(t.render_ms_max) : QStringLiteral("н/д");
+    qCInfo(chiakiGui).noquote().nospace()
+        << "[anyplay-render] обробка=" << (preset >= 0 && preset < 6 ? preset_names[preset] : "?")
+        << " ші=" << hook_names[qBound(0, hook, 3)]
+        << " за_с=" << QString::number(secs, 'f', 1)
+        << " прийшло=" << t.arrived << " показано=" << t.shown
+        << " кадр_с=" << QString::number(t.shown / secs, 'f', 1) << "/" << QString::number(t.arrived / secs, 'f', 1)
+        << " не_встиг=" << t.late_slow << " пачкою=" << t.late_burst << " втрачено_в_мережі=" << t.lost
+        << " gpu_мс_сер/макс=" << gpu << " рендер_мс_сер/макс=" << cpu
+        << " інтерфейс_перемальовано=" << t.quick_renders << " гра_ще_раз=" << t.repeat_renders
+        << " інтерфейс_з_кадром=" << t.ui_coalesced
+        << " вікно=" << width() << "x" << height() << " пікселів=" << px.width() << "x" << px.height()
+        << " збільшення=" << QString::number(upscale, 'f', 2)
+        << " екран_гц=" << qRound(displayRefreshRate())
+        << " прямий_показ=" << (bypass_frame_queue ? 1 : 0);
+}
+
 void QmlMainWindow::setSettings(Settings *new_settings)
 {
     settings = new_settings;
@@ -3302,6 +3387,21 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
     if (!frame.frame)
         return;
     stream_frames_current.fetchAndAddRelaxed(1);
+    // AnyPlay 121: вимір обробки. Кадр, що прийшов менш ніж за пів інтервалу після попереднього, — пачка після затримки
+    // в мережі (у черзі кадрів так рахуємо «зайві» кадри пачки; при прямому показі — нижче, коли кадр замінює кадр)
+    {
+        const qint64 gap_us = last_arrival_us > 0 ? present_entry_us - last_arrival_us : -1;
+        last_arrival_us = present_entry_us;
+        last_arrival_mark_us.storeRelease(present_entry_us);
+        const bool burst_arrival = !bypass_frame_queue && gap_us >= 0 && gap_us < static_cast<qint64>(source_frame_interval_ms * 500.0);
+        const int lost = qMax(0, static_cast<int>(frames_lost));
+        withRenderStats([&](RenderTick &t) {
+            t.arrived++;
+            t.lost += lost;
+            if (burst_arrival)
+                t.late_burst++;
+        });
+    }
 
     // AnyPlay 115: поки гра ще не з'явилась на екрані, зламаний кадр (декодер позначив його або ключового кадру ще
     // не було) не показуємо: лишається екран завантаження, а приймач уже попросив у приставки ключовий кадр.
@@ -3341,8 +3441,14 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
             if (direct_pending_frame) {
                 av_frame_free(&direct_pending_frame);
                 dropped_frames_current.fetchAndAddRelaxed(1);
+                // AnyPlay 121: попередній кадр так і не показано. Якщо новий прийшов майже одразу — це пачка з мережі;
+                // якщо через звичайний інтервал — комп'ютер не встиг намалювати попередній за цілий кадр
+                const qint64 waited_us = direct_pending_arrival_us > 0 ? present_entry_us - direct_pending_arrival_us : 0;
+                const bool slow = waited_us >= static_cast<qint64>(source_frame_interval_ms * 500.0);
+                withRenderStats([slow](RenderTick &t) { if (slow) t.late_slow++; else t.late_burst++; });
             }
             direct_pending_frame = frame.frame;
+            direct_pending_arrival_us = present_entry_us;
         }
         if (!startup_warmup_frame_active)
             startup_first_real_frame_queued_pending_visibility.storeRelease(1);
@@ -5681,6 +5787,17 @@ renderer_backend_ready:
             shown_fps = shown_next;
             emit streamFpsChanged();
         }
+        // AnyPlay 121: рядок [anyplay-render] у журнал раз на 10 с під час гри
+        static int render_log_seconds = 0;
+        if (stream_session_active.loadAcquire() == 0) {
+            render_log_seconds = 0;
+            QMutexLocker locker(&render_stats_mutex);
+            render_tick_log = RenderTick();
+            render_tick_log_mark_us = now_us;
+        } else if (++render_log_seconds >= 10) {
+            render_log_seconds = 0;
+            logRenderStats();
+        }
     });
 
     this->renderparams_opts = pl_options_alloc(this->placebo_log);
@@ -5810,6 +5927,32 @@ void QmlMainWindow::scheduleUpdate(bool force, UpdateRequestReason reason)
     const bool ui_priority = render_backend != RenderBackend::OpenGL &&
         (reason == UpdateRequestReason::SceneChanged ||
          reason == UpdateRequestReason::RenderRequested);
+    // AnyPlay 121: під час гри зміна напису поверх неї (кадри за секунду, пігулка режиму, її поява й зникання) не малює
+    // кадр гри ще раз окремим проходом. Кадр гри (з усією обробкою, з ШІ-чіткістю теж) прийде за мить, і новий напис
+    // піде разом з ним: update() синхронізує інтерфейс перед кожним проходом. До 121 кожна така зміна давала зайвий
+    // повний прохід рендеру; під час анімації пігулки — до 60 на секунду поверх 60 кадрів гри. Меню, діалоги й відповідь
+    // на підказку (overlay_interaction_active, grab_input) малюються одразу, як і раніше. Якщо кадри гри не йдуть
+    // (зв'язок завис), напис показує запасний таймер за два кадри.
+    if (ui_priority && stream_session_active.loadAcquire() != 0 && has_video && bypass_frame_queue &&
+        overlay_interaction_active.loadAcquire() == 0 && grab_input == 0) {
+        const qint64 frame_us = static_cast<qint64>(qMax(4.0, source_frame_interval_ms) * 1000.0);
+        const qint64 last_arrival = last_arrival_mark_us.loadAcquire();
+        const qint64 now_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+        if (last_arrival > 0 && now_us - last_arrival < 2 * frame_us) {
+            withRenderStats([](RenderTick &t) { t.ui_coalesced++; });
+            if (!ui_coalesce_timer) {
+                ui_coalesce_timer = new QTimer(this);
+                ui_coalesce_timer->setSingleShot(true);
+                connect(ui_coalesce_timer, &QTimer::timeout, this, [this]() {
+                    if (quick_need_sync.loadRelaxed() != 0 || quick_need_render.loadRelaxed() != 0)
+                        scheduleUpdate(true, UpdateRequestReason::Unknown);
+                });
+            }
+            if (!ui_coalesce_timer->isActive())
+                ui_coalesce_timer->start(static_cast<int>(2 * frame_us / 1000) + 1);
+            return;
+        }
+    }
     if (ui_priority) {
         if (render_active.loadAcquire() != 0 || deferred_present_in_flight.loadAcquire() != 0)
             ui_priority_update_pending.storeRelease(1);
@@ -7202,6 +7345,11 @@ void QmlMainWindow::render()
 
     struct pl_render_params params = *render_params;
     params.frame_mixer = effectiveFrameMixerConfig(&params);
+    // AnyPlay 121: час відеокарти на кадр — сума часу всіх проходів libplacebo (таймери драйвера; без них нулі)
+    frame_gpu_ns = 0;
+    frame_gpu_passes = 0;
+    params.info_callback = &QmlMainWindow::renderPassInfo;
+    params.info_priv = this;
     // AnyPlay: «Картинка» — кольори поверх будь-якої обробки (і «Власної», якщо її колись обрали)
     if (stream_session_active.loadAcquire() != 0) {
         anyplay_color_adj = anyplayColorAdjustment(picBrightness(), picContrast(), picSaturation(), picWarmth(),
@@ -7268,6 +7416,8 @@ void QmlMainWindow::render()
             pl_unmap_avframe(placeboGpu(), &direct_frame);
             direct_frame = {};
         }
+        if (!incoming && direct_frame.num_planes > 0 && stream_session_active.loadAcquire() != 0)
+            withRenderStats([](RenderTick &t) { t.repeat_renders++; });   // AnyPlay 121: той самий кадр гри ще раз
         if (incoming) {
             pl_unmap_avframe(placeboGpu(), &direct_frame);
             direct_frame = {};
@@ -7282,7 +7432,7 @@ void QmlMainWindow::render()
                     backend->disableZeroCopy();
             } else {
                 anyplay_display_referred(&direct_frame);
-                shown_frames_current.fetchAndAddRelaxed(1);   // новий кадр піде на екран у цьому проході
+                noteShownFrame();   // новий кадр піде на екран у цьому проході
             }
             av_frame_free(&incoming);
         }
@@ -7419,6 +7569,7 @@ void QmlMainWindow::render()
                 const qint64 quick_render_call_begin_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
                 clearQuickOpenGLTarget(quick_fbo);
                 quick_render->render();
+                withRenderStats([](RenderTick &t) { t.quick_renders++; });   // AnyPlay 121: для [anyplay-render]
                 const qint64 quick_render_call_after_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
                 if (quick_render_call_after_us >= quick_render_call_begin_us)
                     logQuickRenderStats(quick_render_call_after_us, quick_render_call_after_us - quick_render_call_begin_us);
@@ -7773,7 +7924,7 @@ void QmlMainWindow::render()
         const uint64_t sig = frame_mix.signatures[hint_index];
         if (sig != last_shown_signature) {
             last_shown_signature = sig;
-            shown_frames_current.fetchAndAddRelaxed(1);
+            noteShownFrame();
         }
     }
     struct pl_color_space hint = hint_frame ? hint_frame->color : pl_color_space{};
@@ -7957,6 +8108,7 @@ void QmlMainWindow::render()
                 if (render_backend == RenderBackend::OpenGL)
                     clearQuickOpenGLTarget(quick_fbo);
                 quick_render->render();
+                withRenderStats([](RenderTick &t) { t.quick_renders++; });   // AnyPlay 121: для [anyplay-render]
                 const qint64 quick_render_call_after_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
                 if (quick_render_call_after_us >= quick_render_call_begin_us)
                     logQuickRenderStats(quick_render_call_after_us, quick_render_call_after_us - quick_render_call_begin_us);
@@ -8082,6 +8234,17 @@ void QmlMainWindow::render()
         }
     }
     const struct pl_hook *active_hooks[] = {fsrcnnx_hook};
+    // AnyPlay 121: що саме малюємо — для рядка [anyplay-render] (потік рендеру пише, головний читає раз на 10 с)
+    {
+        QMutexLocker locker(&render_stats_mutex);
+        render_log_window = swapchain_size;
+        render_log_hook = !fsrcnnx_hook ? 0 : fsrcnnx_hook == fsr_hook ? 1 : fsrcnnx_hook == fsrcnnx_hook_8 ? 2 : 3;
+        if (hint_frame) {
+            const float src_w = fabsf(pl_rect_w(hint_frame->crop)), src_h = fabsf(pl_rect_h(hint_frame->crop));
+            if (src_w > 0.0f && src_h > 0.0f)
+                render_log_upscale = qMin(fabsf(pl_rect_w(target_frame.crop)) / src_w, fabsf(pl_rect_h(target_frame.crop)) / src_h);
+        }
+    }
     if (fsrcnnx_hook) {
         params.hooks = active_hooks;
         params.num_hooks = 1;
@@ -8172,6 +8335,22 @@ void QmlMainWindow::render()
             logLatencyStats("render_image", render_after_us - render_call_begin_us);
             if (render_entry_us_local > 0 && render_after_us >= render_entry_us_local)
                 logLatencyStats("render_work", render_after_us - render_entry_us_local);
+        }
+        // AnyPlay 121: кадр гри намальовано — запам'ятовуємо час процесора і (якщо є таймери) відеокарти
+        if (stream_session_active.loadAcquire() != 0) {
+            const double cpu_ms = render_after_us >= render_call_begin_us ? (render_after_us - render_call_begin_us) / 1000.0 : 0.0;
+            const double gpu_ms = frame_gpu_ns / 1e6;
+            const bool gpu_known = frame_gpu_passes > 0 && gpu_ms > 0.0;
+            withRenderStats([&](RenderTick &t) {
+                t.render_frames++;
+                t.render_ms_sum += cpu_ms;
+                t.render_ms_max = qMax(t.render_ms_max, cpu_ms);
+                if (gpu_known) {
+                    t.gpu_frames++;
+                    t.gpu_ms_sum += gpu_ms;
+                    t.gpu_ms_max = qMax(t.gpu_ms_max, gpu_ms);
+                }
+            });
         }
     }
     close_started_frame(true);

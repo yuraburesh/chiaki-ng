@@ -27,6 +27,7 @@ Item {
     property color tone: ap.accentA      // колір риски, коли toneGradient вимкнено
     property bool toneGradient: true     // риска в градієнті заходу сонця
     property bool active: false          // показано (show() вмикає й вимикає через таймер)
+    property bool ring: false            // 121: блакитна рамка — пігулка зараз приймає клавіші (підказка «Картинка просідає»)
     default property alias content: row.data
 
     // ── геометрія смуги й масштабу ──
@@ -105,6 +106,15 @@ Item {
         opacity: hud.inBand && hud.offsetY === 0 ? 0.72 : 0.9   // поверх гри скло щільніше, щоб текст читався
         border.width: 1
         border.color: ap.cardEdge
+    }
+    Rectangle {   // 121: рамка фокусу з клавіатури, як у меню (ap.cyan)
+        anchors.fill: parent
+        anchors.margins: -2
+        radius: height / 2
+        color: "transparent"
+        border.width: 2
+        border.color: ap.cyan
+        visible: hud.ring
     }
     Rectangle {   // відблиск угорі: трохи об'єму
         anchors.fill: parent

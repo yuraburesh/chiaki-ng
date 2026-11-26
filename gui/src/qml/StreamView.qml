@@ -1524,6 +1524,11 @@ Item {
         function onMenuRequested() {
             if (sessionPinDialog.opened || sessionStopDialog.opened || separateSessionPinWindow.visible || separateSessionStopWindow.visible)
                 return;
+            // 121: поки видно «Картинка просідає», ` і кнопка меню геймпада відповідають на неї (а не відкривають меню)
+            if (!menuController.open && !menuController.closing && anyplayQualityHint.menuKeyPressed()) {
+                Chiaki.window.requestOverlayUpdate();
+                return;
+            }
             if (!menuController.open)
                 view.anyplayMenuPage = anyplayEndBanner.shown ? "extend" : "";
             menuController.toggle();
@@ -1637,16 +1642,36 @@ Item {
         target: Chiaki.cloud
         ignoreUnknownSignals: true
         function onRenderNotice(text) {
-            anyplayHud.show(qsTr("Картинка"), text, 7000);
+            // 121: «головне\nдодаток» — у пігулці у верхній чорній смузі головне яскравіше, додаток блідіше
+            const parts = String(text).split("\n");
+            anyplayHud.show(qsTr("Картинка"), parts[0], 7000, parts.length > 1 ? parts.slice(1).join(" ") : "");
         }
         function onQualityHint() { anyplayQualityHint.show(); }
         function onMenuRequested() { Chiaki.window.menuRequested(); }   // кнопка на геймпаді («Керування»)
     }
     // кнопка меню на геймпаді (Create 1 с) приходить із сесії прямо у window.menuRequested (qmlbackend.cpp)
+    // 121: у нижній чорній смузі (у верхній, якщо внизу вже нагадування про кінець броні); відповідь — клавішею меню
     AnyPlayQualityHint {
         id: anyplayQualityHint
-        z: 100
-        anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 72 }
+        z: 101
+        edge: anyplayEndBanner.active ? "top" : "bottom"
+        fits: view.anyplayHudFits
+        k: view.anyplayHudK
+        hidden: view.anyplayHudHidden
+        menuKey: Chiaki.controllers.length ? qsTr("` або %1").arg(Chiaki.settings.stringForStreamMenuShortcut()) : "`"
+        pad: Chiaki.controllers.length > 0
+        // відповідаємо клавішами: ввід забираємо в гри (клавіатура, мишка й геймпад ідуть у підказку), потім віддаємо
+        onEngagedChanged: {
+            if (engaged)
+                view.grabInput(anyplayQualityHint);
+            else
+                view.releaseInput();
+            Chiaki.window.requestOverlayUpdate();
+        }
+        Connections {
+            target: Chiaki
+            function onSessionChanged() { if (!Chiaki.session && anyplayQualityHint.shown) anyplayQualityHint.close(); }
+        }
         onLower: {
             if (Chiaki.cloud.qualityLevel > 0) {
                 Chiaki.cloud.setQualityLevel(Chiaki.cloud.qualityLevel === 3 ? 1 : Chiaki.cloud.qualityLevel - 1);

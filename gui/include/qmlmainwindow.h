@@ -164,6 +164,29 @@ public:
     VideoPreset videoPreset() const;
     void setVideoPreset(VideoPreset mode);
 
+    // AnyPlay 121: вимір обробки картинки за проміжок. Розрізняє «кадр не прийшов з мережі» (його тут немає зовсім),
+    // «кадр прийшов пачкою після затримки в мережі» (late_burst: показати всі кадри пачки неможливо) і «кадр прийшов
+    // вчасно, але комп'ютер не встиг його показати» (late_slow). Рахує й час відеокарти на кадр (якщо драйвер дає
+    // таймери) та скільки разів перемальовано інтерфейс поверх гри.
+    struct RenderTick {
+        int arrived = 0;          // кадрів гри прийшло від декодера
+        int shown = 0;            // різних кадрів гри показано
+        int late_slow = 0;        // прийшов вчасно, але його замінив наступний, поки комп'ютер малював попередній
+        int late_burst = 0;       // замінив наступний, що прийшов майже одразу (пачка після затримки в мережі)
+        int lost = 0;             // загублено в мережі (frames_lost від приймача)
+        int gpu_frames = 0;       // кадрів з виміряним часом відеокарти
+        double gpu_ms_sum = 0, gpu_ms_max = 0;        // час відеокарти на кадр гри (усі проходи libplacebo)
+        int render_frames = 0;
+        double render_ms_sum = 0, render_ms_max = 0;  // час виклику рендеру на процесорі (pl_render_image)
+        int quick_renders = 0;    // скільки разів перемальовано інтерфейс (QML) поверх гри
+        int repeat_renders = 0;   // кадр гри намальовано ще раз без нового кадру (через зміну інтерфейсу чи вікна)
+        int ui_coalesced = 0;     // зміни інтерфейсу, що пішли разом з наступним кадром гри, а не окремим проходом
+        qint64 span_us = 0;       // тривалість проміжку
+    };
+    RenderTick takeRenderTick();          // для AnyPlayCloud::renderCheck (раз на 2 с); журнал має свої лічильники
+    double displayRefreshRate() const;    // частота екрана, Гц (60, якщо невідома)
+    bool directFrameMapping() const { return bypass_frame_queue; }   // прямий показ кадру (без черги libplacebo)
+
     Q_INVOKABLE void grabInput();
     Q_INVOKABLE void releaseInput();
     Q_INVOKABLE void requestOverlayUpdate();
@@ -359,6 +382,30 @@ private:
     bool bypass_frame_queue = true;
     QMutex direct_frame_mutex;
     AVFrame *direct_pending_frame = nullptr;
+    qint64 direct_pending_arrival_us = 0;   // AnyPlay 121: коли прийшов кадр, що чекає показу (під direct_frame_mutex)
+    // AnyPlay 121: вимір обробки (див. RenderTick). Пишуть потік декодера й потік рендеру, читає головний.
+    QMutex render_stats_mutex;
+    RenderTick render_tick_check;           // з останнього takeRenderTick()
+    RenderTick render_tick_log;             // з останнього рядка [anyplay-render]
+    qint64 render_tick_check_mark_us = 0;
+    qint64 render_tick_log_mark_us = 0;
+    qint64 last_arrival_us = 0;             // коли прийшов попередній кадр (потік декодера)
+    QAtomicInteger<qint64> last_arrival_mark_us = 0;   // те саме для головного потоку (чи йдуть кадри гри зараз)
+    QTimer *ui_coalesce_timer = nullptr;    // запасний показ зміни інтерфейсу, якщо кадр гри не прийшов
+    double frame_gpu_ns = 0;                // сума часу проходів поточного кадру (потік рендеру)
+    int frame_gpu_passes = 0;
+    QSize render_log_window;                // що показати в журналі: розмір вікна, пікселі, збільшення, гачок
+    float render_log_upscale = 0.0f;
+    int render_log_hook = 0;                // 0 — без ШІ, 1 — FSR, 2 — FSRCNNX 8, 3 — FSRCNNX 16
+    template <typename F> void withRenderStats(F &&f)   // однакова зміна в обох наборах лічильників
+    {
+        QMutexLocker locker(&render_stats_mutex);
+        f(render_tick_check);
+        f(render_tick_log);
+    }
+    void noteShownFrame();
+    void logRenderStats();
+    static void renderPassInfo(void *priv, const struct pl_render_info *info);
     struct pl_frame direct_frame = {};
     QAtomicInteger<int> direct_frame_reset = 0;
     uint64_t ts_start = 0;

@@ -37,13 +37,15 @@ jobs:
           submodules: recursive
       - name: Інструменти
         run: |
-          brew install ninja || true
+          brew install ninja protobuf@29 || true
           pip3 install --user 'protobuf>=5,<6' --break-system-packages
+          echo "PROTOC_BIN=$(brew --prefix)/opt/protobuf@29/bin/protoc" >> "$GITHUB_ENV"
+          "$(brew --prefix)/opt/protobuf@29/bin/protoc" --version
       - name: Налаштування (iOS arm64)
         run: |
           cmake -S . -B build-ios -G Ninja \
             -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DPROTOC="$PROTOC_BIN" \
             -DCHIAKI_ENABLE_IOS=ON -DCHIAKI_ENABLE_TESTS=OFF -DCHIAKI_ENABLE_CLI=OFF -DCHIAKI_ENABLE_GUI=OFF \
             -DCHIAKI_ENABLE_SETSU=OFF -DCHIAKI_ENABLE_FFMPEG_DECODER=OFF -DCHIAKI_ENABLE_PI_DECODER=OFF \
             -DCHIAKI_LIB_ENABLE_OPUS=OFF -DCHIAKI_ENABLE_SPEEX=OFF \

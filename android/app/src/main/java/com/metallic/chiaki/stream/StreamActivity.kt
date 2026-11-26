@@ -282,8 +282,8 @@ class StreamActivity : AppCompatActivity()
 	private var wStep = 0               // скільки кроків відновлення вже зроблено в поточній біді
 	private var wTrouble = ""           // яка біда зараз: start_no_video, start_no_picture, stall_net, stall_decoder
 	private var wAutoReconnects = 0     // автоматичних перепідключень підряд без картинки
-	private var wLogSent = false
 	private var wDecoderReset = false   // декодер уже створювали заново в цій біді
+	private var wHevcMarked = false     // уже записали «H.265 тут не тягне»
 
 	/** Екранний геймпад AnyPlay (у фрагменті з розмітки; id фрагмента дістається обгортці, тому шукаємо за id самого геймпада) */
 	private fun gamepad(): GamepadView? = findViewById(R.id.gamepadView)
@@ -611,11 +611,8 @@ class StreamActivity : AppCompatActivity()
 			AnyPlayQuality.hevcFailed(this)
 			Toast.makeText(this, "Перемикаю відео на сумісний формат і підключаюсь заново…", Toast.LENGTH_LONG).show()
 		}
-		if(!wLogSent)
-		{
-			wLogSent = true
-			AnyPlayCloud.uploadLog(this, "error", "Немає картинки: $why")
-		}
+		// після кожної такої спроби (сам журнал не частіше ніж раз на 2 хв)
+		AnyPlayCloud.uploadLog(this, "error", "Немає картинки: $why")
 		if(wAutoReconnects < 2 || (decoderProblem && hevc))
 		{
 			wAutoReconnects++
@@ -705,6 +702,19 @@ class StreamActivity : AppCompatActivity()
 			wStep = 0
 			l.hide()
 			return
+		}
+		// 118.1: декодер довелось створювати заново — з обробкою кольорів вона перша підозрювана (декодер пише в її
+		// SurfaceTexture і стоїть, якщо та не встигає забирати кадри); у H.265 двічі заново — далі цей телефон грає в H.264
+		val recreated = if(v.size > 5) v[5] else 0L
+		if(colorOn && recreated >= 1)
+		{
+			Log.w("AnyPlay", "Сторож: декодер створювали заново ($recreated) з обробкою кольорів — вимикаю її")
+			vs.blockColor()
+		}
+		if(recreated >= 2 && vs.connectInfo.videoProfile.codec == com.metallic.chiaki.lib.Codec.CODEC_H265 && !wHevcMarked)
+		{
+			wHevcMarked = true
+			AnyPlayQuality.hevcFailed(this)
 		}
 		// обробка кольорів: декодер видає кадри, а на екран нічого не потрапляє — вимикаємо її до кінця гри
 		if(colorOn && now - wDecOutAt < 1000 && now - wOutAt > 2000)
@@ -929,6 +939,8 @@ class StreamActivity : AppCompatActivity()
 		anyplayMenu?.dismiss()
 		viewModel.session.shutdown()
 		dialog?.dismiss()
+		if(code.isNotEmpty())
+			AnyPlayCloud.uploadLog(this, "error", "Гру зупинено: $code")
 		val d = MaterialAlertDialogBuilder(this)
 			.setMessage(AnyPlayStyle.errorMessage(text, code))
 			.setCancelable(false)
@@ -1417,6 +1429,17 @@ class StreamActivity : AppCompatActivity()
 		else if(event.device?.isVirtual == false && event.device?.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC)
 			anyplayKeysAt = SystemClock.elapsedRealtime()
 		return viewModel.input.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
+	}
+
+	/**
+	 * AnyPlay 118.1: стіки й курки геймпада забираємо ще до вікон і View. onGenericMotionEvent активності отримує подію
+	 * лише тоді, коли жоден View її не взяв, а з екраном завантаження, банерами й сторінками поверх гри це не гарантовано.
+	 */
+	override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean
+	{
+		if(event.source and InputDevice.SOURCE_CLASS_JOYSTICK == InputDevice.SOURCE_CLASS_JOYSTICK && anyplayMenu == null && padEditor?.isOpen != true)
+			return onGenericMotionEvent(event)
+		return super.dispatchGenericMotionEvent(event)
 	}
 
 	override fun onGenericMotionEvent(event: MotionEvent): Boolean

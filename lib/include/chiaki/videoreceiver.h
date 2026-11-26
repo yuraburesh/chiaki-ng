@@ -44,6 +44,7 @@ typedef struct chiaki_video_receiver_t
 	uint32_t idr_requests_total; // IDR requests sent (with repeats)
 	uint32_t decode_errors_total; // decoder errors and frames the decoder flagged as broken
 	ChiakiMutex frames_lost_mutex;
+	ChiakiCorruptReportLimit corrupt_reports; // AnyPlay 118.1: how often missing/corrupt frames are reported to the console
 } ChiakiVideoReceiver;
 
 CHIAKI_EXPORT void chiaki_video_receiver_init(ChiakiVideoReceiver *video_receiver, struct chiaki_session_t *session, ChiakiPacketStats *packet_stats);

@@ -8,6 +8,8 @@
 #include <media/NdkMediaFormat.h>
 #include <android/native_window_jni.h>
 
+#include <chiaki/time.h>
+
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -16,14 +18,16 @@
 #define OUTPUT_BUFFER_TIMEOUT_US 20000    // потік виводу перевіряє «зупинитись» щонайменше раз на 20 мс
 #define INPUT_FAILS_RECREATE 45           // стільки кадрів поспіль декодер не приймає — створюємо його заново
 #define HEADER_MAX_SIZE 4096
+#define KEY_REQUEST_GAP_MS 1500           // декодер сам просить ключовий кадр не частіше
+#define KEY_WAIT_MAX_MS 2500              // ключового кадру так і немає — показуємо що є (картинка не стоїть вічно)
 
 // AnyPlay 118. Що тут виправлено (журнали Android: «звук є, картинки немає», «стіки є, картинки немає»):
 //  1. set_surface(NULL) тримав м'ютекс і викликав kill_decoder, який брав його вдруге (м'ютекс не рекурсивний) —
 //     головний потік зависав назавжди; без декодера ж виходив з функції, не відпустивши м'ютекс, — і далі зависав
 //     уже потік відео (звук і керування живуть далі, картинки немає).
-//  2. Кадр, що прийшов, поки декодера немає (поверхня ще не готова, декодер не створився), мовчки «приймався»:
-//     бібліотека вважала, що ключовий кадр показано, і не просила новий — новий декодер отримував лише P-кадри
-//     і нічого не показував. Тепер такий кадр — «не прийнято», і бібліотека сама просить ключовий кадр.
+//  2. Кадр, що прийшов, поки декодера немає (поверхня ще не готова, декодер не створився), мовчки «приймався»,
+//     і новий декодер отримував лише P-кадри без опори — нічого не показував. Тепер декодер сам пропускає кадри
+//     до ключового й сам просить його (118.1: не через «кадр не прийнято», бо це давало шторм ключових кадрів).
 //  3. Новий декодер (повторне створення, інша поверхня) не мав заголовка потоку (SPS/PPS): той приходить один раз
 //     на початку. Тепер заголовок зберігаємо й віддаємо кожному новому декодеру першим.
 //  4. Якщо декодер не перемкнувся на нову поверхню (обробка кольорів увімк./вимк.), він далі писав у звільнену —
@@ -55,11 +59,20 @@ ChiakiErrorCode android_chiaki_video_decoder_init(AndroidChiakiVideoDecoder *dec
 	decoder->recreated = 0;
 	decoder->no_codec_frames = 0;
 	decoder->codec_failed = false;
+	decoder->need_key = false;
+	decoder->need_key_since_ms = 0;
+	decoder->key_request_ms = 0;
+	decoder->key_requests = 0;
+	decoder->dropped = 0;
+	decoder->key_frame_cb = NULL;
+	decoder->key_frame_user = NULL;
 	return chiaki_mutex_init(&decoder->codec_mutex, false);
 }
 
-void android_chiaki_video_decoder_stats(AndroidChiakiVideoDecoder *decoder, uint64_t out[7])
+void android_chiaki_video_decoder_stats(AndroidChiakiVideoDecoder *decoder, uint64_t out[ANDROID_VIDEO_STATS_COUNT])
 {
+	out[7] = __atomic_load_n(&decoder->dropped, __ATOMIC_RELAXED);
+	out[8] = __atomic_load_n(&decoder->key_requests, __ATOMIC_RELAXED);
 	out[0] = __atomic_load_n(&decoder->stat_frames_in, __ATOMIC_RELAXED);
 	out[1] = __atomic_load_n(&decoder->stat_frames_out, __ATOMIC_RELAXED);
 	out[2] = __atomic_load_n(&decoder->stat_frames_lost, __ATOMIC_RELAXED);
@@ -90,6 +103,35 @@ static unsigned nal_kinds(const uint8_t *buf, size_t size, bool h265)
 		i += 3;
 	}
 	return r;
+}
+
+bool android_chiaki_video_is_key_frame(const uint8_t *buf, size_t size, bool h265)
+{
+	size_t limit = size < HEADER_MAX_SIZE ? size : HEADER_MAX_SIZE;
+	for(size_t i = 0; i + 3 < limit; i++)
+	{
+		if(buf[i] != 0 || buf[i + 1] != 0 || buf[i + 2] != 1)
+			continue;
+		uint8_t b = buf[i + 3];
+		unsigned t = h265 ? (b >> 1) & 0x3f : b & 0x1f;
+		if(h265 && t <= 31)
+			return t >= 16 && t <= 21;   // BLA/IDR/CRA — з нього декодер починає
+		if(!h265 && t >= 1 && t <= 5)
+			return t == 5;
+		i += 3;
+	}
+	return false;
+}
+
+/** Попереду кадри без опори: пропускати до ключового (від цього моменту) */
+static void want_key_locked(AndroidChiakiVideoDecoder *decoder, const char *why)
+{
+	if(!decoder->need_key)
+	{
+		decoder->need_key = true;
+		decoder->need_key_since_ms = 0;
+		CHIAKI_LOGI(decoder->log, "[anyplay-android] waiting for a key frame: %s", why);
+	}
 }
 
 /** Заголовок потоку (лише набори параметрів, без кадру): запам'ятати для наступних декодерів. Під м'ютексом. */
@@ -245,6 +287,8 @@ static bool create_decoder_locked(AndroidChiakiVideoDecoder *decoder)
 	}
 	decoder->output_thread_running = true;
 	decoder->codec_failed = false;
+	// новому декодерові посеред потоку потрібен ключовий кадр (на старті ним і так буде перший кадр)
+	want_key_locked(decoder, "new decoder");
 
 	// заголовок потоку прийшов раніше (старому декодеру або коли декодера ще не було) — цьому теж потрібен
 	if(decoder->header && decoder->header_size)
@@ -354,26 +398,64 @@ bool android_chiaki_video_decoder_reset(AndroidChiakiVideoDecoder *decoder)
 
 bool android_chiaki_video_decoder_video_sample(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool frame_recovered, void *user)
 {
-	bool r = true;
 	AndroidChiakiVideoDecoder *decoder = user;
 	// телеметрія: рахуємо все, що прийшло з приставки, навіть якщо декодер ще не готовий
 	__atomic_fetch_add(&decoder->stat_frames_in, 1, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&decoder->stat_bytes_in, (uint64_t)buf_size, __ATOMIC_RELAXED);
 	if(frames_lost > 0)
 		__atomic_fetch_add(&decoder->stat_frames_lost, (uint64_t)frames_lost, __ATOMIC_RELAXED);
+	bool ask_key = false;
+	const bool h265 = chiaki_codec_is_h265(decoder->target_codec);
 	chiaki_mutex_lock(&decoder->codec_mutex);
 
 	remember_header(decoder, buf, buf_size);
+	if(nal_kinds(buf, buf_size, h265) == 1)
+	{
+		// сам заголовок (на старті й при зміні профілю): поточному декодеру віддаємо одразу, наступні візьмуть з пам'яті
+		ssize_t st;
+		if(decoder->codec && !queue_sample(decoder, buf, buf_size, &st))
+			CHIAKI_LOGW(decoder->log, "[anyplay-android] decoder did not take the stream header (%d)", (int)st);
+		goto beach;
+	}
 
+	// AnyPlay 118.1: усі збої тут місцеві (декодер телефона), приставка ні до чого. Бібліотеці завжди «прийнято»,
+	// щоб вона не звітувала приставці про пошкоджені кадри і не просила ключовий кадр щокадру; кадри без опори
+	// пропускаємо самі й самі просимо один ключовий кадр (не частіше ніж раз на KEY_REQUEST_GAP_MS)
 	if(!decoder->codec)
 	{
-		// поверхні ще немає або декодер не створився. «Не прийнято» — бібліотека попросить ключовий кадр,
-		// тож щойно декодер з'явиться, картинка почнеться з цілого кадру, а не з P-кадрів без опори
 		if(decoder->no_codec_frames++ % 120 == 0)
 			CHIAKI_LOGE(decoder->log, "Received video data, but decoder is not initialized! (%u frames so far%s)",
-					(unsigned)decoder->no_codec_frames, decoder->codec_failed ? ", decoder creation failed" : "");
-		r = false;
+					(unsigned)decoder->no_codec_frames, decoder->codec_failed ? ", decoder creation failed" : ", no surface yet");
+		want_key_locked(decoder, "no decoder");
+		__atomic_fetch_add(&decoder->dropped, 1, __ATOMIC_RELAXED);
 		goto beach;
+	}
+
+	const uint64_t now = chiaki_time_now_monotonic_ms();
+	if(decoder->need_key)
+	{
+		if(android_chiaki_video_is_key_frame(buf, buf_size, h265))
+		{
+			CHIAKI_LOGI(decoder->log, "[anyplay-android] key frame arrived, decoding again");
+			decoder->need_key = false;
+		}
+		else
+		{
+			if(!decoder->need_key_since_ms)
+				decoder->need_key_since_ms = now;
+			if(now - decoder->need_key_since_ms < KEY_WAIT_MAX_MS)
+			{
+				if(now - decoder->key_request_ms >= KEY_REQUEST_GAP_MS)
+				{
+					decoder->key_request_ms = now;
+					ask_key = true;
+				}
+				__atomic_fetch_add(&decoder->dropped, 1, __ATOMIC_RELAXED);
+				goto beach;
+			}
+			CHIAKI_LOGW(decoder->log, "[anyplay-android] no key frame for %u ms, decoding what comes", (unsigned)(now - decoder->need_key_since_ms));
+			decoder->need_key = false;
+		}
 	}
 
 	if(__atomic_load_n(&decoder->output_errors, __ATOMIC_RELAXED) >= 50)
@@ -383,17 +465,19 @@ bool android_chiaki_video_decoder_video_sample(uint8_t *buf, size_t buf_size, in
 		kill_decoder_locked(decoder);
 		if(create_decoder_locked(decoder))
 			__atomic_fetch_add(&decoder->recreated, 1, __ATOMIC_RELAXED);
-		r = false;
+		__atomic_fetch_add(&decoder->dropped, 1, __ATOMIC_RELAXED);
 		goto beach;
 	}
 
 	ssize_t fail_status = 0;
 	if(!queue_sample(decoder, buf, buf_size, &fail_status))
 	{
-		r = false;
 		decoder->input_fails++;
+		__atomic_fetch_add(&decoder->dropped, 1, __ATOMIC_RELAXED);
 		if(decoder->input_fails == 1 || decoder->input_fails % 30 == 0)
 			CHIAKI_LOGE(decoder->log, "Failed to get input buffer (status %d, %u frames in a row)", (int)fail_status, (unsigned)decoder->input_fails);
+		// пропущений кадр — опора наступних, тож далі до ключового
+		want_key_locked(decoder, "decoder did not take a frame");
 		// декодер стоїть: довго не бере кадри або видає справжні помилки (не «спробуй пізніше») — створюємо його заново
 		const bool hard = fail_status != AMEDIACODEC_INFO_TRY_AGAIN_LATER;
 		if(decoder->input_fails >= INPUT_FAILS_RECREATE || (hard && decoder->input_fails >= 5))
@@ -404,13 +488,23 @@ bool android_chiaki_video_decoder_video_sample(uint8_t *buf, size_t buf_size, in
 			if(create_decoder_locked(decoder))
 				__atomic_fetch_add(&decoder->recreated, 1, __ATOMIC_RELAXED);
 		}
+		if(now - decoder->key_request_ms >= KEY_REQUEST_GAP_MS)
+		{
+			decoder->key_request_ms = now;
+			ask_key = true;
+		}
 		goto beach;
 	}
 	decoder->input_fails = 0;
 
 beach:
 	chiaki_mutex_unlock(&decoder->codec_mutex);
-	return r;
+	if(ask_key && decoder->key_frame_cb)
+	{
+		__atomic_fetch_add(&decoder->key_requests, 1, __ATOMIC_RELAXED);
+		decoder->key_frame_cb(decoder->key_frame_user);
+	}
+	return true;
 }
 
 static void *android_chiaki_video_decoder_output_thread_func(void *user)

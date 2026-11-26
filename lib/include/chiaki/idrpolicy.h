@@ -37,6 +37,16 @@ extern "C" {
 #define CHIAKI_IDR_MIN_GAP_MS 250          // never send two requests closer than this
 #define CHIAKI_IDR_START_HOLD_MAX_MS 5000  // at the start hold P-frames back at most this long
 #define CHIAKI_IDR_HOLD_MAX_MS 1000        // during play hold P-frames back at most this long
+// AnyPlay 118.1 storm guard: a decoder that keeps rejecting frames (Galaxy S7 log: every key frame refused because
+// the decoder had no input buffer) made the receiver ask every 250 ms, and the console answered with a key frame
+// every 2-3 frames. After this many requests within the window the minimum gap becomes CHIAKI_IDR_STORM_GAP_MS.
+#define CHIAKI_IDR_STORM_WINDOW_MS 4000
+#define CHIAKI_IDR_STORM_REQUESTS 6
+#define CHIAKI_IDR_STORM_GAP_MS 1500
+// Reports of missing/corrupt frames to the console: the same broken range (same first frame) at most once per
+// this interval, and at most CHIAKI_CORRUPT_REPORT_MAX_PER_S reports per second in total.
+#define CHIAKI_CORRUPT_REPORT_REPEAT_MS 1000
+#define CHIAKI_CORRUPT_REPORT_MAX_PER_S 8
 
 typedef enum
 {
@@ -55,7 +65,57 @@ typedef struct chiaki_idr_policy_t
 	uint64_t last_request_ms;
 	uint32_t requests;      // requests sent, including repeats
 	uint32_t held_frames;   // frames held back in total
+	uint64_t burst_start_ms;  // storm guard window start
+	uint32_t burst_requests;  // requests in the current window
 } ChiakiIdrPolicy;
+
+/** AnyPlay 118.1: limit for "corrupt frame" reports to the console (see CHIAKI_CORRUPT_REPORT_*) */
+typedef struct chiaki_corrupt_report_limit_t
+{
+	bool any;
+	uint16_t from;          // first frame of the last reported range
+	uint64_t last_ms;       // when it was reported
+	uint64_t window_ms;     // start of the current one-second window
+	uint32_t window_count;  // reports in it
+	uint32_t suppressed;    // reports not sent (total)
+} ChiakiCorruptReportLimit;
+
+static inline void chiaki_corrupt_report_limit_init(ChiakiCorruptReportLimit *l)
+{
+	l->any = false;
+	l->from = 0;
+	l->last_ms = 0;
+	l->window_ms = 0;
+	l->window_count = 0;
+	l->suppressed = 0;
+}
+
+/** @return true if the report for the range starting at `from` should be sent now */
+static inline bool chiaki_corrupt_report_allow(ChiakiCorruptReportLimit *l, uint64_t now_ms, uint16_t from)
+{
+	if(!now_ms)
+		now_ms = 1;
+	if(l->any && from == l->from && now_ms - l->last_ms < CHIAKI_CORRUPT_REPORT_REPEAT_MS)
+	{
+		l->suppressed++;
+		return false;   // the same break that is still growing: the console already knows
+	}
+	if(!l->window_ms || now_ms - l->window_ms >= 1000)
+	{
+		l->window_ms = now_ms;
+		l->window_count = 0;
+	}
+	if(l->window_count >= CHIAKI_CORRUPT_REPORT_MAX_PER_S)
+	{
+		l->suppressed++;
+		return false;
+	}
+	l->window_count++;
+	l->any = true;
+	l->from = from;
+	l->last_ms = now_ms;
+	return true;
+}
 
 static inline void chiaki_idr_policy_init(ChiakiIdrPolicy *p)
 {
@@ -67,10 +127,16 @@ static inline void chiaki_idr_policy_init(ChiakiIdrPolicy *p)
 	p->last_request_ms = 0;
 	p->requests = 0;
 	p->held_frames = 0;
+	p->burst_start_ms = 0;
+	p->burst_requests = 0;
 }
 
 static inline bool chiaki_idr_policy_request_due_(const ChiakiIdrPolicy *p, uint64_t now_ms, uint64_t gap_ms)
 {
+	// storm guard: many requests in a short time — ask less often (a normal loss sends one or two)
+	if(p->burst_requests >= CHIAKI_IDR_STORM_REQUESTS && now_ms - p->burst_start_ms < CHIAKI_IDR_STORM_WINDOW_MS
+		&& gap_ms < CHIAKI_IDR_STORM_GAP_MS)
+		gap_ms = CHIAKI_IDR_STORM_GAP_MS;
 	return p->last_request_ms == 0 || now_ms - p->last_request_ms >= gap_ms;
 }
 
@@ -82,6 +148,12 @@ static inline uint64_t chiaki_idr_policy_repeat_gap_(const ChiakiIdrPolicy *p)
 
 static inline void chiaki_idr_policy_mark_sent_(ChiakiIdrPolicy *p, uint64_t now_ms)
 {
+	if(!p->burst_start_ms || now_ms - p->burst_start_ms >= CHIAKI_IDR_STORM_WINDOW_MS)
+	{
+		p->burst_start_ms = now_ms ? now_ms : 1;
+		p->burst_requests = 0;
+	}
+	p->burst_requests++;
 	p->last_request_ms = now_ms ? now_ms : 1;
 	p->requests++;
 	p->unsent = false;

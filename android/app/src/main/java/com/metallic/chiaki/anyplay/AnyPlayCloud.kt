@@ -132,7 +132,6 @@ object AnyPlayCloud
 
 	// ── журнал для підтримки (К13): власник бачить його в CRM у картці клієнта ──
 	private const val KEY_LIVE = "stream_live"
-	private const val LOG_LIMIT = 480 * 1024
 
 	/** Гра йде (true) або закрилась як слід (false). Якщо застосунок упав посеред гри, позначка лишиться — надішлемо журнал при наступному запуску */
 	fun markLive(context: Context, live: Boolean)
@@ -150,7 +149,72 @@ object AnyPlayCloud
 		uploadLog(context, "error", "Минулого разу гра закрилась несподівано (застосунок перезапустився)")
 	}
 
-	/** Останні рядки журналів гри (chiaki) і системного журналу застосунку */
+	// AnyPlay 118.1: журнал для підтримки. До 118 бралися лише 2 останні сесії (хвости по 160 КБ), тож з багатьох спроб
+	// власника видно було дві, а початок сесії (підключення, профіль, декодер) часто відрізався. Тепер: усі сесії за
+	// останні 2 години (до 6), від кожної початок і кінець, повтори однакових рядків стиснуті, logcat застосунку;
+	// разом до ~450 КБ тексту, а надсилається стиснутим gzip (сервер приймає).
+	private const val LOG_SESSIONS_MAX = 6
+	private const val LOG_SESSIONS_AGE_MS = 2 * 3600 * 1000L
+	private const val LOG_HEAD_LINES = 150
+	private const val LOG_HEAD_MAX = 24 * 1024
+	private const val LOG_TEXT_MAX = 450 * 1024
+	private const val LOG_LOGCAT_MAX = 80 * 1024
+	private const val LOG_AUTO_GAP_MS = 2 * 60 * 1000L   // самі (після збою) — не частіше; на прохання адміна — завжди
+	private const val KEY_LOG_SENT = "log_auto_sent"
+	private const val KEY_LOG_REQ_SENT = "log_request_sent"
+
+	/** Однакові рядки підряд — один рядок і «(ще N разів)» */
+	private fun squeeze(text: String): String
+	{
+		val sb = StringBuilder(text.length / 2)
+		var prev: String? = null
+		var repeats = 0
+		fun flush()
+		{
+			if(repeats > 0)
+				sb.append("    … (ще ").append(repeats).append(" разів)\n")
+			repeats = 0
+		}
+		for(line in text.split('\n'))
+		{
+			if(line == prev && line.isNotEmpty())
+			{
+				repeats++
+				continue
+			}
+			flush()
+			sb.append(line).append('\n')
+			prev = line
+		}
+		flush()
+		return sb.toString()
+	}
+
+	/** Початок і кінець файла журналу сесії (повтори стиснуті), не довше max символів */
+	private fun sessionPart(f: File, max: Int): String
+	{
+		val all = squeeze(String(f.readBytes(), Charsets.UTF_8))
+		if(all.length <= max)
+			return all
+		var headEnd = 0
+		var lines = 0
+		while(lines < LOG_HEAD_LINES && headEnd < all.length && headEnd < LOG_HEAD_MAX)
+		{
+			val nl = all.indexOf('\n', headEnd)
+			if(nl < 0) break
+			headEnd = nl + 1
+			lines++
+		}
+		val head = all.substring(0, headEnd)
+		val tailLen = (max - head.length - 64).coerceAtLeast(1024)
+		var from = (all.length - tailLen).coerceAtLeast(headEnd)
+		val nl = all.indexOf('\n', from)
+		if(nl in from until all.length - 1)
+			from = nl + 1   // хвіст — з початку рядка
+		return head + "\n… (пропущено ${from - headEnd} символів) …\n\n" + all.substring(from)
+	}
+
+	/** Журнали гри (chiaki) за останні дві години і logcat застосунку */
 	private fun collectLog(context: Context, note: String): String
 	{
 		val sb = StringBuilder()
@@ -160,39 +224,84 @@ object AnyPlayCloud
 			sb.append(note).append("\n")
 		try
 		{
-			val dir = File(context.filesDir, "session_logs")
-			val files = dir.listFiles()?.filter { it.isFile && it.name.endsWith(".log") }?.sortedByDescending { it.lastModified() } ?: listOf()
-			for(f in files.take(2).reversed())
-			{
-				val bytes = f.readBytes()
-				val tail = if(bytes.size > 160 * 1024) bytes.copyOfRange(bytes.size - 160 * 1024, bytes.size) else bytes
-				sb.append("\n===== ").append(f.name).append(" =====\n").append(String(tail, Charsets.UTF_8))
-			}
+			val p = AnyPlayQuality.videoProfile(context)
+			sb.append("Відео для наступної гри: ").append(p.width).append("x").append(p.height).append(", ").append(p.maxFPS)
+				.append(" кадрів, ").append(p.codec).append(", ").append(p.bitrate).append(" кбіт/с; якість ").append(AnyPlayQuality.name(context))
+				.append("; кольори ").append(if(AnyPlayPicture.params(context) == null) "типові" else "змінені (обробка відеокартою)").append("\n")
 		}
-		catch(e: Exception) { sb.append("\n(журнал гри недоступний: ").append(e.javaClass.simpleName).append(")\n") }
+		catch(e: Exception) {}
+		var logcatPart: String
 		try
 		{
-			val p = ProcessBuilder("logcat", "-d", "-v", "time", "-t", "2500").redirectErrorStream(true).start()
+			val p = ProcessBuilder("logcat", "-d", "-v", "time", "-t", "3000").redirectErrorStream(true).start()
 			val text = p.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
 			p.waitFor()
-			sb.append("\n===== logcat =====\n").append(text)
+			val sq = squeeze(text)
+			logcatPart = if(sq.length > LOG_LOGCAT_MAX) "…\n" + sq.substring(sq.length - LOG_LOGCAT_MAX) else sq
+			if(logcatPart.isBlank())
+				logcatPart = "(logcat порожній)\n"
 		}
-		catch(e: Exception) { sb.append("\n(logcat недоступний: ").append(e.javaClass.simpleName).append(")\n") }
-		val all = sb.toString()
-		return if(all.length > LOG_LIMIT) all.substring(0, 400) + "\n…\n" + all.substring(all.length - (LOG_LIMIT - 500)) else all
+		catch(e: Exception) { logcatPart = "(logcat недоступний: ${e.javaClass.simpleName})\n" }
+		try
+		{
+			val dir = File(context.filesDir, "session_logs")
+			val now = System.currentTimeMillis()
+			val all = dir.listFiles()?.filter { it.isFile && it.name.endsWith(".log") }?.sortedByDescending { it.lastModified() } ?: listOf()
+			// за дві години (до 6), а якщо таких немає — хоч останній
+			val files = all.filter { now - it.lastModified() <= LOG_SESSIONS_AGE_MS }.take(LOG_SESSIONS_MAX).ifEmpty { all.take(1) }
+			sb.append("Журналів гри за 2 год: ").append(files.size).append(" (усього на телефоні ").append(all.size).append(")\n")
+			val budget = (LOG_TEXT_MAX - sb.length - logcatPart.length - 2048).coerceAtLeast(64 * 1024)
+			val each = budget / files.size.coerceAtLeast(1)
+			for(f in files.reversed())
+				sb.append("\n===== ").append(f.name).append(" =====\n").append(sessionPart(f, each))
+		}
+		catch(e: Exception) { sb.append("\n(журнал гри недоступний: ").append(e.javaClass.simpleName).append(")\n") }
+		sb.append("\n===== logcat =====\n").append(logcatPart)
+		return sb.toString()
 	}
 
-	/** Надіслати журнал на сервер у фоні. reason: request (адмін попросив), error (збій), app */
+	private fun gzip(data: ByteArray): ByteArray
+	{
+		val out = java.io.ByteArrayOutputStream(data.size / 4 + 64)
+		java.util.zip.GZIPOutputStream(out).use { it.write(data) }
+		return out.toByteArray()
+	}
+
+	/**
+	 * Надіслати журнал на сервер у фоні. reason: request (адмін попросив), error (збій), app.
+	 * Самі (не request) — не частіше ніж раз на 2 хв.
+	 */
 	fun uploadLog(context: Context, reason: String, note: String = "")
 	{
 		val app = context.applicationContext
 		if(token(app).isEmpty())
 			return
+		val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+		val now = System.currentTimeMillis()
+		if(reason == "request")
+		{
+			// адмін попросив: сервер знімає прохання, коли журнал прийшов; поки він їде, головний екран і гра
+			// можуть побачити прохання ще раз — не шлемо двічі
+			if(now - prefs.getLong(KEY_LOG_REQ_SENT, 0) in 0 until 30_000L)
+				return
+			prefs.edit().putLong(KEY_LOG_REQ_SENT, now).apply()
+		}
+		else
+		{
+			val last = prefs.getLong(KEY_LOG_SENT, 0)
+			if(now - last in 0 until LOG_AUTO_GAP_MS)
+			{
+				android.util.Log.i("AnyPlay", "Журнал ($reason: $note) не надсилаю: минулий був ${(now - last) / 1000} с тому")
+				return
+			}
+			prefs.edit().putLong(KEY_LOG_SENT, now).apply()
+		}
 		Thread {
 			var conn: HttpURLConnection? = null
 			try
 			{
-				val body = collectLog(app, note).toByteArray(Charsets.UTF_8)
+				val text = collectLog(app, note).toByteArray(Charsets.UTF_8)
+				val body = gzip(text)
 				conn = URL("$SERVER/api/app/log?reason=" + URLEncoder.encode(reason, "UTF-8")).openConnection() as HttpURLConnection
 				conn.requestMethod = "POST"
 				conn.connectTimeout = 15000
@@ -204,9 +313,10 @@ object AnyPlayCloud
 				conn.setRequestProperty("Authorization", "Bearer " + token(app))
 				conn.setFixedLengthStreamingMode(body.size)
 				conn.outputStream.use { it.write(body) }
-				conn.responseCode
+				val code = conn.responseCode
+				android.util.Log.i("AnyPlay", "Журнал ($reason) надіслано: ${text.size / 1024} КБ тексту, ${body.size / 1024} КБ стиснуто, відповідь $code")
 			}
-			catch(e: Exception) { }
+			catch(e: Exception) { android.util.Log.w("AnyPlay", "Журнал не надіслано: ${e.javaClass.simpleName}") }
 			finally { conn?.disconnect() }
 		}.apply { isDaemon = true; name = "anyplay-log" }.start()
 	}

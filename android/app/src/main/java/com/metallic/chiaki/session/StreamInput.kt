@@ -14,15 +14,17 @@ class StreamInput(val context: Context, val preferences: Preferences)
 {
 	var controllerStateChangedCallback: ((ControllerState) -> Unit)? = null
 
-	val controllerState: ControllerState get()
+	companion object
 	{
-		val controllerState = sensorControllerState or keyControllerState or motionControllerState
-
-		val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-		@Suppress("DEPRECATION")
-		when(windowManager.defaultDisplay.rotation)
+		/**
+		 * Стан, що йде в гру: датчики, кнопки й осі справжнього геймпада, екранні кнопки (шари вже об'єднані).
+		 * Окремою чистою функцією, щоб її можна було перевірити тестом без телефона.
+		 */
+		fun merge(sensor: ControllerState, key: ControllerState, motion: ControllerState, touch: ControllerState, rotated90: Boolean): ControllerState
 		{
-			Surface.ROTATION_90 -> {
+			val controllerState = sensor or key or motion
+			if(rotated90)
+			{
 				controllerState.accelX *= -1.0f
 				controllerState.accelZ *= -1.0f
 				controllerState.gyroX *= -1.0f
@@ -30,17 +32,36 @@ class StreamInput(val context: Context, val preferences: Preferences)
 				controllerState.orientX *= -1.0f
 				controllerState.orientZ *= -1.0f
 			}
-			else -> {}
+			// prioritize motion controller's l2 and r2 over key
+			// (some controllers send only key, others both but key earlier than full press)
+			if(motion.l2State > 0U)
+				controllerState.l2State = motion.l2State
+			if(motion.r2State > 0U)
+				controllerState.r2State = motion.r2State
+			return controllerState or touch
 		}
 
-		// prioritize motion controller's l2 and r2 over key
-		// (some controllers send only key, others both but key earlier than full press)
-		if(motionControllerState.l2State > 0U)
-			controllerState.l2State = motionControllerState.l2State
-		if(motionControllerState.r2State > 0U)
-			controllerState.r2State = motionControllerState.r2State
+		/** Курок 0..1 → 0..255. AnyPlay 118.1: частина геймпадів (Xbox, деякі 8BitDo) шле курки як «гальмо/газ» */
+		fun triggerValue(trigger: Float, alt: Float): UByte =
+			(maxOf(trigger, alt).coerceIn(0f, 1f) * UByte.MAX_VALUE.toFloat()).toUInt().toUByte()
 
-		return controllerState or touchControllerState
+		/** Кнопки хрестовини з клавіш (KEYCODE_DPAD_*): частина геймпадів шле хрестовину клавішами, а не віссю HAT */
+		fun dpadKeyMask(keyCode: Int): UInt = when(keyCode)
+		{
+			KeyEvent.KEYCODE_DPAD_LEFT -> ControllerState.BUTTON_DPAD_LEFT
+			KeyEvent.KEYCODE_DPAD_RIGHT -> ControllerState.BUTTON_DPAD_RIGHT
+			KeyEvent.KEYCODE_DPAD_UP -> ControllerState.BUTTON_DPAD_UP
+			KeyEvent.KEYCODE_DPAD_DOWN -> ControllerState.BUTTON_DPAD_DOWN
+			else -> 0U
+		}
+	}
+
+	val controllerState: ControllerState get()
+	{
+		val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+		@Suppress("DEPRECATION")
+		val rotated90 = windowManager.defaultDisplay.rotation == Surface.ROTATION_90
+		return merge(sensorControllerState, keyControllerState, motionControllerState, touchControllerState, rotated90)
 	}
 
 	private val sensorControllerState = ControllerState() // from Motion Sensors
@@ -126,14 +147,28 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		if(event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP)
 			return false
 
+		// AnyPlay 118.1: хрестовина клавішами (лише з геймпада: стрілки клавіатури телефона/планшета не чіпаємо)
+		val dpad = dpadKeyMask(event.keyCode)
+		val fromPad = event.device?.let { d -> !d.isVirtual &&
+			(d.sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || d.sources and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK) } == true
+		if(dpad != 0U && fromPad)
+		{
+			keyControllerState.buttons = if(event.action == KeyEvent.ACTION_DOWN) keyControllerState.buttons or dpad
+				else keyControllerState.buttons and dpad.inv()
+			controllerStateUpdated()
+			return true
+		}
+
 		when(event.keyCode)
 		{
 			KeyEvent.KEYCODE_BUTTON_L2 -> {
 				keyControllerState.l2State = if(event.action == KeyEvent.ACTION_DOWN) UByte.MAX_VALUE else 0U
+				controllerStateUpdated()   // 118.1: раніше цифровий курок не відправлявся, доки не зміниться щось інше
 				return true
 			}
 			KeyEvent.KEYCODE_BUTTON_R2 -> {
 				keyControllerState.r2State = if(event.action == KeyEvent.ACTION_DOWN) UByte.MAX_VALUE else 0U
+				controllerStateUpdated()
 				return true
 			}
 		}
@@ -178,13 +213,12 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		if(event.source and InputDevice.SOURCE_CLASS_JOYSTICK != InputDevice.SOURCE_CLASS_JOYSTICK)
 			return false
 		fun Float.signedAxis() = (this * Short.MAX_VALUE).toInt().toShort()
-		fun Float.unsignedAxis() = (this * UByte.MAX_VALUE.toFloat()).toUInt().toUByte()
 		motionControllerState.leftX = event.getAxisValue(MotionEvent.AXIS_X).signedAxis()
 		motionControllerState.leftY = event.getAxisValue(MotionEvent.AXIS_Y).signedAxis()
 		motionControllerState.rightX = event.getAxisValue(MotionEvent.AXIS_Z).signedAxis()
 		motionControllerState.rightY = event.getAxisValue(MotionEvent.AXIS_RZ).signedAxis()
-		motionControllerState.l2State = event.getAxisValue(MotionEvent.AXIS_LTRIGGER).unsignedAxis()
-		motionControllerState.r2State = event.getAxisValue(MotionEvent.AXIS_RTRIGGER).unsignedAxis()
+		motionControllerState.l2State = triggerValue(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE))
+		motionControllerState.r2State = triggerValue(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS))
 		motionControllerState.buttons = motionControllerState.buttons.let {
 			val dpadX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
 			val dpadY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)

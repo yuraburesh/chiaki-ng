@@ -455,7 +455,8 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 
 	fun setControllerState(controllerState: ControllerState)
 	{
-		ChiakiNative.sessionSetControllerState(nativePtr, controllerState)
+		if(nativePtr != 0L)
+			ChiakiNative.sessionSetControllerState(nativePtr, controllerState)
 	}
 
 	fun setLoginPin(pin: String)

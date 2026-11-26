@@ -7,6 +7,7 @@
 #include <chiaki/common.h>
 #include <chiaki/log.h>
 #include <chiaki/session.h>
+#include <chiaki/time.h>
 #include <chiaki/discoveryservice.h>
 #include <chiaki/regist.h>
 #include <chiaki/remote/holepunch.h>
@@ -285,6 +286,9 @@ typedef struct android_chiaki_session_t
 	bool started; // потік сесії запущено (інакше join нема чого чекати)
 	ChiakiHolepunchSession holepunch; // AnyPlay: з'єднання через PSN (належить ChiakiSession)
 	int psn_step; // AnyPlay: на якому кроці з'єднання через PSN ми зараз (або де зупинились), див. sessionPsnConnect
+	// AnyPlay 118.1: вібрація з тактильного відгуку DualSense (потік haptics, лише потік звуку)
+	uint8_t haptic_left, haptic_right;
+	uint64_t haptic_sent_ms;
 } AndroidChiakiSession;
 
 static void android_chiaki_event_cb(ChiakiEvent *event, void *user)
@@ -330,6 +334,61 @@ static void android_chiaki_event_cb(ChiakiEvent *event, void *user)
 	}
 
 	(*global_vm)->DetachCurrentThread(global_vm);
+}
+
+// AnyPlay 118.1: декодер телефона просить ключовий кадр сам (з потоку відео, обмеження частоти — у декодері)
+static void android_chiaki_key_frame_cb(void *user)
+{
+	AndroidChiakiSession *session = user;
+	if(!session || !session->started)
+		return;
+	ChiakiErrorCode err = chiaki_session_request_idr(&session->session);
+	CHIAKI_LOGI(session->log, "[anyplay-android] decoder asked for a key frame: %s", chiaki_error_string(err));
+}
+
+#define ANYPLAY_HAPTIC_MIN 400    // слабший відгук — не вібруємо (на комп'ютері поріг 100, телефон грубіший)
+#define ANYPLAY_HAPTIC_GAP_MS 60  // не частіше, ніж раз на 60 мс (вібромотор телефона частіше й не встигає)
+
+static void android_chiaki_haptics_cb(uint8_t *buf, size_t buf_size, void *user)
+{
+	AndroidChiakiSession *session = user;
+	const size_t frame = 2 * sizeof(int16_t);   // стерео 16 біт
+	if(!session || buf_size < frame)
+		return;
+	size_t n = buf_size / frame;
+	uint32_t suml = 0, sumr = 0;
+	for(size_t i = 0; i < n; i++)
+	{
+		int16_t l, r;
+		memcpy(&l, buf + i * frame, sizeof(int16_t));
+		memcpy(&r, buf + i * frame + sizeof(int16_t), sizeof(int16_t));
+		suml += (uint32_t)abs((int)l) * 2;
+		sumr += (uint32_t)abs((int)r) * 2;
+	}
+	uint32_t ml = suml / n, mr = sumr / n;
+	// 0..255: повна сила вже з середньої амплітуди ~8000 (відгук DualSense тихий), дрібні зміни відкидаємо
+	uint8_t left = ml > ANYPLAY_HAPTIC_MIN ? (uint8_t)((ml >> 6) > 255 ? 255 : (ml >> 6)) : 0;
+	uint8_t right = mr > ANYPLAY_HAPTIC_MIN ? (uint8_t)((mr >> 6) > 255 ? 255 : (mr >> 6)) : 0;
+	left &= 0xf8; right &= 0xf8;
+	if(ml > ANYPLAY_HAPTIC_MIN && !left) left = 8;
+	if(mr > ANYPLAY_HAPTIC_MIN && !right) right = 8;
+	uint64_t now = chiaki_time_now_monotonic_ms();
+	bool stop = left == 0 && right == 0;
+	bool was = session->haptic_left || session->haptic_right;
+	if(left == session->haptic_left && right == session->haptic_right && (stop || now - session->haptic_sent_ms < 400))
+		return;
+	if(!stop && now - session->haptic_sent_ms < ANYPLAY_HAPTIC_GAP_MS)
+		return;
+	if(stop && !was)
+		return;
+	session->haptic_left = left;
+	session->haptic_right = right;
+	session->haptic_sent_ms = now;
+	ChiakiEvent event = { 0 };
+	event.type = CHIAKI_EVENT_RUMBLE;
+	event.rumble.left = left;
+	event.rumble.right = right;
+	android_chiaki_event_cb(&event, session);
 }
 
 JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject result, jobject connect_info_obj, jstring log_file_str, jboolean log_verbose, jobject java_session)
@@ -402,6 +461,13 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
 
 	connect_info.video_profile_auto_downgrade = true;
 	connect_info.enable_idr_on_fec_failure = true;   // AnyPlay: після збою FEC просимо ключовий кадр і тримаємо останню добру картинку
+	// AnyPlay 118.1: приставка має бачити DualSense, як у програмі на комп'ютері. До цього Android (як і chiaki)
+	// оголошував DualShock 4 і не вмикав можливості DualSense: PS5 показувала «пристрій підключився», а ігри для PS5
+	// (GTA VI) такого контролера не приймають — керування не йшло в гру
+	connect_info.enable_dualsense = ps5;
+	// як на комп'ютері: приставці повідомляємо втрати до 5% (0 означало «втрат ніколи немає», і PS5 не знижувала
+	// бітрейт навіть на поганому мобільному інтернеті — картинка сипалась і гальмувала)
+	connect_info.packet_loss_max = 0.05;
 
 	// AnyPlay: гра через інтернет — з'єднання з PS5 пробиває PSN, прив'язка відбувається в тій самій сесії
 	if(psn_token_string)
@@ -507,7 +573,15 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
 	session->java_controller_touch_id = E->GetFieldID(env, controller_touch_class, "id", "B");
 
 	chiaki_session_set_event_cb(&session->session, android_chiaki_event_cb, session);
+	// AnyPlay 118.1: з DualSense ігри шлють не «rumble», а тактильний відгук (звук для моторів). Перетворюємо його
+	// на вібрацію телефона, як програма на комп'ютері — на вібрацію геймпада
+	ChiakiAudioSink haptics_sink = { 0 };
+	haptics_sink.user = session;
+	haptics_sink.frame_cb = android_chiaki_haptics_cb;
+	chiaki_session_set_haptics_sink(&session->session, &haptics_sink);
 	chiaki_session_set_video_sample_cb(&session->session, android_chiaki_video_decoder_video_sample, &session->video_decoder);
+	session->video_decoder.key_frame_cb = android_chiaki_key_frame_cb;
+	session->video_decoder.key_frame_user = session;
 
 	ChiakiAudioSink audio_sink;
 	android_chiaki_audio_decoder_get_sink(&session->audio_decoder, &audio_sink);
@@ -629,15 +703,15 @@ JNIEXPORT jstring JNICALL JNI_FCN(psnDiag)(JNIEnv *env, jobject obj)
 JNIEXPORT jlongArray JNICALL JNI_FCN(sessionVideoStats)(JNIEnv *env, jobject obj, jlong ptr)
 {
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
-	uint64_t stats[7] = { 0 };
+	uint64_t stats[ANDROID_VIDEO_STATS_COUNT] = { 0 };
 	if(session)
 		android_chiaki_video_decoder_stats(&session->video_decoder, stats);
-	jlong values[7];
-	for(int i = 0; i < 7; i++)
+	jlong values[ANDROID_VIDEO_STATS_COUNT];
+	for(int i = 0; i < ANDROID_VIDEO_STATS_COUNT; i++)
 		values[i] = (jlong)stats[i];
-	jlongArray r = E->NewLongArray(env, 7);
+	jlongArray r = E->NewLongArray(env, ANDROID_VIDEO_STATS_COUNT);
 	if(r)
-		E->SetLongArrayRegion(env, r, 0, 7, values);
+		E->SetLongArrayRegion(env, r, 0, ANDROID_VIDEO_STATS_COUNT, values);
 	return r;
 }
 
@@ -682,8 +756,8 @@ JNIEXPORT jboolean JNICALL JNI_FCN(sessionResetDecoder)(JNIEnv *env, jobject obj
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
 	if(!session)
 		return JNI_FALSE;
+	// новий декодер сам попросить ключовий кадр (key_frame_cb) з першим же кадром без опори
 	bool ok = android_chiaki_video_decoder_reset(&session->video_decoder);
-	anyplay_request_key_frame(session, "android_decoder_reset");
 	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -818,9 +892,8 @@ JNIEXPORT void JNICALL JNI_FCN(sessionSetSurface)(JNIEnv *env, jobject obj, jlon
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
 	if(!session)
 		return;
-	// AnyPlay 118: декодер створено заново посеред гри (інша поверхня) — йому потрібен ключовий кадр
-	if(android_chiaki_video_decoder_set_surface(&session->video_decoder, env, surface))
-		anyplay_request_key_frame(session, "android_new_decoder");
+	// декодер, створений заново посеред гри, сам пропускає кадри до ключового й сам його просить (key_frame_cb)
+	android_chiaki_video_decoder_set_surface(&session->video_decoder, env, surface);
 }
 
 JNIEXPORT void JNICALL JNI_FCN(sessionSetControllerState)(JNIEnv *env, jobject obj, jlong ptr, jobject controller_state_java)

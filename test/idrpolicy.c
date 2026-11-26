@@ -151,6 +151,72 @@ static MunitResult test_idr_external(const MunitParameter params[], void *fixtur
 	return MUNIT_OK;
 }
 
+// AnyPlay 118.1: a decoder that refuses every key frame (Galaxy S7 log) made the receiver ask every 250 ms
+static uint32_t storm_requests(bool guard)
+{
+	ChiakiIdrPolicy p;
+	bool send;
+	chiaki_idr_policy_init(&p);
+	frame(&p, 1000, CHIAKI_IDR_FRAME_I, &send);
+	uint32_t sent = 0;
+	// the decoder rejects every frame for 4 s (each rejection is a new break), the console sends a key frame every 3rd
+	for(uint64_t t = 2000; t < 6000; t += 16)
+	{
+		if(!guard)
+			p.burst_requests = 0;
+		if(chiaki_idr_policy_corrupt(&p, t, true))
+			sent++;
+		if(!guard)
+			p.burst_requests = 0;
+		if(frame(&p, t + 8, (t / 16) % 3 ? CHIAKI_IDR_FRAME_P : CHIAKI_IDR_FRAME_I, &send) && send)
+			sent++;
+		else if(send)
+			sent++;
+	}
+	return sent;
+}
+
+// AnyPlay 118.1: a decoder that refuses every frame (Galaxy S7 log) made the receiver ask every 250 ms
+static MunitResult test_idr_storm_guard(const MunitParameter params[], void *fixture)
+{
+	uint32_t without = storm_requests(false);
+	uint32_t with = storm_requests(true);
+	munit_logf(MUNIT_LOG_INFO, "requests in 4 s: %u without the guard, %u with it", without, with);
+	munit_assert_uint32(without, >=, 15);
+	// first CHIAKI_IDR_STORM_REQUESTS as before, then one per 1.5 s
+	munit_assert_uint32(with, <=, CHIAKI_IDR_STORM_REQUESTS + 3);
+	// a normal loss later (new window) is answered at once again
+	ChiakiIdrPolicy p;
+	bool send;
+	chiaki_idr_policy_init(&p);
+	munit_assert(frame(&p, 1000, CHIAKI_IDR_FRAME_I, &send));
+	munit_assert(chiaki_idr_policy_corrupt(&p, 20000, false));
+	return MUNIT_OK;
+}
+
+static MunitResult test_corrupt_report_limit(const MunitParameter params[], void *fixture)
+{
+	ChiakiCorruptReportLimit l;
+	chiaki_corrupt_report_limit_init(&l);
+	munit_assert(chiaki_corrupt_report_allow(&l, 1000, 2849));
+	// the same growing range every frame: once per second
+	uint32_t n = 1;
+	for(uint64_t t = 1016; t < 3000; t += 16)
+		if(chiaki_corrupt_report_allow(&l, t, 2849))
+			n++;
+	munit_assert_uint32(n, ==, 2);
+	// a new break is reported at once
+	munit_assert(chiaki_corrupt_report_allow(&l, 3005, 3100));
+	// many different breaks in one second: at most 8
+	chiaki_corrupt_report_limit_init(&l);
+	n = 0;
+	for(uint16_t i = 0; i < 30; i++)
+		if(chiaki_corrupt_report_allow(&l, 5000 + i * 10, (uint16_t)(100 + i * 5)))
+			n++;
+	munit_assert_uint32(n, ==, CHIAKI_CORRUPT_REPORT_MAX_PER_S);
+	return MUNIT_OK;
+}
+
 static const uint8_t h265_header[] = {
 	0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x0c, 0x01, 0xff, 0xff, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00,
 	0xb0, 0x00, 0x00, 0x03, 0x00, 0x00, 0x03, 0x00, 0x96, 0x0a, 0xc0, 0x90, 0x00, 0x00, 0x00, 0x01,
@@ -222,6 +288,8 @@ MunitTest tests_idrpolicy[] = {
 	{ "/corrupt_soft", test_idr_corrupt_soft, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
 	{ "/corrupt_hold", test_idr_corrupt_hold, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
 	{ "/external", test_idr_external, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+	{ "/storm_guard", test_idr_storm_guard, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
+	{ "/corrupt_report_limit", test_corrupt_report_limit, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
 	{ "/bitstream_key_frame_packing", test_bitstream_key_frame_packing, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL },
 	{ NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }
 };

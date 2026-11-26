@@ -157,7 +157,10 @@ object AnyPlayQuality
 		if(profile.codec != Codec.CODEC_H265)
 			return profile
 		val broken = System.currentTimeMillis() < prefs(context).getLong(KEY_HEVC_BROKEN, 0)
-		if(!broken && hevcHardware(profile.width, profile.height))
+		// 118.1: Android 10 і старші (телефони до ~2019, як Galaxy S7 з журналу власника) — H.264: їхні декодери H.265
+		// на потоці PS5 1080p не встигали брати кадри («Failed to get input buffer»), а H.264 вони тягнуть упевнено
+		val old = Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+		if(!broken && !old && hevcHardware(profile.width, profile.height))
 			return profile
 		val h264 = ConnectVideoProfile.preset(p.resolution.preset, p.fps.preset, Codec.CODEC_H264)
 		return p.bitrate?.let { h264.copy(bitrate = it) } ?: h264

@@ -235,6 +235,9 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		}
 		session = r.json
 		skew = r.json.optLong("now") - System.currentTimeMillis() / 1000
+		// 118.1: адмін попросив журнал — надсилаємо й з головного екрана, не лише з гри
+		if(r.json.optBoolean("sendLog"))
+			AnyPlayCloud.uploadLog(this, "request", "Адміністратор попросив журнал (головний екран)")
 		if(r.json.optBoolean("admin"))
 		{
 			val a = withContext(Dispatchers.IO) { AnyPlayCloud.admin(this@AnyPlayActivity) }
@@ -400,6 +403,9 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 				is PlayError ->
 				{
 					render()
+					// 118.1: невдала спроба — журнал для підтримки (сам не частіше ніж раз на 2 хв)
+					if(target.code.isNotEmpty())
+						AnyPlayCloud.uploadLog(this@AnyPlayActivity, "error", "Не вдалося почати гру: ${target.code}")
 					AnyPlayStyle.show(MaterialAlertDialogBuilder(this@AnyPlayActivity)
 						.setMessage(AnyPlayStyle.errorMessage(target.text, target.code))
 						.setPositiveButton("Зрозуміло", null))

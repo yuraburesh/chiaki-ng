@@ -60,6 +60,7 @@ CHIAKI_EXPORT void chiaki_video_receiver_init(ChiakiVideoReceiver *video_receive
 	video_receiver->idr_wait_since_ms = 0;
 	video_receiver->idr_requests_total = 0;
 	video_receiver->decode_errors_total = 0;
+	chiaki_corrupt_report_limit_init(&video_receiver->corrupt_reports);
 	chiaki_mutex_init(&video_receiver->frames_lost_mutex, false);
 }
 
@@ -242,10 +243,15 @@ CHIAKI_EXPORT void chiaki_video_receiver_av_packet(ChiakiVideoReceiver *video_re
 		if(chiaki_seq_num_16_gt(frame_index, next_frame_expected)
 			&& !(frame_index == 1 && video_receiver->frame_index_cur < 0)) // ok for frame 1
 		{
-			CHIAKI_LOGW(video_receiver->log, "Detected missing or corrupt frame(s) from %d to %d", next_frame_expected, (int)frame_index);
-			err = stream_connection_send_corrupt_frame(&video_receiver->session->stream_connection, next_frame_expected, frame_index - 1);
-			if(err != CHIAKI_ERR_SUCCESS)
-				CHIAKI_LOGW(video_receiver->log, "Error sending corrupt frame.");
+			// AnyPlay 118.1: the same growing range is reported (and logged) at most once per second
+			if(chiaki_corrupt_report_allow(&video_receiver->corrupt_reports, chiaki_time_now_monotonic_ms(), next_frame_expected))
+			{
+				CHIAKI_LOGW(video_receiver->log, "Detected missing or corrupt frame(s) from %d to %d%s", next_frame_expected, (int)frame_index,
+						video_receiver->corrupt_reports.suppressed ? " (repeats limited)" : "");
+				err = stream_connection_send_corrupt_frame(&video_receiver->session->stream_connection, next_frame_expected, frame_index - 1);
+				if(err != CHIAKI_ERR_SUCCESS)
+					CHIAKI_LOGW(video_receiver->log, "Error sending corrupt frame.");
+			}
 			// AnyPlay: the frames after the gap may reference the lost ones
 			video_receiver_corrupt(video_receiver, "missing_frames", frame_index, false);
 		}
@@ -283,7 +289,8 @@ static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *vi
 		if (flush_result == CHIAKI_FRAME_PROCESSOR_FLUSH_RESULT_FEC_FAILED)
 		{
 			ChiakiSeqNum16 next_frame_expected = (ChiakiSeqNum16)(video_receiver->frame_index_prev_complete + 1);
-			stream_connection_send_corrupt_frame(&video_receiver->session->stream_connection, next_frame_expected, video_receiver->frame_index_cur);
+			if(chiaki_corrupt_report_allow(&video_receiver->corrupt_reports, chiaki_time_now_monotonic_ms(), next_frame_expected))
+				stream_connection_send_corrupt_frame(&video_receiver->session->stream_connection, next_frame_expected, video_receiver->frame_index_cur);
 			// AnyPlay: a lost frame always asks for a key frame (before 115 only with the "IDR on FEC failure"
 			// setting, so on a still screen the broken picture stayed for minutes); the setting now means
 			// "hold the last good picture until the key frame comes" instead of showing broken frames

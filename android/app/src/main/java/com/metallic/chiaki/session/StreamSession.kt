@@ -34,10 +34,23 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 	private var surfaceTexture: SurfaceTexture? = null
 	private var surface: Surface? = null
 
+	// AnyPlay 118.1: чи пішов у цю сесію хоч один стан з натисканням (для журналу: «керування не йде в гру»)
+	@Volatile private var inputLogged: Session? = null
+
 	init
 	{
-		input.controllerStateChangedCallback = {
-			session?.setControllerState(it)
+		input.controllerStateChangedCallback = { state ->
+			val s = session
+			if(s != null)
+			{
+				s.setControllerState(state)
+				if(inputLogged !== s && (state.buttons != 0U || state.l2State > 0U || state.r2State > 0U ||
+						state.leftX.toInt() != 0 || state.leftY.toInt() != 0 || state.rightX.toInt() != 0 || state.rightY.toInt() != 0))
+				{
+					inputLogged = s
+					Log.i("AnyPlay", "Ввід: перше натискання в цій сесії пішло в гру (кнопки 0x${state.buttons.toString(16)}, стан ${_state.value?.javaClass?.simpleName})")
+				}
+			}
 		}
 	}
 
@@ -90,6 +103,8 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 			_state.value = StreamStateConnecting
 			session.eventCallback = { event -> if(this.session === session) eventCallback(event) }
 			this.session = session
+			// 118.1: нова сесія (перепідключення) одразу отримує поточний стан керування, а не лише після наступного дотику
+			session.setControllerState(input.controllerState)
 			val duid = connectInfo.psnDuid
 			if(connectInfo.psnToken != null && duid != null)
 			{
@@ -224,8 +239,14 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		val input = if(r.start()) r.input else null
 		if(input == null)
 		{
+			// 118.1: до цього тут був лише return — декодер так і не отримував поверхню, і гра йшла без картинки
+			// («Received video data, but decoder is not initialized» у журналі Galaxy S7). Тепер — картинка напряму
 			Log.e("AnyPlay", "Обробка кольорів недоступна на цьому телефоні: картинка напряму")
 			r.release()
+			colorBlocked = true
+			colorParams = null
+			surface = out
+			session?.setSurface(out)
 			return
 		}
 		r.params = want
@@ -234,6 +255,8 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		if(!r.attachOutput())
 		{
 			Log.e("AnyPlay", "Обробка кольорів не підключилась до екрана: картинка напряму")
+			colorBlocked = true
+			colorParams = null
 			surface = out
 			session?.setSurface(out)
 			r.release()

@@ -69,8 +69,8 @@ if (NOT CHIAKI_IS_SWITCH)
 		set(HTTP_ONLY ON)
 		set(ENABLE_WEBSOCKETS ON)
 		set(CHIAKI_CURL_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/curl")
-		if(ANDROID)
-			# AnyPlay: на Android немає звичного сховища кореневих сертифікатів для OpenSSL —
+		if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+			# AnyPlay: на Android (і на iOS) немає звичного сховища кореневих сертифікатів для OpenSSL —
 			# беремо файл, шлях до якого застосунок кладе в SSL_CERT_FILE
 			set(CURL_CA_FALLBACK ON CACHE BOOL "" FORCE)
 			set(CURL_CA_BUNDLE "none" CACHE STRING "" FORCE)

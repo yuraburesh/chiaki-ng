@@ -5,6 +5,11 @@ name: AnyPlay iOS
 # сама програма без підпису (перевірка, що все компілюється); підписує й ставить на телефон власник у Xcode.
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: "Машина GitHub (macos-14, macos-15, macos-26), якщо на одній черга"
+        type: string
+        default: macos-14
   push:
     branches: [anyplay]
     paths:
@@ -23,7 +28,8 @@ concurrency:
 
 jobs:
   core:
-    runs-on: macos-15
+    # macos-15 часто не дістається (черга на машини Apple); macos-14 вільніший, Xcode там теж є
+    runs-on: ${{ inputs.runner || 'macos-14' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

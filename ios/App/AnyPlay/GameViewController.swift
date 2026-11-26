@@ -188,7 +188,12 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	}
 
 	func sessionRumble(left: Int, right: Int) { Haptics.shared.rumble(left: left, right: right) }
-	func sessionTriggers(typeL: Int, typeR: Int, data: [UInt8]) { Haptics.shared.triggerEffects(typeL: typeL, typeR: typeR, data: data) }
+	// 130: адаптивні курки — окрема фішка, вмикається у «Вібрації»; вимкнено — курки звичайні
+	func sessionTriggers(typeL: Int, typeR: Int, data: [UInt8])
+	{
+		if Prefs.feel["adaptive"] as? Bool ?? false { Haptics.shared.triggerEffects(typeL: typeL, typeR: typeR, data: data) }
+		else { Haptics.shared.triggerEffects(typeL: 0, typeR: 0, data: []) }
+	}
 
 	private func sendController()
 	{

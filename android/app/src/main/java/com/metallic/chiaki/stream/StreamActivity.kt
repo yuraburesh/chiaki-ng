@@ -209,6 +209,7 @@ class StreamActivity : AppCompatActivity()
 		{
 			// 125: вібрація гри з плавною силою (AnyPlayHaptics), налаштування «Вібрація гри»
 			AnyPlayHaptics.resetTriggers()
+			AnyPlayHaptics.load(this)
 			viewModel.session.rumbleState.observe(this, Observer {
 				AnyPlayHaptics.rumble(this, it.left.toInt(), it.right.toInt())
 			})

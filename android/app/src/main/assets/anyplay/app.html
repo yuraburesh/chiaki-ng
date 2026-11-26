@@ -105,6 +105,26 @@ h2{font:600 22px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 #vGate .hero{align-items:center;max-width:560px;padding:12px 0}
 #vGate .lead{max-width:44ch}
 #vGate .spin{margin:6px auto}
+/* 130: «Як керувати» — картки груп, ключі в одній колонці */
+.sw{position:relative;flex:0 0 46px;width:46px;height:26px;border-radius:13px;background:#ffffff26;border:1px solid var(--edge);margin-left:10px;transition:background-color .2s}
+.sw i{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.sw.on{background:var(--cyan);border-color:var(--cyan)}
+.sw.on i{transform:translateX(20px);background:var(--dark)}
+.hseg{margin-bottom:10px}
+.hseg .seg{display:flex;width:100%}
+.hseg .seg button{flex:1;padding:8px 6px}
+.hgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;align-items:start}
+.hcard{border:1px solid var(--hair);border-radius:6px;background:#ffffff0a;padding:9px 12px 4px}
+.hcard .cap{margin-bottom:4px}
+.hrow{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--hair)}
+.hrow:first-of-type{border-top:0}
+.hk{display:flex;flex-wrap:wrap;gap:4px}
+.ht{font-size:13px;line-height:1.4;color:var(--ink)}
+.key.k-x{color:#9bbcff;border-color:#7aaaff80}
+.key.k-o{color:#ff8f9b;border-color:#ff5c6c80}
+.key.k-s{color:#f8a8e2;border-color:#f68cdc80}
+.key.k-t{color:#6ee8bd;border-color:#40e2aa80}
+@media (max-width:520px){.hgrid{grid-template-columns:minmax(0,1fr)}.hrow{grid-template-columns:78px minmax(0,1fr)}}
 /* 129: картки й підказки результату (адмінка) */
 .card{border:1px solid var(--hair);border-radius:6px;background:#ffffff0a;padding:10px 12px;margin-bottom:10px}
 .card .row{min-height:0;padding:2px 0 6px}
@@ -138,7 +158,7 @@ h2{font:600 22px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 .back{display:inline-block;font:500 14px var(--display);letter-spacing:1.6px;text-transform:uppercase;color:var(--mute);padding:4px 0;margin-bottom:8px}
 .m-single .back,.m-menu .back{display:none}
 .seg{display:inline-flex;border:1px solid var(--edge);border-radius:2px;overflow:hidden;flex:0 0 auto}
-.seg button{padding:8px 16px;font:500 14px/1.2 var(--display);letter-spacing:1.4px;text-transform:uppercase;color:var(--mute)}
+.seg button{text-align:center;padding:8px 16px;font:500 14px/1.2 var(--display);letter-spacing:1.4px;text-transform:uppercase;color:var(--mute)}
 .seg button.on{background:var(--ink);color:var(--dark)}
 .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px 40px;align-items:start}
 .pick{display:flex;flex-direction:column}
@@ -424,6 +444,8 @@ body.wallet #methods{margin-top:6px}
 .setrow .top2{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .setrow .t{font:500 14px/1.35 var(--body)}
 .setrow .try{font:500 12.5px var(--body);color:var(--cyan);padding:2px 0;white-space:nowrap}
+.setrow .top2 .try{margin-left:auto}
+.setrow .top2 .sw{align-self:center}
 .setrow .seg{display:flex;width:100%}
 .setrow .seg button{flex:1;padding:8px 4px;font-size:13px;letter-spacing:1px;text-align:center;white-space:nowrap}
 .setrow .small{margin-top:0}
@@ -568,10 +590,8 @@ body.wallet #methods{margin-top:6px}
 
     <!-- як керувати приставкою -->
     <div id="vHelp" class="hidden">
-      <div class="vhead"><div><h2 class="vtitle">Як керувати</h2><p class="hint">Кнопки в GTA і керування самою приставкою.</p></div></div>
-      <div id="gtaHelp"></div>
-      <p class="cap mt">Приставка: у будь-якій грі й меню PS5</p>
-      <div class="grid2" id="help" style="row-gap:0"></div>
+      <div class="vhead t-only"><h2 class="vtitle">Як керувати</h2></div>
+      <div id="helpBody"></div>
     </div>
 
     <!-- 125: вібрація (гра, кнопки, курки L2/R2) -->
@@ -1627,37 +1647,70 @@ function renderPsn(s){
 }
 
 // ── як керувати самою приставкою ──
+// 130: «Як керувати» — розділи (GTA VI, GTA V, приставка), усередині картки за групами кнопок, ключі в одну колонку
 const HELP = [
-  ['Швидке меню приставки', 'Коротко натисни <b>PS</b> (кругла кнопка внизу по центру). Знизу з\'явиться панель: звук, друзі, перемикання між грою і меню. Ще раз <b>PS</b> ховає її.', ['PS']],
-  ['Головний екран приставки', 'Натисни <b>PS</b> і тримай близько секунди. Відкриється головний екран PS5 зі списком ігор, гра при цьому не закривається.', ['PS', 'тримати 1 с']],
-  ['Рух по меню приставки', 'Хрестовина або лівий стік рухають вибір, <b>✕</b> підтверджує, <b>○</b> повертає назад.', ['✕', '○']],
-  ['Запустити гру', 'На головному екрані обери гру хрестовиною ← → і натисни <b>✕</b>.', ['← →', '✕']],
-  ['Перейти в іншу гру', 'Відкрий головний екран, обери іншу гру і натисни <b>✕</b>. Приставка спитає, чи закрити попередню: погодься.', ['PS', '✕']],
-  ['Закрити гру', 'На головному екрані наведи на гру, натисни <b>OPTIONS</b> (овальна кнопка з трьома рисками, праворуч від PS) і обери «Закрити гру».', ['OPTIONS']],
-  ['Пауза і меню самої гри', 'У грі <b>OPTIONS</b> відкриває паузу, карту й налаштування гри. Овальна кнопка ліворуч від PS: Create (знімки екрана).', ['OPTIONS']],
-  ['Тачпад, L3 і R3', 'Тачпад: прямокутник між L і R, короткий дотик дорівнює натисканню. <b>L3</b> і <b>R3</b> (натиснути стік): окремі кнопки біля стіків, або двічі швидко торкнись стіка й тримай.', ['L3', 'R3']],
-  ['Меню AnyPlay', 'Кнопка з трьома крапками на екрані або «Назад» на телефоні. Там час до кінця гри, продовження, якість картинки, кнопки на екрані й вихід.', ['⋯']],
-  ['Свій геймпад', 'Можна підключити до телефона геймпад через Bluetooth чи кабель і сховати кнопки на екрані: меню AnyPlay, «Кнопки на екрані».', []],
-  ['Закінчити гру', 'Відкрий меню AnyPlay й обери «Вийти з гри». Приставку вимикати не треба.', []]
+  ['Меню приставки', [
+    [['PS'], 'Швидке меню: звук, друзі, перемикання між грою і меню. Ще раз PS ховає його.'],
+    [['PS', '1 с'], 'Тримай PS секунду: головний екран PS5 зі списком ігор. Гра при цьому не закривається.'],
+    [['✕', '○'], 'Рух меню хрестовиною або лівим стіком, ✕ підтверджує, ○ назад.'],
+    [['OPTIONS'], 'На головному екрані наведи на гру й натисни: там «Закрити гру».']]],
+  ['Ігри', [
+    [['← →', '✕'], 'Запустити гру: обери її на головному екрані й натисни ✕.'],
+    [['PS', '✕'], 'Інша гра: головний екран, обери гру, погодься закрити попередню.'],
+    [['OPTIONS'], 'У самій грі: пауза, карта й налаштування.'],
+    [['Create'], 'Овальна кнопка ліворуч від PS: знімки й відео екрана.']]],
+  ['Стіки й тачпад', [
+    [['L3'], 'Натиснути лівий стік: двічі швидко торкнись лівого стіка й тримай палець.'],
+    [['R3'], 'Натиснути правий стік: так само двічі торкнись правого стіка й тримай.'],
+    [['L3', 'R3'], 'Окремі кнопки L3 і R3 можна додати: плитка «Джойстик» → «L3 окремо» і «R3 окремо».'],
+    [['Тачпад'], 'Прямокутник між L і R: короткий дотик як натискання, ковзання як свайп.']]],
+  ['AnyPlay', [
+    [['⋯'], 'Меню AnyPlay: кнопка з крапками або «Назад». Час, продовження, якість, кнопки, вихід.'],
+    [['Геймпад'], 'Свій геймпад через Bluetooth чи кабель: кнопки на екрані горизонтально сховаються самі.'],
+    [['Вийти'], 'Закінчити гру: меню AnyPlay → «Вийти з гри». Приставку вимикати не треба.']]]
 ];
-// 125: кнопки геймпада в GTA VI і GTA V (ті самі розкладки, що на комп'ютері: gui/res/anyplay-controls*.json)
 const GTA = {"gta6":[["Пішки",[["L2","Приціл, розмова"],["R2","Постріл, кинути, схопити"],["R1","Укриття, пірнути"],["△","Взаємодія, сісти в авто"],["○","Присісти / відпочити"],["✕","Стрибок, лізти, парашут"],["□","Ближній бій"],["L3","Біг, швидше плисти"],["R3","Глянути назад, з ПКМ огляд"],["L1","Сховати / колесо зброї"],["L1","Сховати або дістати зброю"],["↑","Телефон / WAiNK"],["←","Радіо / меню радіо"],["↓","Ціль / навігація"],["→","Підірвати / напарник"],["R1 + →","Змінити героя (Джейсон, Люсія)"],["L3 + R3","Концентрація"]]],["Транспорт",[["R2","Газ, педалі"],["L2","Гальмо, задній хід"],["✕","Ручне гальмо"],["△","Вийти / зупинитись і вийти"],["L3","Сигнал, нітро"],["○","Фари / пригнутися"],["R1","Стріляти з авто, жест"],["□","Удар, відбитись"],["R3","Крикнути / глянути назад"],["L1","Пістолет / зброя авто"],["↑","Телефон / взаємодія"],["←","Поворотник / меню авто"],["↓","Дані авто / навігація"],["→","Поворотник / напарник"],["R1 + →","Змінити героя (Джейсон, Люсія)"]]],["Авіація",[["R2","Тяга, набір висоти"],["L2","Менше тяги, зниження"],["□","Поворот вліво"],["○","Поворот вправо"],["L3","Шасі"],["R1","Зброя"],["△","Вийти"],["R3","Глянути назад"],["L1","Вибір зброї (тримай)"],["↑","Телефон"],["←","Радіо / меню"],["↓","Ціль / навігація"]]]],"gta5":[["Пішки",[["✕","Біг (спринт)"],["□","Стрибок / перелізти"],["L3","Режим стелсу (присісти)"],["R1","Укриття"],["R2","Вогонь / удар"],["L2","Прицілювання"],["L1","Колесо зброї"],["○","Перезарядка"],["→","Взаємодія"],["△","Сісти в транспорт, взаємодія"],["L3 + R3","Особлива здібність"],["Create","Змінити камеру"],["R3","Подивитися назад"],["↓","Колесо персонажів (утримувати)"],["↓","Масштаб радара"],["Create","Меню взаємодії"]]],["Транспорт",[["R2","Газ"],["L2","Гальмо / задній хід"],["R1","Ручне гальмо"],["△","Вийти з транспорту"],["L3","Клаксон"],["→","Фари"],["←","Радіо (колесо станцій)"],["○","Кінематографічна камера"],["✕","Пригнутися"],["L1","Прицілитися з авто"],["R1","Стріляти з авто"],["Create","Змінити камеру"],["R3","Подивитися назад"],["L3 + R3","Особлива здібність"],["□","Зброя транспорту"]]],["Авіація",[["R2","Газ (тяга)"],["L2","Гальмо / зниження"],["L1","Кермо напряму вліво"],["R1","Кермо напряму вправо"],["L3","Шасі"],["□","Зброя"],["R3","Камера зброї"],["△","Вийти"],["Create","Змінити камеру"]]]]};
 let gtaGame = 'gta6', gtaMode = 0;
 try { gtaGame = localStorage.getItem('gtaGame') || 'gta6'; } catch(e) {}
+if(!['gta6', 'gta5', 'ps'].includes(gtaGame)) gtaGame = 'gta6';
+const FACE = {'✕': 'k-x', '○': 'k-o', '□': 'k-s', '△': 'k-t'};
+function keyChip(k){ return '<span class="key ' + (FACE[k] || '') + '">' + esc(k) + '</span>'; }
+// група кнопки GTA: курки й бампери, кнопки дій, стіки, стрілки, решта (комбінації, Create)
+function gtaGroup(k){
+  if(k.includes(' + ')) return 4;
+  if(/^[LR][12]$/.test(k)) return 0;
+  if(FACE[k]) return 1;
+  if(/^[LR]3$/.test(k)) return 2;
+  if(/^[↑↓←→]/.test(k)) return 3;
+  return 4;
+}
+const GTA_GROUPS = ['Курки й бампери', 'Кнопки ✕ ○ □ △', 'Стіки (натиснути)', 'Стрілки', 'Комбінації та інше'];
+function helpCard(title, rows){
+  return '<div class="hcard"><p class="cap">' + esc(title) + '</p>' + rows.map(r => '<div class="hrow"><span class="hk">' + r[0].map(keyChip).join('') + '</span><span class="ht">' + esc(r[1]) + '</span></div>').join('') + '</div>';
+}
 function renderGta(){
-  const el = $('gtaHelp'); if(!el) return;
-  if(!GTA[gtaGame]) gtaGame = 'gta6';
-  const modes = GTA[gtaGame]; if(gtaMode >= modes.length) gtaMode = 0;
-  el.innerHTML = '<div class="setrow" style="border:0;padding-top:0"><div class="seg">' + [['gta6', 'GTA VI'], ['gta5', 'GTA V']].map(x => '<button type="button" data-gg="' + x[0] + '" class="' + (x[0] === gtaGame ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>'
-    + '<div class="seg">' + modes.map((m, i) => '<button type="button" data-gm="' + i + '" class="' + (i === gtaMode ? 'on' : '') + '">' + m[0] + '</button>').join('') + '</div></div>'
-    + '<div class="grid2" style="row-gap:0">' + modes[gtaMode][1].map(r => '<div class="row"><span class="t">' + esc(r[1]) + '</span><span class="keys">' + r[0].split(' + ').map(k => '<span class="key">' + esc(k) + '</span>').join('') + '</span></div>').join('') + '</div>';
-  el.querySelectorAll('[data-gg]').forEach(b => b.onclick = () => { haptic(); gtaGame = b.dataset.gg; gtaMode = 0; try { localStorage.setItem('gtaGame', gtaGame); } catch(e) {} renderGta(); });
+  const el = $('helpBody'); if(!el) return;
+  let h = '<div class="hseg">' + segHtml('gg', ['GTA VI', 'GTA V', 'Приставка'], ['gta6', 'gta5', 'ps'].indexOf(gtaGame)) + '</div>';
+  if(gtaGame === 'ps') h += '<div class="hgrid">' + HELP.map(c => helpCard(c[0], c[1])).join('') + '</div>';
+  else {
+    const modes = GTA[gtaGame]; if(gtaMode >= modes.length) gtaMode = 0;
+    h += '<div class="hseg">' + segHtml('gm', modes.map(m => m[0]), gtaMode) + '</div>';
+    // однакові кнопки в одному рядку; групи — окремими картками
+    const groups = GTA_GROUPS.map(() => []), seen = {};
+    modes[gtaMode][1].forEach(r => {
+      const k = r[0];
+      if(seen[k]){ if(!seen[k][1].includes(r[1])) seen[k][1] += '; ' + r[1]; return; }
+      const row = [k.split(' + '), r[1]]; seen[k] = row; groups[gtaGroup(k)].push(row);
+    });
+    h += '<div class="hgrid">' + groups.map((g, i) => g.length ? helpCard(GTA_GROUPS[i], g) : '').join('') + '</div>';
+    if(modes[gtaMode][1].some(r => /L3|R3/.test(r[0]))) h += '<p class="small mt">L3 і R3: двічі швидко торкнись стіка й тримай палець. Або додай окремі кнопки: «Джойстик» → «L3 окремо», «R3 окремо».</p>';
+  }
+  el.innerHTML = h;
+  el.querySelectorAll('[data-gg]').forEach(b => b.onclick = () => { haptic(); gtaGame = ['gta6', 'gta5', 'ps'][+b.dataset.gg]; gtaMode = 0; try { localStorage.setItem('gtaGame', gtaGame); } catch(e) {} renderGta(); });
   el.querySelectorAll('[data-gm]').forEach(b => b.onclick = () => { haptic(); gtaMode = +b.dataset.gm; renderGta(); });
 }
 function loadHelp(){
   renderGta();
-  $('help').innerHTML = HELP.map(h => '<div class="row"><span><span class="t">' + h[0] + '</span><span class="s">' + h[1] + '</span></span><span class="keys">'
-    + h[2].map(k => '<span class="key">' + k + '</span>').join('') + '</span></div>').join('');
   show('help');
 }
 
@@ -1674,21 +1727,28 @@ function feelBox(){
     + (test ? '<button type="button" class="try" data-vt="' + test + '">Спробувати</button>' : '') + '</div>' + seg + '<span class="small">' + note + '</span></div>';
   return row('Вібрація гри', f.rumble > 0 ? 'rumble' : '', segHtml('vr', FEEL_R, f.rumble), 'Удари, вибухи, двигун машини: як моторчики DualSense.')
     + row('Відгук кнопок', f.buttons > 0 ? 'buttons' : '', segHtml('vb', FEEL_B, f.buttons), 'Тік на ✕ ○ □ △ і стрілках, клацання на L1 і R1, упор стіка на краю.')
-    + row('Курки L2 і R2', 'trigger', segHtml('va', ['Одразу повністю', 'Сила натиску'], f.analog ? 1 : 0),
-      f.analog ? 'Торкнись курка й тягни палець униз: що нижче, то сильніше (газ, гальмо). Унизу відчуєш упор.'
-        : 'Натиснув і курок повністю. Коли гра робить курок тугим, як на DualSense, натиск відчутно сильніший.')
+    // 130: курки — дві окремі фішки, кожну можна ввімкнути чи вимкнути
+    + '<p class="cap mt">Додатково</p>'
+    + toggleRow('vad', !!f.adaptive, 'Адаптивні курки L2 і R2', 'Коли гра робить курок тугим, як на DualSense (стрільба, гальмо), натиск на екрані відчувається сильніше, а на курку горить золота риска.', 'trigger')
+    + toggleRow('va', !!f.analog, 'Сила натиску курка', 'Торкнись курка й тягни палець униз: що нижче, то сильніше (газ, гальмо). Вимкнено: натиснув і курок одразу повністю.', '')
     + (f.amp === false ? '<p class="small" style="margin-top:8px">Цей телефон не вміє міняти силу вібрації, тому силу передає ритм поштовхів.</p>' : '');
 }
+function toggleRow(key, on, title, note, test){
+  return '<div class="setrow"><div class="top2"><span class="t">' + title + '</span>'
+    + (test && on ? '<button type="button" class="try" data-vt="' + test + '">Спробувати</button>' : '')
+    + '<button type="button" class="sw' + (on ? ' on' : '') + '" data-' + key + '="' + (on ? 0 : 1) + '" role="switch" aria-checked="' + on + '" aria-label="' + title + '"><i></i></button></div>'
+    + '<span class="small">' + note + '</span></div>';
+}
 function feelWire(root, again){
-  root.querySelectorAll('[data-vr],[data-vb],[data-va],[data-vt]').forEach(b => b.onclick = () => {
+  root.querySelectorAll('[data-vr],[data-vb],[data-va],[data-vad],[data-vt]').forEach(b => b.onclick = () => {
     const d = b.dataset;
     if(d.vt){ try { native.feelTest(d.vt); } catch(e) {} return; }
-    const o = d.vr != null ? {rumble: +d.vr} : d.vb != null ? {buttons: +d.vb} : {analog: d.va === '1'};
+    const o = d.vr != null ? {rumble: +d.vr} : d.vb != null ? {buttons: +d.vb} : d.vad != null ? {adaptive: d.vad === '1'} : {analog: d.va === '1'};
     try { if(native && native.setFeel) FV = JSON.parse(native.setFeel(JSON.stringify(o))); else FV = Object.assign({}, FV, o); } catch(e) {}
     haptic();
     // одразу дати відчути нову силу
     if(o.rumble > 0) try { native.feelTest('rumble'); } catch(e) {}
-    if(o.analog != null) try { native.feelTest('trigger'); } catch(e) {}
+    if(o.analog || o.adaptive) try { native.feelTest('trigger'); } catch(e) {}
     again();
   });
 }

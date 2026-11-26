@@ -226,8 +226,16 @@ object AnyPlayDiag
 		val f = File(context.applicationContext.filesDir, "anyplay_app.log")
 		if(!f.exists())
 			return ""
-		val b = synchronized(lock) { f.readBytes() }
-		val tail = if(b.size > max) b.copyOfRange(b.size - max, b.size) else b
+		// 130: лише кінець файла (цілий файл міг бути завеликим для пам'яті)
+		val tail = synchronized(lock) {
+			java.io.RandomAccessFile(f, "r").use { raf ->
+				val n = minOf(raf.length(), max.toLong()).toInt()
+				val b = ByteArray(n)
+				raf.seek(raf.length() - n)
+				raf.readFully(b)
+				b
+			}
+		}
 		return String(tail, Charsets.UTF_8)
 	}
 }

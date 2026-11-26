@@ -39,7 +39,8 @@ object PadLayout
 	private const val PREFS = "anyplay_pad"
 	private const val KEY_OPACITY = "opacity"
 	private const val KEY_AUTOHIDE = "autohide"
-	private const val VERSION = 1
+	// 2 (130): L3 і R3 окремими кнопками — за бажанням, типово вимкнені (натискаються й самими стіками: двічі торкнутись і тримати)
+	private const val VERSION = 2
 
 	const val MIN_SCALE = 0.5f
 	const val MAX_SCALE = 2.2f
@@ -162,6 +163,8 @@ object PadLayout
 			e("lstick", 0.28f, 0.72f), e("rstick", 0.72f, 0.72f),
 			e("l3", 0.08f, 0.6f), e("r3", 0.92f, 0.6f),
 			e("create", 0.37f, 0.91f), e("ps", 0.5f, 0.91f), e("options", 0.63f, 0.91f), e("menu", 0.08f, 0.91f))
+		// 130: L3 і R3 окремими кнопками — лише за бажанням (вмикаються в «Джойстику»)
+		list.filter { it.id == "l3" || it.id == "r3" }.forEach { it.on = false }
 		return PadProfile(list, 1f)
 	}
 
@@ -173,6 +176,7 @@ object PadLayout
 		{
 			val o = JSONObject(text)
 			val arr = o.getJSONArray("el")
+			val old = o.optInt("v", 1) < 2   // збережено до 130: там L3 і R3 були ввімкнені самі
 			val list = mutableListOf<PadElement>()
 			for(i in 0 until arr.length())
 			{
@@ -189,7 +193,7 @@ object PadLayout
 					j.optDouble("x", 0.5).toFloat().coerceIn(0f, 1f),
 					j.optDouble("y", 0.5).toFloat().coerceIn(0f, 1f),
 					j.optDouble("s", 1.0).toFloat().coerceIn(MIN_SCALE, MAX_SCALE),
-					j.optBoolean("on", true) || id == "menu",
+					(j.optBoolean("on", true) && !(old && (id == "l3" || id == "r3"))) || id == "menu",
 					j.optString("label").take(14), btn))
 			}
 			// стандартні кнопки, яких немає в збереженому (нова версія програми додала), — на типові місця

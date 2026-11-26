@@ -199,7 +199,17 @@ object AnyPlayCloud
 	/** Початок і кінець файла журналу сесії (повтори стиснуті), не довше max символів */
 	private fun sessionPart(f: File, max: Int): String
 	{
-		val all = squeeze(String(f.readBytes(), Charsets.UTF_8))
+		// 130: журнал довгої гри буває десятки МБ — читати його цілим не можна (на Galaxy S7 це нестача пам'яті, і журнал
+		// так і не доходив до сервера). Читаємо лише початок і кінець файла
+		val size = f.length()
+		val headBytes = 48 * 1024L
+		val tailBytes = (max * 3L).coerceAtLeast(64 * 1024L)
+		val all = if(size <= headBytes + tailBytes) squeeze(String(f.readBytes(), Charsets.UTF_8)) else
+			java.io.RandomAccessFile(f, "r").use { raf ->
+				val h = ByteArray(headBytes.toInt()); raf.readFully(h)
+				val t = ByteArray(tailBytes.toInt()); raf.seek(size - tailBytes); raf.readFully(t)
+				squeeze(String(h, Charsets.UTF_8)) + "\n… (пропущено ${(size - headBytes - tailBytes) / 1024} КБ) …\n" + squeeze(String(t, Charsets.UTF_8))
+			}
 		if(all.length <= max)
 			return all
 		var headEnd = 0
@@ -333,7 +343,7 @@ object AnyPlayCloud
 				val code = conn.responseCode
 				AnyPlayDiag.i("Журнал ($reason) надіслано: ${text.size / 1024} КБ тексту, ${body.size / 1024} КБ стиснуто, відповідь $code")
 			}
-			catch(e: Exception) { AnyPlayDiag.w("Журнал не надіслано: ${e.javaClass.simpleName}") }
+			catch(e: Throwable) { AnyPlayDiag.w("Журнал не надіслано: ${e.javaClass.simpleName}") }   // 130: і нестача пам'яті теж
 			finally { conn?.disconnect() }
 		}.apply { isDaemon = true; name = "anyplay-log" }.start()
 	}

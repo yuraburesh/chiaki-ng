@@ -28,6 +28,9 @@ object AnyPlayHaptics
 	private const val KEY_BUTTONS = "buttons"
 	/** Курки L2/R2: false — одразу повністю, true — сила залежить від того, наскільки протягнув палець */
 	private const val KEY_ANALOG = "analog"
+	/** 130: адаптивні курки (ефекти гри на L2/R2, як на DualSense) — окрема фішка, типово вимкнена */
+	private const val KEY_ADAPTIVE = "adaptive"
+	@Volatile private var adaptiveOn = false
 
 	private val RUMBLE_GAIN = floatArrayOf(0f, 0.45f, 0.75f, 1f)
 	private val BUTTON_GAIN = floatArrayOf(0f, 0.6f, 1f)
@@ -42,8 +45,14 @@ object AnyPlayHaptics
 	@Volatile private var cache: IntArray? = null   // [rumble, buttons, analog]
 
 	private fun settings(c: Context): IntArray = cache ?: prefs(c).let {
-		intArrayOf(it.getInt(KEY_RUMBLE, 2).coerceIn(0, 3), it.getInt(KEY_BUTTONS, 1).coerceIn(0, 2), if(it.getBoolean(KEY_ANALOG, false)) 1 else 0)
-	}.also { cache = it }
+		intArrayOf(it.getInt(KEY_RUMBLE, 2).coerceIn(0, 3), it.getInt(KEY_BUTTONS, 1).coerceIn(0, 2), if(it.getBoolean(KEY_ANALOG, false)) 1 else 0,
+			if(it.getBoolean(KEY_ADAPTIVE, false)) 1 else 0)
+	}.also { cache = it; adaptiveOn = it[3] == 1 }
+
+	fun adaptiveTriggers(c: Context) = settings(c)[3] == 1
+
+	/** Прочитати налаштування заздалегідь (ефекти курків приходять без доступу до них) */
+	fun load(c: Context) { settings(c) }
 
 	fun rumbleLevel(c: Context) = settings(c)[0]
 	fun buttonsLevel(c: Context) = settings(c)[1]
@@ -53,6 +62,7 @@ object AnyPlayHaptics
 		.put("rumble", rumbleLevel(c))
 		.put("buttons", buttonsLevel(c))
 		.put("analog", analogTriggers(c))
+		.put("adaptive", adaptiveTriggers(c))
 		.put("amp", hasAmplitude(c))
 
 	/** Зі сторінки налаштувань: {rumble, buttons, analog} (будь-яке з них) */
@@ -62,8 +72,10 @@ object AnyPlayHaptics
 		if(o.has("rumble")) e.putInt(KEY_RUMBLE, o.optInt("rumble", 2).coerceIn(0, 3))
 		if(o.has("buttons")) e.putInt(KEY_BUTTONS, o.optInt("buttons", 1).coerceIn(0, 2))
 		if(o.has("analog")) e.putBoolean(KEY_ANALOG, o.optBoolean("analog", false))
+		if(o.has("adaptive")) e.putBoolean(KEY_ADAPTIVE, o.optBoolean("adaptive", false))
 		e.apply()
 		cache = null
+		settings(c)
 		if(rumbleLevel(c) == 0)
 			stopRumble()
 	}
@@ -201,7 +213,7 @@ object AnyPlayHaptics
 		heldVibrate = 0
 	}
 
-	fun triggerEffect(side: Int): Trigger = if(side == 1) effL else if(side == 2) effR else Trigger.NONE
+	fun triggerEffect(side: Int): Trigger = if(!adaptiveOn) Trigger.NONE else if(side == 1) effL else if(side == 2) effR else Trigger.NONE
 
 	// ── відгук кнопок ──
 	private var lastTapAt = 0L

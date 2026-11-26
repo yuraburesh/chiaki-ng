@@ -160,7 +160,7 @@ object AnyPlayCloud
 	// останні 2 години (до 6), від кожної початок і кінець, повтори однакових рядків стиснуті, logcat застосунку;
 	// разом до ~450 КБ тексту, а надсилається стиснутим gzip (сервер приймає).
 	private const val LOG_SESSIONS_MAX = 6
-	private const val LOG_SESSIONS_AGE_MS = 2 * 3600 * 1000L
+	private const val LOG_SESSIONS_AGE_MS = 12 * 3600 * 1000L
 	private const val LOG_HEAD_LINES = 150
 	private const val LOG_HEAD_MAX = 24 * 1024
 	private const val LOG_TEXT_MAX = 450 * 1024
@@ -266,7 +266,7 @@ object AnyPlayCloud
 			val all = dir.listFiles()?.filter { it.isFile && it.name.endsWith(".log") }?.sortedByDescending { it.lastModified() } ?: listOf()
 			// за дві години (до 6), а якщо таких немає — хоч останній
 			val files = all.filter { now - it.lastModified() <= LOG_SESSIONS_AGE_MS }.take(LOG_SESSIONS_MAX).ifEmpty { all.take(1) }
-			sb.append("Журналів гри за 2 год: ").append(files.size).append(" (усього на телефоні ").append(all.size).append(")\n")
+			sb.append("Журналів гри за 12 год: ").append(files.size).append(" (усього на телефоні ").append(all.size).append(")\n")
 			val budget = (LOG_TEXT_MAX - sb.length - logcatPart.length - 2048).coerceAtLeast(64 * 1024)
 			val each = budget / files.size.coerceAtLeast(1)
 			for(f in files.reversed())

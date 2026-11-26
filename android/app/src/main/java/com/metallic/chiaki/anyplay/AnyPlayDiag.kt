@@ -29,11 +29,13 @@ object AnyPlayDiag
 	private const val TAG = "AnyPlay"
 	private const val APP_LOG_MAX = 256 * 1024L     // журнал програми: коли більший — лишаємо другу половину
 	private const val STALL_MS = 2000L
+	private const val STALL_UPLOAD_MS = 5000L
 	private const val PREFS = "anyplay"
 	private const val KEY_EXIT_SEEN = "exit_reason_seen"
 
 	@Volatile private var appLog: File? = null
 	@Volatile private var crashDir: File? = null
+	@Volatile private var appCtx: Context? = null
 	private val lock = Any()
 	private var installed = false
 
@@ -49,6 +51,7 @@ object AnyPlayDiag
 			installed = true
 		}
 		val app = context.applicationContext
+		appCtx = app
 		val dir = crashDir(app)
 		crashDir = dir
 		appLog = File(app.filesDir, "anyplay_app.log")
@@ -130,6 +133,7 @@ object AnyPlayDiag
 		Thread {
 			var stalledSince = 0L
 			var reported = false
+			var uploaded = false
 			while(true)
 			{
 				val posted = SystemClock.uptimeMillis()
@@ -154,6 +158,18 @@ object AnyPlayDiag
 					w(text)
 					try { crashDir?.let { File(it, "main-stall.txt").appendText("\n=== ${stamp()}, процес ${Process.myPid()} ===\n$text\n") } }
 					catch(e: Throwable) {}
+				}
+				// AnyPlay 121: зависання довше 5 с — журнал на сервер одразу, з цього ж потоку, поки система не закрила
+				// застосунок (на Galaxy S7 власника гра так і гинула: екран стояв, а журнал потім не надсилався)
+				if(reported && !uploaded && now - stalledSince >= STALL_UPLOAD_MS)
+				{
+					uploaded = true
+					val trace = Looper.getMainLooper().thread.stackTrace.take(40).joinToString("\n") { "    at $it" }
+					w("Головний потік не відповідає ${(now - stalledSince) / 1000} с, надсилаю журнал; де він зараз:\n$trace")
+					appCtx?.let { ctx ->
+						try { AnyPlayCloud.uploadLog(ctx, "error", "Програма зависла: головний потік не відповідає ${(now - stalledSince) / 1000} с", force = true) }
+						catch(e: Throwable) {}
+					}
 				}
 			}
 		}.apply { name = "anyplay-watchdog"; isDaemon = true; priority = Thread.MAX_PRIORITY }.start()
@@ -202,7 +218,7 @@ object AnyPlayDiag
 
 	/** Чи є свіжі падіння, про які ще не повідомили (час останнього запису у файли падінь) */
 	fun lastCrashAt(context: Context): Long =
-		crashDir(context).listFiles()?.filter { it.isFile && it.length() > 0 && it.name != "main-stall.txt" }?.maxOfOrNull { it.lastModified() } ?: 0L
+		crashDir(context).listFiles()?.filter { it.isFile && it.length() > 0 }?.maxOfOrNull { it.lastModified() } ?: 0L
 
 	/** Хвіст журналу програми (усі процеси за останній час) */
 	fun appLogTail(context: Context, max: Int): String

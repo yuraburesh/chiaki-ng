@@ -300,6 +300,17 @@ class StreamActivity : AppCompatActivity()
 	private var wDecoderReset = false   // декодер уже створювали заново в цій біді
 	private var wHevcMarked = false     // уже записали «H.265 тут не тягне»
 	private var wNoSurfaceSession: Any? = null   // для якої сесії вже записали «кадри є, поверхні немає»
+	private var wSnapSession: Any? = null        // 121: для якої сесії вже надіслали журнал «довго немає картинки»
+
+	/** 121: картинки довго немає — журнал на сервер сам (раз на сесію), щоб гравцю нічого не пересилати */
+	private fun wSnapshot(s: Any?, why: String)
+	{
+		if(s == null || wSnapSession === s)
+			return
+		wSnapSession = s
+		AnyPlayDiag.w("Сторож: $why, надсилаю журнал")
+		AnyPlayCloud.uploadLog(this, "error", "Довго немає картинки: $why", force = true)
+	}
 
 	/** Екранний геймпад AnyPlay (у фрагменті з розмітки; id фрагмента дістається обгортці, тому шукаємо за id самого геймпада) */
 	private fun gamepad(): GamepadView? = findViewById(R.id.gamepadView)
@@ -680,6 +691,8 @@ class StreamActivity : AppCompatActivity()
 				else -> psnStepText(s.psnStep())
 			}
 			val waited = now - loadSince
+			if(waited > 20000)
+				wSnapshot(s, "підключення триває ${waited / 1000} с (крок ${s?.psnStep() ?: 0})")
 			if(waited > 25000)
 				detail += "\n\nДовше, ніж звичайно. Перевір інтернет на телефоні або натисни «Підключитись заново»."
 			l.show(AnyPlayLoading.Stage.CONNECT, detail, true, loadSince, waited > 25000, if(everShown) "Вийти з гри" else "Скасувати")
@@ -748,6 +761,8 @@ class StreamActivity : AppCompatActivity()
 			if(loadSince == 0L)
 				loadSince = now
 			val t = now - wConnectedAt
+			if(t > 10000)
+				wSnapshot(s, "з приставкою з'єднано ${t / 1000} с, кадрів прийшло $vin, декодер показав $dec, поверхня ${if(vs.hasSurface) "є" else "немає"}, обробка кольорів ${if(colorOn) "увімк." else "вимк."}")
 			val stage: AnyPlayLoading.Stage
 			val detail: String
 			if(wTrouble == "stuck")

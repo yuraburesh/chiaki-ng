@@ -60,7 +60,9 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.yuraburesh.anyplay
+        # власник обрав у Xcode свій Apple ID (Personal Team) і цей ідентифікатор — наступні версії проєкту їх зберігають
+        PRODUCT_BUNDLE_IDENTIFIER: com.any.play
+        DEVELOPMENT_TEAM: 59DYYJ566R
         PRODUCT_NAME: AnyPlay
         ANYPLAY_BUILD: "1"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO

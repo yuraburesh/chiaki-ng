@@ -14,6 +14,7 @@ on:
     branches: [anyplay]
     paths:
       - 'ios/**'
+      - 'android/app/src/main/assets/anyplay/**'
       - 'lib/**'
       - 'cmake/OpenSSLExternalProject.cmake'
       - 'third-party/CMakeLists.txt'
@@ -67,7 +68,35 @@ jobs:
           ls -la out/lib
           # перевірка: усі потрібні символи на місці
           nm -gU out/lib/libAnyPlayCore.a 2>/dev/null | grep -E ' _(anyplay_core_create|chiaki_session_init|opus_decode|curl_easy_init|EVP_EncryptInit)$' || true
+      # ── сама програма: ресурси ті самі, що на Android; проєкт Xcode робить XcodeGen ──
+      - name: Проєкт Xcode
+        run: |
+          set -e
+          BUILD="$(tr -d '[:space:]' < anyplay-build.txt)"
+          mkdir -p ios/App/Frameworks ios/App/Resources
+          rm -rf ios/App/Frameworks/AnyPlayCore.xcframework ios/App/Resources/anyplay
+          cp -R out/AnyPlayCore.xcframework ios/App/Frameworks/
+          cp -R android/app/src/main/assets/anyplay ios/App/Resources/anyplay
+          cp android/app/src/main/assets/cacert.pem ios/App/Resources/cacert.pem
+          sed -i '' "s/ANYPLAY_BUILD: \"1\"/ANYPLAY_BUILD: \"$BUILD\"/" ios/App/project.yml
+          brew install xcodegen
+          cd ios/App && xcodegen generate
+      - name: Збірка програми (без підпису, перевірка)
+        working-directory: ios/App
+        run: |
+          set -o pipefail
+          xcodebuild -project AnyPlay.xcodeproj -scheme AnyPlay -configuration Debug -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/xcodebuild.log"
+      - name: Пакет для Mac
+        if: always()
+        run: |
+          cd ios/App
+          rm -rf build DerivedData
+          zip -qry "$GITHUB_WORKSPACE/AnyPlay-iOS.zip" AnyPlay.xcodeproj AnyPlay Frameworks Resources project.yml
+          ls -la "$GITHUB_WORKSPACE/AnyPlay-iOS.zip"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: AnyPlayCore-xcframework
-          path: out/AnyPlayCore.xcframework
+          name: AnyPlay-iOS
+          path: AnyPlay-iOS.zip

@@ -52,7 +52,6 @@ final class ServerPageViewController: UIViewController, WKNavigationDelegate, WK
 		web.backgroundColor = view.backgroundColor
 		web.scrollView.backgroundColor = view.backgroundColor
 		web.navigationDelegate = self
-		if UIDevice.current.userInterfaceIdiom == .pad { web.pageZoom = 1.2 }
 		web.uiDelegate = self
 		web.translatesAutoresizingMaskIntoConstraints = false
 		view.addSubview(web)

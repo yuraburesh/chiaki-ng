@@ -53,14 +53,18 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 		super.init()
 		uc.add(WeakHandler(self), name: "anyplay")
 		uc.addUserScript(WKUserScript(source: WebPage.shim(initial: WebPage.state(host)), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+		// 133: на iPad сторінка в 1,5 раза більша через meta viewport (сторінка вважає екран вужчим, а iPad
+		// збільшує її на весь екран). pageZoom тут не годиться: розмітка лишалась на повну ширину і вилазила за край
+		if UIDevice.current.userInterfaceIdiom == .pad
+		{
+			uc.addUserScript(WKUserScript(source: WebPage.padFit, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+		}
 		web.isOpaque = !transparent
 		web.backgroundColor = transparent ? .clear : UIColor(red: 0x2b / 255.0, green: 0x27 / 255.0, blue: 0x40 / 255.0, alpha: 1)
 		web.scrollView.backgroundColor = web.backgroundColor
 		web.scrollView.contentInsetAdjustmentBehavior = .never
 		web.scrollView.bounces = false
 		web.navigationDelegate = self
-		// 132: на iPad сторінка більша (як на телефоні за розміром для ока): без цього все дрібне, а довкола пустота
-		if UIDevice.current.userInterfaceIdiom == .pad { web.pageZoom = 1.3 }
 		if let url = Bundle.main.url(forResource: "app", withExtension: "html", subdirectory: "web")
 		{
 			var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -92,6 +96,21 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 	}
 
 	func eval(_ js: String) { web.evaluateJavaScript(js, completionHandler: nil) }
+
+	private static let padFit = """
+	(function(){
+	  function fit(){
+	    var o = typeof window.orientation === 'number' ? Math.abs(window.orientation) === 90 : (window.matchMedia && matchMedia('(orientation: landscape)').matches);
+	    var sw = screen.width, sh = screen.height, dw = o ? Math.max(sw, sh) : Math.min(sw, sh);
+	    var k = 1.5, w = Math.round(dw / k);
+	    var m = document.querySelector('meta[name=viewport]');
+	    if(!m){ m = document.createElement('meta'); m.name = 'viewport'; document.head.appendChild(m); }
+	    m.setAttribute('content', 'width=' + w + ', initial-scale=' + k + ', minimum-scale=' + k + ', maximum-scale=' + k + ', user-scalable=no, viewport-fit=cover');
+	  }
+	  fit();
+	  window.addEventListener('orientationchange', function(){ setTimeout(fit, 60); setTimeout(fit, 400); });
+	})();
+	"""
 
 	private static func shim(initial: [String: String]) -> String
 	{

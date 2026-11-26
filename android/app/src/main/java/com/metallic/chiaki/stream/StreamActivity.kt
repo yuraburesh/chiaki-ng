@@ -261,6 +261,11 @@ class StreamActivity : AppCompatActivity()
 
 	private val anyplay get() = intent.getBooleanExtra(EXTRA_ANYPLAY, false)
 	private var anyplayFirstResume = true
+	// 128: екран заблокували чи програму згорнули посеред гри — з'єднання з приставкою тримаємо (до BG_KEEP_MS),
+	// і після розблокування гра йде далі одразу, без нового підключення
+	private var anyplayBgSince = 0L
+	private var anyplayBgLost = false
+	private var anyplayBgJob: Job? = null
 	private var anyplayBeatJob: Job? = null
 	private var anyplayResumeJob: Job? = null
 	private var anyplayQualityJob: Job? = null
@@ -457,6 +462,9 @@ class StreamActivity : AppCompatActivity()
 	/** Екранний геймпад AnyPlay (у фрагменті з розмітки; id фрагмента дістається обгортці, тому шукаємо за id самого геймпада) */
 	private fun gamepad(): GamepadView? = findViewById(R.id.gamepadView)
 
+	/** 128: скільки тримати з'єднання, поки екран заблоковано чи програму згорнуто */
+	private val BG_KEEP_MS = 10 * 60 * 1000L
+
 	override fun onResume()
 	{
 		super.onResume()
@@ -476,8 +484,27 @@ class StreamActivity : AppCompatActivity()
 			anyplayHelperOf = intent.getStringExtra(EXTRA_ANYPLAY_HELPER_OF) ?: ""
 			viewModel.session.resume()
 		}
+		else if(anyplayBgSince != 0L && !anyplayBgLost && viewModel.session.session != null && viewModel.session.state.value == StreamStateConnected)
+		{
+			// 128: з'єднання пережило блокування екрана — гра одразу далі; декодер отримав нову поверхню, просимо ключовий кадр
+			AnyPlayDiag.i("Повернулись у гру через ${(SystemClock.elapsedRealtime() - anyplayBgSince) / 1000} с: з'єднання збережене, без нового підключення")
+			anyplayBgJob?.cancel()
+			anyplayBgSince = 0L
+			loadSince = 0L
+			viewModel.session.requestKeyFrame("повернення в гру")
+		}
 		else
 		{
+			if(anyplayBgSince != 0L)
+			{
+				// тримали з'єднання, але воно обірвалось у фоні (телефон приспав Wi-Fi тощо): тихо підключаємось знову
+				AnyPlayDiag.i("Повернулись у гру: з'єднання у фоні обірвалось, підключаємось знову")
+				anyplayBgJob?.cancel()
+				anyplayBgSince = 0L
+				anyplayBgLost = false
+				viewModel.session.shutdown()
+				Thread { AnyPlayCloud.heartbeat(applicationContext, false) }.start()
+			}
 			// після згортання — нове підключення зі свіжим ключем від сервера (старий діє недовго). Приставка може ще
 			// кілька секунд закривати попереднє підключення: «уже зайнята» в цей час — не помилка, а повтор
 			anyplaySelfRetryWindow()
@@ -838,6 +865,7 @@ class StreamActivity : AppCompatActivity()
 				busyRetry && anyplayRetrySelf -> "Приставка ще закриває попереднє підключення. Пробую ще раз, це кілька секунд."
 				busyRetry -> "Приставка ще зайнята на іншому пристрої. Вона звільниться за кілька секунд."
 				s == null || anyplayConnecting -> "Отримую доступ до приставки від сервера AnyPlay."
+				s.connectInfo.psnToken == null -> "Приставка поруч, у твоїй мережі: підключаюсь напряму."
 				else -> psnStepText(s.psnStep())
 			}
 			val waited = now - loadSince
@@ -1147,6 +1175,21 @@ class StreamActivity : AppCompatActivity()
 	override fun onPause()
 	{
 		super.onPause()
+		// 128: гра йде, екран заблокували або згорнули — з'єднання не рвемо (якщо не виходимо з гри)
+		if(anyplay && !isFinishing && !isChangingConfigurations && dialogContents == null
+			&& viewModel.session.session != null && viewModel.session.state.value == StreamStateConnected)
+		{
+			anyplayKeepInBackground()
+			return
+		}
+		anyplayStopStream()
+	}
+
+	/** Зупинити стрім тут і сказати серверу (згорнули надовго, вийшли з гри) */
+	private fun anyplayStopStream()
+	{
+		anyplayBgJob?.cancel()
+		anyplayBgSince = 0L
 		anyplayBeatJob?.cancel()
 		anyplayResumeJob?.cancel()
 		anyplayQualityJob?.cancel()
@@ -1167,6 +1210,31 @@ class StreamActivity : AppCompatActivity()
 		{
 			val ctx = applicationContext
 			Thread { AnyPlayCloud.heartbeat(ctx, false) }.start()
+		}
+	}
+
+	/**
+	 * 128: екран заблоковано (або програму згорнули) посеред гри. Сесію з приставкою не закриваємо: сигнал серверу
+	 * йде далі, кнопки відпущено, вібрація стоп. Повернувся до BG_KEEP_MS — гра одразу далі. Довше — зупиняємо стрім,
+	 * як раніше, а після повернення буде нове підключення.
+	 */
+	private fun anyplayKeepInBackground()
+	{
+		anyplayBgSince = SystemClock.elapsedRealtime()
+		anyplayBgLost = false
+		anyplayResumeJob?.cancel()
+		anyplayQualityJob?.cancel()
+		anyplayWatchJob?.cancel()
+		anyplayTakeoverJob?.cancel()
+		AnyPlayHaptics.stopRumble()
+		padEditor?.close(true)
+		gamepad()?.releaseAll()
+		AnyPlayDiag.i("Екран вимкнено або програму згорнуто: з'єднання з приставкою тримаємо до ${BG_KEEP_MS / 60000} хв")
+		anyplayBgJob?.cancel()
+		anyplayBgJob = lifecycleScope.launch {
+			delay(BG_KEEP_MS)
+			AnyPlayDiag.i("Програма у фоні понад ${BG_KEEP_MS / 60000} хв: стрім зупинено, після повернення — нове підключення")
+			anyplayStopStream()
 		}
 	}
 
@@ -1446,6 +1514,13 @@ class StreamActivity : AppCompatActivity()
 					viewModel.session.resume()
 				}
 			}
+			return
+		}
+		// 128: сесія обірвалась, поки екран був заблокований: без вікна помилки, після повернення підключимось знову самі
+		if(anyplay && anyplayBgSince != 0L && (state is StreamStateQuit || state is StreamStatePsnFailed))
+		{
+			anyplayBgLost = true
+			AnyPlayDiag.i("Поки екран був вимкнений, з'єднання обірвалось (${if(state is StreamStateQuit) "QUIT ${state.reason.value}" else "PSN"})")
 			return
 		}
 		if(anyplay && (state is StreamStateQuit || state is StreamStatePsnFailed))

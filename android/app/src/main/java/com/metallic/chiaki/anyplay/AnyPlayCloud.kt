@@ -388,6 +388,8 @@ object AnyPlayCloud
 	private fun findTarget(context: Context, session: JSONObject): PlayTarget
 	{
 		val console = session.optJSONObject("console") ?: return PlayError("Сервер не передав приставку. Спробуй ще раз за хвилину.", "AP-NO-CONSOLE")
+		// 128: телефон у тій самій мережі, що й приставка (вдома в адміна) — напряму, як на комп'ютері: за секунди
+		AnyPlayLan.target(context, console, AnyPlayQuality.videoProfile(context))?.let { return PlayReady(it, session.optBoolean("guest")) }
 		val remote = console.optJSONObject("remote") ?: JSONObject()
 		val token = remote.optString("auth_token")
 		val account = try { Base64.decode(remote.optString("account_id"), Base64.DEFAULT) } catch(e: Exception) { ByteArray(0) }

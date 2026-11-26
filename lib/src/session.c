@@ -31,6 +31,7 @@
 #define SESSION_EXPECT_TIMEOUT_MS		5000
 
 #define SESSION_EXPECT_CTRL_START_MS    10000
+#define SESSION_RUDP_CTRL_WAIT_MS       1500
 
 static void *session_thread_func(void *arg);
 static void regist_cb(ChiakiRegistEvent *event, void *user);
@@ -523,7 +524,11 @@ static void *session_thread_func(void *arg)
 	if(err != CHIAKI_ERR_SUCCESS)
 		QUIT(quit);
 
-	err = chiaki_cond_timedwait_pred(&session->state_cond, &session->state_mutex, SESSION_EXPECT_CTRL_START_MS, session_check_state_pred_ctrl_start, session);
+	// AnyPlay 128: через інтернет (PSN, rudp) id сесії приходить лише після того, як пробито канал даних, тож тут
+	// щоразу чекали всі 10 с даремно (журнали: «Ctrl connected» — і рівно через 10 с «Punching hole for data»).
+	// Вхід ctrl (і запит PIN) приходить за десятки мілісекунд, тому через PSN чекаємо коротко
+	err = chiaki_cond_timedwait_pred(&session->state_cond, &session->state_mutex,
+		session->rudp ? SESSION_RUDP_CTRL_WAIT_MS : SESSION_EXPECT_CTRL_START_MS, session_check_state_pred_ctrl_start, session);
 	CHECK_STOP(quit_ctrl);
 
 	if(session->ctrl_failed)

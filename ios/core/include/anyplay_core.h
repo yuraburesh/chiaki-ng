@@ -81,6 +81,12 @@ const char *anyplay_core_error_string(int err);
 const char *anyplay_core_quit_string(int reason);
 bool anyplay_core_quit_is_error(int reason);
 
+/**
+ * Приставки акаунта PSN (блокує потік, мережа). Результат у out: перший рядок «ok» або «err<TAB>код»,
+ * далі рядки «duid<TAB>назва<TAB>1|0» (1 — дистанційне відтворення увімкнено). Повертає код помилки chiaki.
+ */
+int anyplay_core_psn_devices(const char *token, char *out, size_t out_size);
+
 /** Файл сертифікатів для HTTPS (PSN) — з пакета програми */
 void anyplay_core_set_ca_bundle(const char *path);
 

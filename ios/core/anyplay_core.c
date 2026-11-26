@@ -373,3 +373,41 @@ void anyplay_core_set_ca_bundle(const char *path)
 	setenv("SSL_CERT_FILE", path, 1);
 	setenv("CURL_CA_BUNDLE", path, 1);
 }
+
+int anyplay_core_psn_devices(const char *token, char *out, size_t out_size)
+{
+	if(!out || out_size < 16)
+		return CHIAKI_ERR_INVALID_DATA;
+	if(!atomic_exchange(&lib_ready, true))
+		chiaki_lib_init();
+	static ChiakiLog list_log;
+	static atomic_bool list_log_ready;
+	if(!atomic_exchange(&list_log_ready, true))
+		chiaki_log_init(&list_log, CHIAKI_LOG_ALL & ~CHIAKI_LOG_VERBOSE, chiaki_log_cb_print, NULL);
+	ChiakiHolepunchDeviceInfo *devices = NULL;
+	size_t count = 0;
+	ChiakiErrorCode err = token ? chiaki_holepunch_list_devices(token, CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5, &devices, &count, &list_log)
+		: CHIAKI_ERR_INVALID_DATA;
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		snprintf(out, out_size, "err\t%d\n", (int)err);
+		return err;
+	}
+	size_t off = (size_t)snprintf(out, out_size, "ok\n");
+	for(size_t i = 0; i < count && off < out_size; i++)
+	{
+		char hex[sizeof(devices[i].device_uid) * 2 + 1];
+		for(size_t j = 0; j < sizeof(devices[i].device_uid); j++)
+			snprintf(hex + 2 * j, 3, "%02x", devices[i].device_uid[j]);
+		char name[sizeof(devices[i].device_name) + 1];
+		memcpy(name, devices[i].device_name, sizeof(devices[i].device_name));
+		name[sizeof(devices[i].device_name)] = 0;
+		for(char *c = name; *c; c++)
+			if(*c == '\t' || *c == '\n')
+				*c = ' ';
+		off += (size_t)snprintf(out + off, out_size - off, "%s\t%s\t%d\n", hex, name, devices[i].remoteplay_enabled ? 1 : 0);
+	}
+	if(devices)
+		chiaki_holepunch_free_device_list(&devices);
+	return CHIAKI_ERR_SUCCESS;
+}

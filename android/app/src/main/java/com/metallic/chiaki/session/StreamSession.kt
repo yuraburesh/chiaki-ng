@@ -161,6 +161,8 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 				)
 			)
 			is RumbleEvent -> _rumbleState.postValue(event)
+			is TriggerEffectsEvent -> com.metallic.chiaki.anyplay.AnyPlayHaptics.triggerEffects(event.typeLeft, event.typeRight, event.left, event.right)
+			else -> {}
 		}
 	}
 

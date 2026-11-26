@@ -48,6 +48,8 @@ import com.metallic.chiaki.touchcontrols.TouchControlsFragment
 import com.metallic.chiaki.touchcontrols.TouchpadOnlyFragment
 import com.metallic.chiaki.anyplay.AnyPlayCloud
 import com.metallic.chiaki.anyplay.AnyPlayLive
+import com.metallic.chiaki.anyplay.AnyPlayHaptics
+import com.metallic.chiaki.anyplay.AnyPlayStatsHud
 import com.metallic.chiaki.anyplay.AnyPlayQuality
 import com.metallic.chiaki.anyplay.PlayError
 import com.metallic.chiaki.anyplay.PlayReady
@@ -203,7 +205,19 @@ class StreamActivity : AppCompatActivity()
 		viewModel.session.state.observe(this, Observer { this.stateChanged(it) })
 		adjustStreamViewAspect()
 
-		if(Preferences(this).rumbleEnabled)
+		if(anyplay)
+		{
+			// 125: вібрація гри з плавною силою (AnyPlayHaptics), налаштування «Вібрація гри»
+			AnyPlayHaptics.resetTriggers()
+			viewModel.session.rumbleState.observe(this, Observer {
+				AnyPlayHaptics.rumble(this, it.left.toInt(), it.right.toInt())
+			})
+			hud = AnyPlayStatsHud(this).also {
+				it.visibility = View.GONE
+				binding.root.addView(it, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
+			}
+		}
+		else if(Preferences(this).rumbleEnabled)
 		{
 			val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
 			viewModel.session.rumbleState.observe(this, Observer {
@@ -303,6 +317,95 @@ class StreamActivity : AppCompatActivity()
 	private var wNoSurfaceSession: Any? = null   // для якої сесії вже записали «кадри є, поверхні немає»
 	private var wSnapSession: Any? = null        // 121: для якої сесії вже надіслали журнал «довго немає картинки»
 
+	// 125: статистика під час гри (AnyPlayStatsHud): свої лічильники за останню секунду
+	private var hud: AnyPlayStatsHud? = null
+	private var hudSession: Any? = null
+	private var hudPrev: LongArray? = null
+	private var hudPrevAt = 0L
+	private var hudTickN = 0
+
+	private fun hudTick()
+	{
+		val h = hud ?: return
+		val mode = AnyPlayStatsHud.mode(this)
+		val s = viewModel.session.session
+		val v = s?.videoStats()
+		val now = SystemClock.elapsedRealtime()
+		val loadingShown = loadSince != 0L
+		if(mode == AnyPlayStatsHud.OFF || s == null || v == null || v.size < 4 || anyplayMenu != null || padEditor?.isOpen == true || loadingShown
+			|| viewModel.session.state.value != StreamStateConnected)
+		{
+			if(h.visibility != View.GONE)
+				h.animate().cancel()
+			h.visibility = View.GONE
+			h.update(null)
+			if(s !== hudSession) { hudSession = s; hudPrev = null }
+			return
+		}
+		val prev = hudPrev
+		if(s !== hudSession || prev == null || v[0] < prev[0])
+		{
+			hudSession = s; hudPrev = v; hudPrevAt = now
+			return
+		}
+		val dt = (now - hudPrevAt) / 1000.0
+		if(dt < 0.8)
+			return
+		hudPrev = v; hudPrevAt = now
+		val profile = viewModel.session.connectInfo.videoProfile
+		val net = s.netStats()
+		val stats = AnyPlayStatsHud.Stats(
+			fpsShown = (v[1] - prev[1]) / dt, fpsStream = (v[0] - prev[0]) / dt, target = if(profile.maxFPS > 0) profile.maxFPS else 60,
+			mbps = (v[3] - prev[3]) * 8.0 / dt / 1e6, pingMs = if(net != null && net.isNotEmpty() && net[0] > 0) (net[0] + 500) / 1000 else 0L,
+			lossPct = anyplayLoss * 100.0, dropped = v[2] - prev[2],
+			codec = if(profile.codec == com.metallic.chiaki.lib.Codec.CODEC_H264) "H.264" else "H.265",
+			width = profile.width, height = profile.height, quality = AnyPlayQuality.name(this))
+		h.mode = mode
+		h.update(stats)
+		placeHud(h)
+		if(h.visibility != View.VISIBLE)
+		{
+			h.visibility = View.VISIBLE
+			h.alpha = 0f
+			h.animate().alpha(1f).setDuration(220).start()
+		}
+	}
+
+	/** Панель статистики туди, де немає кнопок: угорі по центру, ліворуч, праворуч, потім унизу */
+	private fun placeHud(h: AnyPlayStatsHud)
+	{
+		val w = binding.root.width
+		val ht = binding.root.height
+		val hw = h.wantWidth()
+		val hh = h.wantHeight()
+		if(w == 0 || hw == 0)
+			return
+		val dp = resources.displayMetrics.density
+		val m = (8 * dp).toInt()
+		val cut = ViewCompat.getRootWindowInsets(binding.root)?.getInsets(WindowInsetsCompat.Type.displayCutout())
+		val cl = cut?.left ?: 0
+		val cr = cut?.right ?: 0
+		val ct = cut?.top ?: 0
+		val portrait = ht > w
+		val (x, y) = if(portrait && anyplayControls) (m + cl) to (ct + m)
+		else
+		{
+			val busy = if(anyplayControls) gamepad()?.occupied() ?: emptyList() else emptyList()
+			val cands = listOf((w - hw) / 2 to m, (m + cl) to m, (w - hw - m - cr) to m, (m + cl) to (ht - hh - m), (w - hw - m - cr) to (ht - hh - m))
+			val pad = 4 * dp
+			cands.firstOrNull { (cx, cy) ->
+				val r = android.graphics.RectF(cx - pad, cy - pad, cx + hw + pad, cy + hh + pad)
+				busy.none { android.graphics.RectF.intersects(it, r) }
+			} ?: cands[0]
+		}
+		if(h.translationX != x.toFloat() || h.translationY != y.toFloat())
+		{
+			if(h.visibility == View.VISIBLE && h.translationX != 0f)
+				h.animate().translationX(x.toFloat()).translationY(y.toFloat()).setDuration(180).start()
+			else { h.translationX = x.toFloat(); h.translationY = y.toFloat() }
+		}
+	}
+
 	// 123: чіткість (AnyPlayPicture) не встигає на цьому телефоні — декодер дає кадри, а на екран доходить помітно менше
 	private var sharpWinAt = 0L
 	private var sharpWinDec = 0L
@@ -381,7 +484,10 @@ class StreamActivity : AppCompatActivity()
 			{
 				anyplayWatchTick()
 				if(n++ % 2 == 0)
+				{
 					anyplayLoading?.tick()
+					hudTick()
+				}
 				delay(500)
 			}
 		}
@@ -480,9 +586,13 @@ class StreamActivity : AppCompatActivity()
 
 	private val anyplayHideBannerRunnable = Runnable { anyplayHideBanner() }
 
+	private var bannerMinutes = 0L
+	private var lastPortrait: Boolean? = null
+
 	private fun anyplayShowBanner(minutes: Long)
 	{
 		anyplayHideBanner()
+		bannerMinutes = minutes
 		val c = this
 		val dp = resources.displayMetrics.density
 		fun px(v: Int) = (v * dp).toInt()
@@ -1039,6 +1149,8 @@ class StreamActivity : AppCompatActivity()
 		anyplayWatchJob?.cancel()
 		viewModel.session.pause()
 		anyplayTakeoverJob?.cancel()
+		if(anyplay)
+			AnyPlayHaptics.stopRumble()
 		padEditor?.close(true)
 		if(anyplay)
 			AnyPlayCloud.markLive(this, false)
@@ -1090,6 +1202,10 @@ class StreamActivity : AppCompatActivity()
 		val cut = ViewCompat.getRootWindowInsets(binding.root)?.getInsets(WindowInsetsCompat.Type.displayCutout())
 		val controls = viewModel.onScreenControlsEnabled.value != false
 		val portrait = h > w
+		// 125: повернули телефон — банер «Лишилось N хв» перебудовуємо під нову ширину (інакше вилазив за край)
+		if(lastPortrait != null && lastPortrait != portrait && anyplayBanner != null)
+			binding.root.post { if(anyplayBanner != null) anyplayShowBanner(bannerMinutes) }
+		lastPortrait = portrait
 		val lp = binding.aspectRatioLayout.layoutParams as FrameLayout.LayoutParams
 		var videoBottom = 0
 		val wantHeight: Int

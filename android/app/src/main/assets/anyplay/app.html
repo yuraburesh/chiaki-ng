@@ -13,7 +13,7 @@
 @font-face{font-family:Inter;font-weight:400;src:url(fonts/Inter-Regular.ttf) format("truetype")}
 @font-face{font-family:Inter;font-weight:500;src:url(fonts/Inter-Medium.ttf) format("truetype")}
 @font-face{font-family:Inter;font-weight:600;src:url(fonts/Inter-SemiBold.ttf) format("truetype")}
-:root{color-scheme:dark;--bg1:#2b2740;--bg2:#4a3558;--bg3:#7a4a63;--ink:#f5f3f7;--mute:#ffffffa6;--faint:#ffffff6b;--hair:#ffffff1f;--edge:#ffffff40;
+:root{color-scheme:dark;--bg1:#2b2740;--bg2:#4a3558;--bg3:#7a4a63;--ink:#f5f3f7;--mute:#ffffffa6;--faint:#ffffff85;--hair:#ffffff1f;--edge:#ffffff40;
   --panel:#ffffff0d;--dark:#221d2e;--cyan:#8fe3ff;--gold:#ffd9a0;--ok:#c9f5d8;--bad:#ff9a9a;
   --display:Oswald,"Arial Narrow",sans-serif;--body:Inter,system-ui,-apple-system,Roboto,sans-serif;--pad:16px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -31,12 +31,12 @@ input{-webkit-user-select:text;user-select:text}
 #app{height:100%;display:flex;flex-direction:column}
 .top{flex:0 0 auto;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"brand nav who";align-items:end;column-gap:24px;
   padding:10px max(var(--pad),calc((100% - 1180px) / 2)) 0;border-bottom:1px solid var(--hair)}
-.brand{grid-area:brand;font:600 22px/1.1 var(--display);letter-spacing:3px;padding-bottom:9px;white-space:nowrap}
+.brand{grid-area:brand;font:600 21px/1.1 var(--display);letter-spacing:3px;padding-bottom:9px;white-space:nowrap}
 .brand span{display:block;font:500 10px/1.3 var(--body);letter-spacing:1.6px;color:var(--faint);margin-top:2px}
 .nav{grid-area:nav;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
 .nav::-webkit-scrollbar{display:none}
 .nav.fade{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
-.nav button{flex:0 0 auto;border-bottom:2px solid transparent;padding:10px 12px 9px;font:500 15px/1.2 var(--display);letter-spacing:1.6px;text-transform:uppercase;opacity:.62;white-space:nowrap}
+.nav button{flex:0 0 auto;border-bottom:2px solid transparent;padding:10px 12px 9px;font:500 14.5px/1.2 var(--display);letter-spacing:1.5px;text-transform:uppercase;opacity:.62;white-space:nowrap;transition:opacity .2s,border-color .25s}
 .nav button.on{opacity:1;border-bottom-color:var(--ink)}
 .who{grid-area:who;display:flex;align-items:center;gap:10px;padding-bottom:9px;font-size:13px;color:var(--mute);white-space:nowrap;min-width:0}
 .who b{font-weight:500;max-width:160px;overflow:hidden;text-overflow:ellipsis}
@@ -44,30 +44,32 @@ input{-webkit-user-select:text;user-select:text}
 .lnk{border:1px solid var(--edge);border-radius:2px;padding:5px 11px;font:500 12.5px var(--body);color:var(--ink);background:#ffffff0a;white-space:nowrap}
 .subhead{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:10px var(--pad);border-bottom:1px solid var(--hair)}
 .subhead button{flex:0 0 40px;height:40px;border:1px solid var(--edge);border-radius:2px;font:500 26px/1 var(--display);display:grid;place-items:center;padding:0 0 4px}
-.subhead h1{margin:0;font:600 20px/1.2 var(--display);letter-spacing:2px;text-transform:uppercase;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subhead h1{margin:0;font:600 18px/1.2 var(--display);letter-spacing:2px;text-transform:uppercase;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 main{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:18px var(--pad) 24px}
 .inner{max-width:1180px;margin:0 auto}
 .m-home #app>.subhead,.m-single #app>.top,.m-menu #app{display:none}
 
 /* ── спільні елементи ── */
 .grid2{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px 56px;align-items:start}
-.cap{font:600 13px/1.3 var(--display);letter-spacing:1.8px;text-transform:uppercase;color:var(--mute);margin:0 0 6px}
+.cap{font:600 12.5px/1.3 var(--display);letter-spacing:1.7px;text-transform:uppercase;color:var(--mute);margin:0 0 6px}
 .cap.bad{color:var(--bad)}
-h2{font:600 26px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase;margin:0}
-.hint{color:var(--mute);margin:6px 0 0;max-width:62ch}
-.small{display:block;font-size:12px;line-height:1.4;color:var(--faint);margin:0}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--ink);color:var(--dark);border:1px solid var(--ink);border-radius:2px;padding:13px 26px;
-  font:600 18px/1.15 var(--display);letter-spacing:2.4px;text-transform:uppercase;min-width:240px;text-align:center}
+h2{font:600 22px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase;margin:0}
+.hint{color:var(--mute);margin:6px 0 0;max-width:62ch;font-size:13.5px}
+.small{display:block;font-size:12.5px;line-height:1.45;color:var(--faint);margin:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--ink);color:var(--dark);border:1px solid var(--ink);border-radius:2px;padding:12px 22px;
+  font:600 16px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase;min-width:220px;text-align:center;
+  transition:transform .12s cubic-bezier(.2,.8,.2,1),background-color .15s,border-color .15s,opacity .15s,box-shadow .2s}
+.btn:active{transform:scale(.97)}
 .btn:active{background:#fff}
 .btn[disabled]{opacity:.45}
-.btn.ghost{background:none;color:var(--ink);border-color:var(--edge);font-size:15px;letter-spacing:1.8px;min-width:0;padding:12px 20px}
+.btn.ghost{background:none;color:var(--ink);border-color:var(--edge);font-size:14px;letter-spacing:1.6px;min-width:0;padding:11px 18px}
 .btn.ghost:active{border-color:var(--ink)}
 .btn.bad{color:var(--bad);border-color:#ff9a9a66}
-.btn.sm{font-size:13px;letter-spacing:1.4px;padding:8px 14px;min-width:0}
+.btn.sm{font-size:12.5px;letter-spacing:1.3px;padding:8px 13px;min-width:0}
 .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
 .row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;min-height:52px;padding:7px 0;border-bottom:1px solid var(--hair)}
 .row .t{display:block;font:500 14px/1.35 var(--body)}
-.row .s{display:block;font-size:12px;line-height:1.4;color:var(--faint);margin-top:1px}
+.row .s{display:block;font-size:12.5px;line-height:1.4;color:var(--faint);margin-top:1px}
 .row .s b{color:var(--mute);font-weight:600}
 .row.click{cursor:pointer}
 .row.click:active .t{text-decoration:underline;text-underline-offset:3px}
@@ -89,12 +91,12 @@ h2{font:600 26px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 .home>.side{grid-area:side}
 .home>.foot2{grid-area:foot;align-self:end}
 .hero{display:flex;flex-direction:column;gap:10px;min-width:0}
-.eyebrow{font:500 15px/1.3 var(--display);letter-spacing:3px;text-transform:uppercase;color:var(--cyan)}
+.eyebrow{font:500 13.5px/1.3 var(--display);letter-spacing:2.6px;text-transform:uppercase;color:var(--cyan)}
 .eyebrow.bad{color:var(--bad)}
-.timer{font:500 clamp(54px,min(19vw,19vh),116px)/0.95 var(--display);letter-spacing:2px;font-variant-numeric:tabular-nums}
+.timer{font:500 clamp(48px,min(15vw,16vh),92px)/0.95 var(--display);letter-spacing:2px;font-variant-numeric:tabular-nums}
 .timer.play{color:var(--gold)}
-.big{font:600 clamp(28px,min(8vw,9vh),52px)/1.05 var(--display);letter-spacing:2px;text-transform:uppercase;margin:0;overflow-wrap:anywhere}
-.lead{font:400 15px/1.5 var(--body);color:var(--mute);margin:0;max-width:52ch}
+.big{font:600 clamp(24px,min(6.4vw,8vh),40px)/1.08 var(--display);letter-spacing:2px;text-transform:uppercase;margin:0;overflow-wrap:anywhere}
+.lead{font:400 14.5px/1.5 var(--body);color:var(--mute);margin:0;max-width:52ch}
 .lead b{color:var(--ink);font-weight:600}
 .foot2{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;margin-top:22px;font-size:11.5px;color:var(--faint)}
 .foot2 .me{display:none;align-items:center;gap:10px;color:var(--mute);font-size:13px}
@@ -166,10 +168,10 @@ h2{font:600 26px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 
 /* ── оплата ── */
 #sheet{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;background:linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 45%,var(--bg3) 100%)}
-.amount{font:500 46px/1.05 var(--display);letter-spacing:1px;font-variant-numeric:tabular-nums}
+.amount{font:500 40px/1.05 var(--display);letter-spacing:1px;font-variant-numeric:tabular-nums}
 .req{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hair)}
 .req span{display:block;font-size:12px;color:var(--faint)}
-.req b{display:block;font:600 16px/1.35 var(--body);word-break:break-all;-webkit-user-select:text;user-select:text}
+.req b{display:block;font:600 16px/1.35 var(--body);overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
 input.field{width:100%;padding:12px 2px;border:0;border-bottom:1px solid var(--edge);border-radius:0;background:transparent;color:var(--ink);font:500 16px var(--body);outline:0}
 input.field:focus{border-bottom-color:var(--ink)}
 .code{font:500 40px/1.1 var(--display);letter-spacing:8px;padding:8px 0;font-variant-numeric:tabular-nums;-webkit-user-select:text;user-select:text}
@@ -254,7 +256,7 @@ body.wallet #methods{margin-top:6px}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* ── телефон вертикально ── */
-@media (max-width:700px){
+@media (max-width:700px) and (orientation:portrait),(max-width:520px){
   :root{--pad:16px}
   .top{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand who" "nav nav";padding-top:12px}
   .brand{font-size:21px;padding-bottom:8px}
@@ -305,8 +307,8 @@ body.wallet #methods{margin-top:6px}
   .eyebrow{font-size:13.5px}
   .lead{font-size:14px;line-height:1.45}
   .actions{margin-top:4px}
-  .btn{padding:10px 22px;font-size:16px;min-width:200px}
-  .btn.ghost{padding:9px 16px;font-size:14px}
+  .btn{padding:10px 18px;font-size:15px;min-width:180px}
+  .btn.ghost{padding:9px 14px;font-size:13.5px}
   .row{min-height:42px;padding:4px 0}
   .side .cap{margin-top:12px}
   .foot2{margin-top:10px}
@@ -319,9 +321,16 @@ body.wallet #methods{margin-top:6px}
   .subhead button{height:34px;flex-basis:34px}
   #pm{padding-top:6px}
   .pm-head{padding:2px 0 6px}
-  .pm-head .big{font-size:22px}
+  .pm-head .big{font-size:20px}
+  .pm-grid{grid-template-columns:minmax(160px,215px) minmax(0,1fr);gap:0 26px}
   .pm-left{padding-top:2px}
-  .pm-left button{padding:9px 4px;font-size:15px}
+  .pm-left button{padding:8px 4px;font-size:14px}
+  .pm-left button.on{padding-left:10px}
+  .big{font-size:24px}
+  .timer{font-size:clamp(44px,17vh,76px)}
+  .home{column-gap:28px}
+  .grid2{gap:12px 28px}
+  #barBtn{min-width:220px}
   .pm-right{padding-top:8px}
   .foot{padding-top:5px}
   .amount{font-size:36px}
@@ -332,6 +341,49 @@ body.wallet #methods{margin-top:6px}
   .side .row{min-height:36px}
   .timer{font-size:clamp(46px,18vh,100px)}
 }
+/* ── 125: рух і відгук. Розділи з'являються м'яко, рядки по черзі, кнопки «натискаються», вибране підсвічується ── */
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{opacity:.4;transform:translateY(28px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.6)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+@keyframes glow{0%,100%{text-shadow:0 0 0 #ffd9a000}50%{text-shadow:0 0 22px #ffd9a099}}
+@keyframes pulseLow{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+@keyframes shimmer{from{background-position:-200% 0}to{background-position:200% 0}}
+#main.anim>.inner>div:not(.hidden){animation:fadeIn .2s ease-out both}
+#main.anim .side>*,#main.anim .pick>*,#main.anim #help>.row,#main.anim #wHist>.row,#main.anim .how>.row,#main.anim #mine>.bk,#main.anim .hero>*,#main.anim .setrow{animation:rise .32s cubic-bezier(.2,.8,.2,1) both}
+#main.anim .side>*:nth-child(2),#main.anim .pick>*:nth-child(2),#main.anim #help>.row:nth-child(2),#main.anim .how>.row:nth-child(2),#main.anim .hero>*:nth-child(2),#main.anim .setrow:nth-child(2){animation-delay:.035s}
+#main.anim .side>*:nth-child(3),#main.anim .pick>*:nth-child(3),#main.anim #help>.row:nth-child(3),#main.anim .how>.row:nth-child(3),#main.anim .hero>*:nth-child(3),#main.anim .setrow:nth-child(3){animation-delay:.07s}
+#main.anim .side>*:nth-child(4),#main.anim .pick>*:nth-child(4),#main.anim #help>.row:nth-child(4),#main.anim .how>.row:nth-child(4),#main.anim .hero>*:nth-child(4),#main.anim .setrow:nth-child(4){animation-delay:.105s}
+#main.anim .side>*:nth-child(n+5),#main.anim .pick>*:nth-child(n+5),#main.anim #help>.row:nth-child(n+5),#main.anim .how>.row:nth-child(n+5),#main.anim .hero>*:nth-child(n+5),#main.anim .setrow:nth-child(n+5){animation-delay:.14s}
+.timer.play{animation:glow 3.2s ease-in-out .4s infinite}
+.timer.low{color:var(--bad);animation:pulseLow 1.6s ease-in-out infinite}
+#sheet:not(.hidden){animation:slideUp .28s cubic-bezier(.2,.8,.2,1) both}
+#pm:not(.hidden){animation:fadeIn .18s ease-out both}
+.pm-left button{transition:opacity .15s,background .2s,padding .2s}
+#pm.intro .pm-left button{animation:slideIn .28s cubic-bezier(.2,.8,.2,1) both}
+.pm-left button:nth-child(2){animation-delay:.025s}.pm-left button:nth-child(3){animation-delay:.05s}.pm-left button:nth-child(4){animation-delay:.075s}
+.pm-left button:nth-child(5){animation-delay:.1s}.pm-left button:nth-child(6){animation-delay:.125s}.pm-left button:nth-child(n+7){animation-delay:.15s}
+#pm.anim #pmText>*{animation:rise .24s cubic-bezier(.2,.8,.2,1) both}
+.opt,.day,.times button,.amts button,.method button,.seg button,.row.click,.lnk,.bal,.chip{transition:background-color .18s,color .18s,border-color .18s,transform .12s,opacity .18s}
+.opt:active,.day:active,.times button:active,.amts button:active,.method button:active,.seg button:active,.row.click:active{transform:scale(.985)}
+.row.click{border-radius:2px}
+.row.click:active{background:#ffffff0d}
+#toast{transition:opacity .2s,transform .28s cubic-bezier(.2,1.4,.4,1)}
+.spin{animation:r .9s cubic-bezier(.5,.15,.5,.85) infinite}
+/* рядок коротких фактів під таймером: «до 20:22», «PSN спільний» */
+.facts{display:flex;flex-wrap:wrap;gap:6px}
+.facts .chip{font-weight:500;background:#ffffff0f}
+.facts .chip b{font-weight:600;color:var(--ink)}
+/* налаштування вібрації й статистики: рядок з вибором і «Спробувати» */
+.setrow{display:flex;flex-direction:column;gap:7px;padding:10px 0;border-bottom:1px solid var(--hair)}
+.setrow .top2{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.setrow .t{font:500 14px/1.35 var(--body)}
+.setrow .try{font:500 12.5px var(--body);color:var(--cyan);padding:2px 0;white-space:nowrap}
+.setrow .seg{display:flex;width:100%}
+.setrow .seg button{flex:1;padding:8px 4px;font-size:13px;letter-spacing:1px;text-align:center;white-space:nowrap}
+.setrow .small{margin-top:0}
+.seg button{transition:background-color .2s,color .2s}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:3s!important}}
 </style>
 </head>
@@ -370,7 +422,7 @@ body.wallet #methods{margin-top:6px}
     <!-- бронювання -->
     <div id="vBook" class="hidden">
       <div class="vhead">
-        <div><h2 class="vtitle">Бронювання</h2><p class="hint vtitle">Обери, скільки грати, день і початок. Час закріплюється за тобою одразу, оплата тут же.</p></div>
+        <div><h2 class="vtitle">Бронювання</h2><p class="hint vtitle">Тривалість, день і початок. Оплата тут же.</p></div>
         <div class="seg"><button type="button" class="on" id="tabNew">Забронювати</button><button type="button" id="tabMine">Мої броні</button></div>
       </div>
       <div id="pNew">
@@ -393,12 +445,11 @@ body.wallet #methods{margin-top:6px}
         <div><h2 class="vtitle">Баланс</h2>
           <div class="timer wbig"><span class="balv"></span></div>
           <p class="small hidden" id="wOther"></p>
-          <p class="lead" style="margin-top:8px">Баланс — це передоплата за гру в AnyPlay. Поповнюєш один раз, а далі платиш за броні й продовження <b>одним натиском</b>: без переказу і без чекання, поки знайдеться оплата.</p>
-          <p class="lead" style="margin-top:6px">Це не обов'язково: за кожну гру можна заплатити й переказом. Спосіб оплати обираєш щоразу сам. Якщо на балансі не вистачає, решту доплачуєш карткою.</p>
+          <p class="lead" style="margin-top:8px">Передоплата за гру: броні й продовження <b>одним натиском</b>, без переказу. Не обов'язково, можна щоразу й переказом.</p>
         </div>
         <div><p class="cap">Валюта балансу</p>
           <div class="amts c3" id="wBal"></div>
-          <p class="small" id="wBalHint" style="margin-top:6px">Поповнюй будь-яким способом: гроші самі перерахуються у вибрану валюту за курсом НБУ.</p>
+          <p class="small" id="wBalHint" style="margin-top:6px">Поповнюй будь-чим: суму перерахуємо за курсом НБУ.</p>
           <div class="paybox hidden" id="wBalBox"></div>
         </div>
         <div><p class="cap">Поповнити</p>
@@ -410,11 +461,11 @@ body.wallet #methods{margin-top:6px}
       </div>
       <div class="wcol">
         <div class="how"><p class="cap">Як це працює</p>
-          <div class="row"><span><span class="t">Поповнюєш на будь-яку суму</span><span class="s">переказом, як за звичайну бронь; гроші з'являться на балансі за 1–2 хвилини</span></span><span></span></div>
-          <div class="row"><span><span class="t">Платиш з балансу за секунду</span><span class="s">бронь чи продовження бронювання прямо під час гри, нічого не переказуєш</span></span><span></span></div>
-          <div class="row"><span><span class="t">Не вистачає — доплачуєш карткою</span><span class="s">частину спишемо з балансу, решту переказуєш як звичайну оплату</span></span><span></span></div>
-          <div class="row"><span><span class="t">Скасував бронь — гроші на баланс</span><span class="s">повертаються одразу, можна витратити на наступну гру</span></span><span></span></div>
-          <div class="row"><span><span class="t">Залишок не згорає</span><span class="s">лишається на балансі для наступних ігор</span></span><span></span></div>
+          <div class="row"><span><span class="t">Поповнюєш на будь-яку суму</span><span class="s">переказом, гроші з'являться за 1–2 хв</span></span><span></span></div>
+          <div class="row"><span><span class="t">Платиш з балансу за секунду</span><span class="s">бронь чи продовження, навіть під час гри</span></span><span></span></div>
+          <div class="row"><span><span class="t">Не вистачає — доплачуєш карткою</span><span class="s">частина з балансу, решта переказом</span></span><span></span></div>
+          <div class="row"><span><span class="t">Скасував бронь — гроші на баланс</span><span class="s">гроші повертаються одразу</span></span><span></span></div>
+          <div class="row"><span><span class="t">Залишок не згорає</span><span class="s">лишається для наступних ігор</span></span><span></span></div>
         </div>
         <div><p class="cap">Історія</p><div id="wHist"></div></div>
       </div>
@@ -436,19 +487,19 @@ body.wallet #methods{margin-top:6px}
     <!-- друзі (етап 7): хто грає й транслює, запити, запросити, передати гру, подарунки -->
     <div id="vFriends" class="hidden grid2">
       <div class="wcol">
-        <div><h2 class="vtitle">Друзі</h2><p class="hint vtitle lhide">Дивись, як грають друзі, говори з ними й підказуй. Передай гру другу на складну місію або подаруй йому години й баланс.</p></div>
+        <div><h2 class="vtitle">Друзі</h2><p class="hint vtitle lhide">Дивись гру друзів, говори з ними, передавай гру й даруй години.</p></div>
         <div id="frHand"></div>
         <div class="fr"><p class="cap">Друзі</p><div id="frList"></div></div>
       </div>
       <div class="wcol">
         <div id="frIn"></div>
         <div><p class="cap">Додати друга</p>
-          <p class="small">Надішли другу посилання-запрошення або продиктуй свій код. Можна й навпаки: впиши його код чи нік у Telegram.</p>
+          <p class="small">Надішли посилання чи свій код або впиши код друга чи його нік у Telegram.</p>
           <div class="actions"><button type="button" class="btn" id="frShare">Запросити друга</button><button type="button" class="btn ghost" id="frCopy">Мій код</button></div>
           <div class="own"><input class="field" id="frAdd" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Код друга або @нік" aria-label="Код друга або нік у Telegram"><button type="button" class="btn sm" id="frAddGo">Додати</button></div>
         </div>
         <div class="fgift"><p class="cap">Подарунки</p>
-          <p class="small">Поповни баланс друга, переказуй йому зі свого балансу або забронюй години для друга. Друг отримає повідомлення в боті.</p>
+          <p class="small">Поповни другу баланс або забронюй йому години.</p>
           <div class="actions"><button type="button" class="btn ghost" id="frGifts">Подарувати</button></div></div>
       </div>
     </div>
@@ -465,20 +516,27 @@ body.wallet #methods{margin-top:6px}
       <div class="grid2" id="help" style="row-gap:0"></div>
     </div>
 
+    <!-- 125: вібрація (гра, кнопки, курки L2/R2) -->
+    <div id="vFeel" class="hidden">
+      <div class="vhead"><div><h2 class="vtitle">Вібрація</h2><p class="hint">Відчуй гру руками, як на DualSense.</p></div></div>
+      <div id="feel" style="max-width:560px"></div>
+    </div>
+
     <!-- якість картинки і перевірка інтернету -->
     <div id="vQuality" class="hidden">
       <div class="grid2">
-        <div><h2 class="vtitle">Якість картинки</h2><p class="hint vtitle lhide">«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш інше, якість буде сталою.</p>
+        <div><h2 class="vtitle">Якість картинки</h2><p class="hint vtitle lhide">«Авто» знижує якість, коли зв'язок слабшає, щоб гра не відставала.</p>
           <div class="pick mt" id="qList"></div>
           <p class="cap mt">Чіткість</p>
-          <p class="small">Відеокарта телефона підкреслює дрібні деталі: вивіски, листя, обличчя. Без ореолів на краях і без затримки. Якщо телефон не встигатиме, програма вимкне її сама.</p>
+          <p class="small">Підкреслює дрібні деталі без затримки. Не встигатиме телефон, вимкнеться сама.</p>
           <div class="pick mt" id="sharpList"></div>
           <p class="cap mt">Кольори</p>
-          <p class="small">Змінюються одразу, без перепідключення. Обробляє відеокарта телефона: затримка не помітна. Коли все на нулі, картинка йде без обробки.</p>
+          <p class="small">Змінюються одразу. Усе на нулі: картинка без обробки.</p>
           <div id="picList"></div>
-          <div class="actions"><button type="button" class="btn ghost sm" id="picReset">Скинути кольори</button></div></div>
+          <div class="actions"><button type="button" class="btn ghost sm" id="picReset">Скинути кольори</button></div>
+          <div id="hudBox" class="mt"></div></div>
         <div id="netBox"><p class="cap">Перевірити інтернет</p>
-          <p class="small">Необов'язково. Перевірка міряє інтернет цього пристрою, а гра ще залежить від того, Wi-Fi це чи кабель. Витрачає до 40 МБ трафіку.</p>
+          <p class="small">Необов'язково. Міряє інтернет телефона, до 40 МБ трафіку.</p>
           <div id="netRows"></div>
           <div id="netRes"></div>
           <div class="actions"><button type="button" class="btn ghost" id="netBtn">Перевірити інтернет</button><button type="button" class="btn hidden" id="netApply">Застосувати</button></div>
@@ -587,11 +645,11 @@ function errText(r){ return r.json.text || ERR[r.json.error] || (r.status === 0 
 // ── режим сторінки: головний екран програми, меню під час гри або одна сторінка у вікні ──
 const HASH = decodeURIComponent((location.hash || '#home').slice(1));
 const ROUTE = HASH.split(':')[0], ARG = HASH.split(':')[1] || '';
-const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','quality','wallet'].includes(ROUTE) ? 'single' : 'home';
+const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','quality','wallet','feel'].includes(ROUTE) ? 'single' : 'home';
 document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
-const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality', friends: 'vFriends'};
-const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Зображення', friends: 'Друзі'};
+const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality', friends: 'vFriends', feel: 'vFeel'};
+const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Зображення', friends: 'Друзі', feel: 'Вібрація'};
 let view = null, viewTok = 0, method = null, busy = false;
 
 function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
@@ -601,7 +659,9 @@ function failView(r, retry){
   $('loading').innerHTML = '<p class="lead">' + esc(errText(r)) + '</p><div class="actions"><button type="button" class="btn ghost" id="retryBtn">Спробувати ще раз</button></div>';
   $('retryBtn').onclick = retry;
 }
-function show(v){ hideViews(); $('loading').classList.add('hidden'); $(VIEWS[v]).classList.remove('hidden'); }
+// 125: розділ з'являється з рухом (рядки по черзі); оновлення вже відкритого розділу — без анімації
+function anim(el){ if(!el) return; el.classList.add('anim'); clearTimeout(el._a); el._a = setTimeout(() => el.classList.remove('anim'), 700); }
+function show(v){ const was = !$(VIEWS[v]).classList.contains('hidden'); hideViews(); $('loading').classList.add('hidden'); $(VIEWS[v]).classList.remove('hidden'); if(!was) anim($('main')); }
 function bar(text, hint, enabled, fn, big){ $('bar').classList.remove('hidden'); $('barBtn').textContent = text;
   $('barHint').innerHTML = (big ? '<b class="bwhen">' + esc(big) + '</b>' : '') + esc(hint || '');
   $('barHint').classList.toggle('hidden', !hint); $('barBtn').disabled = !enabled; $('barBtn').onclick = fn; }
@@ -625,6 +685,7 @@ function go(v){
   else if(v === 'help'){ loadHelp(); }
   else if(v === 'quality'){ loadQuality(); }
   else if(v === 'friends'){ fConfirm = ''; fOpen = 0; renderFriends(); show('friends'); fLoad(true); }
+  else if(v === 'feel'){ renderFeel(); show('feel'); }
 }
 function markNav(){
   const on = view === 'extend' ? 'home' : view;
@@ -667,12 +728,12 @@ function renderGate(){
   const pairing = H.state === 'pairing';
   const code = H.pairShort ? String(H.pairShort).replace(/(\d{3})(\d{3})/, '$1 $2') : '';
   $('gate').innerHTML = (pairing
-    ? '<span class="eyebrow">Вхід</span><p class="big">Підтвердь вхід у Telegram</p><p class="lead">Натисни «Старт» у боті AnyPlay і повернись сюди: програма продовжить сама.</p>'
+    ? '<span class="eyebrow">Вхід</span><p class="big">Підтвердь вхід у Telegram</p><p class="lead">Натисни «Старт» у боті й повернись сюди.</p>'
       + (code ? '<p class="lead" style="margin-top:10px">Telegram на іншому пристрої? Надішли боту ' + esc(H.pairBot || '@play_any_bot') + ' цей код:</p>'
         + '<p class="big paircode">' + esc(code) + '</p>' : '') + '<div class="spin"></div>'
       + '<div class="actions">' + (code ? '<button type="button" class="btn" data-act="openTg">Відкрити Telegram</button>' : '')
       + '<button type="button" class="btn ghost" data-act="cancelLogin">Скасувати</button></div>'
-    : '<span class="eyebrow">Ласкаво просимо</span><p class="big">Грай у PS5 зі свого телефона</p><p class="lead">Увійди через Telegram: це той самий акаунт, з якого ти бронюєш час у боті.</p>'
+    : '<span class="eyebrow">Ласкаво просимо</span><p class="big">Грай у PS5 зі свого телефона</p><p class="lead">Увійди через Telegram: той самий акаунт, що й у боті.</p>'
       + '<div class="actions"><button type="button" class="btn" data-act="login">Увійти через Telegram</button>'
       + '<button type="button" class="btn ghost" data-act="loginCode">Telegram на іншому пристрої</button></div>')
     + '<p class="small" style="margin-top:14px">AnyPlay для Android, збірка ' + esc(H.build || '') + '</p>';
@@ -695,18 +756,15 @@ function heroUser(){
       if(H.busy) return '<span class="eyebrow">Гостьовий доступ</span><p class="big">Шукаємо приставку…</p><p class="lead">Це займає до хвилини.</p><div class="spin"></div>';
       return '<span class="eyebrow">Гостьовий доступ</span>'
         + (end > 0 ? '<div class="timer play" id="tick" data-to="' + end + '">' + dur(end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>')
-        + '<p class="lead">Гостьовий доступ: граєш, поки приставка вільна.' + (end > 0 ? ' До <b>' + esc(fmtTime(end)) + '</b>.' : '')
-        + (c.psn ? ' Акаунт PSN: ' + esc(c.psn) + ' (' + (c.own ? 'твій' : 'спільний') + ').' : '') + '</p>'
+        + facts([end > 0 ? 'до <b>' + esc(fmtTime(end)) + '</b>' : '', psnFact(c)]) + '<p class="lead">Граєш, поки приставка вільна.</p>'
         + '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button></div>';
     }
     let h = '<span class="eyebrow">' + (end > 0 ? 'Можна грати!' : 'Твоя гра') + '</span>';
     if(H.busy) return h + '<p class="big">Шукаємо приставку…</p><p class="lead">' + (end > 0 ? 'Твій час до <b>' + esc(fmtTime(end)) + '</b>. ' : '') + 'Це займає до хвилини.</p><div class="spin"></div>';
     h += end > 0 ? '<div class="timer play" id="tick" data-to="' + end + '">' + dur(end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>';
-    const lines = [], checking = !!(bk && bk.paymentChecking);   // гра в кредит: час вийшов, оплату продовження ще перевіряють
-    if(checking) lines.push('Оплату продовження ще перевіряємо, тому гра не зупинилась. Поки що грати можна до <b>' + esc(fmtTime(end)) + '</b>; щойно оплату підтвердять, час додасться сам.');
-    else if(end > 0) lines.push('Лишилось до кінця гри. Твій час до <b>' + esc(fmtTime(end)) + '</b>.');
-    if(c.psn) lines.push('Акаунт PSN: ' + esc(c.psn) + ' (' + (c.own ? 'твій' : 'спільний') + ').');
-    if(lines.length) h += '<p class="lead">' + lines.join(' ') + '</p>';
+    const checking = !!(bk && bk.paymentChecking);   // гра в кредит: час вийшов, оплату продовження ще перевіряють
+    h += facts([end > 0 ? 'до <b>' + esc(fmtTime(end)) + '</b>' : '', psnFact(c)]);
+    if(checking) h += '<p class="lead">Оплату продовження ще перевіряємо, тому гра йде далі. Підтвердять, і час додасться сам.</p>';
     return h + '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button>'
       + (checking ? '' : bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити бронювання</button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
   }
@@ -723,19 +781,22 @@ function heroUser(){
       + '<div class="actions"><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>';
   }
   if(st === 'no_console') return '<span class="eyebrow bad">Приставка</span><p class="big">' + (s.closed ? 'Технічні роботи' : 'Приставка зараз недоступна') + '</p>'
-    + '<p class="lead">Ми вже це лагодимо. Твоя бронь і оплата збережені. Якщо є питання, напиши в підтримку.</p>'
+    + '<p class="lead">Уже лагодимо. Бронь і оплата збережені.</p>'
     + '<div class="actions"><button type="button" class="btn" data-act="bot">Відкрити бота</button></div>';
   if(st === 'update') return '<span class="eyebrow">Оновлення</span><p class="big">Потрібна нова версія</p>'
-    + '<p class="lead">Ця версія програми застаріла й більше не підключається до приставки. Натисни «Оновити»: нова версія встановиться сама, вхід і броні збережуться.</p>'
+    + '<p class="lead">Ця версія вже не підключається до приставки. «Оновити» встановить нову за хвилину, вхід і броні збережуться.</p>'
     + '<div class="actions"><button type="button" class="btn" data-act="update">Оновити</button></div>';
   if(st === 'offline') return '<span class="eyebrow bad">Немає зв\'язку</span><p class="big">Перевір інтернет</p><p class="lead">Не вдається з\'єднатися з сервером AnyPlay.</p>'
     + '<div class="actions"><button type="button" class="btn" data-act="retry">Спробувати ще раз</button></div>';
   if(nx.start > 0) return '<span class="eyebrow">Твоя наступна гра</span><div class="timer" id="tick" data-to="' + nx.start + '" data-open="1">' + dur(nx.start - nowTs()) + '</div>'
-    + '<p class="lead">Грати можна з <b>' + esc(fmtTime(nx.start)) + '</b> до <b>' + esc(fmtTime(nx.end)) + '</b>. Кнопка «Грати» з\'явиться тут сама.</p>'
+    + facts(['з <b>' + esc(fmtTime(nx.start)) + '</b> до <b>' + esc(fmtTime(nx.end)) + '</b>']) + '<p class="lead">Кнопка «Грати» з\'явиться тут сама.</p>'
     + '<div class="actions"><button type="button" class="btn" data-tab="book" data-sub="mine">Мої броні</button><button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати ще</button></div>';
-  return '<span class="eyebrow">Бронювання</span><p class="big">Броні поки немає</p><p class="lead">Забронюй час прямо тут. Коли він настане, з\'явиться кнопка «Грати».</p>'
+  return '<span class="eyebrow">Бронювання</span><p class="big">Броні поки немає</p><p class="lead">Обери час тут. Коли він настане, з\'явиться «Грати».</p>'
     + '<div class="actions"><button type="button" class="btn" data-tab="book" data-sub="new">Забронювати</button></div>';
 }
+// 125: короткі факти чіпами під таймером: «до 20:22», «PSN anyplay_ps5, спільний»
+function facts(list){ list = list.filter(Boolean); return list.length ? '<div class="facts">' + list.map(x => '<span class="chip">' + x + '</span>').join('') + '</div>' : ''; }
+function psnFact(c){ return c && c.psn ? 'PSN <b>' + esc(c.psn) + '</b>, ' + (c.own ? 'твій' : 'спільний') : ''; }
 // «Передати повністю» (етап 7): друг передає мені гру; я граю в бронь друга; я віддав свою гру другові
 function heroHandoff(s, st){
   const ho = H.handoffLive || s.handoffOffer || s.handoff;
@@ -805,12 +866,13 @@ function renderSide(){
     if(homeMine === null) h += '<p class="small" style="padding:10px 0">Завантажуємо…</p>';
     else if(!homeMine.length) h += '<p class="small" style="padding:10px 0">Броней поки немає.</p>';
     else h += homeMine.slice(0, max).map(m => bookingRow(m, true)).join('') + (homeMine.length > max ? '<button type="button" class="more" data-tab="book" data-sub="mine">Усі броні: ' + homeMine.length + '</button>' : '');
-    if(wal) h += '<div class="row click" data-tab="wallet" style="margin-top:6px"><span><span class="t">Баланс</span><span class="s">плати за гру одним натиском, без переказу щоразу</span></span>'
+    if(wal) h += '<div class="row click" data-tab="wallet" style="margin-top:6px"><span><span class="t">Баланс</span><span class="s">оплата одним натиском</span></span>'
       + '<span class="chip balv">' + esc(wText()) + '</span></div>';
   }
   h += '<p class="cap">Налаштування гри</p>'
-    + '<div class="row click" data-tab="quality"><span><span class="t">Зображення</span><span class="s">якість і кольори картинки</span></span><span class="chip">' + esc(q.name || 'Авто') + '</span></div>'
-    + '<div class="row click" data-act="layout"><span><span class="t">Кнопки на екрані</span><span class="s">розташування, розмір, додаткові кнопки</span></span><span class="chip">змінити</span></div>';
+    + '<div class="row click" data-tab="quality"><span><span class="t">Зображення</span><span class="s">якість, чіткість, кольори, статистика</span></span><span class="chip">' + esc(q.name || 'Авто') + '</span></div>'
+    + '<div class="row click" data-act="layout"><span><span class="t">Кнопки на екрані</span><span class="s">розташування, розмір, джойстик</span></span><span class="chip">змінити</span></div>'
+    + '<div class="row click" data-tab="feel"><span><span class="t">Вібрація</span><span class="s">гра, кнопки, курки L2 і R2</span></span><span class="chip">' + esc(FEEL_R[feelInfo().rumble] || 'Середня') + '</span></div>';
   if(!H.admin){
     const psn = !s.myPsn ? ['', 'спільний'] : s.myPsnReady ? ['ok', s.myPsn] : ['wait', 'підключається'];
     h += '<div class="row click" data-tab="psn"><span><span class="t">Акаунт PSN</span><span class="s">на якому акаунті грати</span></span><span class="chip ' + psn[0] + '">' + esc(psn[1]) + '</span></div>'
@@ -825,6 +887,7 @@ function tick(){
   if(t && MODE === 'home'){
     const to = +t.dataset.to, left = to - nowTs();
     t.textContent = dur(left);
+    t.classList.toggle('low', t.classList.contains('play') && left > 0 && left < 600);
     if(t.dataset.open && left <= 0 && openAt !== to){ openAt = to; openAsk = [0, 3, 8, 15, 30].map(x => Date.now() + x * 1000); }
   }
   while(openAsk.length && Date.now() >= openAsk[0]){ openAsk.shift(); act('refresh'); }
@@ -904,7 +967,7 @@ function renderBook(){
 }
 function renderStarts(){
   const el = $('starts'), t = tariff(); el.innerHTML = '';
-  $('tzNote').textContent = 'Час показано за годинником твого телефона.';
+  $('tzNote').textContent = 'Час за годинником телефона.';
   if(starts === null){ el.innerHTML = '<div class="note">Шукаємо вільний час…</div>'; return; }
   if(!starts.length){ el.innerHTML = '<div class="note">На цей день такий час уже не вміщується. Обери інший день або меншу тривалість.</div>'; return; }
   const soon = Date.now() / 1000 + 900;   // вільно просто зараз: найближчий час підписуємо «зараз»
@@ -919,9 +982,8 @@ function renderBar(){
   if(!start || !t){ bar('Обери час початку', '', false, null); return; }
   const when = upFirst(range(start, start + t.hours * 3600)), p = payPlan(t, method, bookPay), m = x => money(x, p.cur, p.sym);
   if(p.pay === 'wallet') bar('Оплатити з балансу ' + m(p.price), 'Бронь підтвердиться одразу, без переказу. Залишиться ' + m(p.bal - p.price) + '.', !busy, book, when);
-  else if(p.pay === 'mix') bar('Доплатити ' + m(p.rest) + ' ' + viaWord(method), 'Місце тримаємо ' + B.holdMinutes + ' хв. Як тільки надійде доплата ' + m(p.rest)
-    + ', спишемо ' + m(p.part) + ' з балансу, і бронь підтвердиться.', !busy, book, when);
-  else bar('Забронювати за ' + priceStr(t.prices[method]), 'Місце тримаємо ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book, when);
+  else if(p.pay === 'mix') bar('Доплатити ' + m(p.rest) + ' ' + viaWord(method), 'Тримаємо місце ' + B.holdMinutes + ' хв. Після доплати спишемо ' + m(p.part) + ' з балансу.', !busy, book, when);
+  else bar('Забронювати за ' + priceStr(t.prices[method]), 'Тримаємо місце ' + B.holdMinutes + ' хв, поки оплачуєш.', !busy, book, when);
 }
 async function book(){
   if(busy) return;
@@ -1304,7 +1366,7 @@ function payboxHtml(p){
   if(p.status === 'pending_review') return h + '<span class="small">Позначку «Я оплатив» отримали. Перевіряємо платіж: гроші з\'являться на балансі самі, зазвичай за кілька хвилин.</span>'
     + '<div class="actions" style="flex-direction:row;align-items:center"><span class="chip wait">перевіряємо оплату</span><button type="button" class="btn sm ghost" data-tpay="' + id + '">Реквізити</button></div></div>';
   return h + '<span class="small">' + (p.auto === false ? 'Переказуй точну суму до копійки, а потім натисни «Я оплатив»: адміністратор перевірить оплату, і гроші з\'являться на балансі.'
-      : 'Переказуй точну суму до копійки: так оплата знайдеться сама і з\'явиться на балансі за 1–2 хвилини.') + (p.holdUntil > 0 ? ' Чекаємо переказ до ' + esc(fmtTime(p.holdUntil)) + '.' : '') + '</span>'
+      : 'Переказуй точну суму до копійки: оплата знайдеться сама за 1–2 хв.') + (p.holdUntil > 0 ? ' Чекаємо переказ до ' + esc(fmtTime(p.holdUntil)) + '.' : '') + '</span>'
     + '<div class="actions"><button type="button" class="btn" data-tpay="' + id + '">Оплатити</button><button type="button" class="btn ghost" data-tdone="' + id + '">Я оплатив</button></div>'
     + '<button type="button" class="xlink" data-tcancel="' + id + '">Скасувати поповнення</button></div>';
 }
@@ -1509,6 +1571,50 @@ function loadHelp(){
   show('help');
 }
 
+// ── 125: вібрація (AnyPlayHaptics.kt) і статистика під час гри (AnyPlayStatsHud.kt) ──
+const FEEL_R = ['Вимк.', 'Слабка', 'Середня', 'Сильна'], FEEL_B = ['Вимк.', 'Легка', 'Сильна'], HUD = ['Вимк.', 'Коротко', 'Докладно'];
+let FV = null;
+function feelInfo(){ return nativeJson('feel') || FV || {rumble: 2, buttons: 1, analog: false, amp: true}; }
+function segHtml(key, list, v){
+  return '<div class="seg">' + list.map((t, i) => '<button type="button" data-' + key + '="' + i + '" class="' + (i === v ? 'on' : '') + '">' + t + '</button>').join('') + '</div>';
+}
+function feelBox(){
+  const f = FV = feelInfo();
+  const row = (t, test, seg, note) => '<div class="setrow"><div class="top2"><span class="t">' + t + '</span>'
+    + (test ? '<button type="button" class="try" data-vt="' + test + '">Спробувати</button>' : '') + '</div>' + seg + '<span class="small">' + note + '</span></div>';
+  return row('Вібрація гри', f.rumble > 0 ? 'rumble' : '', segHtml('vr', FEEL_R, f.rumble), 'Удари, вибухи, двигун машини: як моторчики DualSense.')
+    + row('Відгук кнопок', f.buttons > 0 ? 'buttons' : '', segHtml('vb', FEEL_B, f.buttons), 'Тік на ✕ ○ □ △ і стрілках, клацання на L1 і R1, упор стіка на краю.')
+    + row('Курки L2 і R2', 'trigger', segHtml('va', ['Одразу повністю', 'Сила натиску'], f.analog ? 1 : 0),
+      f.analog ? 'Торкнись курка й тягни палець униз: що нижче, то сильніше (газ, гальмо). Унизу відчуєш упор.'
+        : 'Натиснув і курок повністю. Коли гра робить курок тугим, як на DualSense, натиск відчутно сильніший.')
+    + (f.amp === false ? '<p class="small" style="margin-top:8px">Цей телефон не вміє міняти силу вібрації, тому силу передає ритм поштовхів.</p>' : '');
+}
+function feelWire(root, again){
+  root.querySelectorAll('[data-vr],[data-vb],[data-va],[data-vt]').forEach(b => b.onclick = () => {
+    const d = b.dataset;
+    if(d.vt){ try { native.feelTest(d.vt); } catch(e) {} return; }
+    const o = d.vr != null ? {rumble: +d.vr} : d.vb != null ? {buttons: +d.vb} : {analog: d.va === '1'};
+    try { if(native && native.setFeel) FV = JSON.parse(native.setFeel(JSON.stringify(o))); else FV = Object.assign({}, FV, o); } catch(e) {}
+    haptic();
+    // одразу дати відчути нову силу
+    if(o.rumble > 0) try { native.feelTest('rumble'); } catch(e) {}
+    if(o.analog != null) try { native.feelTest('trigger'); } catch(e) {}
+    again();
+  });
+}
+function renderFeel(){ $('feel').innerHTML = feelBox(); feelWire($('feel'), renderFeel); }
+function hudBox(){
+  let v = 0; try { v = native && native.hud ? +native.hud() : 0; } catch(e) {}
+  return '<div class="setrow"><div class="top2"><span class="t">Статистика під час гри</span></div>' + segHtml('hd', HUD, v)
+    + '<span class="small">' + (v === 2 ? 'Кадри, швидкість, пінг, втрати, відео й якість.' : 'FPS, швидкість, пінг і втрати в кутку екрана, як на комп\'ютері.') + '</span></div>';
+}
+function renderHud(){
+  const el = $('hudBox'); if(!el) return;
+  el.innerHTML = hudBox();
+  el.querySelectorAll('[data-hd]').forEach(b => b.onclick = () => { haptic(); try { native.setHud(+b.dataset.hd); } catch(e) {} renderHud();
+    if(MODE !== 'menu' && +b.dataset.hd > 0) toast('Статистику видно під час гри'); });
+}
+
 // ── якість картинки ──
 const QDEF = {auto: true, level: 1, name: 'Авто: Оптимальна', levels: [{title: 'Економна', hint: '540p, 30 кадрів: для слабкого або мобільного інтернету'},
   {title: 'Оптимальна', hint: '720p, 60 кадрів: підходить більшості'}, {title: 'Максимальна', hint: '1080p, 60 кадрів: потрібен швидкий Wi-Fi'}]};
@@ -1552,6 +1658,7 @@ $('picReset').onclick = () => {
 };
 function renderQuality(){
   renderPicture();
+  renderHud();
   Q = qInfo();
   const items = [{c: -1, t: 'Авто (радимо)', s: 'програма сама підбирає якість під твій інтернет' + (Q.auto ? ', зараз: ' + Q.levels[Q.level].title : '')}]
     .concat(Q.levels.map((l, i) => ({c: i, t: l.title, s: l.hint})));
@@ -1701,8 +1808,8 @@ function friendRow(f){
 }
 function friendsList(){
   if(!F) return '<p class="small" style="padding:10px 0">Завантажуємо…</p>';
-  if(!F.friends.length) return '<p class="small" style="padding:10px 0">Друзів поки немає. Запроси друга посиланням або кодом.</p>';
-  return F.friends.map(friendRow).join('');
+  if(!(F.friends || []).length) return '<p class="small" style="padding:10px 0">Друзів поки немає. Запроси друга посиланням або кодом.</p>';
+  return (F.friends || []).map(friendRow).join('');
 }
 function renderFriends(){
   if(view !== 'friends') return;
@@ -1781,22 +1888,24 @@ $('frAdd').addEventListener('keydown', e => { if(e.key === 'Enter') fAdd(); });
 $('frGifts').onclick = () => { haptic(); if(native && native.page) native.page('/app/book.html#friends'); };
 
 // ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
-const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['console', 'Керування приставкою'], ['controls', 'Кнопки на екрані'], ['exit', 'Вийти з гри']];
+const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й вібрація'], ['console', 'Керування приставкою'], ['exit', 'Вийти з гри']];
 // розділ меню прихований: гостю й тому, хто грає в бронь друга, продовжувати нічого
 const pmHidden = p => ((G.guest || G.helperOf) && p === 'extend') || (G.admin && p === 'friends');
 let pmSel = 'back', pmDetail = false, G = {};
 function pmInit(){
   $('pm').classList.remove('hidden');
+  $('pm').classList.add('intro'); setTimeout(() => $('pm').classList.remove('intro'), 900);
   ['loading', 'vExtend', 'vQuality', 'vHelp', 'bar'].forEach(id => $('pmSlot').appendChild($(id)));
   G = nativeJson('info') || G;
   $('pmNav').innerHTML = PM.filter(p => !pmHidden(p[0])).map(p => '<button type="button" data-p="' + p[0] + '"' + (p[0] === 'exit' ? ' class="exit"' : '') + '>' + (p[0] === 'friends' && G.helperOf ? 'Гра друга' : p[1]) + '</button>').join('');
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
     if(b.dataset.p === 'back'){ closeApp(); return; }
-    pmSel = b.dataset.p; pmDetail = true; haptic(); pmRender();
+    const changed = pmSel !== b.dataset.p;
+    pmSel = b.dataset.p; pmDetail = true; haptic(); if(changed) anim($('pm')); pmRender();
   });
-  $('pmBack').onclick = () => { pmDetail = false; pmRender(); };
+  $('pmBack').onclick = () => { pmDetail = false; anim($('pm')); pmRender(); };
   pmSel = PM.some(p => p[0] === ARG) && !pmHidden(ARG) ? ARG : 'back'; pmDetail = pmSel !== 'back' && !!ARG;
-  pmTick(); pmRender();
+  pmTick(); anim($('pm')); pmRender();
   wFetch();
   fLoad(true);   // друзі й моя передача гри (якщо сервер це вміє)   // баланс для «Продовжити гру»: з балансу чи переказом (у адміна й на старому сервері його немає)
 }
@@ -1807,21 +1916,22 @@ function pmRender(){
   view = null; viewTok++; netStop();
   const until = G.left >= 0 ? hm(pmEnd()) : '';
   let h = '';
-  if(pmSel === 'back') h = '<p class="cap">Гра на паузі не стоїть</p><p class="lead">Поки відкрите це меню, гра на приставці йде далі. Повернись кнопкою ліворуч або кнопкою «Назад».</p>';
+  if(pmSel === 'back') h = '<p class="cap">Гра йде далі</p><p class="lead">Поки меню відкрите, гра на приставці не зупиняється.</p>';
   else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити бронювання</p>'; view = 'extend'; loadExtend(); }
   else if(pmSel === 'friends') h = pmFriends();
-  else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="lead">Нова якість діє з нового підключення: картинка зникне на кілька секунд. Кольори змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
+  else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="small">Нова якість: перепідключення на кілька секунд. Кольори й статистика змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
   else if(pmSel === 'console'){ h = '<p class="cap">Керування приставкою</p><p class="small">Це працює в будь-якій грі й у меню PS5.</p>'; view = 'help'; loadHelp(); }
-  else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="lead">' + (G.controls === false
-      ? 'Зараз кнопки на екрані сховано. Якщо граєш без геймпада, покажи їх знову.' : 'Зараз кнопки на екрані показано. Коли граєш геймпадом (Bluetooth чи кабель), вони самі ховаються до першого дотику, а можна сховати й зовсім. Нижче можна обрати, коли ховати їх під час гри пальцями.')
-    + '</p><p class="small" style="margin-top:6px">У розташуванні можна пересунути кожну кнопку, змінити розмір і прозорість, додати кнопки «Постріл», «Перезарядка», «Сісти в машину» та інші.</p>'
-    + '<div class="actions"><button type="button" class="btn" data-act="layout">Розташування кнопок</button><button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
-    + (G.controls === false ? '' : ahBox());
+  else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="small">' + (G.controls === false
+      ? 'Кнопки сховано. Граєш без геймпада? Покажи їх знову.' : 'Пересунь кнопки, зміни розмір, додай «Постріл», «Машина» та інші. Геймпад через Bluetooth ховає кнопки сам.')
+    + '</p><div class="actions"><button type="button" class="btn" data-act="layout">Розташування кнопок</button><button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
+    + (G.controls === false ? '' : ahBox())
+    + '<p class="cap" style="margin-top:16px">Вібрація</p>' + feelBox();
   else if(pmSel === 'exit') h = '<p class="cap bad">Вийти з гри</p><p class="lead">Трансляція закриється, але час гри йде далі.'
     + (until ? ' Повернутись можна з головного екрана кнопкою «Грати» до <b>' + until + '</b>.' : ' Повернутись можна з головного екрана кнопкою «Грати».')
     + '</p><div class="actions"><button type="button" class="btn" data-act="exit">Вийти з гри</button><button type="button" class="btn ghost" id="pmStay">Залишитись</button></div>';
   $('pmText').innerHTML = h;
   if(pmSel === 'friends') liveWire();
+  if(pmSel === 'controls') feelWire($('pmText'), pmRender);
   $('pmText').querySelectorAll('[data-ah]').forEach(b => b.onclick = () => {
     haptic(); G.autoHide = +b.dataset.ah; act('autohide', b.dataset.ah); pmRender();
   });
@@ -1833,13 +1943,13 @@ function pmRender(){
 /** Меню гри → «Кнопки на екрані»: коли ховати кнопки (лише горизонтально) */
 function ahBox(){
   const v = G.autoHide == null ? -1 : +G.autoHide;
-  const opt = [[-1, 'Ховати одразу'], [10, 'Через 10 с'], [0, 'Не ховати']];
-  const txt = v < 0 ? 'Кнопки зникають, щойно відпускаєш екран, і з\'являються від дотику. Натискання при цьому йде в гру.'
-    : v > 0 ? 'Кнопки зникають через ' + v + ' с без дотиків. Перший дотик лише показує їх.'
-    : 'Кнопки завжди на екрані.';
-  return '<p class="cap" style="margin-top:14px">Коли ховати кнопки</p><div class="actions">'
-    + opt.map(o => '<button type="button" class="btn' + (o[0] === v || (o[0] > 0 && v > 0) ? '' : ' ghost') + '" data-ah="' + o[0] + '">' + o[1] + '</button>').join('')
-    + '</div><p class="small" style="margin-top:6px">' + txt + ' Лише коли телефон лежить горизонтально.</p>';
+  const opt = [[-1, 'Одразу'], [10, 'Через 10 с'], [0, 'Ніколи']];
+  const txt = v < 0 ? 'Зникають, щойно відпускаєш екран; дотик показує й одразу натискає.'
+    : v > 0 ? 'Зникають через ' + v + ' с без дотиків; перший дотик лише показує.'
+    : 'Завжди на екрані.';
+  return '<div class="setrow"><div class="top2"><span class="t">Ховати кнопки</span></div><div class="seg">'
+    + opt.map(o => '<button type="button" class="' + (o[0] === v || (o[0] > 0 && v > 0) ? 'on' : '') + '" data-ah="' + o[0] + '">' + o[1] + '</button>').join('')
+    + '</div><span class="small">' + txt + ' Лише горизонтально.</span></div>';
 }
 /** Меню гри → «Друзі»: передати гру другу (власник броні) або повернути її (друг) */
 function pmFriends(){
@@ -1849,10 +1959,10 @@ function pmFriends(){
   let h = '<p class="cap">Друзі</p>';
   if(F && !fFeat('friends')) return h + '<p class="lead">Друзі зараз вимкнені.</p>';
   h += handBox();
-  if(canHand() && !OH) h += '<p class="small">Складна місія? Передай гру другові: він підключиться до приставки своєю програмою й пограє в твій час. Повернути гру собі можна будь-коли. Обери друга:</p>';
+  if(canHand() && !OH) h += '<p class="small">Складна місія? Передай гру другу, повернути можна будь-коли. Обери друга:</p>';
   h += '<div class="fr">' + friendsList() + '</div>';
   h += liveBox();
-  h += '<p class="small" style="margin-top:6px">Додати друзів і подарувати години можна на головному екрані, вкладка «Друзі».</p>';
+  h += '<p class="small" style="margin-top:6px">Додати друзів можна на головному екрані, вкладка «Друзі».</p>';
   return h;
 }
 // ── 124: трансляція з телефона (AnyPlayLive.kt): друзі дивляться гру за посиланням у будь-якому браузері чи Telegram ──
@@ -1865,7 +1975,7 @@ function liveBox(){
   let h = '<p class="cap" style="margin-top:14px">Трансляція для друзів</p>';
   const st = LV.state;
   if(st === 'off' || st === 'error'){
-    h += '<p class="small">Друзі дивляться твою гру за посиланням: у браузері на будь-якому пристрої чи в Telegram, без програми. Телефон пересилає те саме відео, що отримує від приставки, нічого не кодує, тож гра не гальмує. Але інтернет на відправку потрібен такий самий, як на гру (зазвичай 10–15 Мбіт/с), краще Wi-Fi.</p>'
+    h += '<p class="small">Друзі дивляться за посиланням у браузері чи Telegram, без програми. Гра не гальмує, але потрібна віддача 10–15 Мбіт/с, краще Wi-Fi.</p>'
       + (st === 'error' && LV.text ? '<p class="small bad">' + esc(LV.text) + '</p>' : '')
       + '<div class="actions"><button type="button" class="btn" data-live="start" data-arg="1">Почати трансляцію</button>'
       + '<button type="button" class="btn ghost" data-live="start" data-arg="0">Без звуку гри</button></div>';

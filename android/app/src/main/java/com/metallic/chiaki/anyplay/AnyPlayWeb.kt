@@ -274,6 +274,33 @@ class AnyPlayBridge(private val activity: Activity, private val web: WebView, pr
 		return picture()
 	}
 
+	/** 125: вібрація {rumble 0..3, buttons 0..2, analog, amp} */
+	@JavascriptInterface
+	fun feel(): String = AnyPlayHaptics.json(activity).toString()
+
+	@JavascriptInterface
+	fun setFeel(json: String): String
+	{
+		val o = try { JSONObject(json) } catch(e: Exception) { JSONObject() }
+		AnyPlayHaptics.set(activity, o)
+		return feel()
+	}
+
+	/** «Спробувати»: rumble | buttons | trigger */
+	@JavascriptInterface
+	fun feelTest(what: String) = activity.runOnUiThread { if(alive()) AnyPlayHaptics.demo(activity, what) }
+
+	/** 125: статистика під час гри: 0 вимкнено, 1 коротко, 2 докладно */
+	@JavascriptInterface
+	fun hud(): Int = AnyPlayStatsHud.mode(activity)
+
+	@JavascriptInterface
+	fun setHud(mode: Int): Int
+	{
+		AnyPlayStatsHud.setMode(activity, mode)
+		return hud()
+	}
+
 	/** choice: -1 — «Авто», 0..2 — сталий рівень. Повертає нову якість. */
 	@JavascriptInterface
 	fun setQuality(choice: Int): String

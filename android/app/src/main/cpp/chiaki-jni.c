@@ -259,6 +259,7 @@ typedef struct android_chiaki_session_t
 	jmethodID java_session_event_login_pin_request_meth;
 	jmethodID java_session_event_quit_meth;
 	jmethodID java_session_event_rumble_meth;
+	jmethodID java_session_event_trigger_effects_meth; // AnyPlay 125: ефекти курків DualSense (опір, «постріл», вібрація)
 	jfieldID java_controller_state_buttons;
 	jfieldID java_controller_state_l2_state;
 	jfieldID java_controller_state_r2_state;
@@ -329,6 +330,24 @@ static void android_chiaki_event_cb(ChiakiEvent *event, void *user)
 							  session->java_session_event_rumble_meth,
 							  (jint)event->rumble.left,
 							  (jint)event->rumble.right);
+			break;
+		// AnyPlay 125: ефекти курків L2/R2 від гри — екранні курки відчуваються тугішими (див. AnyPlayHaptics.kt)
+		case CHIAKI_EVENT_TRIGGER_EFFECTS:
+			if(session->java_session_event_trigger_effects_meth)
+			{
+				jbyteArray l = E->NewByteArray(env, 10), r = E->NewByteArray(env, 10);
+				if(l && r)
+				{
+					E->SetByteArrayRegion(env, l, 0, 10, (const jbyte *)event->trigger_effects.left);
+					E->SetByteArrayRegion(env, r, 0, 10, (const jbyte *)event->trigger_effects.right);
+					E->CallVoidMethod(env, session->java_session, session->java_session_event_trigger_effects_meth,
+									  (jint)event->trigger_effects.type_left, (jint)event->trigger_effects.type_right, l, r);
+				}
+				if(E->ExceptionCheck(env))
+					E->ExceptionClear(env);
+				if(l) E->DeleteLocalRef(env, l);
+				if(r) E->DeleteLocalRef(env, r);
+			}
 			break;
 		default:
 			break;
@@ -549,6 +568,12 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
 	session->java_session_event_login_pin_request_meth = E->GetMethodID(env, session->java_session_class, "eventLoginPinRequest", "(Z)V");
 	session->java_session_event_quit_meth = E->GetMethodID(env, session->java_session_class, "eventQuit", "(ILjava/lang/String;)V");
 	session->java_session_event_rumble_meth = E->GetMethodID(env, session->java_session_class, "eventRumble", "(II)V");
+	session->java_session_event_trigger_effects_meth = E->GetMethodID(env, session->java_session_class, "eventTriggerEffects", "(II[B[B)V");
+	if(E->ExceptionCheck(env))
+	{
+		E->ExceptionClear(env);
+		session->java_session_event_trigger_effects_meth = NULL;
+	}
 
 	jclass controller_state_class = E->FindClass(env, BASE_PACKAGE"/ControllerState");
 	session->java_controller_state_buttons = E->GetFieldID(env, controller_state_class, "buttons", "I");
@@ -889,6 +914,22 @@ JNIEXPORT jdouble JNICALL JNI_FCN(sessionPacketLoss)(JNIEnv *env, jobject obj, j
 	if(!session || !session->started)
 		return 0.0;
 	return session->session.stream_connection.congestion_control.packet_loss;
+}
+
+// AnyPlay 125: для панелі статистики — [затримка до приставки, мкс (замір на старті); виміряна швидкість потоку, кбіт/с]
+JNIEXPORT jlongArray JNICALL JNI_FCN(sessionNetStats)(JNIEnv *env, jobject obj, jlong ptr)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	jlong values[2] = { 0, 0 };
+	if(session && session->started)
+	{
+		values[0] = (jlong)session->session.rtt_us;
+		values[1] = (jlong)(session->session.stream_connection.measured_bitrate * 1000.0);
+	}
+	jlongArray r = E->NewLongArray(env, 2);
+	if(r)
+		E->SetLongArrayRegion(env, r, 0, 2, values);
+	return r;
 }
 
 JNIEXPORT jint JNICALL JNI_FCN(sessionStop)(JNIEnv *env, jobject obj, jlong ptr)

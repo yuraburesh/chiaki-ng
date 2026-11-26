@@ -16,11 +16,12 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import com.metallic.chiaki.lib.ControllerState
-import com.metallic.chiaki.touchcontrols.ButtonHaptics
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null): View(context, attrs)
 {
@@ -40,7 +41,6 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	/** 123: у редакторі почали (true) або закінчили (false) тягнути чи змінювати кнопку — панель редактора ховається */
 	var editDragListener: ((Boolean) -> Unit)? = null
 
-	private val haptics = ButtonHaptics(context)
 	private val state = ControllerState()
 
 	private enum class Kind { SHOULDER, TOUCHPAD, DPAD, FACE, STICK, SMALL, PS, MENU, EXTRA }
@@ -59,6 +59,11 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	{
 		val rect = RectF()
 		var downs = 0          // скільки пальців тримають
+		// 125: аналоговий курок — сила натиску 0..1 (протягнути палець униз), де почали і яку сходинку вже відчули
+		var level = 1f
+		var downY = 0f
+		var step = 0
+		var full = false
 		val pressed get() = downs > 0
 		val cx get() = rect.centerX()
 		val cy get() = rect.centerY()
@@ -72,6 +77,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		var pointer = -1
 		var lastUp = 0L
 		var click = false                  // L3 / R3 (подвійний дотик)
+		var edge = false                   // 125: стік дотягнуто до краю (упор уже відчули)
 		val zone = RectF()
 	}
 
@@ -89,6 +95,8 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		const val G_EXTRA = 9
 		const val TRIGGER_L2 = 1
 		const val TRIGGER_R2 = 2
+		const val ANALOG_START = 0.45f     // аналоговий курок: сила одразу після дотику
+		const val ANALOG_PULL_DP = 42f     // на скільки dp протягнути вниз до повного натиску
 
 		fun kindOf(id: String): Kind = when(id)
 		{
@@ -439,6 +447,8 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			G_TEXT ->
 			{
 				body(canvas, k.rect, k.rect.height() * 0.45f, k.pressed)
+				if(k.trigger != 0)
+					drawTriggerExtras(canvas, k, k.rect)
 				text.textSize = k.rect.height() * 0.46f
 				centeredText(canvas, PadLayout.TITLES[k.item.el.id] ?: "", cx, cy)
 			}
@@ -519,6 +529,33 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		}
 	}
 
+	/**
+	 * 125: курок L2/R2 — заповнення знизу вгору, наскільки сильно натиснуто (аналоговий режим), і золота риска внизу,
+	 * коли гра зробила курок тугим (ефект DualSense: опір, «постріл», вібрація)
+	 */
+	private fun drawTriggerExtras(canvas: Canvas, k: Key, r: RectF)
+	{
+		if(k.pressed && k.level < 0.999f)
+		{
+			canvas.save()
+			tmp.set(r.left, r.bottom - r.height() * k.level, r.right, r.bottom)
+			canvas.clipRect(tmp)
+			fill.color = Color.argb(al(120), 143, 227, 255)
+			canvas.drawRoundRect(r, r.height() * 0.45f, r.height() * 0.45f, fill)
+			canvas.restore()
+		}
+		if(AnyPlayHaptics.triggerEffect(k.trigger) != AnyPlayHaptics.Trigger.NONE)
+		{
+			val w = r.width() * 0.34f
+			fill.color = Color.argb(al(230), 255, 217, 160)
+			tmp.set(r.centerX() - w / 2, r.bottom - dp(4f), r.centerX() + w / 2, r.bottom - dp(2f))
+			canvas.drawRoundRect(tmp, dp(1f), dp(1f), fill)
+		}
+	}
+
+	/** Де зараз стоять кнопки (для панелі статистики: вона стає туди, де кнопок немає) */
+	fun occupied(): List<RectF> = items.map { RectF(it.bounds) }
+
 	private fun drawTouchpad(canvas: Canvas, it: Item)
 	{
 		body(canvas, it.bounds, it.bounds.height() * 0.3f, touchpadPressed || touchpadPointer >= 0)
@@ -593,6 +630,12 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 
 	private fun drawEditFrames(canvas: Canvas)
 	{
+		// 125: напрямні, коли кнопка вирівнялась по центру чи з іншою кнопкою
+		frame.strokeWidth = dp(1f)
+		frame.color = Color.argb(200, 255, 217, 160)
+		frame.pathEffect = dash
+		if(!guideX.isNaN()) canvas.drawLine(guideX, area.top, guideX, area.bottom, frame)
+		if(!guideY.isNaN()) canvas.drawLine(area.left, guideY, area.right, guideY, frame)
 		for(it in items)
 		{
 			val sel = it.el.id == selectedId
@@ -619,6 +662,49 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			if(d < bestD) { bestD = d; best = k }
 		}
 		return best
+	}
+
+	// ── 125: відгук і аналогові курки ──
+	private val analog get() = AnyPlayHaptics.analogTriggers(context)
+
+	private fun feelDown(k: Key)
+	{
+		when
+		{
+			k.trigger != 0 -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TRIGGER_DOWN, k.trigger)
+			k.glyph == G_TEXT || k.glyph == G_CREATE || k.glyph == G_OPTIONS || k.glyph == G_PS -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.CLICK)
+			k.glyph == G_MENU -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.UI)
+			else -> AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TICK)
+		}
+	}
+
+	private fun feelUp(k: Key)
+	{
+		if(k.trigger != 0)
+			AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TRIGGER_UP, k.trigger)
+	}
+
+	/** Курок натиснули: повністю одразу або (аналоговий режим) з половини, далі тягнеш палець униз */
+	private fun triggerStart(k: Key, y: Float)
+	{
+		k.downY = y
+		k.full = false
+		k.level = if(analog) ANALOG_START else 1f
+		k.step = (k.level * 4).toInt()
+	}
+
+	private fun triggerMove(k: Key, y: Float)
+	{
+		if(!analog)
+			return
+		val lv = (ANALOG_START + (y - k.downY) / dp(ANALOG_PULL_DP) * (1f - ANALOG_START)).coerceIn(0.15f, 1f)
+		k.level = lv
+		val step = (lv * 4).toInt()
+		if(step > k.step && lv < 0.98f)
+			AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.DETENT)
+		k.step = step
+		if(lv >= 0.98f && !k.full) { k.full = true; AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TRIGGER_FULL, k.trigger) }
+		else if(lv < 0.9f) k.full = false
 	}
 
 	private fun dpadMaskAt(x: Float, y: Float): UInt
@@ -653,6 +739,9 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		if(len > 1f) { dx /= len; dy /= len }
 		s.dx = dx
 		s.dy = dy
+		// 125: упор на краю, як у справжнього стіка
+		if(len >= 0.97f && !s.edge) { s.edge = true; AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.DETENT) }
+		else if(len < 0.8f) s.edge = false
 	}
 
 	private fun touchpadPos(x: Float, y: Float): Pair<UShort, UShort>
@@ -673,7 +762,11 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			keyPointers[id] = k
 			k.downs++
 			if(k.downs == 1)
-				haptics.trigger()
+			{
+				if(k.trigger != 0)
+					triggerStart(k, y)
+				feelDown(k)
+			}
 			return
 		}
 		val pad = dpad
@@ -681,7 +774,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		{
 			dpadPointer = id
 			dpadMask = dpadMaskAt(x, y)
-			haptics.trigger()
+			AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TICK)
 			return
 		}
 		val tp = touchpad
@@ -703,8 +796,9 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		if(landscape) { s.cx = x; s.cy = y }
 		else { val it = s.item!!; s.cx = it.cx; s.cy = it.cy; moveStick(s, x, y) }
 		s.click = now - s.lastUp < 300
+		s.edge = false
 		if(s.click)
-			haptics.trigger(true)
+			AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.HEAVY)
 	}
 
 	private fun pointerMove(id: Int, x: Float, y: Float)
@@ -712,15 +806,27 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		val held = keyPointers[id]
 		if(held != null)
 		{
+			// аналоговий курок: палець тягне його вниз, на сусідні кнопки не перескакує
+			if(held.trigger != 0 && analog)
+			{
+				triggerMove(held, y)
+				return
+			}
 			// палець з'їхав на сусідню кнопку (наприклад з ✕ на ○) — перемикаємо без відривання
 			val k = keyAt(x, y)
 			if(k != null && k !== held && held.glyph != G_MENU && k.glyph != G_MENU)
 			{
 				held.downs = max(0, held.downs - 1)
+				if(held.downs == 0)
+					feelUp(held)
 				keyPointers[id] = k
 				k.downs++
 				if(k.downs == 1)
-					haptics.trigger()
+				{
+					if(k.trigger != 0)
+						triggerStart(k, y)
+					feelDown(k)
+				}
 			}
 			return
 		}
@@ -731,7 +837,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			{
 				dpadMask = m
 				if(m != 0U)
-					haptics.trigger()
+					AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TICK)
 			}
 			return
 		}
@@ -753,6 +859,11 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		if(k != null)
 		{
 			k.downs = max(0, k.downs - 1)
+			if(k.downs == 0)
+			{
+				feelUp(k)
+				k.level = 1f
+			}
 			if(k.glyph == G_MENU && !cancelled)
 			{
 				tmp.set(k.rect)
@@ -777,7 +888,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			if(!cancelled && now - touchpadDownAt < 250 && hypot(x - touchpadDownX, y - touchpadDownY) < dp(12f))
 			{
 				touchpadPressed = true
-				haptics.trigger(true)
+				AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.HEAVY)
 				removeCallbacks(touchpadRelease)
 				postDelayed(touchpadRelease, 110)
 			}
@@ -863,22 +974,22 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	private fun pushState()
 	{
 		var mask = dpadMask
-		var l2 = false
-		var r2 = false
+		var l2 = 0f
+		var r2 = 0f
 		for(k in keys)
 		{
 			if(!k.pressed)
 				continue
 			mask = mask or k.bits
-			if(k.trigger == TRIGGER_L2) l2 = true
-			if(k.trigger == TRIGGER_R2) r2 = true
+			if(k.trigger == TRIGGER_L2) l2 = max(l2, k.level)
+			if(k.trigger == TRIGGER_R2) r2 = max(r2, k.level)
 		}
 		if(leftStick.click) mask = mask or ControllerState.BUTTON_L3
 		if(rightStick.click) mask = mask or ControllerState.BUTTON_R3
 		if(touchpadPressed) mask = mask or ControllerState.BUTTON_TOUCHPAD
 		state.buttons = mask
-		state.l2State = if(l2) 255U else 0U
-		state.r2State = if(r2) 255U else 0U
+		state.l2State = (l2 * 255).roundToInt().coerceIn(0, 255).toUByte()
+		state.r2State = (r2 * 255).roundToInt().coerceIn(0, 255).toUByte()
 		state.leftX = quantize(leftStick.dx)
 		state.leftY = quantize(leftStick.dy)
 		state.rightX = quantize(rightStick.dx)
@@ -891,7 +1002,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	{
 		keyPointers.clear()
 		swallowed.clear()
-		keys.forEach { it.downs = 0 }
+		keys.forEach { it.downs = 0; it.level = 1f }
 		dpadPointer = -1
 		dpadMask = 0U
 		touchpadPointer = -1
@@ -901,7 +1012,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		removeCallbacks(touchpadRelease)
 		for(s in sticks)
 		{
-			s.pointer = -1; s.dx = 0f; s.dy = 0f; s.click = false
+			s.pointer = -1; s.dx = 0f; s.dy = 0f; s.click = false; s.edge = false
 			s.item?.let { s.cx = it.cx; s.cy = it.cy }
 		}
 	}
@@ -1041,7 +1152,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 					dragPointer = e.getPointerId(0)
 					dragDX = x - it.cx
 					dragDY = y - it.cy
-					haptics.trigger()
+					AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.TICK)
 					editDragListener?.invoke(true)
 				}
 				else
@@ -1093,16 +1204,42 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			{
 				dragPointer = -1
 				pinching = false
+				guideX = Float.NaN
+				guideY = Float.NaN
 				editDragListener?.invoke(false)
 			}
 		}
 		invalidate()
 	}
 
-	private fun moveTo(it: Item, cx: Float, cy: Float)
+	// 125: прилипання до центру екрана й до інших кнопок (з тіком вібрації), щоб розкладка була рівною
+	private var guideX = Float.NaN
+	private var guideY = Float.NaN
+
+	private fun moveTo(it: Item, cx0: Float, cy0: Float)
 	{
 		if(area.width() <= 0f || area.height() <= 0f)
 			return
+		val snap = dp(7f)
+		var cx = cx0
+		var cy = cy0
+		var gx = Float.NaN
+		var gy = Float.NaN
+		if(abs(cx - area.centerX()) < snap) { cx = area.centerX(); gx = cx }
+		for(o in items)
+		{
+			if(o === it) continue
+			if(gx.isNaN() && abs(cx - o.cx) < snap) { cx = o.cx; gx = cx }
+			if(gy.isNaN() && abs(cy - o.cy) < snap) { cy = o.cy; gy = cy }
+			// дзеркально до кнопки з іншого боку (L2 ↔ R2, стік ↔ стік)
+			val mx = area.left + area.right - o.cx
+			if(gx.isNaN() && abs(cx - mx) < snap && abs(cy - o.cy) < snap * 3) { cx = mx; gx = cx }
+		}
+		val snapped = (!gx.isNaN() && guideX.isNaN()) || (!gy.isNaN() && guideY.isNaN())
+		guideX = gx
+		guideY = gy
+		if(snapped)
+			AnyPlayHaptics.tap(context, AnyPlayHaptics.Tap.DETENT)
 		it.el.x = ((cx - area.left) / area.width()).coerceIn(0f, 1f)
 		it.el.y = ((cy - area.top) / area.height()).coerceIn(0f, 1f)
 		relayout()

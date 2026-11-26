@@ -102,6 +102,7 @@ private class ChiakiNative
 		@JvmStatic external fun psnDiag(): String
 		@JvmStatic external fun sessionPsnStep(ptr: Long): Int
 		@JvmStatic external fun sessionVideoStats(ptr: Long): LongArray?
+		@JvmStatic external fun sessionNetStats(ptr: Long): LongArray?
 		@JvmStatic external fun sessionRequestKeyFrame(ptr: Long, reason: String)
 		@JvmStatic external fun sessionResetDecoder(ptr: Long): Boolean
 		@JvmStatic external fun sessionStop(ptr: Long): Int
@@ -376,6 +377,8 @@ object ConnectedEvent: Event()
 data class LoginPinRequestEvent(val pinIncorrect: Boolean): Event()
 data class QuitEvent(val reason: QuitReason, val reasonString: String?): Event()
 data class RumbleEvent(val left: UByte, val right: UByte): Event()
+/** AnyPlay 125: ефекти курків DualSense від гри (тип і 10 байтів параметрів для L2 і R2) */
+class TriggerEffectsEvent(val typeLeft: Int, val typeRight: Int, val left: ByteArray, val right: ByteArray): Event()
 
 class CreateError(val errorCode: ErrorCode): Exception("Failed to create a native object: $errorCode")
 
@@ -409,6 +412,8 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	/** AnyPlay: кадрів прийшло, показано, втрачено, байтів відео (наростаючі від початку сесії);
 	 * з 118 ще [4] декодер є (1/0), [5] скільки разів декодер створено заново, [6] помилок виводу декодера */
 	fun videoStats(): LongArray? = if(nativePtr != 0L) ChiakiNative.sessionVideoStats(nativePtr) else null
+	/** AnyPlay 125: [затримка до приставки, мкс; виміряна швидкість потоку, кбіт/с] */
+	fun netStats(): LongArray? = if(nativePtr != 0L) ChiakiNative.sessionNetStats(nativePtr) else null
 	/** AnyPlay 118: попросити в приставки ключовий кадр (з обмеженням частоти в бібліотеці) */
 	fun requestKeyFrame(reason: String) { if(nativePtr != 0L) ChiakiNative.sessionRequestKeyFrame(nativePtr, reason) }
 	/** AnyPlay 118: створити декодер відео заново на тій самій поверхні й попросити ключовий кадр */
@@ -449,6 +454,12 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	private fun eventRumble(left: Int, right: Int)
 	{
 		event(RumbleEvent(left.toUByte(), right.toUByte()))
+	}
+
+	@Suppress("unused")   // кличе chiaki-jni.c
+	private fun eventTriggerEffects(typeLeft: Int, typeRight: Int, left: ByteArray, right: ByteArray)
+	{
+		event(TriggerEffectsEvent(typeLeft, typeRight, left, right))
 	}
 
 	fun setSurface(surface: Surface?)

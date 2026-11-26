@@ -250,7 +250,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 			true
 		}
 		p.addView(head)
-		p.addView(label("Тягни кнопку пальцем, розмір двома пальцями. Біля центру й інших кнопок вона прилипає.", 11.5f, AnyPlayStyle.MUTE)
+		p.addView(label("Тягни пальцем, розмір двома пальцями.", 11.5f, AnyPlayStyle.MUTE)
 			.apply { setPadding(0, px(4f), 0, 0) })
 
 		// вибрана кнопка: розмір і «Сховати»
@@ -306,8 +306,8 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		}
 		hideHint.text = when
 		{
-			autoHide < 0 -> "Зникають, щойно відпускаєш екран; дотик показує й одразу натискає."
-			autoHide > 0 -> "Зникають через $autoHide с без дотиків; перший дотик лише показує."
+			autoHide < 0 -> "Зникають, щойно відпускаєш екран."
+			autoHide > 0 -> "Зникають через $autoHide с без дотиків."
 			else -> "Завжди на екрані."
 		} + " Лише горизонтально."
 	}
@@ -412,7 +412,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 			{
 				map.picking && pickCode == null -> "Своя кнопка: торкнись на джойстику кнопки, яку вона натискатиме."
 				map.picking -> "Кнопка ${PadLayout.buttonMark(pickCode!!)}. Підпиши її і натисни «Додати»."
-				else -> "Торкнись кнопки на джойстику, щоб сховати її з екрана або показати знову."
+				else -> "Світяться кнопки, що є на екрані. Торкнись, щоб сховати чи показати."
 			}
 		}
 		val addBtn = smallButton("Додати", true) {
@@ -510,7 +510,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		{
 			// горизонтально: джойстик ліворуч, кнопки GTA праворуч
 			val body = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
-			body.addView(map, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.05f))
+			body.addView(map, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.35f))
 			val right = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
 			right.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 			right.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = px(8f) })
@@ -521,7 +521,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		else
 		{
 			val w = minOf(parent.width - px(24f), px(400f))
-			sheet.addView(map, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ((w - px(28f)) * 0.62f).toInt()))
+			sheet.addView(map, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ((w - px(28f)) * 733f / 1084f).toInt()))
 			sheet.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = px(4f) })
 			sheet.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = px(10f) })
 			dim.addView(sheet, FrameLayout.LayoutParams(w, maxH.coerceAtMost(px(620f)), Gravity.CENTER))

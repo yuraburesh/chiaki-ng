@@ -50,6 +50,21 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 	private var opacity = PadLayout.opacity(activity)
 	private var autoHide = PadLayout.autoHide(activity)
 	private var refreshing = false
+	private var collapsed = false
+	private lateinit var collapseBtn: TextView
+	private lateinit var doneMini: TextView
+
+	/** 123: панель згорнута до заголовка (з «Розгорнути» і «Готово»), щоб не закривала кнопки */
+	private fun setCollapsed(c: Boolean)
+	{
+		val p = panel ?: return
+		collapsed = c
+		for(i in 1 until p.childCount)
+			p.getChildAt(i).visibility = if(c) View.GONE else View.VISIBLE
+		collapseBtn.text = if(c) "Розгорнути" else "Згорнути"
+		doneMini.visibility = if(c) View.VISIBLE else View.GONE
+		orient.visibility = if(c) View.GONE else View.VISIBLE
+	}
 
 	val isOpen get() = panel != null
 
@@ -60,9 +75,21 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		pad.editMode = true
 		val p = build()
 		panel = p
-		val lp = FrameLayout.LayoutParams(px(330f).coerceAtMost(maxOf(px(240f), parent.width - px(24f))), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
+		// 123: вертикально — панель над картинкою гри (там кнопок немає), горизонтально — угорі по центру
+		val portrait = parent.height > parent.width
+		val lp = FrameLayout.LayoutParams(px(330f).coerceAtMost(maxOf(px(240f), parent.width - px(24f))), ViewGroup.LayoutParams.WRAP_CONTENT,
+			Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+		lp.topMargin = px(if(portrait) 12f else 8f)
 		parent.addView(p, lp)
 		pad.editListener = { refresh() }
+		// поки тягнеш кнопку чи змінюєш розмір, панель майже зникає й не заважає (дотики проходять крізь неї)
+		pad.editDragListener = { dragging ->
+			p.animate().cancel()
+			p.animate().alpha(if(dragging) 0.12f else 1f).setDuration(if(dragging) 90 else 160).start()
+		}
+		// горизонтально кнопки по всьому екрану: панель одразу згорнута до рядка заголовка
+		if(!portrait)
+			setCollapsed(true)
 		refresh()
 	}
 
@@ -78,6 +105,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 			PadLayout.setAutoHide(activity, autoHide)
 		}
 		pad.editListener = null
+		pad.editDragListener = null
 		pad.editMode = false   // перечитує збережене розташування
 		pad.reloadSettings()
 		parent.removeView(p)
@@ -148,11 +176,15 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		// заголовок: за нього панель можна перетягнути, якщо закриває кнопку
 		val title = label("Розташування кнопок", 15f, AnyPlayStyle.INK, true)
 		orient = label("", 12f, AnyPlayStyle.MUTE)
+		collapseBtn = smallButton("Згорнути", false) { setCollapsed(!collapsed) }.apply { minHeight = px(32f); textSize = 12f }
+		doneMini = smallButton("Готово", true) { close(true) }.apply { minHeight = px(32f); textSize = 12f; visibility = View.GONE }
 		val head = LinearLayout(activity).apply {
 			orientation = LinearLayout.HORIZONTAL
 			gravity = Gravity.CENTER_VERTICAL
 			addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 			addView(orient)
+			addView(collapseBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = px(8f) })
+			addView(doneMini, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6f) })
 		}
 		var downX = 0f
 		var downY = 0f
@@ -173,7 +205,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 			true
 		}
 		p.addView(head)
-		p.addView(label("Перетягни кнопку пальцем. Розмір: двома пальцями або повзунком. Панель пересувається за заголовок.",
+		p.addView(label("Перетягни кнопку пальцем. Розмір: двома пальцями або повзунком. Поки тягнеш, панель зникає. Її можна згорнути або пересунути за заголовок.",
 			12f, AnyPlayStyle.MUTE).apply { setPadding(0, px(2f), 0, px(8f)) })
 
 		sizeLabel = label("", 13f, AnyPlayStyle.INK)
@@ -204,7 +236,8 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 			hideBtn.text = hideText()
 		}
 		p.addView(row(smallButton("Кнопки…", false) { chooseButtons() }, hideBtn))
-		p.addView(label("Кнопки ховаються, коли граєш геймпадом або не торкаєшся екрана (лише горизонтально). Перший дотик показує їх і в гру не йде.",
+		p.addView(label("«Одразу»: кнопки зникають, щойно відпускаєш екран, і з'являються від дотику (натискання при цьому йде в гру). " +
+			"«Через N с»: зникають після паузи, перший дотик лише показує їх. «Ніколи»: кнопки завжди на екрані. Лише горизонтально.",
 			11f, AnyPlayStyle.MUTE).apply { setPadding(0, px(4f), 0, px(8f)) })
 		p.addView(row(
 			smallButton("Скинути", false) { confirmReset() },
@@ -213,7 +246,12 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		return p
 	}
 
-	private fun hideText() = if(autoHide > 0) "Ховати: ${autoHide} с" else "Ховати: ніколи"
+	private fun hideText() = when
+	{
+		autoHide < 0 -> "Ховати: одразу"
+		autoHide > 0 -> "Ховати: через ${autoHide} с"
+		else -> "Ховати: ніколи"
+	}
 
 	private fun sizeText(): String
 	{
@@ -246,13 +284,18 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 				pad.resetLayout()
 				opacity = 0.7f
 				pad.setOpacityPreview(opacity)
-				autoHide = 10
+				autoHide = PadLayout.AUTOHIDE_INSTANT
 				refresh()
 			}
 			.setNegativeButton("Скасувати", null))
 	}
 
-	/** Які кнопки показувати: стандартні DualSense, готові додаткові для GTA і свої */
+	/**
+	 * Які кнопки показувати: стандартні DualSense, готові додаткові для GTA і свої.
+	 * 123: власний аркуш поверх гри замість системного вікна зі списком: на Galaxy S7 те вікно обрізалось
+	 * (список не вміщався, кнопки «Готово»/«Скасувати» налазили одна на одну). Тут список гортається,
+	 * а кнопки завжди внизу й видно повністю.
+	 */
 	private fun chooseButtons()
 	{
 		val standard = PadLayout.STANDARD.filter { it != "menu" }
@@ -275,25 +318,71 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 			checked.add(true)
 		}
 		val state = checked.toBooleanArray()
-		AnyPlayStyle.show(MaterialAlertDialogBuilder(activity)
-			.setTitle("Кнопки на екрані")
-			.setMultiChoiceItems(titles.toTypedArray(), state) { _, which, isChecked -> state[which] = isChecked }
-			.setPositiveButton("Готово") { _, _ ->
-				var i = 0
-				for(id in standard)
-					pad.setElementOn(id, state[i++])
-				for(pr in PadLayout.PRESETS)
-				{
-					val id = "x_" + pr.id
-					if(state[i++]) pad.addExtra(id, pr.label, pr.button) else pad.removeElement(id)
-				}
-				for(c in customs)
-					if(!state[i++])
-						pad.removeElement(c.id)
-				refresh()
+
+		val dim = FrameLayout(activity).apply {
+			setBackgroundColor(0x99000000.toInt())
+			isClickable = true   // дотики не йдуть до кнопок під аркушем
+			elevation = 20 * density
+		}
+		val sheet = LinearLayout(activity).apply {
+			orientation = LinearLayout.VERTICAL
+			background = GradientDrawable().apply {
+				setColor(AnyPlayStyle.DIALOG)
+				cornerRadius = 3 * density
+				setStroke(px(1f), AnyPlayStyle.EDGE)
 			}
-			.setNeutralButton("Своя кнопка…") { _, _ -> addCustom() }
-			.setNegativeButton("Скасувати", null))
+			setPadding(px(14f), px(12f), px(14f), px(12f))
+			isClickable = true
+		}
+		sheet.addView(label("Кнопки на екрані", 16f, AnyPlayStyle.INK, true).apply { setPadding(0, 0, 0, px(6f)) })
+		val list = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+		titles.forEachIndexed { i, t ->
+			val row = TextView(activity).apply {
+				textSize = 15f
+				setTextColor(AnyPlayStyle.INK)
+				typeface = AnyPlayStyle.body(activity)
+				minHeight = px(42f)
+				gravity = Gravity.CENTER_VERTICAL
+				setPadding(px(4f), px(4f), px(4f), px(4f))
+			}
+			val paint = { row.text = (if(state[i]) "☑  " else "☐  ") + t }
+			paint()
+			row.setOnClickListener { state[i] = !state[i]; paint() }
+			list.addView(row)
+		}
+		val scroll = android.widget.ScrollView(activity).apply {
+			isVerticalScrollBarEnabled = true
+			isFillViewport = false
+			addView(list)
+		}
+		val close = { parent.removeView(dim) }
+		val apply = {
+			var i = 0
+			for(id in standard)
+				pad.setElementOn(id, state[i++])
+			for(pr in PadLayout.PRESETS)
+			{
+				val id = "x_" + pr.id
+				if(state[i++]) pad.addExtra(id, pr.label, pr.button) else pad.removeElement(id)
+			}
+			for(c in customs)
+				if(!state[i++])
+					pad.removeElement(c.id)
+			refresh()
+		}
+		val buttons = row(
+			smallButton("Своя…", false) { close(); addCustom() },
+			smallButton("Скасувати", false) { close() },
+			smallButton("Готово", true) { apply(); close() })
+		// висота: список займає все, що лишилось між заголовком і кнопками, але не більше екрана
+		val maxH = (parent.height - px(32f)).coerceAtLeast(px(220f))
+		sheet.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+		sheet.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = px(10f) })
+		val want = px(60f) + titles.size * px(42f) + px(60f)
+		val lp = FrameLayout.LayoutParams(px(340f).coerceAtMost(parent.width - px(24f)), want.coerceAtMost(maxH), Gravity.CENTER)
+		dim.addView(sheet, lp)
+		dim.setOnClickListener { close() }
+		parent.addView(dim, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 	}
 
 	/** Своя кнопка: яку кнопку геймпада натискати і як її підписати */

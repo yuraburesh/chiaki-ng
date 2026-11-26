@@ -237,6 +237,8 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		if(color != null)
 			return
 		val r = ColorRenderer(out)
+		r.videoWidth = connectInfo.videoProfile.width
+		r.videoHeight = connectInfo.videoProfile.height
 		val input = if(r.start()) r.input else null
 		if(input == null)
 		{

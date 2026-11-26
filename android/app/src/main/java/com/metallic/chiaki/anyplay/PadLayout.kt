@@ -88,9 +88,11 @@ object PadLayout
 	fun opacity(context: Context) = prefs(context).getFloat(KEY_OPACITY, 0.7f).coerceIn(0.2f, 1f)
 	fun setOpacity(context: Context, v: Float) = prefs(context).edit().putFloat(KEY_OPACITY, v.coerceIn(0.2f, 1f)).apply()
 
-	/** Через скільки секунд без дотиків ховати кнопки (горизонтально), 0 — не ховати */
-	val AUTOHIDE_STEPS = intArrayOf(5, 10, 20, 0)
-	fun autoHide(context: Context) = prefs(context).getInt(KEY_AUTOHIDE, 10)
+	/** Через скільки секунд без дотиків ховати кнопки (горизонтально), 0 — не ховати, -1 — одразу, щойно відпустив екран */
+	val AUTOHIDE_STEPS = intArrayOf(-1, 5, 10, 20, 0)
+	const val AUTOHIDE_INSTANT = -1
+	const val INSTANT_HIDE_MS = 350L
+	fun autoHide(context: Context) = prefs(context).getInt(KEY_AUTOHIDE, AUTOHIDE_INSTANT)
 	fun setAutoHide(context: Context, sec: Int) = prefs(context).edit().putInt(KEY_AUTOHIDE, sec).apply()
 
 	private fun key(landscape: Boolean) = if(landscape) "land" else "port"

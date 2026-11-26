@@ -470,6 +470,9 @@ body.wallet #methods{margin-top:6px}
       <div class="grid2">
         <div><h2 class="vtitle">Якість картинки</h2><p class="hint vtitle lhide">«Авто» сама знижує якість, коли зв'язок слабшає, щоб гра не відставала. Якщо обереш інше, якість буде сталою.</p>
           <div class="pick mt" id="qList"></div>
+          <p class="cap mt">Чіткість</p>
+          <p class="small">Відеокарта телефона підкреслює дрібні деталі: вивіски, листя, обличчя. Без ореолів на краях і без затримки. Якщо телефон не встигатиме, програма вимкне її сама.</p>
+          <div class="pick mt" id="sharpList"></div>
           <p class="cap mt">Кольори</p>
           <p class="small">Змінюються одразу, без перепідключення. Обробляє відеокарта телефона: затримка не помітна. Коли все на нулі, картинка йде без обробки.</p>
           <div id="picList"></div>
@@ -1530,12 +1533,21 @@ function renderPicture(){
     };
     el.onchange = picSend;
   });
+  renderSharp();
 }
 function picSend(){ try { native && native.setPicture && native.setPicture(JSON.stringify(PV)); } catch(e) {} }
+const SHARP = [[0, 'Вимкнено', 'картинка як є'], [1, 'Помірна', 'чіткіше, природно (радимо)'], [2, 'Сильна', 'найчіткіше, краще для великого екрана']];
+function renderSharp(){
+  const v = PV && PV.sharp != null ? +PV.sharp : 0;
+  $('sharpList').innerHTML = SHARP.map(x => '<button type="button" class="opt' + (x[0] === v ? ' on' : '') + '" data-sh="' + x[0] + '"><span><span class="ot">' + x[1]
+    + '</span><span class="small">' + x[2] + '</span></span><i></i></button>').join('')
+    + (PV && PV.sharpSlow && v > 0 ? '<p class="small bad">Цей телефон не встигав із чіткістю, тож до наступної версії програми вона вимкнена.</p>' : '');
+  $('sharpList').querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { haptic(); PV.sharp = +b.dataset.sh; picSend(); renderSharp(); });
+}
 $('picReset').onclick = () => {
   haptic();
   try { if(native && native.resetPicture) PV = JSON.parse(native.resetPicture()); } catch(e) {}
-  PV = {brightness: 0, contrast: 0, saturation: 0, warmth: 0}; renderPicture();
+  PV = Object.assign({}, PV, {brightness: 0, contrast: 0, saturation: 0, warmth: 0}); renderPicture();
   if(MODE !== 'menu') toast('Кольори скинуто');
 };
 function renderQuality(){
@@ -1801,18 +1813,33 @@ function pmRender(){
   else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="lead">Нова якість діє з нового підключення: картинка зникне на кілька секунд. Кольори змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
   else if(pmSel === 'console'){ h = '<p class="cap">Керування приставкою</p><p class="small">Це працює в будь-якій грі й у меню PS5.</p>'; view = 'help'; loadHelp(); }
   else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="lead">' + (G.controls === false
-      ? 'Зараз кнопки на екрані сховано. Якщо граєш без геймпада, покажи їх знову.' : 'Зараз кнопки на екрані показано. Коли граєш геймпадом (Bluetooth чи кабель), вони самі ховаються до першого дотику, а можна сховати й зовсім.')
+      ? 'Зараз кнопки на екрані сховано. Якщо граєш без геймпада, покажи їх знову.' : 'Зараз кнопки на екрані показано. Коли граєш геймпадом (Bluetooth чи кабель), вони самі ховаються до першого дотику, а можна сховати й зовсім. Нижче можна обрати, коли ховати їх під час гри пальцями.')
     + '</p><p class="small" style="margin-top:6px">У розташуванні можна пересунути кожну кнопку, змінити розмір і прозорість, додати кнопки «Постріл», «Перезарядка», «Сісти в машину» та інші.</p>'
-    + '<div class="actions"><button type="button" class="btn" data-act="layout">Розташування кнопок</button><button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>';
+    + '<div class="actions"><button type="button" class="btn" data-act="layout">Розташування кнопок</button><button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
+    + (G.controls === false ? '' : ahBox());
   else if(pmSel === 'exit') h = '<p class="cap bad">Вийти з гри</p><p class="lead">Трансляція закриється, але час гри йде далі.'
     + (until ? ' Повернутись можна з головного екрана кнопкою «Грати» до <b>' + until + '</b>.' : ' Повернутись можна з головного екрана кнопкою «Грати».')
     + '</p><div class="actions"><button type="button" class="btn" data-act="exit">Вийти з гри</button><button type="button" class="btn ghost" id="pmStay">Залишитись</button></div>';
   $('pmText').innerHTML = h;
+  $('pmText').querySelectorAll('[data-ah]').forEach(b => b.onclick = () => {
+    haptic(); G.autoHide = +b.dataset.ah; act('autohide', b.dataset.ah); pmRender();
+  });
   if($('pmStay')) $('pmStay').onclick = () => { pmSel = 'back'; pmDetail = false; pmRender(); };
   $('pmRight').scrollTop = 0;
 }
 // кінець гри за годинником телефона; програма дає «лишилось» цілими секундами (з обрізанням), тож округлюємо
 // до хвилини — броні закінчуються рівно на хвилині, інакше часто видно «гра до 00:44» замість «00:45»
+/** Меню гри → «Кнопки на екрані»: коли ховати кнопки (лише горизонтально) */
+function ahBox(){
+  const v = G.autoHide == null ? -1 : +G.autoHide;
+  const opt = [[-1, 'Ховати одразу'], [10, 'Через 10 с'], [0, 'Не ховати']];
+  const txt = v < 0 ? 'Кнопки зникають, щойно відпускаєш екран, і з\'являються від дотику. Натискання при цьому йде в гру.'
+    : v > 0 ? 'Кнопки зникають через ' + v + ' с без дотиків. Перший дотик лише показує їх.'
+    : 'Кнопки завжди на екрані.';
+  return '<p class="cap" style="margin-top:14px">Коли ховати кнопки</p><div class="actions">'
+    + opt.map(o => '<button type="button" class="btn' + (o[0] === v || (o[0] > 0 && v > 0) ? '' : ' ghost') + '" data-ah="' + o[0] + '">' + o[1] + '</button>').join('')
+    + '</div><p class="small" style="margin-top:6px">' + txt + ' Лише коли телефон лежить горизонтально.</p>';
+}
 /** Меню гри → «Друзі»: передати гру другу (власник броні) або повернути її (друг) */
 function pmFriends(){
   if(G.helperOf) return '<p class="cap">Гра друга</p><p class="lead">Цю гру тобі передав ' + esc(G.helperOf) + ', час броні його. Він може повернути гру собі будь-коли, тоді вона тут зупиниться. Пройшов складне місце? Поверни гру сам.</p>'

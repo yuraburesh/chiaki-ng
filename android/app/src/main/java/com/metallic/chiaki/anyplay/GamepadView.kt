@@ -37,6 +37,8 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	var menuCallback: (() -> Unit)? = null
 	/** Редактор: змінився вибір, розмір або орієнтація екрана */
 	var editListener: (() -> Unit)? = null
+	/** 123: у редакторі почали (true) або закінчили (false) тягнути чи змінювати кнопку — панель редактора ховається */
+	var editDragListener: ((Boolean) -> Unit)? = null
 
 	private val haptics = ButtonHaptics(context)
 	private val state = ControllerState()
@@ -809,14 +811,20 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 				val i = event.actionIndex
 				val id = event.getPointerId(i)
 				removeCallbacks(hideRunnable)
-				if(!shown)
+				if(!shown && autoHideSec > 0)
 				{
 					// кнопки були сховані: перший дотик лише показує їх
 					swallowed.add(id)
 					reveal()
 				}
 				else
+				{
+					// 123, режим «ховати одразу»: кнопки стоять на своїх місцях, тож дотик і показує їх, і одразу
+					// натискає (інакше кожне перше натискання губилося б)
+					if(!shown)
+						reveal()
 					pointerDown(id, event.getX(i), event.getY(i))
+				}
 			}
 			MotionEvent.ACTION_MOVE ->
 				for(i in 0 until event.pointerCount)
@@ -916,17 +924,26 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	private fun scheduleHide()
 	{
 		removeCallbacks(hideRunnable)
-		if(landscape && !editMode && autoHideSec > 0)
+		if(!landscape || editMode || autoHideSec == 0)
+			return
+		if(autoHideSec < 0)
+		{
+			// 123: «ховати одразу» — щойно жоден палець не торкається екрана (коротка пауза, щоб кнопки не блимали
+			// між швидкими натисканнями)
+			if(!anyPointer())
+				postDelayed(hideRunnable, PadLayout.INSTANT_HIDE_MS)
+		}
+		else
 			postDelayed(hideRunnable, autoHideSec * 1000L)
 	}
 
 	private fun hideNow()
 	{
-		if(editMode || anyPointer() || !shown || autoHideSec <= 0)
+		if(editMode || anyPointer() || !shown || autoHideSec == 0)
 			return
 		shown = false
 		animate().cancel()
-		animate().alpha(0f).setDuration(260).start()
+		animate().alpha(0f).setDuration(if(autoHideSec < 0) 180 else 260).start()
 	}
 
 	/** Показати кнопки (дотик до екрана, відкрили редактор) */
@@ -936,7 +953,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		{
 			shown = true
 			animate().cancel()
-			animate().alpha(1f).setDuration(140).start()
+			animate().alpha(1f).setDuration(if(autoHideSec < 0) 60 else 140).start()
 		}
 		scheduleHide()
 	}
@@ -944,7 +961,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	/** Натиснули справжній геймпад: кнопки на екрані одразу ховаються, доки не торкнуться екрана */
 	fun physicalInput()
 	{
-		if(shown && !editMode && autoHideSec > 0 && !anyPointer())
+		if(shown && !editMode && autoHideSec != 0 && !anyPointer())
 		{
 			removeCallbacks(hideRunnable)
 			hideNow()
@@ -1025,6 +1042,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 					dragDX = x - it.cx
 					dragDY = y - it.cy
 					haptics.trigger()
+					editDragListener?.invoke(true)
 				}
 				else
 					dragPointer = -1
@@ -1075,6 +1093,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			{
 				dragPointer = -1
 				pinching = false
+				editDragListener?.invoke(false)
 			}
 		}
 		invalidate()

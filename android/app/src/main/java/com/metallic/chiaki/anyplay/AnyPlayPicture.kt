@@ -40,6 +40,8 @@ object AnyPlayPicture
 		val v = values(context)
 		val o = JSONObject()
 		KEYS.forEachIndexed { i, k -> o.put(k, v[i]) }
+		o.put("sharp", sharp(context))
+		o.put("sharpSlow", sharpSlow(context))
 		return o
 	}
 
@@ -50,6 +52,8 @@ object AnyPlayPicture
 		for(k in KEYS)
 			if(o.has(k))
 				e.putInt("pic_$k", o.optInt(k, 0).coerceIn(-50, 50))
+		if(o.has("sharp"))
+			e.putInt(SHARP_KEY, o.optInt("sharp", SHARP_DEFAULT).coerceIn(0, 2))
 		e.apply()
 	}
 
@@ -61,17 +65,38 @@ object AnyPlayPicture
 		e.apply()
 	}
 
-	/** Параметри шейдера (яскравість, контраст, насиченість, тепло) або null, якщо все на нулі — тоді без обробки */
+	// ── AnyPlay 123: чіткість (адаптивне підвищення різкості, як FidelityFX CAS) ──
+	// 0 — вимкнено, 1 — помірна, 2 — сильна: дрібні деталі (вивіски, листя, обличчя) чіткіші, без ореолів на краях.
+	// Рахує відеокарта в тому ж одному проході, що й кольори. Типово вимкнена: гравець вмикає сам у «Зображення»
+	// (на старих телефонах обробка відеокартою — додатковий ризик, тож без згоди не вмикаємо).
+	const val SHARP_KEY = "pic_sharp"
+	const val SHARP_DEFAULT = 0
+	private val SHARP_AMOUNT = floatArrayOf(0f, 0.55f, 1f)
+
+	fun sharp(context: Context): Int = prefs(context).getInt(SHARP_KEY, SHARP_DEFAULT).coerceIn(0, 2)
+	fun setSharp(context: Context, v: Int) = prefs(context).edit().putInt(SHARP_KEY, v.coerceIn(0, 2)).apply()
+
+	/** Чіткість не встигала на цьому телефоні (кадри затримувались) — вимкнена до наступної версії програми */
+	private const val SHARP_SLOW_KEY = "pic_sharp_slow_build"
+	fun sharpSlow(context: Context) = prefs(context).getInt(SHARP_SLOW_KEY, 0) == AnyPlayCloud.BUILD
+	fun markSharpSlow(context: Context) = prefs(context).edit().putInt(SHARP_SLOW_KEY, AnyPlayCloud.BUILD).apply()
+
+	/**
+	 * Параметри шейдера: [яскравість, контраст, насиченість, тепло, чіткість] або null, якщо все на нулі й чіткість
+	 * вимкнена — тоді без обробки, декодер пише прямо на екран
+	 */
 	fun params(context: Context): FloatArray?
 	{
 		val v = values(context)
-		if(v.all { it == 0 })
+		val sh = if(sharpSlow(context)) 0f else SHARP_AMOUNT[sharp(context)]
+		if(v.all { it == 0 } && sh == 0f)
 			return null
 		return floatArrayOf(
 			v[0] / 50f * 0.22f,          // зсув яскравості
 			1f + v[1] / 50f * 0.45f,     // контраст 0.55..1.45
 			1f + v[2] / 50f * 0.9f,      // насиченість 0.1..1.9
-			v[3] / 50f * 0.07f)          // тепло: червоний вгору, синій вниз
+			v[3] / 50f * 0.07f,          // тепло: червоний вгору, синій вниз
+			sh)                          // чіткість 0..1
 	}
 }
 
@@ -101,8 +126,22 @@ precision mediump float;
 varying vec2 vTex;
 uniform samplerExternalOES uTex;
 uniform vec4 uP;
+uniform vec3 uS;   // xy — крок одного пікселя відео в координатах текстури, z — сила чіткості 0..1
 void main() {
   vec3 c = texture2D(uTex, vTex).rgb;
+  if(uS.z > 0.0) {
+    // адаптивна чіткість (як FidelityFX CAS): що менший місцевий контраст, то сильніше підкреслюємо деталь;
+    // на різких краях — слабше, тож ореолів немає. 5 вибірок «хрестом».
+    vec3 n = texture2D(uTex, vTex - vec2(0.0, uS.y)).rgb;
+    vec3 s = texture2D(uTex, vTex + vec2(0.0, uS.y)).rgb;
+    vec3 w = texture2D(uTex, vTex - vec2(uS.x, 0.0)).rgb;
+    vec3 e = texture2D(uTex, vTex + vec2(uS.x, 0.0)).rgb;
+    vec3 mn = min(c, min(min(n, s), min(w, e)));
+    vec3 mx = max(c, max(max(n, s), max(w, e)));
+    vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 0.0001), 0.0, 1.0));
+    vec3 wgt = -amp / mix(8.0, 5.0, uS.z);
+    c = clamp((c + (n + s + w + e) * wgt) / (1.0 + 4.0 * wgt), 0.0, 1.0);
+  }
   c = (c - 0.5) * uP.y + 0.5 + uP.x;
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = mix(vec3(l), c, uP.z);
@@ -125,6 +164,7 @@ void main() {
 	private var aTex = 0
 	private var uSt = 0
 	private var uP = 0
+	private var uS = 0
 	private var texture2: SurfaceTexture? = null
 	private val st = FloatArray(16)
 	private val quad: FloatBuffer = ByteBuffer.allocateDirect(16 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
@@ -132,7 +172,11 @@ void main() {
 		position(0)
 	}
 
-	@Volatile var params = floatArrayOf(0f, 1f, 1f, 0f)
+	@Volatile var params = floatArrayOf(0f, 1f, 1f, 0f, 0f)
+
+	/** Розмір кадру відео (для кроку пікселя в чіткості) */
+	@Volatile var videoWidth = 1280
+	@Volatile var videoHeight = 720
 
 	/** AnyPlay 118: скільки кадрів справді намальовано на екрані (перевірка «картинка є») */
 	@Volatile var drawn = 0L
@@ -185,6 +229,7 @@ void main() {
 		aTex = GLES20.glGetAttribLocation(program, "aTex")
 		uSt = GLES20.glGetUniformLocation(program, "uSt")
 		uP = GLES20.glGetUniformLocation(program, "uP")
+		uS = GLES20.glGetUniformLocation(program, "uS")
 		val t = IntArray(1)
 		GLES20.glGenTextures(1, t, 0)
 		texture = t[0]
@@ -281,6 +326,10 @@ void main() {
 			GLES20.glUniformMatrix4fv(uSt, 1, false, st, 0)
 			val p = params
 			GLES20.glUniform4f(uP, p[0], p[1], p[2], p[3])
+			// крок пікселя: у координатах текстури після матриці SurfaceTexture (вона лише обрізає/віддзеркалює)
+			val sx = kotlin.math.abs(st[0]) / videoWidth.coerceAtLeast(1)
+			val sy = kotlin.math.abs(st[5]) / videoHeight.coerceAtLeast(1)
+			GLES20.glUniform3f(uS, sx, sy, if(p.size > 4) p[4] else 0f)
 			GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
 			if(EGL14.eglSwapBuffers(display, window))
 				drawn++

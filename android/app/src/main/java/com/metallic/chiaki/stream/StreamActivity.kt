@@ -302,6 +302,38 @@ class StreamActivity : AppCompatActivity()
 	private var wNoSurfaceSession: Any? = null   // для якої сесії вже записали «кадри є, поверхні немає»
 	private var wSnapSession: Any? = null        // 121: для якої сесії вже надіслали журнал «довго немає картинки»
 
+	// 123: чіткість (AnyPlayPicture) не встигає на цьому телефоні — декодер дає кадри, а на екран доходить помітно менше
+	private var sharpWinAt = 0L
+	private var sharpWinDec = 0L
+	private var sharpWinShown = 0L
+
+	private fun sharpCheck(now: Long, dec: Long, shown: Long, colorOn: Boolean)
+	{
+		val pr = AnyPlayPicture.params(this)
+		if(!colorOn || pr == null || pr.size < 5 || pr[4] <= 0f)
+		{
+			sharpWinAt = 0L
+			return
+		}
+		if(sharpWinAt == 0L || dec < sharpWinDec || shown < sharpWinShown)
+		{
+			sharpWinAt = now; sharpWinDec = dec; sharpWinShown = shown
+			return
+		}
+		if(now - sharpWinAt < 10000)
+			return
+		val d = dec - sharpWinDec
+		val sh = shown - sharpWinShown
+		sharpWinAt = now; sharpWinDec = dec; sharpWinShown = shown
+		if(d >= 150 && sh < d * 0.85)
+		{
+			AnyPlayDiag.w("Чіткість не встигає: за 10 с декодер дав $d кадрів, на екран дійшло $sh — вимикаю до наступної версії")
+			AnyPlayPicture.markSharpSlow(this)
+			viewModel.session.setColor(AnyPlayPicture.params(this))
+			Toast.makeText(this, "Чіткість вимкнено: цей телефон не встигає з нею показувати всі кадри.", Toast.LENGTH_LONG).show()
+		}
+	}
+
 	/** 121: картинки довго немає — журнал на сервер сам (раз на сесію), щоб гравцю нічого не пересилати */
 	private fun wSnapshot(s: Any?, why: String)
 	{
@@ -803,6 +835,7 @@ class StreamActivity : AppCompatActivity()
 			l.show(stage, detail, true, loadSince, wTrouble == "stuck" || t > 8000, if(everShown) "Вийти з гри" else "Скасувати")
 			return
 		}
+		sharpCheck(now, dec, p, colorOn)
 		// картинка була, а тепер стоїть
 		val outStall = now - wOutAt
 		if(outStall < 2500)
@@ -1151,6 +1184,12 @@ class StreamActivity : AppCompatActivity()
 					Toast.makeText(this@StreamActivity, if(name == "handedOff") "Гру передано другу. Повернути її собі можна на головному екрані."
 						else "Гру повернуто власнику броні. Дякуємо за допомогу!", Toast.LENGTH_LONG).show()
 					finish()
+				}
+				// 123: коли ховати екранні кнопки (-1 одразу, N с, 0 ніколи)
+				"autohide" ->
+				{
+					PadLayout.setAutoHide(this@StreamActivity, arg.toIntOrNull() ?: PadLayout.AUTOHIDE_INSTANT)
+					gamepad()?.reloadSettings()
 				}
 				// «Розташування кнопок»: редактор поверх гри
 				"layout" ->

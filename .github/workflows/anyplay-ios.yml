@@ -105,7 +105,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
           if ! grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/xcodebuild.log"; then
             echo "──── подробиці помилок ────"
-            grep -E -A40 "Undefined symbols|ld: error|ld: warning: ignoring|duplicate symbol" "$RUNNER_TEMP/xcodebuild.log" | head -200
+            grep -E -i "undefined|symbol|ld: |linker" "$RUNNER_TEMP/xcodebuild.log" | grep -v "^    /" | head -120
+            echo "──── перед помилкою ────"
+            grep -B40 "linker command failed" "$RUNNER_TEMP/xcodebuild.log" | cut -c1-400 | head -80
             exit 1
           fi
       - name: Пакет для Mac

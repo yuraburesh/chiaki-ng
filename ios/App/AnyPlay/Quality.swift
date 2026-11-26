@@ -1,6 +1,7 @@
 // AnyPlay для iPhone та iPad: якість картинки (як AnyPlayQuality.kt): «Авто» і три рівні.
 // Усі iPhone та iPad з iOS 15 мають апаратний H.265, тож відео завжди H.265 (менше трафіку при тій самій якості).
 import Foundation
+import UIKit
 
 struct VideoProfile
 {
@@ -108,7 +109,8 @@ enum Prefs
 	/** Коли ховати екранні кнопки: -1 одразу (через 1 с), N секунд, 0 — ніколи */
 	static var autoHide: Int
 	{
-		get { d.object(forKey: "autohide") as? Int ?? -1 }
+		// 134: на iPad кнопки типово не ховаються (екран великий, а сховані кнопки там здавалися відсутніми)
+		get { d.object(forKey: "autohide") as? Int ?? (UIDevice.current.userInterfaceIdiom == .pad ? 0 : -1) }
 		set { d.set(newValue, forKey: "autohide") }
 	}
 

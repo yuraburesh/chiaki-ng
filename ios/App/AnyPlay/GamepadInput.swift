@@ -8,7 +8,13 @@ final class GamepadInput
 
 	/** Коли востаннє грали геймпадом (вібрація гри тоді йде на нього, екранні кнопки ховаються) */
 	private(set) var lastPadAt = Date.distantPast
-	private(set) var state = PadState()
+	/** Усе разом: геймпад, клавіатура й миша (134) */
+	var state: PadState { padState.merged(keyState).merged(mouseState) }
+	private var padState = PadState()
+	private var keyState = PadState()
+	private var mouseState = PadState()
+	private var mouseDX: CGFloat = 0, mouseDY: CGFloat = 0
+	private var mouseDecay: Timer?
 	var onChange: ((PadState) -> Void)?
 	private var started = false
 
@@ -21,10 +27,109 @@ final class GamepadInput
 			if let c = n.object as? GCController { self?.attach(c) }
 		}
 		NotificationCenter.default.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { [weak self] _ in
-			self?.state = PadState()
+			self?.padState = PadState()
 			if let s = self?.state { self?.onChange?(s) }
 		}
 		GCController.controllers().forEach(attach)
+		// 134: клавіатура (Bluetooth чи чохол-клавіатура iPad) і миша/трекпад, як у програмі на комп'ютері
+		NotificationCenter.default.addObserver(forName: .GCKeyboardDidConnect, object: nil, queue: .main) { [weak self] _ in self?.attachKeyboard() }
+		NotificationCenter.default.addObserver(forName: .GCMouseDidConnect, object: nil, queue: .main) { [weak self] n in
+			if let m = n.object as? GCMouse { self?.attachMouse(m) }
+		}
+		attachKeyboard()
+		GCMouse.mice().forEach(attachMouse)
+	}
+
+	/** Відпустити все (програму згорнули: інакше натиснута до цього клавіша «залипала») */
+	func reset()
+	{
+		padState = PadState(); keyState = PadState(); mouseState = PadState()
+		mouseDX = 0; mouseDY = 0
+		onChange?(state)
+	}
+
+	var keyboardConnected: Bool { GCKeyboard.coalesced != nil }
+
+	// ── клавіатура: WASD рух, стрілки огляд, Space ✕, X ○, E □, F △, Q L1, R R1, / L2, правий Shift R2 (і миша) ──
+	private func attachKeyboard()
+	{
+		GCKeyboard.coalesced?.keyboardInput?.keyChangedHandler = { [weak self] kb, _, _, _ in self?.readKeys(kb) }
+	}
+
+	private func readKeys(_ k: GCKeyboardInput)
+	{
+		func on(_ c: GCKeyCode) -> Bool { k.button(forKeyCode: c)?.isPressed ?? false }
+		var s = PadState()
+		func b(_ pressed: Bool, _ bit: UInt32) { if pressed { s.buttons |= bit } }
+		b(on(.spacebar) || on(.returnOrEnter), Btn.cross)
+		b(on(.keyX) || on(.deleteOrBackspace), Btn.moon)
+		b(on(.keyE), Btn.box)
+		b(on(.keyF), Btn.pyramid)
+		b(on(.keyQ), Btn.l1)
+		b(on(.keyR), Btn.r1)
+		b(on(.leftShift), Btn.l3)
+		b(on(.keyC), Btn.r3)
+		b(on(.escape), Btn.options)
+		b(on(.keyM), Btn.share)
+		b(on(.keyP), Btn.ps)
+		b(on(.keyN) || on(.keyV), Btn.touchpad)
+		b(on(.one), Btn.up)
+		b(on(.two), Btn.down)
+		b(on(.three), Btn.left)
+		b(on(.four), Btn.right)
+		if on(.slash) || on(.keyZ) { s.l2 = 255 }
+		if on(.rightShift) || on(.keyT) { s.r2 = 255 }
+		func ax(_ neg: Bool, _ pos: Bool) -> Int16 { neg == pos ? 0 : (neg ? -32767 : 32767) }
+		s.lx = ax(on(.keyA), on(.keyD))
+		s.ly = ax(on(.keyW), on(.keyS))
+		s.rx = ax(on(.leftArrow), on(.rightArrow))
+		s.ry = ax(on(.upArrow), on(.downArrow))
+		DispatchQueue.main.async {
+			self.keyState = s
+			self.lastPadAt = Date()
+			self.onChange?(self.state)
+		}
+	}
+
+	// ── миша/трекпад: рух — огляд (правий стік), ліва кнопка R2, права L2 ──
+	private func attachMouse(_ m: GCMouse)
+	{
+		guard let mi = m.mouseInput else { return }
+		mi.mouseMovedHandler = { [weak self] _, dx, dy in
+			DispatchQueue.main.async { self?.mouseMoved(CGFloat(dx), CGFloat(-dy)) }
+		}
+		mi.leftButton.pressedChangedHandler = { [weak self] _, _, p in
+			DispatchQueue.main.async { guard let self = self else { return }; self.mouseState.r2 = p ? 255 : 0; self.onChange?(self.state) }
+		}
+		mi.rightButton?.pressedChangedHandler = { [weak self] _, _, p in
+			DispatchQueue.main.async { guard let self = self else { return }; self.mouseState.l2 = p ? 255 : 0; self.onChange?(self.state) }
+		}
+	}
+
+	private func mouseMoved(_ dx: CGFloat, _ dy: CGFloat)
+	{
+		// швидкість руху миші → відхилення стіка; без руху стік плавно повертається в центр
+		mouseDX = (mouseDX * 0.5 + dx * 0.06).clamped(-1, 1)
+		mouseDY = (mouseDY * 0.5 + dy * 0.06).clamped(-1, 1)
+		mouseState.rx = Int16((mouseDX * 32767).rounded())
+		mouseState.ry = Int16((mouseDY * 32767).rounded())
+		lastPadAt = Date()
+		onChange?(state)
+		if mouseDecay == nil
+		{
+			mouseDecay = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { [weak self] t in
+				guard let self = self else { t.invalidate(); return }
+				self.mouseDX *= 0.7; self.mouseDY *= 0.7
+				if abs(self.mouseDX) < 0.02 && abs(self.mouseDY) < 0.02
+				{
+					self.mouseDX = 0; self.mouseDY = 0
+					t.invalidate(); self.mouseDecay = nil
+				}
+				self.mouseState.rx = Int16((self.mouseDX * 32767).rounded())
+				self.mouseState.ry = Int16((self.mouseDY * 32767).rounded())
+				self.onChange?(self.state)
+			}
+		}
 	}
 
 	var connected: Bool { GCController.controllers().contains { $0.extendedGamepad != nil } }
@@ -64,9 +169,9 @@ final class GamepadInput
 		s.ly = axis(-g.leftThumbstick.yAxis.value)     // у PS5 вгору — від'ємне
 		s.rx = axis(g.rightThumbstick.xAxis.value)
 		s.ry = axis(-g.rightThumbstick.yAxis.value)
-		state = s
+		padState = s
 		lastPadAt = Date()
-		onChange?(s)
+		onChange?(state)
 	}
 }
 

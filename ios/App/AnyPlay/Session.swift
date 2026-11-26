@@ -125,6 +125,7 @@ final class Session
 	{
 		guard let c = core else { return }
 		core = nil
+		delegate = nil   // 134: події старої сесії (кінець трансляції) не мають закривати нову
 		anyplay_core_psn_cancel(c)
 		// self тримаємо, доки потік сесії не зупиниться: він ще може покликати наші обробники
 		DispatchQueue.global().async { anyplay_core_free(c); _ = self }

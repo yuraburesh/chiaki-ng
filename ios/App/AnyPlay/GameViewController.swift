@@ -42,6 +42,8 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 
 	override var prefersStatusBarHidden: Bool { true }
 	override var prefersHomeIndicatorAutoHidden: Bool { true }
+	// 134: миша/трекпад на iPad крутять камеру (як на комп'ютері): вказівник захоплює гра
+	override var prefersPointerLocked: Bool { true }
 	override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .all }
 	override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
 
@@ -89,6 +91,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		}
 		videoView.onNeedKeyFrame = { [weak self] in self?.session?.requestIDR() }
 		NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(foreground), name: UIApplication.didBecomeActiveNotification, object: nil)
 		UIApplication.shared.isIdleTimerDisabled = true
 		connect()
 		timers.append(Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in self?.heartbeat() })
@@ -402,11 +405,35 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	}
 
 	// ── кінець ──
+	// 134: згорнули — у фоні iOS не дає тримати трансляцію, тож закриваємо її, але гра не виходить на головну:
+	// повернувся, і програма сама підключається знову. Кнопки й клавіші відпускаємо, щоб нічого не «залипало»
+	private var backgrounded = false
+
 	@objc private func background()
 	{
-		// у фоні iOS не дає тримати трансляцію: закриваємо, щоб приставка звільнилась одразу
 		guard !ended else { return }
-		end("Гру зупинено, бо програму згорнули. Натисни «Грати», щоб підключитись знову: час броні йде як завжди.")
+		backgrounded = true
+		pad.releaseAll()
+		touchState = PadState()
+		lastSent = PadState()
+		GamepadInput.shared.reset()
+		Haptics.shared.stopRumble()
+		closeMenu()
+		session?.close()
+		session = nil
+		connected = false
+		setLoading("Повертаємось у гру…")
+		Task { _ = await Cloud.heartbeat(streaming: false) }
+	}
+
+	@objc private func foreground()
+	{
+		guard !ended, backgrounded else { return }
+		backgrounded = false
+		GamepadInput.shared.reset()
+		setLoading("Повертаємось у гру…")
+		// приставці потрібна мить, щоб закрити попереднє підключення
+		DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.reconnectFresh() }
 	}
 
 	private func end(_ text: String)

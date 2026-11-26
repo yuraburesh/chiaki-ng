@@ -4,6 +4,8 @@
 // compact (меню гри) — те саме, щільніше. Клавіші справжні (з урахуванням змін клієнта).
 // 118: для GTA VI з клавіатури ще ряд: «коротко і тримай» на літерах хрестовини і що ввімкнути в налаштуваннях самої гри
 // (назви пунктів у лапках такі, як їх показує приставка: меню GTA VI на ній російською).
+// input4: «Завести без ключа» (V: стіки назустріч, миша шукає точку дотику) і «Комбінації з гри» (△ двічі тощо);
+// «Закрити гру» і «Пауза» в одній плитці, щоб усе далі вміщалось без прокрутки (12 плиток).
 import QtQuick
 import QtQuick.Layouts
 
@@ -38,6 +40,19 @@ GridLayout {
         const profiles = Chiaki.settings.anyplayProfiles();
         for (let i = 0; i < profiles.length; i++) {
             if (profiles[i].id !== "foot")
+                continue;
+            const list = profiles[i].bindings;
+            for (let j = 0; j < list.length; j++)
+                if (list[j].id === id)
+                    return list[j].key ? list[j].keyName : "";
+        }
+        return "";
+    }
+    // клавіша дії з режиму «Транспорт» ("" — нема)
+    function vehKey(id) {
+        const profiles = Chiaki.settings.anyplayProfiles();
+        for (let i = 0; i < profiles.length; i++) {
+            if (profiles[i].id !== "vehicle")
                 continue;
             const list = profiles[i].bindings;
             for (let j = 0; j < list.length; j++)
@@ -85,12 +100,12 @@ GridLayout {
             + qsTr("Помилилась: %1 перемикає, F1, F2, F3 обирають режим.").arg(toggleKey),
         keys: [toggleKey]
     }] : []
+    // input4: заведення без ключа в GTA VI — стіки зводять назустріч і шукають точку дотику, а не крутять по колу
+    readonly property string lockKeys: [footKey("lock_r_ccw"), footKey("lock_r_cw")].filter((k) => k).join(" і ")
     readonly property var lockRow: modeRow.concat(hotwireKey ? [{
-        title: qsTr("Злам машини (GTA VI)"),
-        text: qsTr("Тримай %1: стіки стають назустріч, миша крутить обидва, коліщатко і ← → докручують. Один стік по колу: лівий %2, правий %3.")
-            .arg(hotwireKey)
-            .arg([footKey("lock_l_ccw"), footKey("lock_l_cw")].filter((k) => k).join(" і ") || "—")
-            .arg([footKey("lock_r_ccw"), footKey("lock_r_cw")].filter((k) => k).join(" і ") || "—"),
+        title: qsTr("Завести без ключа (GTA VI)"),
+        text: qsTr("Тримай %1: стіки до упору назустріч. Мишею вгору-вниз шукай точку, де півкола заповнюються (коліщатко і ↑ ↓ дрібно).").arg(hotwireKey)
+            + (lockKeys ? qsTr(" Відмичка на дверях: %1.").arg(lockKeys) : ""),
         keys: [hotwireKey, qsTr("миша")]
     }] : []).concat(preciseKey && holdKey ? [{
         // 118: точний рух і «утримати камеру» в одній плитці, щоб з порадами для GTA VI все вміщалось без прокрутки
@@ -119,9 +134,19 @@ GridLayout {
                 text: qsTr("Як на геймпаді: %1 коротко — телефон, тримай — WAiNK. Так само %2, %3, %4 і все, що на екрані «Клавіші» через «/».").arg(t).arg(x).arg(z).arg(g),
                 keys: [t, x, z, g]
             });
+        // input4: комбінації самої гри — подвійні натискання окремими клавішами, решта разом, як на геймпаді
+        const b2 = vehKey("exit_running"), f2 = vehKey("exit"), n2 = vehKey("radio_toggle");
+        if (b2 && f2)
+            out.push({
+                title: qsTr("Комбінації з гри"),
+                text: qsTr("У машині %1: вийти, мотор працює (△ двічі, або %2 двічі). Тримай %2: зупинитись і вийти.").arg(b2).arg(f2)
+                    + (n2 ? qsTr(" %1: радіо (← двічі).").arg(n2) : "")
+                    + qsTr(" Пішки %1 + %2: огляд від першої особи.").arg(footKey("aim") || qsTr("ПКМ")).arg(footKey("look_back") || "C"),
+                keys: [b2, f2]
+            });
         out.push({
             title: qsTr("Гра: легше з клавіатури"),
-            text: qsTr("Налаштування гри, «Игровой процесс»: увімкни «Упрощенные мини-игры» (злам без стіків) і «Помощь с нажатиями» (тримати замість частого □)."),
+            text: qsTr("Налаштування гри, «Игровой процесс»: увімкни «Упрощенные мини-игры» (заведення й відмичка легші) і «Помощь с нажатиями» (тримати замість частого □)."),
             keys: [opt]
         });
         out.push({
@@ -152,8 +177,7 @@ GridLayout {
         { title: qsTr("Кнопка PS"), text: qsTr("Коротко %1: унизу панель PS5 зі звуком, друзями й іграми. Утримуй %1 секунду: головний екран, гра не закривається.").arg(ps), keys: [ps, hold] },
         { title: qsTr("Рух по меню"), text: qsTr("Стрілки рухають вибір, %1 підтверджує (кнопка ✕), %2 повертає назад (кнопка ○).").arg(cross).arg(moon), keys: ["↑↓←→", cross, moon] },
         { title: qsTr("Запустити чи змінити гру"), text: qsTr("Утримуй %1, обери гру стрілками й натисни %2 (перший запуск до хвилини). Спитає, чи закрити попередню, — погодься.").arg(ps).arg(cross), keys: [ps, cross] },
-        { title: qsTr("Закрити гру"), text: qsTr("На головному екрані наведи на гру, натисни %1 (кнопка OPTIONS) і обери «Закрити гру».").arg(opt), keys: [opt] },
-        { title: qsTr("Пауза і меню гри"), text: qsTr("Під час гри %1 працює як OPTIONS: пауза самої гри, карта, завдання, налаштування.").arg(opt), keys: [opt] },
+        { title: qsTr("Пауза і закрити гру"), text: qsTr("Під час гри %1 працює як OPTIONS: пауза, карта, налаштування. Закрити гру: на головному екрані наведи на неї, %1 і «Закрити гру».").arg(opt), keys: [opt] },
         { title: qsTr("Меню AnyPlay і вихід"), text: qsTr("Відкривається: %1. Тут бронь, картинка, клавіші й «Вийти з гри». Приставку не вимикай: вона все завершить сама.").arg(menuKey), keys: ["`"] }
     ]
     readonly property var rows: pad ? padRows : keyRows.concat(lockRow).concat(gtaRows)

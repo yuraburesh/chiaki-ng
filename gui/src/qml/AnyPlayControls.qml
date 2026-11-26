@@ -45,7 +45,7 @@ Item {
     // 115: пояснення до «Автоматично визначати транспорт» з клавішею ручного перемикання з розкладки (U)
     readonly property string toggleKey: { const g = profOf(cfg, "global"); const t = g ? g.bindings.find((x) => x.profile === "toggle" && x.key) : null; return t ? kname(t.key) : ""; }
     // 118: «сів — одразу їдеш»: перший ефект на газі після F, затиснута W одразу газ; боротьба в машині режим не скидає
-    readonly property string autoVehicleText: qsTr("«Транспорт» вмикається, щойно герой сів у машину (гра дає опір чи вібрацію на курку газу), «Пішки» — щойно вийшов. Затиснута W одразу стає газом, а після виходу знову кроком. F (△) лише дія в грі: сісти, взяти, відчинити; без підтвердження курками режим не міняється. Поки часто тиснеш □ у машині (відбиваєшся), режим не скидається.")
+    readonly property string autoVehicleText: qsTr("«Транспорт» вмикається, щойно гра дає опір на курку газу (після F чекаємо до 25 с: злам, витягнути водія), «Пішки» — щойно вийшов. Затиснута W одразу стає газом, а після виходу знову кроком. Короткі провали в машині й боротьба режим не скидають; без F «Пішки» лише коли ефектів нема 6 с і ти йдеш.")
         + (toggleKey ? qsTr(" Якщо помилилась: %1 перемикає вручну.").arg(toggleKey) : "")
     readonly property alias wireData: wires.wd    // лінії (для перевірки)
 
@@ -104,7 +104,7 @@ Item {
         }
         if (d === "precise") return qsTr("тримай: клавіші руху крутять стік по колу");
         if (d === "hold_stick") return qsTr("натисни: правий стік тримає напрям від миші");
-        if (d === "hotwire") return qsTr("тримай і крути мишею: обидва стіки");
+        if (d === "hotwire") return qsTr("тримай: стіки назустріч, миша вгору-вниз");
         if (d === "cycle") {
             const z = b.aim && b.aim.btn && b.aim.btn[0];
             if (z === "DPAD_UP" || z === "DPAD_DOWN") return qsTr("по колу; у прицілі ближче й далі");
@@ -163,6 +163,14 @@ Item {
                     .arg(bold(kname((tagged(foot).find((x) => x.id === "minimap") || {}).key)))
                     .arg(bold(kname((tagged(foot).find((x) => x.id === "radio") || {}).key)))
                     .arg(bold(kname((tagged(foot).find((x) => x.id === "detonate") || {}).key)));
+            // input4: комбінації самої гри (подвійні натискання — окремими клавішами, решта — разом, як на геймпаді)
+            const veh = profOf(c, "vehicle");
+            const vk = (id) => { const b = veh ? tagged(veh).find((x) => x.id === id) : null; return b && b.key ? bold(kname(b.key)) : ""; };
+            const fk = (id) => { const b = foot ? tagged(foot).find((x) => x.id === id) : null; return b && b.key ? bold(kname(b.key)) : ""; };
+            if (c.layout === "gta6" && !root.tight && vk("exit_running") && vk("exit"))
+                v.hint += qsTr("<br>Комбінації з гри. У машині: %1 — вийти, мотор лишається працювати (△ двічі, так само %2 двічі), тримай %2 — зупинитись і вийти, %3 — радіо вимкнути (← двічі). Пішки: %4 + %5 — огляд від першої особи, %4 + %6 — жест, %7 і тримай %8 — штовхнути чи перевернути авто.")
+                    .arg(vk("exit_running")).arg(vk("exit")).arg(vk("radio_toggle") || "—")
+                    .arg(fk("aim")).arg(fk("look_back")).arg(fk("cover")).arg(fk("run")).arg(fk("melee"));
         } else {
             v.hint = qsTr("Для цієї розкладки один набір клавіш на все.");
         }
@@ -170,7 +178,7 @@ Item {
         const byDo = (d) => glob.find((x) => x["do"] === d && x.key);
         const pre = byDo("precise"), hold = byDo("hold_stick"), hot = byDo("hotwire");
         const parts = [];
-        if (hot) parts.push(qsTr("Злам машини: тримай %1 — стіки стають назустріч, крути мишею (коліщатко і ← → докручують).").arg(bold(kname(hot.key))));
+        if (hot) parts.push(qsTr("Завести без ключа: тримай %1 — стіки до упору назустріч, мишею вгору-вниз шукай точку дотику (коліщатко і ↑ ↓ дрібно).").arg(bold(kname(hot.key))));
         if (pre) parts.push(qsTr("Точний рух: тримай %1 — клавіші руху крутять лівий стік по колу плавно, відпустиш їх — стік стоїть; коротке натискання вмикає до наступного.").arg(bold(kname(pre.key))));
         if (hold) parts.push(qsTr("Утримати камеру: %1 — правий стік тримає напрям від миші, поки не натиснеш ще раз.").arg(bold(kname(hold.key))));
         v.more = parts.join(" ");
@@ -383,7 +391,7 @@ Item {
         else if (d === "macro") log(lab + " → " + nm + qsTr(" (комбінація)"));
         else if (d === "precise") log(lab + " → " + qsTr("точний рух: тримай і крути стік клавішами руху, або відпусти одразу, щоб увімкнути"));
         else if (d === "hold_stick") log(lab + " → " + qsTr("утримати правий стік: рухай мишею над геймпадом, стік стоїть"));
-        else if (d === "hotwire") log(lab + " → " + qsTr("злам машини: стіки назустріч, крути мишею над геймпадом"));
+        else if (d === "hotwire") log(lab + " → " + qsTr("завести без ключа: обидва стіки назустріч, веди мишею вгору-вниз над геймпадом"));
         else if (b.l && b.l.length === 2) log(lab + " → " + qsTr("лівий стік: ") + nm);
         else if (b.btn) log(lab + " → " + pn + qsTr(", поки тримаєш: ") + nm);
         const h = Object.assign({}, held); h[k] = true; held = h;

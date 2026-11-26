@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "start": "foot",
   "profiles": [
     {
@@ -21,7 +21,7 @@
         {"id": "mode_air", "name": "Режим «Авіація»", "key": "F3", "do": "none", "profile": "air"},
         {"id": "precise", "name": "Точний рух: стік по колу", "key": "Alt", "do": "precise"},
         {"id": "hold_stick", "name": "Утримати правий стік", "key": "O", "do": "hold_stick"},
-        {"id": "hotwire", "name": "Злам машини: стіки за мишею", "key": "V", "do": "hotwire"}
+        {"id": "hotwire", "name": "Завести без ключа: стіки назустріч", "key": "V", "do": "hotwire"}
       ]
     },
     {
@@ -42,7 +42,7 @@
         {"id": "melee", "name": "Ближній бій", "key": "R", "btn": ["BOX"]},
         {"id": "melee_mouse", "name": "Ближній бій", "key": "MouseMiddle", "btn": ["BOX"]},
         {"id": "run", "name": "Біг, швидше плисти", "key": "Shift", "btn": ["L3"]},
-        {"id": "look_back", "name": "Глянути назад", "key": "C", "btn": ["R3"]},
+        {"id": "look_back", "name": "Глянути назад, з ПКМ огляд", "key": "C", "btn": ["R3"]},
         {"id": "loadout", "name": "Сховати / колесо зброї", "key": "Tab", "btn": ["L1"]},
         {"id": "holster", "name": "Сховати або дістати зброю", "key": "H", "do": "tap", "btn": ["L1"], "x": 1},
         {"id": "vehicle", "name": "Взаємодія, сісти в авто", "key": "F", "btn": ["PYRAMID"]},
@@ -62,10 +62,8 @@
         {"id": "slot8", "name": "Зброя: лівий верх (вибухівка)", "key": "8", "do": "macro", "hold": {"btn": ["L1"], "r": [-0.707, -0.707], "ms": 300}, "steps": [{"btn": ["L1"], "ms": 200}, {"btn": ["L1"], "r": [-0.707, -0.707], "ms": 340}, {"ms": 80}]},
         {"id": "switch", "name": "Змінити героя (Джейсон, Люсія)", "key": "J", "btn": ["R1", "DPAD_RIGHT"], "x": 1},
         {"id": "focus", "name": "Концентрація", "key": "CapsLock", "btn": ["L3", "R3"]},
-        {"id": "lock_l_ccw", "name": "Злам машини: лівий стік", "key": "9", "do": "spin", "spin": {"l": -1}},
-        {"id": "lock_l_cw", "name": "Злам машини: лівий стік", "key": "0", "do": "spin", "spin": {"l": 1}},
-        {"id": "lock_r_ccw", "name": "Відмичка, злам: правий стік", "key": "K", "do": "spin", "spin": {"r": -1}},
-        {"id": "lock_r_cw", "name": "Відмичка, злам: правий стік", "key": "L", "do": "spin", "spin": {"r": 1}}
+        {"id": "lock_r_ccw", "name": "Відмичка на дверях: правий стік", "key": "K", "do": "spin", "spin": {"r": -1}},
+        {"id": "lock_r_cw", "name": "Відмичка на дверях: правий стік", "key": "L", "do": "spin", "spin": {"r": 1}}
       ]
     },
     {
@@ -78,15 +76,16 @@
         {"id": "steer_left", "name": "Кермо вліво", "key": "A", "l": [-1, 0]},
         {"id": "steer_right", "name": "Кермо вправо", "key": "D", "l": [1, 0]},
         {"id": "handbrake", "name": "Ручне гальмо", "key": "Space", "btn": ["CROSS"]},
-        {"id": "exit", "name": "Вийти з транспорту", "key": "F", "btn": ["PYRAMID"]},
+        {"id": "exit", "name": "Вийти / зупинитись і вийти", "key": "F", "btn": ["PYRAMID"]},
+        {"id": "exit_running", "name": "Вийти, мотор працює (△ двічі)", "key": "B", "do": "macro", "steps": [{"btn": ["PYRAMID"], "ms": 80}, {"ms": 120}, {"btn": ["PYRAMID"], "ms": 80}, {"ms": 60}]},
         {"id": "horn", "name": "Сигнал, нітро", "key": "E", "btn": ["L3"]},
         {"id": "nitro", "name": "Сигнал, нітро", "key": "Shift", "btn": ["L3"]},
         {"id": "lights", "name": "Фари / пригнутися", "key": "Ctrl", "btn": ["MOON"]},
         {"id": "lights_h", "name": "Фари / пригнутися", "key": "H", "btn": ["MOON"]},
-        {"id": "driveby", "name": "Стріляти з авто", "key": "MouseLeft", "btn": ["R1"]},
+        {"id": "driveby", "name": "Стріляти з авто, жест", "key": "MouseLeft", "btn": ["R1"]},
         {"id": "kick", "name": "Удар, відбитись", "key": "R", "btn": ["BOX"]},
         {"id": "kick_mouse", "name": "Удар, відбитись", "key": "MouseMiddle", "btn": ["BOX"]},
-        {"id": "look_back", "name": "Глянути назад", "key": "C", "btn": ["R3"]},
+        {"id": "look_back", "name": "Крикнути / глянути назад", "key": "C", "btn": ["R3"]},
         {"id": "veh_weapon", "name": "Пістолет / зброя авто", "key": "Tab", "btn": ["L1"]},
         {"id": "phone", "name": "Телефон / взаємодія", "key": "T", "btn": ["DPAD_UP"]},
         {"id": "veh_menu", "name": "Поворотник / меню авто", "key": "Q", "btn": ["DPAD_LEFT"]},
@@ -94,10 +93,9 @@
         {"id": "veh_info", "name": "Дані авто / навігація", "key": "Z", "btn": ["DPAD_DOWN"]},
         {"id": "partner", "name": "Поворотник / напарник", "key": "G", "btn": ["DPAD_RIGHT"]},
         {"id": "switch", "name": "Змінити героя (Джейсон, Люсія)", "key": "J", "btn": ["R1", "DPAD_RIGHT"], "x": 1},
-        {"id": "lock_l_ccw", "name": "Злам машини: лівий стік", "key": "9", "do": "spin", "spin": {"l": -1}},
-        {"id": "lock_l_cw", "name": "Злам машини: лівий стік", "key": "0", "do": "spin", "spin": {"l": 1}},
-        {"id": "lock_r_ccw", "name": "Відмичка, злам: правий стік", "key": "K", "do": "spin", "spin": {"r": -1}},
-        {"id": "lock_r_cw", "name": "Відмичка, злам: правий стік", "key": "L", "do": "spin", "spin": {"r": 1}}
+        {"id": "radio_toggle", "name": "Радіо вимкнути, увімкнути (← двічі)", "key": "N", "do": "macro", "steps": [{"btn": ["DPAD_LEFT"], "ms": 70}, {"ms": 110}, {"btn": ["DPAD_LEFT"], "ms": 70}, {"ms": 60}]},
+        {"id": "lean_fwd", "name": "Нахил вперед, стопі", "key": "I", "l": [0, -1]},
+        {"id": "lean_back", "name": "Нахил назад, вілі", "key": "K", "l": [0, 1]}
       ]
     },
     {

@@ -4,8 +4,12 @@
 //  1. «Точний режим» лівого стіка: тримаєш клавішу (Alt) і клавіші руху крутять стік по колу
 //     плавно, за кутом, а не 8 напрямками; відпустив клавішу руху — стік лишається там, де був.
 //  2. «Утримати» правий стік: мишею виставляєш напрям, стік не повертається в центр, поки режим увімкнено.
-//  3. Злам машини (GTA VI) одним жестом: тримаєш V, обидва стіки виставляються назустріч (L▸ ◂R),
-//     мишею крутиш обидва синхронно: правий за мишею, лівий дзеркально по горизонталі.
+//  3. Злам машини (GTA VI, «заведення» без ключа): тримаєш V, обидва стіки зведені назустріч до упору (L▸ ◂R),
+//     мишею вгору-вниз ведеш «точку дотику» по дузі: обидва стіки рухаються разом, дзеркально.
+//     input4 (Юрій: «треба зводити стіки в одну точку і шукати точку прикосновєнія, а не крутити по колу»):
+//     так і в грі: «Bring together L and R at the right spots to fill the semi-circles» (підказка гри, allthings.how);
+//     лівий стік до правого краю, правий до лівого, дві півдуги назустріч, правильне місце на одному стіку
+//     зазвичай дзеркальне іншому (IGN). Тож без обертання: обидва до упору, кут спільний, правий можна зсунути окремо.
 //
 // Усі кути в градусах, 0 — угору, за годинниковою стрілкою (як дивишся на стік згори).
 // Вісь y стіка в chiaki: y < 0 — угору.
@@ -24,10 +28,14 @@ constexpr double AnyPlayPreciseMinMag = 0.0;
 
 // «Утримати» правий стік: скільки пікселів миші на повне відхилення (при чутливості 1,0)
 constexpr double AnyPlayHoldRadiusPx = 140.0;
-// Злам машини: радіус кола миші, по якому крутяться стіки (менший — чутливіше)
-constexpr double AnyPlayHotwireRadiusPx = 36.0;
-// Злам машини: крок коліщатка або стрілок
-constexpr double AnyPlayHotwireStepDeg = 12.0;
+// Злам машини: скільки градусів дуги на піксель миші (при чутливості 1,0): 180° дуги — це ~720 px руху
+constexpr double AnyPlayHotwireDegPerPx = 0.25;
+// Злам машини: дрібний крок коліщатка або стрілок ↑ ↓ (обидва стіки) і ← → (лише правий стік)
+constexpr double AnyPlayHotwireStepDeg = 2.0;
+constexpr double AnyPlayHotwireOffsetStepDeg = 3.0;
+constexpr double AnyPlayHotwireMaxDeg = 90.0;        // точка ходить по внутрішній півдузі: від прямо вниз до прямо вгору
+constexpr double AnyPlayHotwireMaxOffsetDeg = 45.0;
+constexpr int64_t AnyPlayHotwireResumeMs = 15000;    // відпустив V і за стільки натиснув знову — точка там, де була
 
 inline double AnyPlayWrapDeg(double a)
 {
@@ -160,28 +168,37 @@ inline void AnyPlayHoldStick(const AnyPlayMousePoint &p, double radius_px, bool 
 }
 
 // ── 3. Злам машини ──
-// Початок: правий стік дивиться вліво (◂R), лівий дзеркально — вправо (L▸): стіки «назустріч»
-inline void AnyPlayHotwireStart(AnyPlayMousePoint *p, double radius_px)
+// Точка дотику на внутрішній півдузі. angle: 0 — стіки прямо назустріч (лівий вправо, правий вліво),
+// +90 — обидва вгору, -90 — обидва вниз. offset — якщо в цієї машини точки не дзеркальні: правий стік зсунутий окремо.
+// Обидва стіки завжди до упору (повне відхилення): у грі півдуги заповнюються, коли тримаєш стіки в правильному місці.
+struct AnyPlayHotwire
 {
-	p->x = -radius_px;
-	p->y = 0.0;
-}
+	double angle = 0.0;
+	double offset = 0.0;
 
-// Обидва стіки з точки миші: правий — у напрямку точки на повну силу, лівий — дзеркально по горизонталі.
-// Якщо точка в центрі (ще не рухали), стіки лишаються назустріч.
-inline void AnyPlayHotwireSticks(const AnyPlayMousePoint &p, float *lx, float *ly, float *rx, float *ry)
-{
-	const double len = p.Length();
-	double dx = -1.0, dy = 0.0;
-	if(len > 1e-6)
+	void Reset() { angle = 0.0; offset = 0.0; }
+
+	static double Clamp(double v, double lim) { return v < -lim ? -lim : (v > lim ? lim : v); }
+
+	// Миша: угору (dy < 0) — точка вгору. Рух уліво-вправо не важить: шукають лише місце на дузі.
+	void Mouse(double dy, double sensitivity = 1.0)
 	{
-		dx = p.x / len;
-		dy = p.y / len;
+		angle = Clamp(angle - dy * AnyPlayHotwireDegPerPx * sensitivity, AnyPlayHotwireMaxDeg);
 	}
-	*rx = static_cast<float>(dx);
-	*ry = static_cast<float>(dy);
-	*lx = static_cast<float>(-dx);
-	*ly = static_cast<float>(dy);
-}
+	// Коліщатко, ↑ ↓: обидва стіки на крок; ← →: лише правий
+	void Step(double deg) { angle = Clamp(angle + deg, AnyPlayHotwireMaxDeg); }
+	void Shift(double deg) { offset = Clamp(offset + deg, AnyPlayHotwireMaxOffsetDeg); }
+
+	// Обидва стіки (y < 0 — угору, як у chiaki): лівий праворуч під кутом angle, правий ліворуч дзеркально (+offset)
+	void Sticks(float *lx, float *ly, float *rx, float *ry) const
+	{
+		const double a = angle * AnyPlayPi / 180.0;
+		const double b = Clamp(angle + offset, AnyPlayHotwireMaxDeg + AnyPlayHotwireMaxOffsetDeg) * AnyPlayPi / 180.0;
+		*lx = static_cast<float>(std::cos(a));
+		*ly = static_cast<float>(-std::sin(a));
+		*rx = static_cast<float>(-std::cos(b));
+		*ry = static_cast<float>(-std::sin(b));
+	}
+};
 
 #endif // ANYPLAY_STICK_H

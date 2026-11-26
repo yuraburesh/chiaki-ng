@@ -451,6 +451,17 @@ body.wallet #methods{margin-top:6px}
 .setrow .small{margin-top:0}
 .seg button{transition:background-color .2s,color .2s}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:3s!important}}
+/* 132: виріз екрана й рядок стану (iPhone, iPad): вміст не заходить під них. На Android відступи дає сама програма, тут нулі */
+#app{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+#sheet{padding-top:env(safe-area-inset-top,0px)}
+#pm{top:env(safe-area-inset-top,0px)}
+main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+/* 132: великий екран (планшет): головна по центру по вертикалі, а не притиснута догори з пустотою внизу */
+@media (min-width:600px) and (min-height:600px){
+  main>.inner{min-height:100%;display:flex;flex-direction:column}
+  main>.inner>#vHome:not(.hidden){margin:auto 0;width:100%}
+  main>.inner>#vHome .foot2{margin-top:28px}
+}
 </style>
 </head>
 <body>
@@ -793,7 +804,7 @@ function homeChanged(){
   $('whoName').textContent = H.user || ''; $('meName').textContent = H.user || '';
   // 118: нова версія — і в рядку внизу (горизонтально праворуч немає місця на окремий рядок «Оновлення»)
   const upd = H.update && H.update.build && H.state !== 'update' ? H.update : null;
-  $('ver').innerHTML = 'AnyPlay для ' + (H.platform === 'ios' ? 'iPhone' : 'Android') + ', збірка ' + esc(H.build || '')
+  $('ver').innerHTML = 'AnyPlay для ' + ({ios: 'iPhone', ipad: 'iPad'}[H.platform] || 'Android') + ', збірка ' + esc(H.build || '')
     + (upd ? ' <button type="button" class="lnk upd" data-act="update">' + (upd.busy ? 'Оновлення ' + esc(upd.build) + ' триває' : 'Оновити до ' + esc(upd.build)) + '</button>' : '');
   if(gated){ if(view !== 'gate') go('gate'); else renderGate(); return; }
   if(view === 'gate' || view == null){ go('home'); return; }

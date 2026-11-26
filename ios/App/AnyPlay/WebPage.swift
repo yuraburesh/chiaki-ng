@@ -59,6 +59,8 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 		web.scrollView.contentInsetAdjustmentBehavior = .never
 		web.scrollView.bounces = false
 		web.navigationDelegate = self
+		// 132: на iPad сторінка більша (як на телефоні за розміром для ока): без цього все дрібне, а довкола пустота
+		if UIDevice.current.userInterfaceIdiom == .pad { web.pageZoom = 1.3 }
 		if let url = Bundle.main.url(forResource: "app", withExtension: "html", subdirectory: "web")
 		{
 			var c = URLComponents(url: url, resolvingAgainstBaseURL: false)

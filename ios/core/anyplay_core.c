@@ -366,12 +366,17 @@ const char *anyplay_core_error_string(int err) { return chiaki_error_string((Chi
 const char *anyplay_core_quit_string(int reason) { return chiaki_quit_reason_string((ChiakiQuitReason)reason); }
 bool anyplay_core_quit_is_error(int reason) { return chiaki_quit_reason_is_error((ChiakiQuitReason)reason); }
 
+extern void chiaki_aia_set_ca_file(const char *path);
+
 void anyplay_core_set_ca_bundle(const char *path)
 {
 	if(!path) return;
 	// curl зібрано без вбудованого шляху до сертифікатів (як на Android): OpenSSL бере файл зі SSL_CERT_FILE
 	setenv("SSL_CERT_FILE", path, 1);
 	setenv("CURL_CA_BUNDLE", path, 1);
+	// 132: той самий файл для відновлення ланцюжка сертифікатів сервера сповіщень Sony (як на Android). Без нього
+	// на iPad підключення падало на кроці 2 з «помилка 6»: curl не бачив кореня для довантаженого проміжного сертифіката
+	chiaki_aia_set_ca_file(path);
 }
 
 int anyplay_core_psn_devices(const char *token, char *out, size_t out_size)

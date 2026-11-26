@@ -103,7 +103,11 @@ jobs:
           set -o pipefail
           xcodebuild -project AnyPlay.xcodeproj -scheme AnyPlay -configuration Debug -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
-          grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/xcodebuild.log"
+          if ! grep -q "BUILD SUCCEEDED" "$RUNNER_TEMP/xcodebuild.log"; then
+            echo "──── подробиці помилок ────"
+            grep -E -A40 "Undefined symbols|ld: error|ld: warning: ignoring|duplicate symbol" "$RUNNER_TEMP/xcodebuild.log" | head -200
+            exit 1
+          fi
       - name: Пакет для Mac
         if: always()
         run: |

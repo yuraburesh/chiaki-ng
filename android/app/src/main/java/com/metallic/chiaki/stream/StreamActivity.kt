@@ -8,6 +8,7 @@ import android.app.AlertDialog
 import android.graphics.Matrix
 import android.graphics.drawable.GradientDrawable
 import android.os.*
+import android.util.Log
 import android.view.*
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -15,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import com.metallic.chiaki.anyplay.AnyPlayHost
+import com.metallic.chiaki.anyplay.AnyPlayLoading
 import com.metallic.chiaki.anyplay.AnyPlayStyle
 import com.metallic.chiaki.anyplay.AnyPlayWebDialog
 import com.metallic.chiaki.anyplay.GamepadView
@@ -170,6 +172,11 @@ class StreamActivity : AppCompatActivity()
 			}
 			// кольори картинки (Зображення): обробка відеокартою, лише коли не на нулі
 			viewModel.session.setColor(AnyPlayPicture.params(this))
+			// 118: екран завантаження замість чорного екрана з колом (старе коло chiaki в грі AnyPlay не показуємо)
+			binding.progressBar.isGone = true
+			anyplayLoading = AnyPlayLoading(this, binding.root,
+				onCancel = { anyplayCancelLoading() },
+				onReconnect = { anyplayReconnect(false, "кнопка «Підключитись заново»") })
 			val takeoverMs = intent.getLongExtra(EXTRA_ANYPLAY_TAKEOVER_MS, 0L)
 			if(takeoverMs > 0)
 				anyplayTakeoverUntil = SystemClock.elapsedRealtime() + takeoverMs
@@ -253,6 +260,30 @@ class StreamActivity : AppCompatActivity()
 	/** «Грати тут»: до цього часу (elapsedRealtime) «приставка вже зайнята» означає, що інший пристрій ще її відпускає */
 	private var anyplayTakeoverUntil = 0L
 	private var anyplayTakeoverJob: Job? = null
+	/** 118: те саме вікно повторів після власного перепідключення (повернення в застосунок, зміна якості) — приставка
+	 * ще закриває попереднє підключення цього ж телефона; тоді без підказки «на іншому пристрої» */
+	private var anyplayRetrySelf = false
+
+	// ── 118: екран завантаження і сторож картинки ──
+	private var anyplayLoading: AnyPlayLoading? = null
+	private var anyplayWatchJob: Job? = null
+	@Volatile private var anyplayConnecting = false   // сервер дає ключ і шукаємо приставку (anyplayFreshConnect)
+	private var loadSince = 0L          // з якого моменту чекаємо картинку (0 — картинка йде)
+	private var everShown = false       // у цьому екрані гри картинка вже була (далі завантаження — напівпрозоре)
+	private var wSession: Any? = null   // сесія, за якою стежимо
+	private var wConnectedAt = 0L
+	private var wIn = 0L
+	private var wInAt = 0L
+	private var wOut = 0L
+	private var wOutAt = 0L
+	private var wDecOut = 0L
+	private var wDecOutAt = 0L
+	private var wShown = false          // ця сесія вже показала кадр
+	private var wStep = 0               // скільки кроків відновлення вже зроблено в поточній біді
+	private var wTrouble = ""           // яка біда зараз: start_no_video, start_no_picture, stall_net, stall_decoder
+	private var wAutoReconnects = 0     // автоматичних перепідключень підряд без картинки
+	private var wLogSent = false
+	private var wDecoderReset = false   // декодер уже створювали заново в цій біді
 
 	/** Екранний геймпад AnyPlay (у фрагменті з розмітки; id фрагмента дістається обгортці, тому шукаємо за id самого геймпада) */
 	private fun gamepad(): GamepadView? = findViewById(R.id.gamepadView)
@@ -266,6 +297,8 @@ class StreamActivity : AppCompatActivity()
 			viewModel.session.resume()
 			return
 		}
+		if(loadSince == 0L)
+			loadSince = SystemClock.elapsedRealtime()
 		if(anyplayFirstResume)
 		{
 			anyplayFirstResume = false
@@ -274,7 +307,23 @@ class StreamActivity : AppCompatActivity()
 			viewModel.session.resume()
 		}
 		else
-			anyplayFreshConnect(0)   // після згортання — нове підключення зі свіжим ключем від сервера (старий діє недовго)
+		{
+			// після згортання — нове підключення зі свіжим ключем від сервера (старий діє недовго). Приставка може ще
+			// кілька секунд закривати попереднє підключення: «уже зайнята» в цей час — не помилка, а повтор
+			anyplaySelfRetryWindow()
+			anyplayFreshConnect(0)
+		}
+		anyplayWatchJob?.cancel()
+		anyplayWatchJob = lifecycleScope.launch {
+			var n = 0
+			while(isActive)
+			{
+				anyplayWatchTick()
+				if(n++ % 2 == 0)
+					anyplayLoading?.tick()
+				delay(500)
+			}
+		}
 		anyplayQualityJob?.cancel()
 		anyplayQualityJob = lifecycleScope.launch { anyplayWatchQuality() }
 		anyplayBeatJob?.cancel()
@@ -445,7 +494,9 @@ class StreamActivity : AppCompatActivity()
 	/** Нове підключення: свіжий ключ від сервера й поточна якість з налаштувань */
 	private fun anyplayFreshConnect(waitMs: Long)
 	{
-		binding.progressBar.visibility = View.VISIBLE
+		anyplayConnecting = true
+		if(loadSince == 0L)
+			loadSince = SystemClock.elapsedRealtime()
 		anyplayResumeJob?.cancel()
 		anyplayResumeJob = lifecycleScope.launch {
 			if(waitMs > 0)
@@ -472,16 +523,278 @@ class StreamActivity : AppCompatActivity()
 					PlayError("Немає зв'язку з сервером AnyPlay. Спробуй підключитись знову з головного екрана.", "AP-HTTP ${r.status}")
 						.also { AnyPlayCloud.noteError(this@StreamActivity, it) }
 			}
+			anyplayConnecting = false
 			when(target)
 			{
 				is PlayReady ->
 				{
 					viewModel.session.connectInfo = target.connectInfo
+					adjustStreamViewAspect()   // інший формат кадру (якість) — інші пропорції
 					viewModel.session.resume()
 				}
 				is PlayError -> anyplayEnd(target.text, target.code)
 			}
 		}
+	}
+
+	/** Власне перепідключення: 15 с «приставка зайнята» означає, що вона ще відпускає попереднє підключення */
+	private fun anyplaySelfRetryWindow()
+	{
+		val until = SystemClock.elapsedRealtime() + 15000
+		if(anyplayTakeoverUntil < until)
+		{
+			anyplayTakeoverUntil = until
+			anyplayRetrySelf = true
+		}
+	}
+
+	/** Підключитись заново (кнопка на екрані завантаження або сторож картинки) */
+	private fun anyplayReconnect(auto: Boolean, why: String)
+	{
+		if(isFinishing || dialogContents == AnyPlayEndDialog)
+			return
+		Log.i("AnyPlay", "Підключаюсь заново: $why")
+		if(!auto)
+			wAutoReconnects = 0
+		dialog?.dismiss()
+		dialog = null
+		loadSince = SystemClock.elapsedRealtime()
+		viewModel.session.shutdown()
+		anyplaySelfRetryWindow()
+		anyplayFreshConnect(1500)
+	}
+
+	/** «Скасувати» на екрані завантаження: вийти з гри на головний екран */
+	private fun anyplayCancelLoading()
+	{
+		Log.i("AnyPlay", "Завантаження гри скасовано кнопкою")
+		anyplayLoading?.hide(false)
+		finish()
+	}
+
+	private fun psnStepText(step: Int): String = when(step)
+	{
+		0, 1 -> "Готую з'єднання через інтернет."
+		2 -> "Зв'язуюсь із серверами Sony."
+		3 -> "Шукаю шлях до приставки через твою мережу."
+		4 -> "Приставка приймає підключення."
+		5 -> "Встановлюю пряме з'єднання з приставкою."
+		else -> "Приставка на зв'язку, запускаю гру."
+	}
+
+	/** Крок відновлення, якщо час біди перейшов поріг (кожен крок — один раз) */
+	private fun wDue(elapsed: Long, vararg at: Long): Int
+	{
+		if(wStep < at.size && elapsed >= at[wStep])
+			return wStep++
+		return -1
+	}
+
+	private fun wNewTrouble(kind: String)
+	{
+		if(wTrouble == kind)
+			return
+		Log.i("AnyPlay", "Сторож картинки: $kind")
+		wTrouble = kind
+		wStep = 0
+		wDecoderReset = false
+	}
+
+	/** Картинки так і не було: автоматично підключаємось заново (двічі), потім пояснюємо й чекаємо рішення гравця */
+	private fun wGiveUpOrReconnect(why: String, decoderProblem: Boolean)
+	{
+		val s = viewModel.session
+		val hevc = s.connectInfo.videoProfile.codec == com.metallic.chiaki.lib.Codec.CODEC_H265
+		if(decoderProblem && hevc)
+		{
+			// кадри приходили, а декодер H.265 так нічого й не показав: далі цей телефон грає в H.264
+			AnyPlayQuality.hevcFailed(this)
+			Toast.makeText(this, "Перемикаю відео на сумісний формат і підключаюсь заново…", Toast.LENGTH_LONG).show()
+		}
+		if(!wLogSent)
+		{
+			wLogSent = true
+			AnyPlayCloud.uploadLog(this, "error", "Немає картинки: $why")
+		}
+		if(wAutoReconnects < 2 || (decoderProblem && hevc))
+		{
+			wAutoReconnects++
+			anyplayReconnect(true, why)
+		}
+		else
+			wTrouble = "stuck"
+	}
+
+	/** Раз на пів секунди: що показати на екрані завантаження і чи не час рятувати картинку */
+	private fun anyplayWatchTick()
+	{
+		val l = anyplayLoading ?: return
+		val now = SystemClock.elapsedRealtime()
+		if(isFinishing || dialogContents != null || padEditor?.isOpen == true)
+		{
+			l.hide(false)
+			return
+		}
+		val vs = viewModel.session
+		val st = vs.state.value
+		val s = vs.session
+		if(s !== wSession)
+		{
+			wSession = s
+			wConnectedAt = 0L
+			wIn = 0L; wInAt = now
+			wOut = 0L; wOutAt = now
+			wDecOut = 0L; wDecOutAt = now
+			wShown = false
+			wTrouble = ""
+			wStep = 0
+		}
+		val v = if(st == StreamStateConnected) s?.videoStats() else null
+		if(st != StreamStateConnected || v == null || v.size < 4)
+		{
+			// ще підключаємось (ключ від сервера, PSN, рукостискання з приставкою)
+			if(loadSince == 0L)
+				loadSince = now
+			val busyRetry = anyplayTakeoverJob?.isActive == true
+			var detail = when
+			{
+				busyRetry && anyplayRetrySelf -> "Приставка ще закриває попереднє підключення. Пробую ще раз, це кілька секунд."
+				busyRetry -> "Приставка ще зайнята на іншому пристрої. Вона звільниться за кілька секунд."
+				s == null || anyplayConnecting -> "Отримую доступ до приставки від сервера AnyPlay."
+				else -> psnStepText(s.psnStep())
+			}
+			val waited = now - loadSince
+			if(waited > 25000)
+				detail += "\n\nДовше, ніж звичайно. Перевір інтернет на телефоні або натисни «Підключитись заново»."
+			l.show(AnyPlayLoading.Stage.CONNECT, detail, true, loadSince, waited > 25000, if(everShown) "Вийти з гри" else "Скасувати")
+			return
+		}
+		if(wConnectedAt == 0L)
+		{
+			wConnectedAt = now
+			wInAt = now
+			wOutAt = now
+			wDecOutAt = now
+		}
+		val vin = v[0]
+		val dec = v[1]
+		val hasCodec = v.size < 5 || v[4] != 0L
+		if(vin != wIn) { wIn = vin; wInAt = now }
+		if(dec > wDecOut || dec < wDecOut) { if(dec > wDecOut) wDecOutAt = now; wDecOut = dec }
+		// що справді на екрані: з обробкою кольорів — кадри, які вона намалювала, інакше — кадри декодера
+		val colorOn = vs.colorActive
+		val p = if(colorOn) vs.colorFrames() else dec
+		if(p < wOut)
+			wOut = p
+		if(p > wOut)
+		{
+			wOut = p
+			wOutAt = now
+			if(!wShown)
+			{
+				wShown = true
+				Log.i("AnyPlay", "Перша картинка через ${now - loadSince} мс від початку підключення" +
+					(if(colorOn) " (з обробкою кольорів)" else "") + ", формат " + vs.connectInfo.videoProfile.codec)
+			}
+			everShown = true
+			loadSince = 0L
+			wAutoReconnects = 0
+			if(wTrouble != "")
+				Log.i("AnyPlay", "Сторож картинки: картинка повернулась ($wTrouble, кроків ${wStep})")
+			wTrouble = ""
+			wStep = 0
+			l.hide()
+			return
+		}
+		// обробка кольорів: декодер видає кадри, а на екран нічого не потрапляє — вимикаємо її до кінця гри
+		if(colorOn && now - wDecOutAt < 1000 && now - wOutAt > 2000)
+		{
+			vs.blockColor()
+			wOutAt = now
+			return
+		}
+		if(!wShown)
+		{
+			// підключились, а першої картинки ще немає
+			if(loadSince == 0L)
+				loadSince = now
+			val t = now - wConnectedAt
+			val stage: AnyPlayLoading.Stage
+			val detail: String
+			if(wTrouble == "stuck")
+			{
+				stage = AnyPlayLoading.Stage.STUCK
+				detail = "Зв'язок з приставкою є, але картинка так і не з'явилась. Натисни «Підключитись заново». " +
+					"Якщо повториться, вибери в меню «Зображення» нижчу якість або напиши в підтримку: журнал ми вже отримали."
+			}
+			else if(vin == 0L)
+			{
+				wNewTrouble("start_no_video")
+				stage = AnyPlayLoading.Stage.PICTURE
+				detail = "Приставка на зв'язку, чекаю перший кадр картинки."
+				when(wDue(t, 3000, 8000, 16000))
+				{
+					0, 1 -> vs.requestKeyFrame("android_start_no_video")
+					2 -> wGiveUpOrReconnect("після підключення ${t / 1000} с не прийшло жодного кадру", false)
+				}
+			}
+			else
+			{
+				wNewTrouble("start_no_picture")
+				stage = AnyPlayLoading.Stage.ALMOST
+				detail = if(!hasCodec) "Картинка вже йде, запускаю відео на телефоні." else "Картинка вже йде, ще мить."
+				when(wDue(t, 2500, 5000, 7500, 11000))
+				{
+					0 -> vs.requestKeyFrame("android_start_no_picture")
+					1 -> { wDecoderReset = true; Log.i("AnyPlay", "Сторож: декодер заново (кадрів прийшло $vin, показано $dec)"); vs.resetDecoder() }
+					2 -> if(colorOn) vs.blockColor() else vs.requestKeyFrame("android_start_no_picture")
+					3 -> wGiveUpOrReconnect("кадри приходять ($vin), а на екрані нічого${if(!hasCodec) ", декодер не створився" else ""}", true)
+				}
+			}
+			l.show(stage, detail, true, loadSince, wTrouble == "stuck" || t > 8000, if(everShown) "Вийти з гри" else "Скасувати")
+			return
+		}
+		// картинка була, а тепер стоїть
+		val outStall = now - wOutAt
+		if(outStall < 2500)
+		{
+			if(l.isShown)
+				l.hide()
+			return
+		}
+		val netStall = now - wInAt >= 2000
+		var detail = ""
+		if(wTrouble == "stuck")
+		{
+			// уже зробили все, що могли: чекаємо рішення гравця
+		}
+		else if(netStall)
+		{
+			wNewTrouble("stall_net")
+			detail = "Картинка не приходить від приставки: схоже, інтернет пригальмовує. Чекаю, гра не зупиняється."
+			when(wDue(outStall, 3000, 9000, 20000))
+			{
+				0, 1 -> vs.requestKeyFrame("android_video_stalled")
+				2 -> wGiveUpOrReconnect("відео не приходить ${outStall / 1000} с (звук і керування могли йти)", false)
+			}
+		}
+		else
+		{
+			wNewTrouble("stall_decoder")
+			detail = "Кадри приходять, але екран їх не показує. Перезапускаю відео, це кілька секунд."
+			when(wDue(outStall, 2500, 5000, 7500, 11000))
+			{
+				0 -> vs.requestKeyFrame("android_picture_stalled")
+				1 -> { wDecoderReset = true; Log.i("AnyPlay", "Сторож: декодер заново посеред гри"); vs.resetDecoder() }
+				2 -> if(colorOn) vs.blockColor() else vs.requestKeyFrame("android_picture_stalled")
+				3 -> wGiveUpOrReconnect("картинка зависла посеред гри ${outStall / 1000} с, кадри приходять", false)
+			}
+		}
+		if(wTrouble == "stuck")
+			l.show(AnyPlayLoading.Stage.STUCK, "Картинка не відновилась. Натисни «Підключитись заново» або вийди з гри й зайди знову.",
+				false, wOutAt, true, "Вийти з гри")
+		else
+			l.show(AnyPlayLoading.Stage.RECOVER, detail, false, wOutAt, outStall > 6000, "Вийти з гри")
 	}
 
 	/**
@@ -535,6 +848,8 @@ class StreamActivity : AppCompatActivity()
 				val title = AnyPlayQuality.down(this) ?: continue
 				Toast.makeText(this, "Інтернет не встигає за картинкою. Знижую якість до «$title» і підключаюсь заново…", Toast.LENGTH_LONG).show()
 				viewModel.session.shutdown()
+				anyplaySelfRetryWindow()
+				loadSince = SystemClock.elapsedRealtime()
 				anyplayFreshConnect(2500)
 			}
 		}
@@ -608,6 +923,8 @@ class StreamActivity : AppCompatActivity()
 		anyplayResumeJob?.cancel()
 		anyplayRemindJob?.cancel()
 		anyplayHandoffJob?.cancel()
+		anyplayWatchJob?.cancel()
+		anyplayLoading?.hide(false)
 		anyplayHideBanner()
 		anyplayMenu?.dismiss()
 		viewModel.session.shutdown()
@@ -633,6 +950,7 @@ class StreamActivity : AppCompatActivity()
 		anyplayQualityJob?.cancel()
 		anyplayRemindJob?.cancel()
 		anyplayHandoffJob?.cancel()
+		anyplayWatchJob?.cancel()
 		viewModel.session.pause()
 		anyplayTakeoverJob?.cancel()
 		padEditor?.close(true)
@@ -807,6 +1125,8 @@ class StreamActivity : AppCompatActivity()
 			Toast.makeText(this@StreamActivity, "Якість: ${AnyPlayQuality.name(this@StreamActivity)}. Підключаюсь заново…", Toast.LENGTH_LONG).show()
 			anyplayMenu?.dismiss()
 			viewModel.session.shutdown()
+			anyplaySelfRetryWindow()
+			loadSince = SystemClock.elapsedRealtime()
 			anyplayFreshConnect(2500)
 		}
 	}
@@ -877,11 +1197,13 @@ class StreamActivity : AppCompatActivity()
 
 	private fun stateChanged(state: StreamState)
 	{
-		binding.progressBar.visibility = if(state == StreamStateConnecting) View.VISIBLE else View.GONE
+		// у грі AnyPlay замість кола — екран завантаження (anyplayWatchTick)
+		binding.progressBar.visibility = if(state == StreamStateConnecting && !anyplay) View.VISIBLE else View.GONE
 		if(anyplay && state == StreamStateConnected)
 		{
 			AnyPlayCloud.markLive(this, true)
 			anyplayTakeoverUntil = 0L
+			anyplayRetrySelf = false
 		}
 		// «Грати тут»: інший пристрій ще тримає приставку (відпустить за кілька секунд) — пробуємо знову раз на 3 с
 		if(anyplay && anyplayTakeoverUntil > SystemClock.elapsedRealtime() && !isFinishing &&
@@ -889,14 +1211,14 @@ class StreamActivity : AppCompatActivity()
 		{
 			if(anyplayTakeoverJob?.isActive != true)
 			{
-				Toast.makeText(this, "Приставка ще зайнята на іншому пристрої. Вона звільниться за кілька секунд, підключаюсь…", Toast.LENGTH_SHORT).show()
+				// пояснення — на екрані завантаження («приставка ще зайнята…»), окреме спливне вікно не потрібне
+				Log.i("AnyPlay", "Приставка ще зайнята (${if(anyplayRetrySelf) "попереднє підключення цього телефона" else "інший пристрій"}), повтор за 3 с")
 				anyplayTakeoverJob = lifecycleScope.launch {
 					delay(TAKEOVER_RETRY_MS)
 					viewModel.session.shutdown()
 					viewModel.session.resume()
 				}
 			}
-			binding.progressBar.visibility = View.VISIBLE
 			return
 		}
 		if(anyplay && (state is StreamStateQuit || state is StreamStatePsnFailed))
@@ -926,6 +1248,8 @@ class StreamActivity : AppCompatActivity()
 							dialog = null
 							dialogContents = null
 							viewModel.session.shutdown()
+							loadSince = SystemClock.elapsedRealtime()
+							anyplaySelfRetryWindow()
 							anyplayFreshConnect(1500)
 						}
 						.setNegativeButton("Вийти") { _, _ ->
@@ -983,6 +1307,7 @@ class StreamActivity : AppCompatActivity()
 							if(anyplay)
 							{
 								viewModel.session.shutdown()
+								loadSince = SystemClock.elapsedRealtime()
 								anyplayFreshConnect(0)   // свіжий ключ від сервера: старий міг уже не діяти
 							}
 							else

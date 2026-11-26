@@ -2,7 +2,12 @@
 package com.metallic.chiaki.anyplay
 
 import android.content.Context
+import android.media.MediaCodecList
+import android.os.Build
+import android.util.Log
 import com.metallic.chiaki.common.Preferences
+import com.metallic.chiaki.lib.Codec
+import com.metallic.chiaki.lib.ConnectVideoProfile
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -96,6 +101,73 @@ object AnyPlayQuality
 	{
 		if(auto(context))
 			prefs(context).edit().putBoolean(KEY_UP, true).apply()
+	}
+
+	// ── формат відео (AnyPlay 118) ──
+	// Типово H.265 (менше трафіку при тій самій якості). Але частина телефонів не має апаратного декодера H.265
+	// потрібного розміру або він на потоці PS5 не показує картинку (звук є, картинки немає). Тоді — H.264:
+	// апаратний декодер H.264 є на всіх телефонах.
+	private const val KEY_HEVC_BROKEN = "hevc_broken_until"
+	private const val HEVC_BROKEN_MS = 14 * DAY
+	@Volatile private var hevcCache: String? = null   // "WxH" → результат перевірки
+	@Volatile private var hevcCacheOk = false
+
+	/** Чи є апаратний декодер H.265 для такого розміру (програмний на 60 кадрах не встигає) */
+	private fun hevcHardware(width: Int, height: Int): Boolean
+	{
+		val key = "${width}x$height"
+		if(hevcCache == key)
+			return hevcCacheOk
+		var ok = false
+		try
+		{
+			for(info in MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos)
+			{
+				if(info.isEncoder || info.supportedTypes.none { it.equals("video/hevc", true) })
+					continue
+				val name = info.name.lowercase()
+				val software = if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.isSoftwareOnly
+					else name.startsWith("omx.google.") || name.startsWith("c2.android.")
+				if(software)
+					continue
+				val caps = info.getCapabilitiesForType("video/hevc").videoCapabilities ?: continue
+				if(caps.isSizeSupported(width, height))
+				{
+					ok = true
+					break
+				}
+			}
+		}
+		catch(e: Exception)
+		{
+			ok = true   // не змогли перевірити — лишаємо як є, перевірка картинки в грі підстрахує
+		}
+		hevcCache = key
+		hevcCacheOk = ok
+		if(!ok)
+			Log.i("AnyPlay", "Апаратного декодера H.265 для $key немає: відео в H.264")
+		return ok
+	}
+
+	/** Профіль відео для гри: якість з налаштувань, формат — H.265, якщо телефон його справді показує, інакше H.264 */
+	fun videoProfile(context: Context): ConnectVideoProfile
+	{
+		val p = Preferences(context)
+		val profile = p.videoProfile
+		if(profile.codec != Codec.CODEC_H265)
+			return profile
+		val broken = System.currentTimeMillis() < prefs(context).getLong(KEY_HEVC_BROKEN, 0)
+		if(!broken && hevcHardware(profile.width, profile.height))
+			return profile
+		val h264 = ConnectVideoProfile.preset(p.resolution.preset, p.fps.preset, Codec.CODEC_H264)
+		return p.bitrate?.let { h264.copy(bitrate = it) } ?: h264
+	}
+
+	/** У грі з H.265 картинка так і не з'явилась (декодер не створився або не показав жодного кадру): два тижні — H.264 */
+	fun hevcFailed(context: Context)
+	{
+		prefs(context).edit().putLong(KEY_HEVC_BROKEN, System.currentTimeMillis() + HEVC_BROKEN_MS).apply()
+		Log.w("AnyPlay", "H.265 на цьому телефоні не показав картинку: наступні підключення в H.264")
 	}
 
 	/** Для сторінки: {auto, level, name, levels: [{title, hint}]} */

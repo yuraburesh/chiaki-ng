@@ -134,6 +134,10 @@ void main() {
 
 	@Volatile var params = floatArrayOf(0f, 1f, 1f, 0f)
 
+	/** AnyPlay 118: скільки кадрів справді намальовано на екрані (перевірка «картинка є») */
+	@Volatile var drawn = 0L
+		private set
+
 	/** Поверхня для декодера (є після вдалого start()) */
 	var input: Surface? = null
 		private set
@@ -278,7 +282,10 @@ void main() {
 			val p = params
 			GLES20.glUniform4f(uP, p[0], p[1], p[2], p[3])
 			GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
-			EGL14.eglSwapBuffers(display, window)
+			if(EGL14.eglSwapBuffers(display, window))
+				drawn++
+			else if(drawn == 0L)
+				Log.e(TAG, "eglSwapBuffers: 0x" + Integer.toHexString(EGL14.eglGetError()))
 		}
 		catch(e: Exception)
 		{

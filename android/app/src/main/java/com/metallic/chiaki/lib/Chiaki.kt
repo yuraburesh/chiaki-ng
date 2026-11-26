@@ -101,6 +101,8 @@ private class ChiakiNative
 		@JvmStatic external fun psnDiag(): String
 		@JvmStatic external fun sessionPsnStep(ptr: Long): Int
 		@JvmStatic external fun sessionVideoStats(ptr: Long): LongArray?
+		@JvmStatic external fun sessionRequestKeyFrame(ptr: Long, reason: String)
+		@JvmStatic external fun sessionResetDecoder(ptr: Long): Boolean
 		@JvmStatic external fun sessionStop(ptr: Long): Int
 		@JvmStatic external fun sessionJoin(ptr: Long): Int
 		@JvmStatic external fun sessionSetSurface(ptr: Long, surface: Surface?)
@@ -400,8 +402,13 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	/** AnyPlay: крок з'єднання через PSN, на якому зупинились: 1 роутер, 2 сесія на серверах Sony, 3 своя адреса (STUN),
 	 * 4 приставка приєднується, 5 пряме з'єднання з приставкою, 6 з'єднано */
 	fun psnStep(): Int = if(nativePtr != 0L) ChiakiNative.sessionPsnStep(nativePtr) else 0
-	/** AnyPlay: кадрів прийшло, показано, втрачено, байтів відео (наростаючі від початку сесії) */
+	/** AnyPlay: кадрів прийшло, показано, втрачено, байтів відео (наростаючі від початку сесії);
+	 * з 118 ще [4] декодер є (1/0), [5] скільки разів декодер створено заново, [6] помилок виводу декодера */
 	fun videoStats(): LongArray? = if(nativePtr != 0L) ChiakiNative.sessionVideoStats(nativePtr) else null
+	/** AnyPlay 118: попросити в приставки ключовий кадр (з обмеженням частоти в бібліотеці) */
+	fun requestKeyFrame(reason: String) { if(nativePtr != 0L) ChiakiNative.sessionRequestKeyFrame(nativePtr, reason) }
+	/** AnyPlay 118: створити декодер відео заново на тій самій поверхні й попросити ключовий кадр */
+	fun resetDecoder(): Boolean = nativePtr != 0L && ChiakiNative.sessionResetDecoder(nativePtr)
 	/** AnyPlay: частка втрачених пакетів 0..1 */
 	fun packetLoss(): Double = if(nativePtr != 0L) ChiakiNative.sessionPacketLoss(nativePtr) else 0.0
 	fun stop() = ErrorCode(ChiakiNative.sessionStop(nativePtr))
@@ -442,7 +449,8 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 
 	fun setSurface(surface: Surface?)
 	{
-		ChiakiNative.sessionSetSurface(nativePtr, surface)
+		if(nativePtr != 0L)
+			ChiakiNative.sessionSetSurface(nativePtr, surface)
 	}
 
 	fun setControllerState(controllerState: ControllerState)

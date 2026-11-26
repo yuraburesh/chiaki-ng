@@ -62,6 +62,10 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 			{
 				psnAbandoned.add(s)
 				s.eventCallback = null
+				// AnyPlay 118: декодер цієї сесії вже тримає поверхню екрана, а сама сесія звільниться пізніше
+				// (у фоні, коли PSN відповість, до хвилини). Відпускаємо поверхню одразу: інакше декодер нової сесії
+				// не міг підключитися до неї — і в новій спробі був звук без картинки
+				s.setSurface(null)
 				s.psnCancel()
 				return
 			}
@@ -149,14 +153,43 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 	private var viewSurface: Surface? = null
 	private var color: ColorRenderer? = null
 	private var colorParams: FloatArray? = null
+	/** AnyPlay 118: обробка кольорів на цьому телефоні не показала жодного кадру — до кінця гри картинка напряму */
+	var colorBlocked = false
+		private set
 
 	/** null — без обробки кольорів */
 	fun setColor(params: FloatArray?)
 	{
-		colorParams = params
-		color?.let { c -> if(params != null) c.params = params }
+		colorParams = if(colorBlocked) null else params
+		color?.let { c -> if(colorParams != null) c.params = colorParams!! }
 		routeSurface()
 	}
+
+	/** Поверхня екрана гри є (SurfaceView створено) */
+	val hasSurface get() = viewSurface != null
+
+	/** Обробка кольорів зараз увімкнена (декодер пише в ColorRenderer) */
+	val colorActive get() = color != null
+
+	/** Скільки кадрів обробка кольорів намалювала на екрані (-1 — обробка вимкнена) */
+	fun colorFrames(): Long = color?.drawn ?: -1L
+
+	/** AnyPlay 118: обробка кольорів не малює картинку — вимкнути її до кінця гри, картинка піде напряму */
+	fun blockColor()
+	{
+		if(colorBlocked)
+			return
+		colorBlocked = true
+		Log.w("AnyPlay", "Обробка кольорів не показала картинку: до кінця гри картинка напряму")
+		colorParams = null
+		routeSurface()
+	}
+
+	/** AnyPlay 118: картинка не йде — попросити ключовий кадр */
+	fun requestKeyFrame(reason: String) = session?.requestKeyFrame(reason)
+
+	/** AnyPlay 118: картинка так і не з'явилась — створити декодер заново */
+	fun resetDecoder(): Boolean = session?.resetDecoder() ?: false
 
 	private fun routeSurface()
 	{

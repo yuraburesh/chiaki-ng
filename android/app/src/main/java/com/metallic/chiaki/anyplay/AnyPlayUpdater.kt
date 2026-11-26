@@ -14,6 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -78,8 +79,16 @@ private class NoSpaceException(val missing: Long): IOException()
  * Перевіряє оновлення і веде користувача через завантаження та встановлення.
  * Живе разом з AnyPlayActivity; вікна показує лише коли головний екран на виду
  * (під час гри зверху StreamActivity — тоді все чекає до повернення).
+ *
+ * AnyPlay 118 («не пропонує сама оновитись»): до 118 перевірка йшла лише при створенні головного екрана і далі раз на
+ * 6 годин, а невдала перевірка (телефон щойно прокинувся, мережа ще не піднялась) теж рахувалась як зроблена — тож
+ * програма, що жила у фоні днями, могла не бачити нову версію пів доби й більше. Після «Пізніше» нагадування не було
+ * зовсім. Тепер: перевірка на старті, при кожному поверненні в застосунок (не частіше ніж раз на 5 хв), раз на годину,
+ * поки головний екран на виду, і через хвилину після невдалої; знайдена версія видна на головному екрані постійно
+ * (рядок «Доступна версія …»), а вікно після «Пізніше» з'являється знову через 12 годин або при наступному запуску.
  */
-class AnyPlayUpdater(private val activity: AppCompatActivity, private val canShowExtra: () -> Boolean)
+class AnyPlayUpdater(private val activity: AppCompatActivity, private val canShowExtra: () -> Boolean,
+	private val onChanged: () -> Unit = {})
 {
 	companion object
 	{
@@ -87,7 +96,12 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 		private const val PREFS = "anyplay_update"
 		private const val KEY_PENDING = "pending_build"    // користувач уже натиснув «Оновити» для цієї збірки
 		private const val KEY_RELAUNCH = "relaunch_build"  // після встановлення цієї збірки відкрити AnyPlay знову
-		private const val CHECK_EVERY_MS = 6 * 60 * 60 * 1000L
+		private const val KEY_SNOOZE_BUILD = "snooze_build"   // «Пізніше» для цієї збірки…
+		private const val KEY_SNOOZE_UNTIL = "snooze_until"   // …до цього часу (мс, годинник телефона)
+		private const val SNOOZE_MS = 12 * 60 * 60 * 1000L
+		private const val CHECK_EVERY_MS = 60 * 60 * 1000L          // поки головний екран на виду
+		private const val CHECK_ON_RETURN_MS = 5 * 60 * 1000L       // повернулись у застосунок
+		private const val CHECK_RETRY_MS = 60 * 1000L               // після невдалої перевірки
 		private const val CHECK_UPDATE_STATE_MS = 60 * 1000L
 		private const val MB = 1024.0 * 1024.0
 
@@ -162,7 +176,10 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	private var job: Job? = null
 	@Volatile private var conn: HttpURLConnection? = null
 	private var checking = false
-	private var lastCheck = 0L                 // SystemClock.elapsedRealtime() останньої перевірки
+	private var lastCheck = 0L                 // SystemClock.elapsedRealtime() останньої вдалої перевірки (0 — ще не було)
+	private var lastTry = 0L                   // останньої спроби (вдалої чи ні)
+	private var lastFailed = false
+	private var shownThisRun = 0               // збірка, вікно якої вже показали від запуску (без «Пізніше» не повторюємо)
 	private var resumed = false
 	private var deferred: (() -> Unit)? = null // що показати, коли головний екран знову на виду
 	private var confirmLaunched = false
@@ -179,6 +196,33 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 		current = WeakReference(this)
 		cleanup()
 		check()
+	}
+
+	/** Чи пора перевіряти: давно не перевіряли (поріг залежить від нагоди) або минула спроба не вдалась */
+	private fun due(normalMs: Long): Boolean
+	{
+		val now = SystemClock.elapsedRealtime()
+		if(lastFailed)
+			return now - lastTry > CHECK_RETRY_MS
+		return lastCheck == 0L || now - lastCheck > normalMs
+	}
+
+	/** Для головного екрана: знайдена нова версія {build, version, notes, mandatory, busy} або null */
+	fun offerJson(): JSONObject?
+	{
+		val u = offer ?: return null
+		return JSONObject()
+			.put("build", u.build)
+			.put("version", u.version)
+			.put("notes", u.notes)
+			.put("mandatory", u.mandatory)
+			.put("busy", phase != Phase.IDLE)
+	}
+
+	private fun snoozed(u: AnyPlayUpdate): Boolean
+	{
+		val p = prefs(activity)
+		return !u.mandatory && p.getInt(KEY_SNOOZE_BUILD, 0) == u.build && System.currentTimeMillis() < p.getLong(KEY_SNOOZE_UNTIL, 0)
 	}
 
 	fun onResume()
@@ -198,8 +242,11 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 			else -> {}
 		}
 		runDeferred()
-		if(SystemClock.elapsedRealtime() - lastCheck > CHECK_EVERY_MS)
+		// повернулись у застосунок (з гри, з Telegram, з фону): перевіряємо, якщо давно не перевіряли
+		if(due(CHECK_ON_RETURN_MS))
 			check()
+		else
+			offer?.let { u -> if(phase == Phase.IDLE && dialog == null && shownThisRun != u.build && !snoozed(u)) whenVisible { offerAgain(u) } }
 	}
 
 	fun onPause()
@@ -228,16 +275,20 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 		if(state == "play" && phase == Phase.IDLE && d != null && dialog === d)
 			dismissDialog()
 		runDeferred()
-		val since = SystemClock.elapsedRealtime() - lastCheck
-		if(since > CHECK_EVERY_MS || (state == "update" && phase == Phase.IDLE && dialog == null && since > CHECK_UPDATE_STATE_MS))
+		if(due(CHECK_EVERY_MS) || (state == "update" && phase == Phase.IDLE && dialog == null && due(CHECK_UPDATE_STATE_MS)))
 			check()
 	}
 
-	/** Кнопка «Оновити» на картці «Потрібна нова версія» */
+	/** Кнопка «Оновити» на картці «Потрібна нова версія» і в рядку «Доступна версія» */
 	fun updateNow(fallback: () -> Unit)
 	{
 		if(phase != Phase.IDLE)
+		{
+			// уже качаємо або чекаємо дозволу: просто показати вікно з ходом, якщо його закрили
+			if(phase == Phase.PERMISSION)
+				offer?.let { askPermission(it) }
 			return
+		}
 		val u = offer
 		if(u != null)
 		{
@@ -282,14 +333,27 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 				AnyPlayCloud.request(activity, "GET", "/api/app/update?platform=android&build=${BuildConfig.ANYPLAY_BUILD}", auth = false)
 			}
 			checking = false
-			lastCheck = SystemClock.elapsedRealtime()
+			lastTry = SystemClock.elapsedRealtime()
+			lastFailed = !r.ok
 			if(!r.ok)
 			{
+				Log.w("AnyPlay", "Оновлення: перевірка не вдалась (HTTP ${r.status}), повтор за хвилину")
 				done?.invoke(null)
 				return@launch
 			}
-			val u = AnyPlayUpdate.parse(r.json.optJSONObject("update"))
+			lastCheck = lastTry
+			val raw = r.json.optJSONObject("update")
+			val u = AnyPlayUpdate.parse(raw)
+			if(u != null)
+				Log.i("AnyPlay", "Оновлення: доступна збірка ${u.build}${if(u.mandatory) " (обов'язкова)" else ""}, у нас ${BuildConfig.ANYPLAY_BUILD}")
+			else if(raw != null)
+				Log.w("AnyPlay", "Оновлення: сервер дав збірку ${raw.optInt("build")}, але без правильного файлу (https, sha256, size) — пропускаю")
+			else
+				Log.i("AnyPlay", "Оновлення: нової збірки немає (у нас ${BuildConfig.ANYPLAY_BUILD})")
+			val changed = offer?.build != u?.build || offer?.mandatory != u?.mandatory
 			offer = u
+			if(changed)
+				onChanged()
 			val p = prefs(activity)
 			if(u == null || p.getInt(KEY_PENDING, 0) != u.build)
 				p.edit().remove(KEY_PENDING).apply()
@@ -300,16 +364,26 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 			}
 			if(u == null || phase != Phase.IDLE)
 				return@launch
-			whenVisible {
-				if(phase != Phase.IDLE || offer !== u)
-					return@whenVisible
-				// уже погодились раніше (програму закрили посеред завантаження) — продовжуємо без питань
-				if(prefs(activity).getInt(KEY_PENDING, 0) == u.build)
-					start(u)
-				else
-					showOffer(u)
-			}
+			// вікно цієї ж версії вже відкрите — не смикаємо його
+			if(dialog != null && shownThisRun == u.build)
+				return@launch
+			// «Пізніше» натиснули недавно: лише рядок на головному екрані, без вікна
+			if(snoozed(u) && prefs(activity).getInt(KEY_PENDING, 0) != u.build)
+				return@launch
+			whenVisible { offerAgain(u) }
 		}
+	}
+
+	/** Показати пропозицію (або продовжити завантаження, на яке вже погодились) */
+	private fun offerAgain(u: AnyPlayUpdate)
+	{
+		if(phase != Phase.IDLE || offer !== u || dialog != null)
+			return
+		// уже погодились раніше (програму закрили посеред завантаження) — продовжуємо без питань
+		if(prefs(activity).getInt(KEY_PENDING, 0) == u.build)
+			start(u)
+		else if(!snoozed(u))
+			showOffer(u)
 	}
 
 	private fun showOffer(u: AnyPlayUpdate)
@@ -328,9 +402,20 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 			.setCancelable(!blocking)
 			.setPositiveButton("Оновити") { _, _ -> start(u) }
 		if(!blocking)
-			b.setNegativeButton("Пізніше", null)
+		{
+			b.setNegativeButton("Пізніше") { _, _ -> snooze(u) }
+			b.setOnCancelListener { snooze(u) }
+		}
+		shownThisRun = u.build
+		Log.i("AnyPlay", "Оновлення: показую вікно «Доступна версія ${u.build}»")
 		val d = present(b)
 		offerDialog = if(blocking) d else null
+	}
+
+	/** «Пізніше»: вікно цієї версії — знову через 12 годин; рядок на головному екрані лишається */
+	private fun snooze(u: AnyPlayUpdate)
+	{
+		prefs(activity).edit().putInt(KEY_SNOOZE_BUILD, u.build).putLong(KEY_SNOOZE_UNTIL, System.currentTimeMillis() + SNOOZE_MS).apply()
 	}
 
 	/** Показує вікно й пам'ятає його, поки його не закриють */
@@ -406,6 +491,7 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	{
 		phase = Phase.IDLE
 		prefs(activity).edit().remove(KEY_PENDING).apply()
+		onChanged()
 	}
 
 	private fun manual(u: AnyPlayUpdate)
@@ -499,6 +585,7 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	private fun download(u: AnyPlayUpdate)
 	{
 		phase = Phase.DOWNLOADING
+		onChanged()
 		showProgress()
 		job?.cancel()
 		job = activity.lifecycleScope.launch {
@@ -802,6 +889,8 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	{
 		phase = Phase.IDLE
 		job = null
+		Log.w("AnyPlay", "Оновлення до ${u.build} не вдалось: $why")
+		onChanged()
 		dismissDialog()
 		whenVisible {
 			if(phase != Phase.IDLE || dialog != null)

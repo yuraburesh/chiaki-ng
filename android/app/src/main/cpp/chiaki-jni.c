@@ -629,16 +629,62 @@ JNIEXPORT jstring JNICALL JNI_FCN(psnDiag)(JNIEnv *env, jobject obj)
 JNIEXPORT jlongArray JNICALL JNI_FCN(sessionVideoStats)(JNIEnv *env, jobject obj, jlong ptr)
 {
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
-	uint64_t stats[4] = { 0 };
+	uint64_t stats[7] = { 0 };
 	if(session)
 		android_chiaki_video_decoder_stats(&session->video_decoder, stats);
-	jlong values[4];
-	for(int i = 0; i < 4; i++)
+	jlong values[7];
+	for(int i = 0; i < 7; i++)
 		values[i] = (jlong)stats[i];
-	jlongArray r = E->NewLongArray(env, 4);
+	jlongArray r = E->NewLongArray(env, 7);
 	if(r)
-		E->SetLongArrayRegion(env, r, 0, 4, values);
+		E->SetLongArrayRegion(env, r, 0, 7, values);
 	return r;
+}
+
+// AnyPlay 118: попросити ключовий кадр (картинка не йде або декодер щойно створено заново).
+// Через правила бібліотеки (не частіше, ніж треба, з повтором раз на секунду, поки не прийде);
+// try-lock, як на комп'ютері: потік з'єднання може довго тримати state_mutex
+static void anyplay_request_key_frame(AndroidChiakiSession *session, const char *reason)
+{
+	if(!session || !session->started)
+		return;
+	if(chiaki_mutex_trylock(&session->session.stream_connection.state_mutex) != CHIAKI_ERR_SUCCESS)
+		return;
+	if(session->session.stream_connection.video_receiver)
+	{
+		CHIAKI_LOGI(session->log, "[anyplay-android] key frame wanted: %s", reason);
+		chiaki_video_receiver_report_corrupt(session->session.stream_connection.video_receiver, reason, false);
+	}
+	chiaki_mutex_unlock(&session->session.stream_connection.state_mutex);
+}
+
+JNIEXPORT void JNICALL JNI_FCN(sessionRequestKeyFrame)(JNIEnv *env, jobject obj, jlong ptr, jstring reason_string)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	if(!session)
+		return;
+	char reason[48] = "android_no_picture";
+	if(reason_string)
+	{
+		const char *r = E->GetStringUTFChars(env, reason_string, NULL);
+		if(r)
+		{
+			snprintf(reason, sizeof(reason), "%s", r);
+			E->ReleaseStringUTFChars(env, reason_string, r);
+		}
+	}
+	anyplay_request_key_frame(session, reason);
+}
+
+// AnyPlay 118: створити декодер заново на тій самій поверхні й попросити ключовий кадр
+JNIEXPORT jboolean JNICALL JNI_FCN(sessionResetDecoder)(JNIEnv *env, jobject obj, jlong ptr)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	if(!session)
+		return JNI_FALSE;
+	bool ok = android_chiaki_video_decoder_reset(&session->video_decoder);
+	anyplay_request_key_frame(session, "android_decoder_reset");
+	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL JNI_FCN(sessionPsnCancel)(JNIEnv *env, jobject obj, jlong ptr)
@@ -770,7 +816,11 @@ JNIEXPORT jint JNICALL JNI_FCN(sessionJoin)(JNIEnv *env, jobject obj, jlong ptr)
 JNIEXPORT void JNICALL JNI_FCN(sessionSetSurface)(JNIEnv *env, jobject obj, jlong ptr, jobject surface)
 {
 	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
-	android_chiaki_video_decoder_set_surface(&session->video_decoder, env, surface);
+	if(!session)
+		return;
+	// AnyPlay 118: декодер створено заново посеред гри (інша поверхня) — йому потрібен ключовий кадр
+	if(android_chiaki_video_decoder_set_surface(&session->video_decoder, env, surface))
+		anyplay_request_key_frame(session, "android_new_decoder");
 }
 
 JNIEXPORT void JNICALL JNI_FCN(sessionSetControllerState)(JNIEnv *env, jobject obj, jlong ptr, jobject controller_state_java)

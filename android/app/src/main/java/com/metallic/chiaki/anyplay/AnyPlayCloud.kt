@@ -7,7 +7,6 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.util.Base64
 import com.metallic.chiaki.BuildConfig
-import com.metallic.chiaki.common.Preferences
 import com.metallic.chiaki.lib.ChiakiPsn
 import com.metallic.chiaki.lib.ConnectInfo
 import com.metallic.chiaki.lib.PsnDeviceList
@@ -285,7 +284,7 @@ object AnyPlayCloud
 			host = "",
 			registKey = ByteArray(0x10),
 			morning = ByteArray(0x10),
-			videoProfile = Preferences(context).videoProfile,
+			videoProfile = AnyPlayQuality.videoProfile(context),   // 118: H.264, якщо H.265 на цьому телефоні не показує картинку
 			psnToken = token,
 			psnAccountId = account,
 			psnDuid = device.duid)

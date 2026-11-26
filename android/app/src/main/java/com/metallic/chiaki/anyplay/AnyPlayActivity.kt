@@ -58,7 +58,8 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 	private var busy = false             // шукаємо приставку перед грою
 	private var adminInfo: JSONObject? = null   // лише для адміна: хто грає, наступні броні, заявки
 	// оновлення програми: вікна лише на цьому екрані й не під час пошуку приставки чи входу
-	private val updater = AnyPlayUpdater(this) { !busy && state != "pairing" }
+	// 118: знайдена нова версія видна й на головному екрані (рядок «Доступна версія …»), тож про зміну кажемо сторінці
+	private val updater = AnyPlayUpdater(this, { !busy && state != "pairing" }) { render() }
 
 	private val isAdmin get() = loggedIn && session.optBoolean("admin")
 
@@ -677,6 +678,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			.put("quality", AnyPlayQuality.json(this))
 			.put("pairShort", if(state == "pairing") pairShort else "")
 			.put("pairBot", pairBot)
+		updater.offerJson()?.let { o.put("update", it) }   // 118: нова версія для рядка на головному екрані
 		// зі стану сервера лише те, що показує сторінка: ключів доступу до PSN тут немає
 		val s = JSONObject()
 		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt", "handoff", "handoffOffer"))

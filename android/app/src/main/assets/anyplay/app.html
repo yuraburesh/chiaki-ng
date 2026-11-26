@@ -98,6 +98,7 @@ h2{font:600 26px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 .lead b{color:var(--ink);font-weight:600}
 .foot2{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;margin-top:22px;font-size:11.5px;color:var(--faint)}
 .foot2 .me{display:none;align-items:center;gap:10px;color:var(--mute);font-size:13px}
+.foot2 .upd{margin-left:8px;color:var(--cyan);font-size:12px}
 #vGate{min-height:calc(100% - 4px);display:flex;align-items:center;justify-content:center;text-align:center}
 #vGate .hero{align-items:center;max-width:560px;padding:12px 0}
 #vGate .lead{max-width:44ch}
@@ -647,7 +648,10 @@ function homeChanged(){
   const gated = !H.loggedIn || H.state === 'login' || H.state === 'pairing';
   $('top').classList.toggle('gated', gated);
   $('whoName').textContent = H.user || ''; $('meName').textContent = H.user || '';
-  $('ver').textContent = 'AnyPlay для Android, збірка ' + (H.build || '');
+  // 118: нова версія — і в рядку внизу (горизонтально праворуч немає місця на окремий рядок «Оновлення»)
+  const upd = H.update && H.update.build && H.state !== 'update' ? H.update : null;
+  $('ver').innerHTML = 'AnyPlay для Android, збірка ' + esc(H.build || '')
+    + (upd ? ' <button type="button" class="lnk upd" data-act="update">' + (upd.busy ? 'Оновлення ' + esc(upd.build) + ' триває' : 'Оновити до ' + esc(upd.build)) + '</button>' : '');
   if(gated){ if(view !== 'gate') go('gate'); else renderGate(); return; }
   if(view === 'gate' || view == null){ go('home'); return; }
   if((H.admin && (view === 'book' || view === 'psn' || view === 'friends')) || (view === 'wallet' && !walletOn())){ go('home'); return; }
@@ -775,8 +779,15 @@ async function loadHomeMine(force){
   if(r.status === 200 && r.json.ok){ homeMine = r.json.mine || []; if(view === 'home') renderSide(); }
 }
 function renderSide(){
-  const s = H.session || {}, q = H.quality || {}, a = H.adminView;
+  const s = H.session || {}, q = H.quality || {}, a = H.adminView, up = H.update;
   let h = '';
+  // 118: знайдена нова версія програми видна тут завжди (вікно з пропозицією могли закрити «Пізніше»);
+  // горизонтально на телефоні місця немає — там лише кнопка в рядку з номером збірки
+  const landPhone = window.innerHeight < 500 && window.innerWidth > window.innerHeight;
+  if(up && up.build && H.state !== 'update' && !landPhone)
+    h += '<p class="cap">Оновлення</p><div class="row click" data-act="update"><span><span class="t">Доступна версія ' + esc(up.build) + '</span><span class="s">'
+      + esc(up.busy ? 'завантажується, AnyPlay відкриється сам' : 'встановиться сама за хвилину, вхід і броні збережуться') + '</span></span>'
+      + '<span class="chip ' + (up.busy ? 'wait' : 'live') + '">' + (up.busy ? 'триває' : 'оновити') + '</span></div>';
   if(H.admin){
     h += '<p class="cap">Адмін</p>'
       + '<div class="row click" data-act="crm"><span><span class="t">CRM</span><span class="s">броні й клієнти</span></span><span class="chip">бот</span></div>'

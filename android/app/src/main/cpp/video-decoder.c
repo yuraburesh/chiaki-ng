@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
 
 #include "video-decoder.h"
+#include "anyplay-live.h"
 
 #include <jni.h>
 
@@ -399,6 +400,8 @@ bool android_chiaki_video_decoder_reset(AndroidChiakiVideoDecoder *decoder)
 bool android_chiaki_video_decoder_video_sample(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool frame_recovered, void *user)
 {
 	AndroidChiakiVideoDecoder *decoder = user;
+	// 124: трансляція друзям — ті самі байти в чергу пересилання (лише коли йде ефір; заголовок запам'ятовується завжди)
+	anyplay_live_tap_video(buf, buf_size);
 	// телеметрія: рахуємо все, що прийшло з приставки, навіть якщо декодер ще не готовий
 	__atomic_fetch_add(&decoder->stat_frames_in, 1, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&decoder->stat_bytes_in, (uint64_t)buf_size, __ATOMIC_RELAXED);

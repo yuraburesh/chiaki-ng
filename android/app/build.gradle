@@ -62,6 +62,8 @@ android {
                         "-DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF",
                         "-DANDROID_STL=c++_shared",
                         "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                        // 124: джерела libdatachannel (трансляція друзям) з кешу CI, щоб збірка не ходила в мережу
+                        "-DFETCHCONTENT_SOURCE_DIR_LIBDATACHANNEL=" + (System.getenv("ANYPLAY_LDC_SRC") ?: ""),
                         "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
             }
         }

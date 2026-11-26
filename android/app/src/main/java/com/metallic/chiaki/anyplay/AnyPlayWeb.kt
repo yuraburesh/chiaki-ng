@@ -229,6 +229,24 @@ class AnyPlayBridge(private val activity: Activity, private val web: WebView, pr
 	@JavascriptInterface
 	fun action(name: String, arg: String) = activity.runOnUiThread { if(alive()) host?.action(name, arg) }
 
+	/** 124: трансляція з телефона — стан для меню гри (AnyPlayLive.info) */
+	@JavascriptInterface
+	fun live(): String = AnyPlayLive.info().toString()
+
+	/** 124: керування трансляцією з меню гри: start (arg «1» — зі звуком гри), stop, audio, chat */
+	@JavascriptInterface
+	fun liveDo(name: String, arg: String) = activity.runOnUiThread {
+		if(!alive())
+			return@runOnUiThread
+		when(name)
+		{
+			"start" -> AnyPlayLive.start(activity, arg != "0")
+			"stop" -> AnyPlayLive.stop()
+			"audio" -> AnyPlayLive.setGameAudio(arg == "1")
+			"chat" -> AnyPlayLive.sendChat(arg)
+		}
+	}
+
 	/** Якість картинки: {auto, level, name, levels} */
 	@JavascriptInterface
 	fun quality(): String = AnyPlayQuality.json(activity).toString()

@@ -47,6 +47,7 @@ import com.metallic.chiaki.touchcontrols.DefaultTouchControlsFragment
 import com.metallic.chiaki.touchcontrols.TouchControlsFragment
 import com.metallic.chiaki.touchcontrols.TouchpadOnlyFragment
 import com.metallic.chiaki.anyplay.AnyPlayCloud
+import com.metallic.chiaki.anyplay.AnyPlayLive
 import com.metallic.chiaki.anyplay.AnyPlayQuality
 import com.metallic.chiaki.anyplay.PlayError
 import com.metallic.chiaki.anyplay.PlayReady
@@ -358,6 +359,7 @@ class StreamActivity : AppCompatActivity()
 		}
 		if(loadSince == 0L)
 			loadSince = SystemClock.elapsedRealtime()
+		AnyPlayLive.onMessage = liveToast
 		if(anyplayFirstResume)
 		{
 			anyplayFirstResume = false
@@ -1050,6 +1052,8 @@ class StreamActivity : AppCompatActivity()
 		}
 	}
 
+	private val liveToast: (String) -> Unit = { m -> if(!isFinishing) Toast.makeText(this, m, Toast.LENGTH_LONG).show() }
+
 	override fun onTrimMemory(level: Int)
 	{
 		super.onTrimMemory(level)
@@ -1059,6 +1063,11 @@ class StreamActivity : AppCompatActivity()
 	override fun onDestroy()
 	{
 		super.onDestroy()
+		// 124: гру закрито — трансляція з телефона теж закривається (кімнату на сервері закриваємо одразу)
+		if(isFinishing)
+			AnyPlayLive.gameEnded()
+		if(AnyPlayLive.onMessage === liveToast)
+			AnyPlayLive.onMessage = null
 		controlsJobs.values.forEach { it.cancel() }
 		controlsJobs.clear()
 	}

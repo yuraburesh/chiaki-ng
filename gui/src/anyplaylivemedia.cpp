@@ -3,7 +3,10 @@
 
 #include <rtc/rtc.hpp>
 
+// Android (AnyPlay 124): без Opus — звук гри йде з PS5 як є, мікрофона й голосів глядачів на телефоні поки немає
+#ifndef ANYPLAY_LIVE_NO_OPUS
 #include <opus/opus.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -503,6 +506,7 @@ void Forwarder::handleVideo(Item &it)
 		video_(out_, key, it.us);
 }
 
+#ifndef ANYPLAY_LIVE_NO_OPUS
 // ───────────────────────────── звук ─────────────────────────────
 
 OpusPacker::~OpusPacker()
@@ -672,6 +676,8 @@ std::vector<std::string> VoiceMixer::speaking() const
 			list.push_back(it.first);
 	return list;
 }
+
+#endif // ANYPLAY_LIVE_NO_OPUS
 
 // ───────────────────────────── WebRTC ─────────────────────────────
 

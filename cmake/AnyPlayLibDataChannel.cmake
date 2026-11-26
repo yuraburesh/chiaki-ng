@@ -32,6 +32,12 @@ function(anyplay_add_libdatachannel)
 	set(sctp_build_programs OFF)
 	set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+	if(ANDROID)
+		# 124: на Android OpenSSL збирається разом з програмою (ExternalProject) уже під час збірки, тож перевірки
+		# libSRTP «чи є OpenSSL» на етапі налаштування не пройшли б. libSRTP бере власне шифрування
+		# (AES-CM, HMAC-SHA1): для 10–20 Мбіт/с цього досить. DTLS у libdatachannel однаково через OpenSSL.
+		set(ENABLE_OPENSSL OFF)
+	endif()
 
 	set(_declare_args
 		GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git

@@ -1821,6 +1821,7 @@ function pmRender(){
     + (until ? ' Повернутись можна з головного екрана кнопкою «Грати» до <b>' + until + '</b>.' : ' Повернутись можна з головного екрана кнопкою «Грати».')
     + '</p><div class="actions"><button type="button" class="btn" data-act="exit">Вийти з гри</button><button type="button" class="btn ghost" id="pmStay">Залишитись</button></div>';
   $('pmText').innerHTML = h;
+  if(pmSel === 'friends') liveWire();
   $('pmText').querySelectorAll('[data-ah]').forEach(b => b.onclick = () => {
     haptic(); G.autoHide = +b.dataset.ah; act('autohide', b.dataset.ah); pmRender();
   });
@@ -1850,8 +1851,63 @@ function pmFriends(){
   h += handBox();
   if(canHand() && !OH) h += '<p class="small">Складна місія? Передай гру другові: він підключиться до приставки своєю програмою й пограє в твій час. Повернути гру собі можна будь-коли. Обери друга:</p>';
   h += '<div class="fr">' + friendsList() + '</div>';
-  h += '<p class="small" style="margin-top:6px">Трансляції для друзів (дивитись твою гру, голос і чат) поки працюють у програмі на комп\'ютері. Додати друзів і подарувати години можна на головному екрані, вкладка «Друзі».</p>';
+  h += liveBox();
+  h += '<p class="small" style="margin-top:6px">Додати друзів і подарувати години можна на головному екрані, вкладка «Друзі».</p>';
   return h;
+}
+// ── 124: трансляція з телефона (AnyPlayLive.kt): друзі дивляться гру за посиланням у будь-якому браузері чи Telegram ──
+let LV = null, liveT = 0;
+function liveInfo(){ return nativeJson('live'); }
+function liveBox(){
+  LV = liveInfo();
+  if(!LV) return '';
+  if(!LV.supported) return '<p class="cap" style="margin-top:14px">Трансляція</p><p class="small">У цій версії програми трансляції немає. Онови програму.</p>';
+  let h = '<p class="cap" style="margin-top:14px">Трансляція для друзів</p>';
+  const st = LV.state;
+  if(st === 'off' || st === 'error'){
+    h += '<p class="small">Друзі дивляться твою гру за посиланням: у браузері на будь-якому пристрої чи в Telegram, без програми. Телефон пересилає те саме відео, що отримує від приставки, нічого не кодує, тож гра не гальмує. Але інтернет на відправку потрібен такий самий, як на гру (зазвичай 10–15 Мбіт/с), краще Wi-Fi.</p>'
+      + (st === 'error' && LV.text ? '<p class="small bad">' + esc(LV.text) + '</p>' : '')
+      + '<div class="actions"><button type="button" class="btn" data-live="start" data-arg="1">Почати трансляцію</button>'
+      + '<button type="button" class="btn ghost" data-live="start" data-arg="0">Без звуку гри</button></div>';
+    return h;
+  }
+  if(st === 'starting') return h + '<p class="lead">' + esc(LV.text || 'Запускаю трансляцію…') + '</p><div class="spin"></div>';
+  const v = LV.viewers || [];
+  h += '<p class="lead">' + (st === 'reconnecting' ? esc(LV.text) : 'В ефірі. Глядачів: ' + v.length + ' з ' + LV.maxViewers + '.') + '</p>';
+  if(LV.webLink){
+    h += '<div class="row"><span><span class="t">Посилання для всіх</span><span class="s">' + esc(LV.webLink) + '</span></span></div>'
+      + '<div class="actions"><button type="button" class="btn" data-live="share">Надіслати посилання</button>'
+      + '<button type="button" class="btn ghost" data-live="copy">Копіювати</button></div>';
+  }
+  if(v.length) h += '<p class="small" style="margin-top:6px">Дивляться: ' + v.map(x => esc(x.name)).join(', ') + '</p>';
+  const chat = (LV.chat || []).slice(-8);
+  h += '<p class="cap" style="margin-top:10px">Чат</p>'
+    + (chat.length ? chat.map(c => '<p class="small"><b>' + esc(c.name) + ':</b> ' + esc(c.text) + '</p>').join('') : '<p class="small">Повідомлень ще немає.</p>')
+    + '<div class="actions"><input id="liveMsg" type="text" maxlength="300" placeholder="Написати глядачам" style="flex:1;min-width:0">'
+    + '<button type="button" class="btn ghost" data-live="chat">Надіслати</button></div>';
+  h += '<div class="actions"><button type="button" class="btn ghost" data-live="audio" data-arg="' + (LV.gameAudio ? '0' : '1') + '">' + (LV.gameAudio ? 'Вимкнути звук гри для глядачів' : 'Увімкнути звук гри для глядачів') + '</button>'
+    + '<button type="button" class="btn ghost" data-live="stop">Зупинити трансляцію</button></div>';
+  if(LV.sentKbps) h += '<p class="small">Відправляю глядачам ' + (LV.sentKbps / 1000).toFixed(1) + ' Мбіт/с.</p>';
+  return h;
+}
+function liveWire(){
+  const box = $('pmText'); if(!box) return;
+  box.querySelectorAll('[data-live]').forEach(b => b.onclick = () => {
+    haptic();
+    const a = b.dataset.live;
+    if(a === 'share'){ try { native.share('Дивись мою гру в AnyPlay: ' + LV.webLink); } catch(e) {} return; }
+    if(a === 'copy'){ try { native.copy(LV.webLink); toast('Посилання скопійовано'); } catch(e) {} return; }
+    if(a === 'chat'){ const i = $('liveMsg'); const t = i ? i.value.trim() : ''; if(!t) return; try { native.liveDo('chat', t); } catch(e) {} i.value = ''; return; }
+    try { native.liveDo(a, b.dataset.arg || ''); } catch(e) {}
+    setTimeout(() => { if(pmSel === 'friends') pmRender(); }, 400);
+  });
+  // поки відкрито «Друзі», стан трансляції оновлюється (не перебиваючи введення повідомлення)
+  clearInterval(liveT);
+  liveT = setInterval(() => {
+    if(pmSel !== 'friends' || !$('pmText')){ clearInterval(liveT); return; }
+    const a = document.activeElement; if(a && a.id === 'liveMsg') return;
+    const n = liveInfo(); if(n && JSON.stringify(n) !== JSON.stringify(LV)) pmRender();
+  }, 2000);
 }
 function pmEnd(){ return Math.round((Date.now() / 1000 + G.left) / 60) * 60; }
 function pmTick(){

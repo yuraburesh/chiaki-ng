@@ -7,6 +7,9 @@ on:
     paths:
       - 'android/**'
       - 'anyplay-build.txt'
+      - 'gui/src/anyplaylivemedia.cpp'
+      - 'gui/include/anyplaylivemedia.h'
+      - 'cmake/AnyPlayLibDataChannel.cmake'
       - '.github/workflows/anyplay-android.yml'
 
 # реліз з APK для оновлення всередині програми
@@ -56,6 +59,20 @@ jobs:
           sudo apt-get install -y ninja-build protobuf-compiler python3-protobuf
           pip3 install --user --break-system-packages protobuf grpcio-tools || true
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
+      # 124: джерела libdatachannel (трансляція з телефона) — фіксована версія, з кешу GitHub;
+      # без кешу — клон з повторами й перевіркою коміту (scripts/anyplay-fetch-libdatachannel.sh)
+      - name: Restore libdatachannel sources
+        id: ldc
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: ldc-src
+          key: libdatachannel-v0.24.6-6b1e2e620f1e37f0eafeee702eaea0043cb305fd-v1
+      - name: Fetch libdatachannel sources
+        if: steps.ldc.outputs.cache-hit != 'true'
+        run: scripts/anyplay-fetch-libdatachannel.sh "$GITHUB_WORKSPACE/ldc-src"
+      - name: libdatachannel для збірки
+        run: echo "ANYPLAY_LDC_SRC=$GITHUB_WORKSPACE/ldc-src" >> "$GITHUB_ENV"
       - name: Ключ підпису
         env:
           ANYPLAY_KS: ${{ secrets.ANYPLAY_ANDROID_KEYSTORE }}

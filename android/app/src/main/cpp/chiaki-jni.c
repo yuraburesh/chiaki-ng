@@ -28,6 +28,7 @@
 #include "audio-output.h"
 #include "log.h"
 #include "chiaki-jni.h"
+#include "anyplay-live.h"
 
 static int anyplay_hex_nibble(char c)
 {
@@ -611,6 +612,7 @@ JNIEXPORT void JNICALL JNI_FCN(sessionFree)(JNIEnv *env, jobject obj, jlong ptr)
 	if(!session)
 		return;
 	CHIAKI_LOGI(session->log, "Shutting down JNI Session");
+	anyplay_live_unset_session(session);
 	chiaki_session_fini(&session->session);
 	android_chiaki_video_decoder_fini(&session->video_decoder);
 	android_chiaki_audio_decoder_fini(&session->audio_decoder);
@@ -862,8 +864,22 @@ JNIEXPORT jint JNICALL JNI_FCN(sessionStart)(JNIEnv *env, jobject obj, jlong ptr
 	CHIAKI_LOGI(session->log, "Start JNI Session");
 	ChiakiErrorCode err = chiaki_session_start(&session->session);
 	if(err == CHIAKI_ERR_SUCCESS)
+	{
 		session->started = true;
+		anyplay_live_set_session(session);
+	}
 	return err;
+}
+
+// AnyPlay 124: ключовий кадр для глядачів трансляції — лише запит до приставки, картинка гравця не зупиняється
+void anyplay_live_request_idr(void *user)
+{
+	AndroidChiakiSession *session = user;
+	if(!session || !session->started)
+		return;
+	ChiakiErrorCode err = chiaki_session_request_idr(&session->session);
+	if(err != CHIAKI_ERR_SUCCESS)
+		CHIAKI_LOGW(session->log, "[anyplay-live] key frame request for viewers failed: %s", chiaki_error_string(err));
 }
 
 // AnyPlay: частка втрачених пакетів (0..1) за останній проміжок — для автоякості

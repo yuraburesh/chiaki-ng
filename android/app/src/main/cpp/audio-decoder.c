@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
 
 #include "audio-decoder.h"
+#include "anyplay-live.h"
 
 #include <jni.h>
 
@@ -95,6 +96,7 @@ static void *android_chiaki_audio_decoder_output_thread_func(void *user)
 static void android_chiaki_audio_decoder_header(ChiakiAudioHeader *header, void *user)
 {
 	AndroidChiakiAudioDecoder *decoder = user;
+	anyplay_live_tap_audio_header(header->channels, header->rate, header->frame_size);
 	chiaki_mutex_lock(&decoder->codec_mutex);
 	memcpy(&decoder->audio_header, header, sizeof(decoder->audio_header));
 
@@ -169,6 +171,7 @@ beach:
 static void android_chiaki_audio_decoder_frame(uint8_t *buf, size_t buf_size, void *user)
 {
 	AndroidChiakiAudioDecoder *decoder = user;
+	anyplay_live_tap_opus(buf, buf_size);   // 124: звук гри друзям — пакет Opus як є
 	chiaki_mutex_lock(&decoder->codec_mutex);
 
 	if(!decoder->codec)

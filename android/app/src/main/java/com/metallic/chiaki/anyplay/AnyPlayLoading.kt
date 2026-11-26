@@ -79,7 +79,7 @@ class AnyPlayLoading(private val activity: Activity, private val parent: FrameLa
 			{
 				Stage.RECOVER -> "Гра триває"
 				Stage.STUCK -> "Щось пішло не так"
-				else -> "Крок ${stage.step} з 3"
+				else -> "Крок ${stage.step}/3"   // 129: «з» великими літерами в Oswald читалось як «3»: «1 3 3»
 			}
 			title.setTextColor(if(stage == Stage.STUCK) AnyPlayStyle.BAD else AnyPlayStyle.INK)
 		}
@@ -145,8 +145,9 @@ class AnyPlayLoading(private val activity: Activity, private val parent: FrameLa
 			letterSpacing = 0.18f
 			setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
 			setTextColor(AnyPlayStyle.MUTE)
+			gravity = Gravity.CENTER
 		}
-		col.addView(eyebrow)
+		col.addView(eyebrow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 		title = TextView(c).apply {
 			typeface = AnyPlayStyle.display(c)
 			isAllCaps = true
@@ -179,27 +180,31 @@ class AnyPlayLoading(private val activity: Activity, private val parent: FrameLa
 		col.addView(timer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { it.topMargin = px(12f) })
 		line = SweepLine(c)
 		col.addView(line, LinearLayout.LayoutParams(px(180f), px(2f)).also { it.topMargin = px(10f) })
+		// 129: кнопки одна під одною, однакової ширини (у ряд «Скасувати» не вміщалось і ламалось на два рядки)
 		val buttons = LinearLayout(c).apply {
-			orientation = LinearLayout.HORIZONTAL
-			gravity = Gravity.CENTER
+			orientation = LinearLayout.VERTICAL
+			gravity = Gravity.CENTER_HORIZONTAL
 		}
 		reconnect = TextView(c).apply {
 			text = "Підключитись заново"
 			gravity = Gravity.CENTER
-			minHeight = px(42f)
+			minHeight = px(44f)
+			isSingleLine = true
 			AnyPlayStyle.button(this, true)
 			setOnClickListener { onReconnect() }
 		}
-		buttons.addView(reconnect, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { it.marginEnd = px(10f) })
+		buttons.addView(reconnect, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { it.bottomMargin = px(10f) })
 		cancel = TextView(c).apply {
 			text = "Скасувати"
 			gravity = Gravity.CENTER
-			minHeight = px(42f)
+			minHeight = px(44f)
+			isSingleLine = true
 			AnyPlayStyle.button(this, false)
 			setOnClickListener { onCancel() }
 		}
-		buttons.addView(cancel)
-		col.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { it.topMargin = px(20f) })
+		buttons.addView(cancel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+		val bw = minOf(px(280f), c.resources.displayMetrics.widthPixels - px(64f))
+		col.addView(buttons, LinearLayout.LayoutParams(bw, ViewGroup.LayoutParams.WRAP_CONTENT).also { it.topMargin = px(20f) })
 
 		val lp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
 		lp.leftMargin = px(16f)

@@ -105,6 +105,17 @@ h2{font:600 22px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 #vGate .hero{align-items:center;max-width:560px;padding:12px 0}
 #vGate .lead{max-width:44ch}
 #vGate .spin{margin:6px auto}
+/* 129: картки й підказки результату (адмінка) */
+.card{border:1px solid var(--hair);border-radius:6px;background:#ffffff0a;padding:10px 12px;margin-bottom:10px}
+.card .row{min-height:0;padding:2px 0 6px}
+.note{margin:8px 0 0;font-size:13px;line-height:1.45}
+.note.ok{color:var(--ok)}
+.note.bad{color:var(--bad)}
+.mt{margin-top:12px}
+.pinrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;margin-top:8px}
+.pinrow .field{font-size:18px;letter-spacing:2px}
+.pinrow .field::placeholder{letter-spacing:0;font-size:15px}
+@media (max-width:520px){.pinrow{grid-template-columns:minmax(0,1fr)}.pinrow .btn{width:100%}}
 /* 128: плитки налаштувань */
 .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .tile{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"i t" "v v";align-items:center;column-gap:6px;row-gap:3px;min-width:0;padding:9px 7px 8px 8px;border:1px solid var(--hair);border-radius:6px;background:#ffffff0d;
@@ -537,6 +548,18 @@ body.wallet #methods{margin-top:6px}
       </div>
     </div>
 
+    <!-- 129: адмінка на телефоні — свої PSN клієнтів і спільний акаунт (прив'язка PS5 кодом, як на комп'ютері) -->
+    <div id="vAdmPsn" class="hidden">
+      <button type="button" class="back" data-tab="home">‹ Головна</button>
+      <div class="vhead"><div><h2 class="vtitle">Свої PSN клієнтів</h2><p class="hint">Клієнт увійшов у свій PSN у програмі, а ти прив'язуєш до нього приставку кодом з PS5.</p></div></div>
+      <div id="admPsn"></div>
+    </div>
+    <div id="vAdmShared" class="hidden">
+      <button type="button" class="back" data-tab="home">‹ Головна</button>
+      <div class="vhead"><div><h2 class="vtitle">Спільний PSN</h2><p class="hint">Акаунт, з якого грають клієнти без свого PSN.</p></div></div>
+      <div id="admShared"></div>
+    </div>
+
     <!-- свій PSN -->
     <div id="vPsn" class="hidden">
       <div class="vhead t-only"><h2 class="vtitle">Мій акаунт PSN</h2></div>
@@ -683,8 +706,8 @@ const ROUTE = HASH.split(':')[0], ARG = HASH.split(':')[1] || '';
 const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','quality','wallet','feel'].includes(ROUTE) ? 'single' : 'home';
 document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
-const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality', friends: 'vFriends', feel: 'vFeel'};
-const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати', quality: 'Зображення', friends: 'Друзі', feel: 'Вібрація'};
+const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality', friends: 'vFriends', feel: 'vFeel', admpsn: 'vAdmPsn', admshared: 'vAdmShared'};
+const TITLES = {admpsn: 'Свої PSN клієнтів', admshared: 'Спільний PSN', book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати', quality: 'Зображення', friends: 'Друзі', feel: 'Вібрація'};
 let view = null, viewTok = 0, method = null, busy = false;
 
 function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
@@ -721,6 +744,7 @@ function go(v){
   else if(v === 'quality'){ loadQuality(); }
   else if(v === 'friends'){ fConfirm = ''; fOpen = 0; renderFriends(); show('friends'); fLoad(true); }
   else if(v === 'feel'){ renderFeel(); show('feel'); }
+  else if(v === 'admpsn' || v === 'admshared'){ admLoad(); }
 }
 function markNav(){
   const on = view === 'extend' ? 'home' : view;
@@ -916,8 +940,8 @@ function renderSide(){
   const psn = !s.myPsn ? ['', 'спільний'] : s.myPsnReady ? ['ok', s.myPsn] : ['wait', 'підключається'];
   const tiles = H.admin ? [
     ['data-act="crm"', 'help', 'CRM', ['', 'броні й клієнти']],
-    ['data-act="adminPsn"', 'psn', 'Свої PSN', a && a.waiting > 0 ? ['wait', 'чекають: ' + a.waiting] : ['', 'немає заявок']],
-    ['data-act="adminShared"', 'psn', 'Спільний', ['', a ? a.shared : '']]] : [];
+    ['data-tab="admpsn"', 'psn', 'Свої PSN', a && a.waiting > 0 ? ['wait', 'чекають: ' + a.waiting] : ['', 'немає заявок']],
+    ['data-tab="admshared"', 'psn', 'Спільний', ['', a ? a.shared : '']]] : [];
   tiles.push(
     ['data-tab="quality"', 'pic', 'Картинка', ['', String(q.name || 'Авто').replace(/^Авто: /, '')]],
     ['data-act="layout" data-arg="map"', 'pad', 'Джойстик', ['', 'на екрані']],
@@ -2095,6 +2119,81 @@ function pmTick(){
   if(G.quality) parts.push('якість ' + G.quality);
   $('pmNet').textContent = parts.join(', ');
 }
+
+// ── 129: адмінка на телефоні ──
+let ADM = null, admMsg = {}, admBusy = '', admOnline = '';
+async function admLoad(){
+  const v = view, tok = viewTok;
+  if(!ADM) loadingView();
+  act('adminState');
+  const r = await api('GET', '/api/app/admin');
+  if(tok !== viewTok) return;
+  if(r.status !== 200 || !r.json.ok){ if(!ADM){ failView(r, () => go(v)); return; } }
+  else ADM = r.json;
+  admRender();
+}
+function admNote(k){ const m = admMsg[k]; return m ? '<p class="note ' + (m.ok ? 'ok' : 'bad') + '">' + esc(m.text) + '</p>' : ''; }
+const PIN_HELP = 'Код з 8 цифр: на PS5 Налаштування → Система → Дистанційне відтворення → Прив\'язати пристрій. Телефон має бути в тому самому Wi-Fi, що й приставка.';
+function pinBox(id, label){
+  return '<div class="pinrow"><input class="field" id="' + id + '" inputmode="numeric" maxlength="11" autocomplete="off" placeholder="8 цифр з екрана PS5" aria-label="Код з PS5">'
+    + '<button type="button" class="btn" data-adm="' + id + '"' + (admBusy ? ' disabled' : '') + '>' + label + '</button></div>';
+}
+function admRender(){
+  if(view === 'admpsn'){
+    const list = (ADM && ADM.psnClients) || [];
+    const st = {signed_in: ['ok', 'увійшов на PS5'], created: ['wait', 'профіль створено'], requested: ['wait', 'нова заявка']};
+    let h = admNote('top');
+    if(!list.length) h += '<p class="lead">Заявок немає: усі клієнти зі своїм PSN уже підключені.</p>';
+    h += list.map(u => {
+      const c = st[u.status] || ['wait', 'нова заявка'], busyMe = admBusy === 'c' + u.userId;
+      return '<div class="card"><div class="row" style="border:0"><span><span class="t">' + esc(u.user || ('Клієнт ' + u.userId)) + '</span><span class="s">PSN ' + esc(u.psn || '') + '</span></span>'
+        + '<span class="chip ' + c[0] + '">' + c[1] + '</span></div>'
+        + (u.accountId ? pinBox('pin' + u.userId, busyMe ? 'Прив\'язую…' : 'Прив\'язати') : '<p class="small">Клієнт ще не увійшов у PSN у своїй програмі.</p>')
+        + admNote('c' + u.userId) + '</div>';
+    }).join('');
+    $('admPsn').innerHTML = h + '<p class="small mt">' + PIN_HELP + '</p>';
+    show('admpsn');
+  } else {
+    const c = ADM && ADM.console, sh = (ADM && ADM.shared) || [];
+    let h = '<div class="card"><p class="cap">Зараз</p>';
+    if(c) h += '<div class="row" style="border:0"><span><span class="t">' + esc(c.psn_name || 'акаунт без ніка') + '</span><span class="s">' + esc(c.label || 'PS5') + '</span></span>'
+      + '<span class="chip ' + (c.tokenOk ? 'ok' : 'bad') + '">' + (c.tokenOk ? 'вхід діє' : 'вхід не діє') + '</span></div>';
+    else h += '<p class="lead">Спільний акаунт ще не передано.</p>';
+    if(sh.length > 1) h += '<p class="small">Усього спільних акаунтів: ' + sh.length + '. Активний той, на який ідуть нові ігри.</p>';
+    h += '</div><div class="card"><p class="cap">Змінити або оновити акаунт</p>'
+      + '<p class="small">1. Увійди в PSN акаунтом, з якого гратимуть клієнти.</p>'
+      + (admOnline ? '<div class="row" style="border:0"><span><span class="t">' + esc(admOnline) + '</span><span class="s">увійдено на цьому телефоні</span></span>'
+        + '<button type="button" class="btn ghost sm" data-adm="login"' + (admBusy ? ' disabled' : '') + '>Змінити</button></div>'
+        : '<div class="actions"><button type="button" class="btn" data-adm="login"' + (admBusy ? ' disabled' : '') + '>Увійти в PSN</button></div>') + admNote('login')
+      + '<p class="small mt">2. На PS5 увімкни профіль цього акаунта, згенеруй код і впиши його тут.</p>'
+      + (admOnline ? pinBox('pinShared', admBusy === 'shared' ? 'Прив\'язую…' : 'Прив\'язати й передати') : '<p class="small">Спершу крок 1.</p>')
+      + admNote('shared') + '</div><p class="small mt">' + PIN_HELP + '</p>';
+    $('admShared').innerHTML = h;
+    show('admshared');
+  }
+}
+window.__anyplayAdmin = j => {
+  let o; try { o = JSON.parse(j); } catch(e) { return; }
+  if(o.kind === 'state'){ admOnline = o.online || ''; if(view === 'admshared') admRender(); return; }
+  if(o.kind === 'login'){ admOnline = o.online || admOnline; admMsg.login = o; }
+  if(o.kind === 'adminLink'){ admBusy = ''; admMsg['c' + o.userId] = o; }
+  if(o.kind === 'adminSharedLink'){ admBusy = ''; admMsg.shared = o; }
+  if(o.ok && o.kind !== 'login') admLoad(); else if(view === 'admpsn' || view === 'admshared') admRender();
+};
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-adm]'); if(!t || admBusy) return;
+  haptic();
+  const k = t.dataset.adm;
+  if(k === 'login'){ act('adminPsnLogin'); return; }
+  const pin = (($(k) || {}).value || '').replace(/\D/g, '');
+  const key = k === 'pinShared' ? 'shared' : 'c' + k.slice(3);
+  if(pin.length !== 8){ admMsg[key] = {ok: false, text: 'Код має бути з 8 цифр.'}; admRender(); return; }
+  admMsg[key] = {ok: true, text: 'Прив\'язую приставку, це до хвилини…'};
+  if(k === 'pinShared'){ admBusy = 'shared'; act('adminSharedLink', JSON.stringify({pin})); }
+  else { const id = +k.slice(3), u = ((ADM && ADM.psnClients) || []).find(x => x.userId === id) || {};
+    admBusy = 'c' + id; act('adminLink', JSON.stringify({userId: id, accountId: u.accountId || '', pin})); }
+  admRender();
+});
 
 // ── запуск ──
 document.addEventListener('click', e => {

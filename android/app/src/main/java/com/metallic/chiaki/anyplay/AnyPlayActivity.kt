@@ -207,13 +207,34 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 				.setMessage("Вийти з AnyPlay на цьому телефоні?")
 				.setPositiveButton("Вийти") { _, _ -> logout() }
 				.setNegativeButton("Скасувати", null))
-			"crm" ->
-			{
-				openBot()
-				toast("У боті натисни кнопку «CRM» внизу зліва")
-			}
+			// 129: CRM у самій програмі (та сама сторінка, що в боті й на комп'ютері)
+			"crm" -> if(isAdmin) AnyPlayPageActivity.open(this, "/app/admin.html")
 			"adminPsn" -> showPsnClients()
 			"adminShared" -> showSharedPsn()
+			// 129: адмінка на телефоні — прив'язка PS5 кодом для клієнта зі своїм PSN і для спільного акаунта
+			"adminState" -> adminEvent(JSONObject().put("kind", "state").put("online", AnyPlayAdminLink.sharedOnline(this)))
+			"adminPsnLogin" -> if(isAdmin) PsnLoginDialog(this, false, admin = true) { err ->
+				val online = AnyPlayAdminLink.sharedOnline(this)
+				adminEvent(JSONObject().put("kind", "login").put("ok", err == null).put("online", online)
+					.put("text", err ?: "Вхід виконано: $online. Тепер крок 2."))
+			}.show()
+			"adminLink", "adminSharedLink" -> if(isAdmin && !adminLinking)
+			{
+				adminLinking = true
+				val o = try { JSONObject(arg) } catch(e: Exception) { JSONObject() }
+				lifecycleScope.launch {
+					val err = withContext(Dispatchers.IO) {
+						if(name == "adminLink") AnyPlayAdminLink.linkClient(this@AnyPlayActivity, o.optLong("userId"), o.optString("accountId"), o.optString("pin"))
+						else AnyPlayAdminLink.linkShared(this@AnyPlayActivity, o.optString("pin"))
+					}
+					adminLinking = false
+					val ok = err == null
+					adminEvent(JSONObject().put("kind", name).put("ok", ok).put("userId", o.optLong("userId")).put("text", err ?: if(name == "adminLink")
+						"Готово! Клієнт тепер грає на своєму акаунті, і наступного разу теж. Йому прийшло повідомлення."
+						else "Готово! Спільний акаунт «${AnyPlayAdminLink.sharedOnline(this@AnyPlayActivity)}» передано на сервер, клієнти гратимуть через нього."))
+					refresh()
+				}
+			}
 			"adminKick" -> adminKick()
 			"adminToggle" -> adminToggleClosed()
 			// «Передати повністю» (етап 7): друг відмовився від гри або повернув її власнику — оновити стан
@@ -222,6 +243,15 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 	}
 
 	override fun qualityChanged() = render()
+
+	private var adminLinking = false
+
+	/** 129: результат дії адміна — на сторінку (вона показує його в розділі «Свої PSN» чи «Спільний PSN») */
+	private fun adminEvent(o: JSONObject)
+	{
+		if(::web.isInitialized)
+			web.evaluateJavascript("window.__anyplayAdmin && window.__anyplayAdmin(${JSONObject.quote(o.toString())})", null)
+	}
 
 	private suspend fun refresh()
 	{

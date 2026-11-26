@@ -375,7 +375,7 @@ class AnyPlayWebDialog(private val activity: Activity, private val page: String,
 }
 
 /** Вхід у PSN на сторінці Sony. onDone(null) — вдалося; onDone(текст) — помилка; закрили самі — onDone не кличемо з помилкою */
-class PsnLoginDialog(private val activity: Activity, private val create: Boolean, private val onDone: (String?) -> Unit):
+class PsnLoginDialog(private val activity: Activity, private val create: Boolean, private val admin: Boolean = false, private val onDone: (String?) -> Unit):
 	Dialog(activity, R.style.AnyPlayTheme)
 {
 	private lateinit var web: WebView
@@ -401,7 +401,7 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 			setOnClickListener { dismiss() }
 		})
 		bar.addView(TextView(activity).apply {
-			text = if(create) "Реєстрація й вхід у PSN" else "Вхід у PSN: пароль бачить лише Sony"
+			text = if(admin) "Спільний акаунт: вхід у PSN" else if(create) "Реєстрація й вхід у PSN" else "Вхід у PSN: пароль бачить лише Sony"
 			textSize = 15f
 			typeface = AnyPlayStyle.display(activity)
 			isAllCaps = true
@@ -485,7 +485,7 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 		progress.visibility = View.VISIBLE
 		web.stopLoading()
 		anyplayIo.execute {
-			val error = AnyPlayPsn.finishLogin(activity, code)
+			val error = if(admin) AnyPlayPsn.finishAdmin(activity, code) else AnyPlayPsn.finishLogin(activity, code)
 			activity.runOnUiThread {
 				if(isShowing)
 					dismiss()

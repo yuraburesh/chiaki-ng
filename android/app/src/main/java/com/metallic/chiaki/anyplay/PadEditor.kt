@@ -129,8 +129,9 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 	private fun smallButton(text: String, primary: Boolean, click: () -> Unit) = TextView(activity).apply {
 		this.text = text
 		gravity = Gravity.CENTER
-		minHeight = px(36f)
 		AnyPlayStyle.button(this, primary)
+		minHeight = px(36f)
+		minimumHeight = px(36f)
 		textSize = 12.5f
 		letterSpacing = 0.08f
 		setPadding(px(10f), px(6f), px(10f), px(6f))

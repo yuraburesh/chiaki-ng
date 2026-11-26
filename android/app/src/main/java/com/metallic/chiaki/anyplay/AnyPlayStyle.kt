@@ -64,8 +64,15 @@ object AnyPlayStyle
 		b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
 		val padH = dp(c, 16f).toInt()
 		b.setPadding(padH, b.paddingTop, padH, b.paddingBottom)
+		// 129: усі кнопки однакової висоти й в один рядок (у вікнах «Вийти» і «Спробувати ще раз» стояли на різній висоті)
+		b.isSingleLine = true
+		b.gravity = android.view.Gravity.CENTER
+		b.minHeight = dp(c, 44f).toInt()
+		b.minimumHeight = dp(c, 44f).toInt()
 		if(b is MaterialButton)
 		{
+			b.insetTop = 0
+			b.insetBottom = 0
 			b.cornerRadius = dp(c, 2f).toInt()
 			b.backgroundTintList = ColorStateList.valueOf(if(primary) INK else 0)
 			b.strokeColor = ColorStateList.valueOf(EDGE)
@@ -103,6 +110,18 @@ object AnyPlayStyle
 		d.getButton(DialogInterface.BUTTON_POSITIVE)?.let { button(it, true) }
 		d.getButton(DialogInterface.BUTTON_NEGATIVE)?.let { button(it, false) }
 		d.getButton(DialogInterface.BUTTON_NEUTRAL)?.let { button(it, false) }
+		// 129: кнопки вікна — по центру по вертикалі, з однаковим проміжком, у тексті трохи менші літери
+		for(w in intArrayOf(DialogInterface.BUTTON_POSITIVE, DialogInterface.BUTTON_NEGATIVE, DialogInterface.BUTTON_NEUTRAL))
+			d.getButton(w)?.let { b ->
+				b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+				b.letterSpacing = 0.1f
+				(b.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.let { lp ->
+					lp.topMargin = 0; lp.bottomMargin = 0
+					lp.marginStart = dp(c, 8f).toInt()
+					b.layoutParams = lp
+				}
+				(b.layoutParams as? android.widget.LinearLayout.LayoutParams)?.gravity = android.view.Gravity.CENTER_VERTICAL
+			}
 	}
 
 	/** Текст вікна з помилкою: пояснення, а нижче дрібним блідим рядком технічний код для підтримки (якщо є) */

@@ -82,11 +82,11 @@ object AnyPlayPsn
 		}
 	}
 
-	/**
-	 * Код зі сторінки «redirect» → ключі входу Sony → сервер AnyPlay. Блокує потік.
-	 * Повертає null, якщо все вдалося, або текст помилки для клієнта.
-	 */
-	fun finishLogin(context: Context, code: String): String?
+	/** Ключі входу Sony для акаунта (accountId — base64 8 байт, як на комп'ютері) */
+	class Tokens(val access: String, val refresh: String, val account: String, val onlineId: String, val expiry: Long)
+
+	/** Код зі сторінки «redirect» → ключі Sony. Блокує потік. Ключі або текст помилки */
+	fun exchange(code: String): Pair<Tokens?, String?>
 	{
 		val form = "grant_type=authorization_code&code=" + URLEncoder.encode(code, "UTF-8") +
 			"&scope=" + URLEncoder.encode(SCOPE, "UTF-8").replace("+", "%20") +
@@ -95,23 +95,45 @@ object AnyPlayPsn
 		val access = tokens.optString("access_token")
 		val refresh = tokens.optString("refresh_token")
 		if(status != 200 || access.isEmpty() || refresh.isEmpty())
-			return if(status == 0) "Немає зв'язку з Sony. Перевір інтернет і спробуй ще раз."
-				else "Sony не прийняла цей вхід (код діє лише кілька хвилин). Спробуй увійти ще раз."
+			return null to (if(status == 0) "Немає зв'язку з Sony. Перевір інтернет і спробуй ще раз."
+				else "Sony не прийняла цей вхід (код діє лише кілька хвилин). Спробуй увійти ще раз.")
 		val (infoStatus, info) = http("GET", "$TOKEN_URL/$access", null)
 		val userId = info.optString("user_id").toLongOrNull()
 		if(infoStatus != 200 || userId == null)
-			return "Sony не віддала дані акаунта. Спробуй увійти ще раз."
+			return null to "Sony не віддала дані акаунта. Спробуй увійти ще раз."
 		val account = Base64.encodeToString(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(userId).array(), Base64.NO_WRAP)
+		return Tokens(access, refresh, account, info.optString("online_id"), System.currentTimeMillis() / 1000 + tokens.optLong("expires_in", 3600)) to null
+	}
+
+	/**
+	 * Код зі сторінки «redirect» → ключі входу Sony → сервер AnyPlay. Блокує потік.
+	 * Повертає null, якщо все вдалося, або текст помилки для клієнта.
+	 */
+	fun finishLogin(context: Context, code: String): String?
+	{
+		val (t, err) = exchange(code)
+		if(t == null)
+			return err
 		val body = JSONObject()
-			.put("accountId", account)
-			.put("onlineId", info.optString("online_id"))
-			.put("refresh_token", refresh)
-			.put("auth_token", access)
-			.put("expiry", System.currentTimeMillis() / 1000 + tokens.optLong("expires_in", 3600))
+			.put("accountId", t.account)
+			.put("onlineId", t.onlineId)
+			.put("refresh_token", t.refresh)
+			.put("auth_token", t.access)
+			.put("expiry", t.expiry)
 		val r = AnyPlayCloud.request(context, "POST", "/api/app/psn/link", body)
 		if(!r.ok)
 			return if(r.status == 0) "Немає зв'язку з сервером AnyPlay. Перевір інтернет і спробуй ще раз."
 				else "Не вдалося передати вхід PSN (помилка ${r.status}). Спробуй ще раз."
+		return null
+	}
+
+	/** 129: адмін на телефоні входить спільним акаунтом — ключі лишаються на телефоні до прив'язки PS5 */
+	fun finishAdmin(context: Context, code: String): String?
+	{
+		val (t, err) = exchange(code)
+		if(t == null)
+			return err
+		AnyPlayAdminLink.saveShared(context, t)
 		return null
 	}
 }

@@ -121,7 +121,14 @@ final class HomeViewController: UIViewController, WebHost
 		case "play": play(takeover: false)
 		case "takeover": if !isAdmin { play(takeover: true) }
 		case "retry", "refresh": if loggedIn && state != "pairing" { Task { await refresh() } }
-		case "bot", "crm", "update": if let u = URL(string: Cloud.botURL) { UIApplication.shared.open(u) }
+		case "bot", "update": if let u = URL(string: Cloud.botURL) { UIApplication.shared.open(u) }
+		// 129: CRM у самій програмі (та сама сторінка, що в боті)
+		case "crm": if isAdmin { present(ServerPageViewController(path: "/app/admin.html"), animated: true) }
+		case "adminState": page.eval("window.__anyplayAdmin && window.__anyplayAdmin(\(jsQuote(jsonText(["kind": "state", "online": ""]))))")
+		case "adminPsnLogin", "adminLink", "adminSharedLink":
+			let kind = name == "adminPsnLogin" ? "login" : name
+			let uid = ((try? JSONSerialization.jsonObject(with: Data(arg.utf8))) as? [String: Any])?["userId"] ?? 0
+			page.eval("window.__anyplayAdmin && window.__anyplayAdmin(\(jsQuote(jsonText(["kind": kind, "ok": false, "userId": uid, "text": "Прив'язка приставки на iPhone ще не працює: зроби це з телефона на Android або з комп'ютера."]))))")
 		case "layout": page.alert("Розташування кнопок на iPhone з'явиться в наступній версії. Зараз кнопки стоять типово, як на Android.")
 		case "logout":
 			let a = UIAlertController(title: nil, message: "Вийти з AnyPlay на цьому пристрої?", preferredStyle: .alert)

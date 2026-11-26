@@ -1,17 +1,7 @@
-// AnyPlay 116: трансляція для друзів — медіа без Qt. Див. anyplaylivemedia.h.
+// AnyPlay 118: трансляція для друзів — медіа без Qt. Див. anyplaylivemedia.h.
 #include "anyplaylivemedia.h"
 
 #include <rtc/rtc.hpp>
-
-extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavutil/frame.h>
-#include <libavutil/hwcontext.h>
-#include <libavutil/imgutils.h>
-#include <libavutil/opt.h>
-#include <libavutil/pixdesc.h>
-#include <libswscale/swscale.h>
-}
 
 #include <opus/opus.h>
 
@@ -70,14 +60,7 @@ int64_t nowUs()
 		std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-static std::string averr(int err)
-{
-	char buf[AV_ERROR_MAX_STRING_SIZE] = {};
-	av_strerror(err, buf, sizeof(buf));
-	return buf;
-}
-
-// потік кодування не має відбирати час у гри: нижчий пріоритет
+// потік пересилання не має відбирати час у гри: нижчий пріоритет
 static void lowerThreadPriority()
 {
 #if defined(_WIN32)
@@ -89,373 +72,238 @@ static void lowerThreadPriority()
 #endif
 }
 
-// ───────────────────────────── відео ─────────────────────────────
+// ───────────────────────────── потік відео з PS5 ─────────────────────────────
 
-VideoEncoder::~VideoEncoder()
+const char *codecName(Codec c)
 {
-	close();
-}
-
-std::vector<std::string> VideoEncoder::candidates(bool allowSoftware)
-{
-	std::vector<std::string> list;
-#if defined(_WIN32)
-	// NVIDIA, AMD, Intel; Media Foundation — апаратний кодувальник через Windows (hw_encoding=1, програмний не приймаємо)
-	list = { "h264_nvenc", "h264_amf", "h264_qsv", "h264_mf" };
-#elif defined(__APPLE__)
-	list = { "h264_videotoolbox" };
-#else
-	list = { "h264_nvenc", "h264_qsv" };
-#endif
-	if(allowSoftware)
+	switch(c)
 	{
-		list.push_back("libx264");
-		list.push_back("libopenh264");
+		case Codec::H264: return "H.264";
+		case Codec::H265: return "H.265";
+		default: return "";
 	}
-	return list;
 }
 
-bool VideoEncoder::open(const VideoConfig &cfg, bool allowSoftware, std::string *err)
+static int nalType(Codec c, const uint8_t *p, size_t n)
 {
-	close();
-	std::string errors;
-	for(const std::string &name : candidates(allowSoftware))
+	if(!n)
+		return -1;
+	if(c == Codec::H264)
+		return p[0] & 0x1f;
+	if(c == Codec::H265)
+		return (p[0] >> 1) & 0x3f;
+	return -1;
+}
+
+std::vector<NalView> splitAnnexB(const uint8_t *d, size_t n, Codec codec)
+{
+	std::vector<NalView> out;
+	if(!d || n < 4)
+		return out;
+	// початок кожної NAL: після 00 00 01 (00 00 00 01 теж закінчується на 00 00 01)
+	std::vector<size_t> starts;
+	for(size_t k = 0; k + 3 <= n; k++)
 	{
-		std::string e;
-		const int64_t t0 = nowUs();
-		if(openNamed(name, cfg, &e))
+		if(d[k] == 0 && d[k + 1] == 0 && d[k + 2] == 1)
 		{
-			logf("encoder %s opened %dx%d@%d %d kbps in %d ms", name.c_str(), cfg.width, cfg.height, cfg.fps, cfg.kbps,
-				static_cast<int>((nowUs() - t0) / 1000));
-			return true;
+			starts.push_back(k + 3);
+			k += 2;
 		}
-		logf("encoder %s unavailable: %s", name.c_str(), e.c_str());
-		if(!errors.empty())
-			errors += "; ";
-		errors += name + ": " + e;
 	}
-	if(err)
-		*err = errors.empty() ? std::string("no H.264 encoders") : errors;
+	for(size_t i = 0; i < starts.size(); i++)
+	{
+		const size_t from = starts[i];
+		size_t to = i + 1 < starts.size() ? starts[i + 1] - 3 : n;
+		// кінцеві нулі: нуль перед 00 00 00 01, вирівнювання chiaki (CHIAKI_VIDEO_BUFFER_PADDING_SIZE).
+		// Справжня NAL-одиниця нулем не закінчується (rbsp_trailing_bits), тож відкидати їх безпечно.
+		while(to > from && d[to - 1] == 0)
+			to--;
+		if(to <= from)
+			continue;
+		NalView v;
+		v.data = d + from;
+		v.size = to - from;
+		v.type = nalType(codec, v.data, v.size);
+		out.push_back(v);
+	}
+	return out;
+}
+
+Codec headerCodec(const uint8_t *nal, size_t n)
+{
+	if(!nal || n < 2 || (nal[0] & 0x80))
+		return Codec::Unknown;   // forbidden_zero_bit
+	// H.265 VPS/SPS: 2-байтовий заголовок 0x40 0x01 / 0x42 0x01 (шар 0, tid 1). Байт 0x41 сам по собі — це ще й
+	// звичайний P-кадр H.264 (nal_ref_idc 2, тип 1), тому другий байт обов'язковий.
+	if((nal[0] == 0x40 || nal[0] == 0x42) && nal[1] == 0x01)
+		return Codec::H265;
+	// H.264 SPS: тип 7 з будь-яким nal_ref_idc (0x67, 0x47, 0x27, 0x07)
+	if((nal[0] & 0x1f) == 7)
+		return Codec::H264;
+	return Codec::Unknown;
+}
+
+Codec detectCodec(const uint8_t *d, size_t n)
+{
+	// перша NAL: H.264 SPS або H.265 VPS/SPS
+	const auto nals = splitAnnexB(d, n, Codec::Unknown);
+	if(nals.empty())
+		return Codec::Unknown;
+	return headerCodec(nals[0].data, nals[0].size);
+}
+
+bool isParameterSet(Codec c, int type)
+{
+	if(c == Codec::H264)
+		return type == 7 || type == 8;
+	if(c == Codec::H265)
+		return type == 32 || type == 33 || type == 34;
 	return false;
 }
 
-static void setOpt(AVDictionary **d, const char *k, const char *v)
+bool isKeyNal(Codec c, int type)
 {
-	av_dict_set(d, k, v, 0);
+	if(c == Codec::H264)
+		return type == 5;
+	if(c == Codec::H265)
+		return type >= 16 && type <= 21;
+	return false;
 }
 
-bool VideoEncoder::openNamed(const std::string &codec_name, const VideoConfig &cfg, std::string *err)
+bool isSliceNal(Codec c, int type)
 {
-	const AVCodec *codec = avcodec_find_encoder_by_name(codec_name.c_str());
-	if(!codec)
+	if(c == Codec::H264)
+		return type >= 1 && type <= 5;
+	if(c == Codec::H265)
+		return type >= 0 && type <= 31;
+	return false;
+}
+
+// перші байти RBSP без захисних 0x03 (00 00 03 → 00 00)
+static std::vector<uint8_t> rbspHead(const uint8_t *p, size_t n, size_t want)
+{
+	std::vector<uint8_t> out;
+	int zeros = 0;
+	for(size_t i = 0; i < n && out.size() < want; i++)
 	{
-		*err = "not in this FFmpeg build";
+		if(zeros >= 2 && p[i] == 3)
+		{
+			zeros = 0;
+			continue;
+		}
+		zeros = p[i] == 0 ? zeros + 1 : 0;
+		out.push_back(p[i]);
+	}
+	return out;
+}
+
+std::string sdpFmtp(Codec c, const std::vector<uint8_t> &paramSets)
+{
+	const auto nals = splitAnnexB(paramSets.data(), paramSets.size(), c);
+	char buf[160];
+	if(c == Codec::H264)
+	{
+		// profile-level-id = profile_idc, constraint flags, level_idc із SPS
+		for(const NalView &v : nals)
+			if(v.type == 7 && v.size >= 4)
+			{
+				const auto r = rbspHead(v.data + 1, v.size - 1, 3);
+				if(r.size() == 3)
+				{
+					snprintf(buf, sizeof(buf), "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=%02x%02x%02x",
+						r[0], r[1], r[2]);
+					return buf;
+				}
+			}
+		return "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640c1f";
+	}
+	if(c == Codec::H265)
+	{
+		// profile_tier_level у SPS: після NAL-заголовка (2 байти) і першого байта (vps id, sub_layers, nesting)
+		for(const NalView &v : nals)
+			if(v.type == 33 && v.size >= 16)
+			{
+				const auto r = rbspHead(v.data + 2, v.size - 2, 13);
+				if(r.size() == 13)
+				{
+					const int tier = (r[1] >> 5) & 1;
+					const int profile = r[1] & 0x1f;
+					const int level = r[12];
+					snprintf(buf, sizeof(buf), "level-id=%d;profile-id=%d;tier-flag=%d;tx-mode=SRST", level, profile ? profile : 1, tier);
+					return buf;
+				}
+			}
+		return "level-id=153;profile-id=1;tier-flag=0;tx-mode=SRST";
+	}
+	return std::string();
+}
+
+static void appendAnnexB(std::vector<uint8_t> &out, const NalView &v)
+{
+	static const uint8_t sc[4] = { 0, 0, 0, 1 };
+	out.insert(out.end(), sc, sc + 4);
+	out.insert(out.end(), v.data, v.data + v.size);
+}
+
+bool parseHeaderSample(const uint8_t *d, size_t n, StreamHeader *out)
+{
+	const Codec c = detectCodec(d, n);
+	if(c == Codec::Unknown)
 		return false;
-	}
-	// дві спроби: з усіма побажаннями для низької затримки, потім лише з обов'язковими (старі драйвери не знають частини опцій)
-	for(int attempt = 0; attempt < 2; attempt++)
-	{
-		AVCodecContext *ctx = avcodec_alloc_context3(codec);
-		if(!ctx)
-		{
-			*err = "alloc";
-			return false;
-		}
-		ctx->width = cfg.width;
-		ctx->height = cfg.height;
-		ctx->time_base = AVRational{ 1, cfg.fps };
-		ctx->framerate = AVRational{ cfg.fps, 1 };
-		ctx->pix_fmt = AV_PIX_FMT_NV12;
-		ctx->bit_rate = static_cast<int64_t>(cfg.kbps) * 1000;
-		ctx->rc_max_rate = ctx->bit_rate;
-		ctx->rc_buffer_size = static_cast<int>(ctx->bit_rate / 2);   // ~0,5 с: рівний потік без великих стрибків
-		ctx->gop_size = cfg.fps * 2;                                  // ключовий кадр раз на 2 с (новий глядач бачить картинку швидко)
-		ctx->max_b_frames = 0;                                        // B-кадри дають затримку і не всі браузери їх люблять
-		ctx->color_range = AVCOL_RANGE_MPEG;
-		ctx->colorspace = AVCOL_SPC_BT709;
-		ctx->color_primaries = AVCOL_PRI_BT709;
-		ctx->color_trc = AVCOL_TRC_BT709;
-		AVDictionary *opts = nullptr;
-		const bool full = attempt == 0;
-		if(codec_name == "h264_nvenc")
-		{
-			setOpt(&opts, "preset", "p2");
-			setOpt(&opts, "tune", "ull");
-			setOpt(&opts, "rc", "cbr");
-			setOpt(&opts, "zerolatency", "1");
-			setOpt(&opts, "delay", "0");
-			setOpt(&opts, "forced-idr", "1");
-			if(full)
-				setOpt(&opts, "profile", "baseline");
-		}
-		else if(codec_name == "h264_amf")
-		{
-			setOpt(&opts, "usage", "ultralowlatency");
-			setOpt(&opts, "quality", "speed");
-			setOpt(&opts, "rc", "cbr");
-			if(full)
-			{
-				setOpt(&opts, "profile", "constrained_baseline");
-				setOpt(&opts, "latency", "1");
-			}
-		}
-		else if(codec_name == "h264_qsv")
-		{
-			setOpt(&opts, "preset", "veryfast");
-			setOpt(&opts, "async_depth", "1");
-			if(full)
-			{
-				setOpt(&opts, "profile", "baseline");
-				setOpt(&opts, "forced_idr", "1");
-			}
-		}
-		else if(codec_name == "h264_mf")
-		{
-			setOpt(&opts, "hw_encoding", "1");   // лише апаратний MFT
-			setOpt(&opts, "rate_control", "cbr");
-			if(full)
-				setOpt(&opts, "scenario", "display_remoting");
-		}
-		else if(codec_name == "h264_videotoolbox")
-		{
-			setOpt(&opts, "realtime", "1");
-			setOpt(&opts, "allow_sw", "0");
-			if(full)
-			{
-				setOpt(&opts, "profile", "constrained_baseline");
-				setOpt(&opts, "prio_speed", "1");
-			}
-		}
-		else if(codec_name == "libx264")
-		{
-			setOpt(&opts, "preset", "ultrafast");
-			setOpt(&opts, "tune", "zerolatency");
-			setOpt(&opts, "profile", "baseline");
-			setOpt(&opts, "forced-idr", "1");
-		}
-		const int r = avcodec_open2(ctx, codec, &opts);
-		av_dict_free(&opts);
-		if(r >= 0)
-		{
-			ctx_ = ctx;
-			name_ = codec_name;
-			cfg_ = cfg;
-			pts_ = 0;
-			sps_pps_.clear();
-			if(ctx->extradata && ctx->extradata_size > 4)
-				rememberParameterSets(ctx->extradata, static_cast<size_t>(ctx->extradata_size));
-			scaled_ = av_frame_alloc();
-			sw_ = av_frame_alloc();
-			if(!scaled_ || !sw_)
-			{
-				close();
-				*err = "alloc";
-				return false;
-			}
-			scaled_->format = AV_PIX_FMT_NV12;
-			scaled_->width = cfg.width;
-			scaled_->height = cfg.height;
-			if(av_frame_get_buffer(scaled_, 0) < 0)
-			{
-				close();
-				*err = "frame buffer";
-				return false;
-			}
-			return true;
-		}
-		*err = averr(r);
-		avcodec_free_context(&ctx);
-	}
-	return false;
-}
-
-void VideoEncoder::close()
-{
-	if(ctx_)
-		avcodec_free_context(&ctx_);
-	if(sws_)
-	{
-		sws_freeContext(sws_);
-		sws_ = nullptr;
-	}
-	av_frame_free(&sw_);
-	av_frame_free(&scaled_);
-	sws_src_w_ = sws_src_h_ = 0;
-	sws_src_fmt_ = -1;
-	name_.clear();
-}
-
-// NAL-одиниці Annex-B: колбек (тип, початок з кодом, довжина з кодом)
-template<typename F> static void forEachNal(const uint8_t *d, size_t n, F f)
-{
-	size_t i = 0;
-	auto find_start = [&](size_t from, size_t *code_len) -> size_t {
-		for(size_t k = from; k + 3 <= n; k++)
-		{
-			if(d[k] == 0 && d[k + 1] == 0)
-			{
-				if(d[k + 2] == 1) { *code_len = 3; return k; }
-				if(k + 4 <= n && d[k + 2] == 0 && d[k + 3] == 1) { *code_len = 4; return k; }
-			}
-		}
-		*code_len = 0;
-		return n;
-	};
-	size_t cl = 0;
-	i = find_start(0, &cl);
-	while(i < n)
-	{
-		size_t next_cl = 0;
-		const size_t next = find_start(i + cl, &next_cl);
-		if(i + cl < n)
-			f(d[i + cl] & 0x1f, d + i, next - i);
-		i = next;
-		cl = next_cl;
-	}
-}
-
-void VideoEncoder::rememberParameterSets(const uint8_t *data, size_t size)
-{
+	const auto nals = splitAnnexB(d, n, c);
 	std::vector<uint8_t> sets;
-	forEachNal(data, size, [&](int type, const uint8_t *p, size_t len) {
-		if(type == 7 || type == 8)
-			sets.insert(sets.end(), p, p + len);
-	});
-	if(!sets.empty())
-		sps_pps_ = std::move(sets);
-}
-
-bool VideoEncoder::prepareInput(const AVFrame *src, std::string *err)
-{
-	const AVFrame *in = src;
-	transfer_ms_ = 0;
-	if(src->hw_frames_ctx)
+	for(const NalView &v : nals)
 	{
-		// копія з відеокарти; одразу після неї кадр гри відпускається (декодер не чекає)
-		av_frame_unref(sw_);
-		const int64_t t0 = nowUs();
-		const int r = av_hwframe_transfer_data(sw_, src, 0);
-		transfer_ms_ = (nowUs() - t0) / 1000.0;
-		if(r < 0)
-		{
-			*err = "hwframe transfer: " + averr(r);
-			return false;
-		}
-		in = sw_;
+		if(isSliceNal(c, v.type))
+			return false;   // це кадр (з параметрами всередині), а не окремий заголовок
+		if(isParameterSet(c, v.type))
+			appendAnnexB(sets, v);
 	}
-	const int64_t t0 = nowUs();
-	if(!sws_ || sws_src_w_ != in->width || sws_src_h_ != in->height || sws_src_fmt_ != in->format)
-	{
-		sws_ = sws_getCachedContext(sws_, in->width, in->height, static_cast<AVPixelFormat>(in->format),
-			cfg_.width, cfg_.height, AV_PIX_FMT_NV12, SWS_BILINEAR, nullptr, nullptr, nullptr);
-		if(!sws_)
-		{
-			const char *fmt_name = av_get_pix_fmt_name(static_cast<AVPixelFormat>(in->format));
-			*err = std::string("swscale: unsupported ") + (fmt_name ? fmt_name : "?");
-			return false;
-		}
-		sws_src_w_ = in->width;
-		sws_src_h_ = in->height;
-		sws_src_fmt_ = in->format;
-	}
-	// кодувальник може ще тримати попередній буфер: тоді беремо новий
-	if(av_frame_make_writable(scaled_) < 0)
-	{
-		*err = "frame not writable";
+	if(sets.empty())
 		return false;
+	if(out)
+	{
+		out->codec = c;
+		out->annexB = std::move(sets);
 	}
-	sws_scale(sws_, in->data, in->linesize, 0, in->height, scaled_->data, scaled_->linesize);
-	scale_ms_ = (nowUs() - t0) / 1000.0;
-	if(in == sw_)
-		av_frame_unref(sw_);
 	return true;
 }
 
-bool VideoEncoder::encode(const AVFrame *src, bool forceKey, std::vector<uint8_t> *out, bool *isKey, std::string *err)
-{
-	out->clear();
-	*isKey = false;
-	if(!ctx_)
-	{
-		*err = "encoder closed";
-		return false;
-	}
-	if(!prepareInput(src, err))
-		return false;
-	const int64_t t0 = nowUs();
-	scaled_->pts = pts_++;
-	scaled_->pict_type = forceKey ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_NONE;
-	int r = avcodec_send_frame(ctx_, scaled_);
-	if(r < 0 && r != AVERROR(EAGAIN))
-	{
-		*err = "send_frame: " + averr(r);
-		return false;
-	}
-	AVPacket *pkt = av_packet_alloc();
-	if(!pkt)
-	{
-		*err = "alloc";
-		return false;
-	}
-	while(true)
-	{
-		r = avcodec_receive_packet(ctx_, pkt);
-		if(r == AVERROR(EAGAIN) || r == AVERROR_EOF)
-			break;
-		if(r < 0)
-		{
-			*err = "receive_packet: " + averr(r);
-			av_packet_free(&pkt);
-			return false;
-		}
-		const bool key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
-		bool has_sps = false;
-		forEachNal(pkt->data, static_cast<size_t>(pkt->size), [&](int type, const uint8_t *, size_t) {
-			if(type == 7)
-				has_sps = true;
-		});
-		if(has_sps)
-			rememberParameterSets(pkt->data, static_cast<size_t>(pkt->size));
-		else if(key && !sps_pps_.empty())
-			out->insert(out->end(), sps_pps_.begin(), sps_pps_.end());   // глядач, що прийшов посеред гри, має отримати SPS/PPS
-		out->insert(out->end(), pkt->data, pkt->data + pkt->size);
-		*isKey = *isKey || key;
-		av_packet_unref(pkt);
-	}
-	av_packet_free(&pkt);
-	encode_ms_ = (nowUs() - t0) / 1000.0;
-	return true;
-}
+// ───────────────────────────── пересилання ─────────────────────────────
 
-VideoPipeline::VideoPipeline() = default;
+Forwarder::Forwarder() = default;
 
-VideoPipeline::~VideoPipeline()
+Forwarder::~Forwarder()
 {
 	stop();
 }
 
-void VideoPipeline::start(const VideoConfig &cfg, bool allowSoftware, Output out, Status status)
+void Forwarder::start(Codec codec, const StreamHeader &header, VideoOut video, AudioOut audio, KeyRequest key)
 {
 	stop();
 	{
 		std::lock_guard<std::mutex> lock(mutex_);
-		cfg_ = cfg;
+		codec_ = codec;
+		header_ = header;
+		video_ = std::move(video);
+		audio_ = std::move(audio);
+		key_ = std::move(key);
+		queue_.clear();
+		queued_video_ = 0;
 		quit_ = false;
-		reconfig_ = false;
-		out_ = std::move(out);
-		status_ = std::move(status);
+		queue_dropped_ = false;
 	}
-	interval_us_.store(1000000 / (std::max)(1, cfg.fps));
-	next_due_us_.store(0);
-	want_key_.store(true);
-	frames_encoded.store(0);
-	frames_dropped.store(0);
-	bytes_out.store(0);
-	errors.store(0);
-	thread_ = std::thread([this, allowSoftware]() { run(allowSoftware); });
+	vq_bytes_ = 0;
+	vq_us_ = 0;
+	// лічильники не обнуляємо: після обриву пересилання починається знову, а показники за ефір — спільні
+	waiting_key.store(true);
+	want_wait_key_.store(false);
+	backlog_ms.store(0);
+	running_.store(true);
+	thread_ = std::thread([this]() { run(); });
 }
 
-void VideoPipeline::stop()
+void Forwarder::stop()
 {
 	running_.store(false);
 	{
@@ -466,158 +314,193 @@ void VideoPipeline::stop()
 	if(thread_.joinable())
 		thread_.join();
 	std::lock_guard<std::mutex> lock(mutex_);
-	if(pending_)
-		av_frame_free(&pending_);
+	queue_.clear();
+	queued_video_ = 0;
 }
 
-void VideoPipeline::reconfigure(const VideoConfig &cfg)
+void Forwarder::setPaceKbps(int kbps)
 {
+	pace_kbps_.store((std::max)(2000, kbps));
+}
+
+void Forwarder::setVideoOn(bool on)
+{
+	video_on_.store(on);
+	if(!on)
+		want_wait_key_.store(true);
+}
+
+void Forwarder::waitKey(const char *why)
+{
+	logf("forward: wait for a key frame (%s)", why ? why : "");
+	want_wait_key_.store(true);
+}
+
+void Forwarder::pushVideo(const uint8_t *data, size_t size, int64_t us)
+{
+	if(!running_.load(std::memory_order_relaxed) || !video_on_.load(std::memory_order_relaxed) || !data || !size)
+		return;
+	frames_in.fetch_add(1, std::memory_order_relaxed);
+	Item it;
+	it.video = true;
+	it.data.assign(data, data + size);   // ~10–100 КБ стиснених байтів: мікросекунди
+	it.us = us;
 	{
 		std::lock_guard<std::mutex> lock(mutex_);
-		cfg_ = cfg;
-		reconfig_ = true;
-	}
-	interval_us_.store(1000000 / (std::max)(1, cfg.fps));
-	cv_.notify_all();
-}
-
-VideoConfig VideoPipeline::config() const
-{
-	std::lock_guard<std::mutex> lock(mutex_);
-	return cfg_;
-}
-
-bool VideoPipeline::wantsFrame(int64_t now_us) const
-{
-	return running_.load(std::memory_order_relaxed) && !paused_.load(std::memory_order_relaxed)
-		&& now_us >= next_due_us_.load(std::memory_order_relaxed);
-}
-
-void VideoPipeline::offer(const AVFrame *frame)
-{
-	if(!frame || !running_.load(std::memory_order_relaxed))
-		return;
-	const int64_t now = nowUs();
-	// кадри гри йдуть рівно (наприклад 60 за секунду), трансляції треба 30: беремо кожен, після якого минув інтервал
-	// (з запасом 3 мс на нерівність показу)
-	next_due_us_.store(now + interval_us_.load(std::memory_order_relaxed) - 3000, std::memory_order_relaxed);
-	AVFrame *copy = av_frame_clone(frame);   // лише посилання: гра далі йде без чекання
-	if(!copy)
-		return;
-	AVFrame *old = nullptr;
-	{
-		std::lock_guard<std::mutex> lock(mutex_);
-		old = pending_;
-		pending_ = copy;
-		pending_us_ = now;
-	}
-	if(old)
-	{
-		av_frame_free(&old);
-		frames_dropped.fetch_add(1, std::memory_order_relaxed);
+		// потік пересилання стоїть (не має бути): найстаріший кадр геть, далі лише з ключового
+		if(queued_video_ >= 8)
+		{
+			for(auto i = queue_.begin(); i != queue_.end(); ++i)
+				if(i->video)
+				{
+					queue_.erase(i);
+					queued_video_--;
+					break;
+				}
+			queue_dropped_ = true;
+		}
+		queue_.push_back(std::move(it));
+		queued_video_++;
 	}
 	cv_.notify_one();
 }
 
-void VideoPipeline::run(bool allowSoftware)
+void Forwarder::pushAudio(const uint8_t *data, size_t size, uint32_t samples)
 {
-	lowerThreadPriority();
-	VideoEncoder enc;
-	VideoConfig cfg;
+	if(!running_.load(std::memory_order_relaxed) || !audio_on_.load(std::memory_order_relaxed))
+		return;
+	Item it;
+	it.video = false;
+	if(data && size)
+		it.data.assign(data, data + size);
+	it.samples = samples;
 	{
 		std::lock_guard<std::mutex> lock(mutex_);
-		cfg = cfg_;
+		if(queue_.size() > 200)
+			return;   // потік пересилання стоїть: старий звук не потрібен
+		queue_.push_back(std::move(it));
 	}
-	std::string err;
-	const bool ok = enc.open(cfg, allowSoftware, &err);
-	if(status_)
-		status_(ok, enc.name(), err);
-	if(!ok)
-		return;
-	running_.store(true);
-	std::vector<uint8_t> au;
-	double avg_us = 0;
-	int consecutive_errors = 0;
+	cv_.notify_one();
+}
+
+void Forwarder::run()
+{
+	lowerThreadPriority();
 	while(true)
 	{
-		AVFrame *frame = nullptr;
-		int64_t capture_us = 0;
-		bool reopen = false;
+		Item it;
+		bool dropped = false;
 		{
 			std::unique_lock<std::mutex> lock(mutex_);
-			cv_.wait_for(lock, std::chrono::milliseconds(500), [this]() { return quit_ || pending_ || reconfig_; });
+			cv_.wait(lock, [this]() { return quit_ || !queue_.empty(); });
 			if(quit_)
 				break;
-			if(reconfig_)
-			{
-				reconfig_ = false;
-				reopen = true;
-				cfg = cfg_;
-			}
-			frame = pending_;
-			pending_ = nullptr;
-			capture_us = pending_us_;
+			it = std::move(queue_.front());
+			queue_.pop_front();
+			if(it.video)
+				queued_video_--;
+			dropped = queue_dropped_;
+			queue_dropped_ = false;
 		}
-		if(reopen)
+		if(dropped)
 		{
-			// нова якість: той самий кодувальник з новими розмірами й бітрейтом
-			const std::string had = enc.name();
-			enc.close();
-			if(!enc.open(cfg, allowSoftware, &err))
-			{
-				logf("encoder reopen failed: %s", err.c_str());
-				running_.store(false);
-				if(status_)
-					status_(false, had, err);
-				av_frame_free(&frame);
-				break;
-			}
-			want_key_.store(true);
+			want_wait_key_.store(true);
+			overflows.fetch_add(1);
 		}
-		if(!frame)
-			continue;
-		const int64_t t0 = nowUs();
-		bool key = false;
-		const bool force = want_key_.exchange(false);
-		if(!enc.encode(frame, force, &au, &key, &err))
+		if(it.video)
+			handleVideo(it);
+		else if(audio_)
 		{
-			errors.fetch_add(1);
-			if(force)
-				want_key_.store(true);
-			if(++consecutive_errors == 1 || consecutive_errors % 100 == 0)
-				logf("encode error #%d: %s", consecutive_errors, err.c_str());
-			if(consecutive_errors >= 30)
-			{
-				// кодувальник зламався (драйвер, сон комп'ютера): пробуємо відкрити заново один раз
-				enc.close();
-				if(!enc.open(cfg, allowSoftware, &err))
-				{
-					running_.store(false);
-					if(status_)
-						status_(false, std::string(), err);
-					av_frame_free(&frame);
-					break;
-				}
-				consecutive_errors = 0;
-				want_key_.store(true);
-			}
-			av_frame_free(&frame);
-			continue;
+			audio_(it.data.data(), it.data.size(), it.samples);
+			if(!it.data.empty())
+				audio_sent.fetch_add(1, std::memory_order_relaxed);
 		}
-		consecutive_errors = 0;
-		av_frame_free(&frame);
-		const int64_t spent = nowUs() - t0;
-		avg_us = avg_us <= 0 ? spent : avg_us * 0.9 + spent * 0.1;
-		encode_us_avg.store(static_cast<int>(avg_us), std::memory_order_relaxed);
-		if(au.empty())
-			continue;
-		frames_encoded.fetch_add(1, std::memory_order_relaxed);
-		bytes_out.fetch_add(static_cast<int64_t>(au.size()), std::memory_order_relaxed);
-		if(out_)
-			out_(au, key, capture_us);
 	}
-	running_.store(false);
-	enc.close();
+}
+
+void Forwarder::handleVideo(Item &it)
+{
+	if(want_wait_key_.exchange(false))
+	{
+		if(!waiting_key.exchange(true) && key_)
+			key_("resume");
+	}
+	// заголовок, що прийшов у потоці (нова роздільність): запам'ятовуємо, далі він іде перед кожним ключовим
+	StreamHeader hdr;
+	if(parseHeaderSample(it.data.data(), it.data.size(), &hdr))
+	{
+		if(hdr.codec == codec_)
+			header_ = std::move(hdr);
+		return;
+	}
+	const auto nals = splitAnnexB(it.data.data(), it.data.size(), codec_);
+	bool key = false, has_params = false, has_slice = false;
+	for(const NalView &v : nals)
+	{
+		if(isKeyNal(codec_, v.type))
+			key = true;
+		if(isParameterSet(codec_, v.type))
+			has_params = true;
+		if(isSliceNal(codec_, v.type))
+			has_slice = true;
+	}
+	if(!has_slice)
+		return;
+	const int64_t now = nowUs();
+	// віртуальна черга пейсера: скільки ще не вийшло в мережу при нашій межі швидкості
+	const double bytes_per_us = pace_kbps_.load(std::memory_order_relaxed) * 1000.0 / 8.0 / 1e6;
+	if(vq_us_)
+		vq_bytes_ = (std::max)(0.0, vq_bytes_ - (now - vq_us_) * bytes_per_us);
+	vq_us_ = now;
+	backlog_ms.store(static_cast<int>(vq_bytes_ / bytes_per_us / 1000.0), std::memory_order_relaxed);
+
+	if(waiting_key.load())
+	{
+		if(!key)
+		{
+			frames_skipped.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+		waiting_key.store(false);
+	}
+	// канал не встигає (понад 0,6 с у черзі): цей і наступні кадри глядачам не шлемо до ключового.
+	// Гравця це не стосується: його гра йде своїм шляхом, а ми не шлемо в мережу більше, ніж вона витримує.
+	if(vq_bytes_ / bytes_per_us > 600000.0)
+	{
+		frames_skipped.fetch_add(1, std::memory_order_relaxed);
+		overflows.fetch_add(1, std::memory_order_relaxed);
+		waiting_key.store(true);
+		if(key_)
+			key_("uplink");
+		return;
+	}
+	// кадр з 4-байтовими довжинами NAL; перед ключовим — параметри (новий глядач без них не покаже нічого)
+	out_.clear();
+	auto put = [this](const uint8_t *p, size_t n) {
+		const uint32_t len = static_cast<uint32_t>(n);
+		const uint8_t be[4] = { uint8_t(len >> 24), uint8_t(len >> 16), uint8_t(len >> 8), uint8_t(len) };
+		out_.insert(out_.end(), be, be + 4);
+		out_.insert(out_.end(), p, p + n);
+	};
+	if(key && !has_params && header_.valid())
+		for(const NalView &v : splitAnnexB(header_.annexB.data(), header_.annexB.size(), codec_))
+			put(v.data, v.size);
+	for(const NalView &v : nals)
+	{
+		// AUD і SEI глядачам не потрібні; решту — як є
+		if(codec_ == Codec::H264 && (v.type == 9 || v.type == 6))
+			continue;
+		if(codec_ == Codec::H265 && (v.type == 35 || v.type == 39 || v.type == 40))
+			continue;
+		put(v.data, v.size);
+	}
+	vq_bytes_ += out_.size() * 1.04;   // + заголовки RTP/SRTP
+	if(key)
+		keyframes.fetch_add(1, std::memory_order_relaxed);
+	frames_sent.fetch_add(1, std::memory_order_relaxed);
+	bytes_sent.fetch_add(static_cast<int64_t>(out_.size()), std::memory_order_relaxed);
+	if(video_)
+		video_(out_, key, it.us);
 }
 
 // ───────────────────────────── звук ─────────────────────────────
@@ -905,28 +788,89 @@ static uint32_t randomSsrc()
 	return static_cast<uint32_t>(rd()) | 1u;
 }
 
-void Peer::addVideo(const std::string &mid, double paceKbps)
+// Звіти SFU про наше відео (RTCP RR, а також блоки звітів усередині SR): втрати й час туди-назад — для журналу й
+// К14. Нічого не змінює сам: трансляція не стає на паузу й не знижує якість гри.
+class RtcpWatch final : public rtc::MediaHandler
+{
+public:
+	explicit RtcpWatch(Peer *peer) : peer_(peer) {}
+	void incoming(rtc::message_vector &messages, const rtc::message_callback &) override
+	{
+		for(const auto &m : messages)
+			if(m && m->type == rtc::Message::Control)
+				parse(reinterpret_cast<const uint8_t *>(m->data()), m->size());
+	}
+
+private:
+	static uint32_t be32(const uint8_t *p) { return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3]; }
+	void parse(const uint8_t *d, size_t n)
+	{
+		size_t off = 0;
+		while(off + 8 <= n)
+		{
+			const uint8_t *h = d + off;
+			const int count = h[0] & 0x1f;
+			const int pt = h[1];
+			const size_t len = (size_t(h[2]) << 8 | h[3]) * 4 + 4;
+			if(len < 8 || off + len > n)
+				break;
+			size_t blocks = 0;
+			if(pt == 201)
+				blocks = 8;           // RR: заголовок + SSRC відправника
+			else if(pt == 200)
+				blocks = 28;          // SR: + відомості відправника
+			if(blocks)
+				for(int i = 0; i < count && blocks + 24 <= len; i++, blocks += 24)
+				{
+					const uint8_t *b = h + blocks;
+					peer_->loss_frac_.store(b[4]);
+					const uint32_t lsr = be32(b + 16), dlsr = be32(b + 20);
+					if(lsr)
+					{
+						// той самий годинник, що в RtcpSrReporter (system_clock у NTP), середні 32 біти
+						const double secs = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+						const uint64_t ntp = uint64_t(std::floor((secs + 2208988800.) * double(uint64_t(1) << 32)));
+						const uint32_t mid = uint32_t(ntp >> 16);
+						const uint32_t rtt = mid - lsr - dlsr;   // одиниці 1/65536 с
+						if(rtt < 65536u * 5)
+							peer_->rtt_ms_.store(static_cast<int>(rtt * 1000.0 / 65536.0));
+					}
+				}
+			off += len;
+		}
+	}
+	Peer *peer_;
+};
+
+void Peer::addVideo(const std::string &mid, Codec codec, const std::string &fmtp, double paceKbps)
 {
 	if(!pc_)
 		return;
 	const uint32_t ssrc = randomSsrc();
 	rtc::Description::Video media(mid, rtc::Description::Direction::SendOnly);
-	media.addH264Codec(96);   // constrained baseline 3.1, packetization-mode=1
+	// той самий кодек і профіль, що прийшов з PS5 (fmtp з її SPS): браузер глядача розкодовує те саме, що й гравець
+	if(codec == Codec::H265)
+		media.addH265Codec(98, fmtp);
+	else
+		media.addH264Codec(96, fmtp);
 	media.addSSRC(ssrc, std::string("anyplay-") + mid, std::string("anyplay"), mid);
 	auto track = pc_->addTrack(media);
-	auto cfg = std::make_shared<rtc::RtpPacketizationConfig>(ssrc, "anyplay-" + mid, 96, rtc::H264RtpPacketizer::ClockRate);
-	auto pack = std::make_shared<rtc::H264RtpPacketizer>(rtc::NalUnit::Separator::StartSequence, cfg, 1100);
+	const int pt = codec == Codec::H265 ? 98 : 96;
+	auto cfg = std::make_shared<rtc::RtpPacketizationConfig>(ssrc, "anyplay-" + mid, static_cast<uint8_t>(pt), rtc::H264RtpPacketizer::ClockRate);
+	std::shared_ptr<rtc::RtpPacketizer> pack;
+	// кадри приходять з 4-байтовими довжинами NAL (Forwarder): без пошуку стартових кодів наново
+	if(codec == Codec::H265)
+		pack = std::make_shared<rtc::H265RtpPacketizer>(rtc::NalUnit::Separator::Length, cfg, 1100);
+	else
+		pack = std::make_shared<rtc::H264RtpPacketizer>(rtc::NalUnit::Separator::Length, cfg, 1100);
 	pack->addToChain(std::make_shared<rtc::RtcpSrReporter>(cfg));
-	pack->addToChain(std::make_shared<rtc::RtcpNackResponder>(1024));
+	pack->addToChain(std::make_shared<rtc::RtcpNackResponder>(2048));
 	pack->addToChain(std::make_shared<rtc::PliHandler>([this]() {
 		if(cb_.keyframe)
 			cb_.keyframe();
 	}));
-	pack->addToChain(std::make_shared<rtc::RembHandler>([this](unsigned bps) {
-		if(cb_.remb)
-			cb_.remb(bps / 1000);
-	}));
-	// ключовий кадр не вилітає одним шматком (сотні пакетів за мить забивали б канал гравця)
+	pack->addToChain(std::make_shared<RtcpWatch>(this));
+	// ключовий кадр не вилітає одним шматком: рівно, не швидше межі з перевірки інтернету (Forwarder рахує ту саму чергу)
 	pack->addToChain(std::make_shared<rtc::PacingHandler>(paceKbps * 1000.0, std::chrono::milliseconds(5)));
 	track->setMediaHandler(pack);
 	Out o;
@@ -1116,7 +1060,7 @@ void Peer::sendVideo(const std::vector<uint8_t> &au, int64_t captureUs)
 	auto it = out_.find("video");
 	if(it == out_.end() || !it->second.track || !it->second.track->isOpen())
 		return;
-	if(!video_start_us_)
+	if(!video_start_us_ || captureUs < video_start_us_)
 		video_start_us_ = captureUs;
 	const double sec = static_cast<double>(captureUs - video_start_us_) / 1e6;
 	try
@@ -1139,6 +1083,8 @@ void Peer::sendAudio(const std::string &mid, const uint8_t *data, size_t size, i
 	Out &o = it->second;
 	const double sec = static_cast<double>(o.ts) / 48000.0;
 	o.ts += static_cast<uint32_t>(samples);
+	if(!data || !size)
+		return;   // PS5 загубила пакет: час іде далі, браузер сам заповнить тишею
 	try
 	{
 		o.track->sendFrame(reinterpret_cast<const rtc::byte *>(data), size, rtc::FrameInfo(std::chrono::duration<double>(sec)));

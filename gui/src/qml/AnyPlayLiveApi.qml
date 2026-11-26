@@ -1,4 +1,4 @@
-// AnyPlay 116: одне місце, де QML бере трансляцію для друзів, голос, допомогу друга, друзів і подарунки з C++.
+// AnyPlay 116–118: одне місце, де QML бере трансляцію для друзів, голос, допомогу друга, друзів і подарунки з C++.
 // Усі екрани (меню гри «Друзі й трансляція», підказки в грі, вкладка «Друзі») читають лише цей об'єкт: якщо в C++
 // назви інші — міняємо тут, а не в екранах. Немає модуля трансляції (стара збірка, Android, C++ ще не готовий) —
 // available: false, і екрани просто не показують трансляцію.
@@ -14,7 +14,7 @@ import org.streetpea.chiaking
 QtObject {
     id: api
     property bool demo: false
-    // off | on | paused | reduced | nohw | friend | preparing | away | incoming | error
+    // off | on | h265 | pending | reconnecting | lag | checking | weak | nolive | friend | preparing | away | incoming
     property string demoState: "on"
     readonly property var cloud: Chiaki.cloud
     readonly property var src: demo ? demoLive : (Chiaki.live ? Chiaki.live : null)
@@ -56,29 +56,40 @@ QtObject {
     }
 
     // ── трансляція ──
-    // state (для екранів): off — вимкнено; starting — підключаємось; on — іде; paused — сама стала на паузу (гра
-    // важливіша); error — не вдалося (reason пояснює). C++: off | starting | live | paused | stopping | error
+    // 118: глядачі отримують гру як є (ті самі кадри й звук, що прийшли з PS5), нічого не кодуємо. Ефір сам не стає
+    // на паузу й не знижує якість. state (для екранів): off — вимкнено; checking — перевіряємо вихідний інтернет;
+    // starting — підключаємось; on — іде; reconnecting — зник інтернет чи гра перепідключається, ефір повернеться
+    // сам; error — не вдалося (reason пояснює). C++: off | checking | starting | live | reconnecting | error
     readonly property string rawState: src && src.state ? String(src.state) : "off"
     readonly property string state: rawState === "live" ? "on" : rawState === "stopping" ? "off" : rawState
-    readonly property bool on: state === "on" || state === "paused" || state === "starting"
-    readonly property bool supported: !!src && src.supported !== false           // є апаратний кодувальник
+    readonly property bool on: state === "on" || state === "reconnecting" || state === "starting" || state === "checking"
+    readonly property bool supported: !!src && src.supported !== false           // модуль трансляції є в цій збірці
     readonly property string unsupportedText: src && src.unsupportedText ? src.unsupportedText
-        : qsTr("На цьому комп'ютері немає апаратного кодування відео. Без нього трансляція забирала б кадри в гри, тож тут її не вмикаємо.")
-    readonly property int quality: { const q = parseInt(String(f("quality") || "")); return q === 540 ? 540 : 720; }   // "720p" або 720
-    readonly property int liveHeight: Number(f("liveHeight") || 0)
-    // знизили якість, щоб не заважати грі (або C++ каже прямо, або шлемо менше, ніж обрано)
-    readonly property bool reduced: f("reduced") === true || (state === "on" && liveHeight > 0 && liveHeight < quality)
-    // чому пауза, знижено чи помилка (statusText у звичайному стані — «Трансляція йде», його не показуємо)
-    readonly property string reason: f("reason") ? String(f("reason"))
-        : (state === "paused" || state === "error" || reduced) && f("statusText") ? String(f("statusText")) : ""
+        : qsTr("Трансляція не ввійшла в цю збірку програми. Онови програму.")
+    // чому чекаємо чи помилка (statusText у звичайному стані — «Трансляція йде», його не показуємо)
+    readonly property string reason: (state === "reconnecting" || state === "error" || state === "checking") && f("statusText")
+        ? String(f("statusText")) : ""
     readonly property bool gameAudio: f("gameAudio") !== false
+    function mbps(kbps) { return (Number(kbps || 0) / 1000).toFixed(1).replace(".", ","); }
+    // гра зараз: що саме піде глядачам (кодек, потік) і скільки вихідного інтернету на це треба
+    readonly property string gameCodec: String(f("gameCodec") || "")
+    readonly property int gameKbps: Number(f("gameKbps") || 0)
+    readonly property int gameFps: Number(f("gameFps") || 0)
+    readonly property int needKbps: Number(f("needKbps") || 0)
+    readonly property int uplinkKbps: f("uplinkKbps") !== undefined ? Number(f("uplinkKbps")) : -1
+    readonly property bool viewersLag: f("viewersLag") === true
+    readonly property bool compatVideo: f("compatVideo") === true
+    readonly property bool compatPending: f("compatPending") === true
+    readonly property string browserNote: String(f("browserNote") || "")
+    readonly property bool canCompat: has("setCompatVideo")
+    // що реально йде глядачам: «60 кадр/с, 14,6 Мбіт/с, H.265»
     readonly property string sendText: {
-        if (f("sendText")) return String(f("sendText"));
-        const h = liveHeight, fps = Number(f("liveFps") || 0), kbps = Number(f("liveKbps") || 0);
-        if (!(h > 0)) return "";
-        return qsTr("%1p, %2 кадр/с, %3 Мбіт/с").arg(h).arg(fps).arg((kbps / 1000).toFixed(1).replace(".", ","));
+        const fps = Number(f("liveFps") || 0), kbps = Number(f("liveKbps") || 0);
+        if (!(kbps > 0)) return "";
+        return qsTr("%1 кадр/с, %2 Мбіт/с").arg(fps).arg(mbps(kbps)) + (gameCodec ? ", " + gameCodec : "");
     }
-    readonly property string encoder: String(f("encoderName", "encoder") || "")
+    // що піде, якщо почати: «Гра зараз: 60 кадр/с, 14,6 Мбіт/с, H.265»
+    readonly property string gameText: gameKbps > 0 ? qsTr("%1 кадр/с, %2 Мбіт/с").arg(gameFps).arg(mbps(gameKbps)) + (gameCodec ? ", " + gameCodec : "") : ""
     readonly property int maxViewers: Number(f("viewerLimit", "maxViewers") || 5)
     // [{id, name, role: viewer|helper, speaking, mic, friend, muted}]; C++ дає uid = memberId — тут це id (його й
     // передаємо в kick / muteViewer / grantControl / handoverFull), userId — id людини (для invite)
@@ -165,10 +176,11 @@ QtObject {
     }
 
     // ── дії ──
-    readonly property bool qString: !!src && src.controlActive !== undefined   // C++ «Трансляції»: якість рядком "720p"
-    function start(q, audio) { return has("start") ? (src.start(qString ? q + "p" : q, audio), true) : call("start"); }
+    function start(audio) { return has("start") ? (src.start("game", audio), true) : call("start"); }
     function stop() { return call("stop"); }
-    function setQuality(q) { return has("setQuality") ? (src.setQuality(qString ? q + "p" : q), true) : call("setQuality"); }
+    function setCompatVideo(on) { return call("setCompatVideo", on); }
+    // гра зараз перепідключиться за згодою гравця: ефір не вимикати, глядачі чекають
+    function holdForReconnect(sec) { if (has("holdForReconnect")) src.holdForReconnect(sec || 120); }
     function setGameAudio(on) { return call("setGameAudio", on); }
     function setMic(on) { return call2("setMicOn", "setMic", on); }
     function setMicVolume(v) { return call("setMicVolume", v); }
@@ -192,6 +204,11 @@ QtObject {
     function acceptFriend(id) { return fcall("acceptFriend", id); }
     function declineFriend(id) { return fcall("declineFriend", id); }
     function removeFriend(id) { return fcall("removeFriend", id); }
+    // «Посилання для всіх»: адреса для браузера (watch.html?r=КОД), а не для Telegram
+    function copyWebLink() {
+        const u = qrText || watchUrl;
+        if (u && cloud && typeof cloud.copyText === "function") cloud.copyText(u);
+    }
     function copyLink() {
         if (has("copyLink")) { src.copyLink(); return; }
         if (watchUrl && cloud && typeof cloud.copyText === "function") cloud.copyText(watchUrl);
@@ -216,18 +233,32 @@ QtObject {
         readonly property string ds: api.demoState
         signal message(string text)
         property bool allowed: true
-        property bool supported: ds !== "nohw"
+        property bool supported: ds !== "nolive"
         property var features: ({ live: true, helper: true, handoff: true, friends: true, gifts: true })
-        property string unsupportedText: qsTr("На цьому комп'ютері немає апаратного кодування відео. Без нього трансляція забирала б кадри в гри, тож тут її не вмикаємо.")
-        property string state: ds === "off" || ds === "nohw" || ds === "away" || ds === "incoming" ? "off" : ds === "paused" ? "paused" : "live"
-        property string statusText: ds === "paused" ? qsTr("Твоя гра почала втрачати кадри, тож трансляцію поставили на паузу. Глядачі бачать «пауза», голос і чат працюють. Відновиться сама, коли стане краще.")
-                                   : ds === "reduced" ? qsTr("Вихідний інтернет не тягне 720p, тож шлемо глядачам 540p. Твоя гра від цього не змінюється.") : qsTr("Трансляція йде")
-        property string quality: "720p"
+        property string unsupportedText: qsTr("Трансляція не ввійшла в цю збірку програми. Онови програму.")
+        property string state: ds === "off" || ds === "nolive" || ds === "away" || ds === "incoming" ? "off" : ds === "weak" ? "error"
+                               : ds === "reconnecting" ? "reconnecting" : ds === "checking" ? "checking" : "live"
+        property string statusText: ds === "reconnecting" ? qsTr("Зник інтернет. Ефір повернеться сам, щойно зв'язок з'явиться.")
+                                   : ds === "checking" ? qsTr("Перевіряю інтернет на відправлення (кілька секунд)…")
+                                   : ds === "weak" ? qsTr("Трансляцію не ввімкнути: інтернет на відправлення зараз 8,2 Мбіт/с, а трансляції треба щонайменше 18,6 Мбіт/с (гра йде 14,6 Мбіт/с, і глядачі отримують її як є, без перекодування). Що можна зробити: у меню «Зображення» обери якість нижче (гра піде меншим потоком) або під'єднай комп'ютер кабелем і спробуй ще раз.")
+                                   : qsTr("Трансляція йде")
+        property string quality: "game"
         property bool gameAudio: true
-        property string encoderName: "h264_nvenc"
-        property int liveFps: 30
-        property int liveKbps: ds === "reduced" ? 1200 : 2300
-        property int liveHeight: state === "off" ? 0 : ds === "reduced" ? 540 : 720
+        property string encoderName: ""
+        property string gameCodec: ds === "h265" || ds === "off" || ds === "weak" || ds === "pending" ? "H.265" : "H.264"
+        property int gameKbps: 14600
+        property int gameFps: 60
+        property int needKbps: 18600
+        property int uplinkKbps: ds === "weak" ? 8200 : 46000
+        property bool viewersLag: ds === "lag"
+        property bool compatVideo: ds === "on" || ds === "lag" || ds === "pending"
+        property bool compatPending: ds === "pending"
+        property string browserNote: gameCodec === "H.265"
+            ? qsTr("Відео йде у форматі H.265, як його дає приставка. Його показують Safari (iPhone, iPad, Mac) і Chrome від версії 136 на Android, Windows і Mac. У Firefox і старих браузерах буде лише звук і чат. Щоб відео відкривалось будь-де, увімкни «Відео для всіх браузерів».")
+            : qsTr("Відео йде у форматі H.264: його показує будь-який сучасний браузер на телефоні, комп'ютері чи телевізорі.")
+        property int liveFps: state === "live" ? 60 : 0
+        property int liveKbps: state === "live" ? (ds === "lag" ? 9100 : 14800) : 0
+        property int liveHeight: 0
         property string roomId: "41"
         property string code: "AB3K9M"
         property string link: "https://t.me/play_any_bot/app?startapp=live_AB3K9M"
@@ -267,9 +298,10 @@ QtObject {
             { id: 11, name: "Ірина", username: "", playing: false, live: null }]
         property var friendRequests: ds === "incoming" || ds === "off" ? [{ id: 12, name: "Тарас", username: "@taras_99" }] : []
         property var friendInvite: ({ link: "https://t.me/play_any_bot?start=f_K7Q2M", code: "K7Q2M", bot: "@play_any_bot" })
-        function start(q, a) { quality = q; gameAudio = a; state = "live"; }
+        function start(q, a) { gameAudio = a; state = "live"; }
         function stop() { state = "off"; controlActive = false; }
-        function setQuality(q) { quality = q; }
+        function setCompatVideo(on) { compatVideo = on; compatPending = on && gameCodec === "H.265"; }
+        function holdForReconnect(sec) {}
         function setGameAudio(a) { gameAudio = a; }
         function setMicOn(on) { micOn = on; }
         function setVoicesOn(on) { voicesOn = on; }

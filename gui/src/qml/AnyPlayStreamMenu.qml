@@ -589,6 +589,8 @@ Item {
                                     api: liveApi
                                     demo: panel.demo
                                     navLeft: liveBtn
+                                    // 118: «Перепідключити гру зараз» (Відео для всіх браузерів) — як після зміни якості
+                                    onExitGame: panel.admin && Chiaki.session ? Chiaki.stopSession(false) : panel.exit()
                                 }
                             }
                         }

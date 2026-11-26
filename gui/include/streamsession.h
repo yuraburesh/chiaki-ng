@@ -176,6 +176,7 @@ class StreamSession : public QObject
 		SessionLog log;
 		ChiakiSession session;
 		ChiakiOpusDecoder opus_decoder;
+		ChiakiAudioSink anyplay_opus_sink;   // AnyPlay 118: справжній приймач Opus (декодер); перед ним — копія для трансляції
 		ChiakiOpusEncoder opus_encoder;
 		bool connected;
 		bool muted;
@@ -396,6 +397,9 @@ class StreamSession : public QObject
 		void Stop();
 		void GoToBed();
 	Q_INVOKABLE bool RequestIDR();
+	// AnyPlay 118: ключовий кадр для глядачів трансляції — запит до приставки БЕЗ очікування в приймачі гравця
+	// (RequestIDR тримає P-кадри до ключового, і картинка гравця на мить зупинялась би)
+	Q_INVOKABLE void RequestLiveKeyframe();
 		void ToggleMute();
 		void SetLoginPIN(const QString &pin);
 		void GoHome();

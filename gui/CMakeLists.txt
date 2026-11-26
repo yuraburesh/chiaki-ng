@@ -157,10 +157,9 @@ if (${Qt6WebEngineQuick_FOUND})
 endif()
 target_link_libraries(chiaki SDL2::SDL2)
 if(ANYPLAY_LIVE)
-	# масштабування кадру гри до 540p/720p (libswscale) і Opus для голосу/звуку гри
-	find_package(FFMPEG REQUIRED COMPONENTS swscale)
+	# 118: відео й звук гри пересилаються як є (нічого не кодуємо); Opus — лише мікрофон гравця й голоси глядачів
 	find_package(Opus REQUIRED)
-	target_link_libraries(chiaki LibDataChannel::LibDataChannelStatic FFMPEG::swscale ${Opus_LIBRARIES})
+	target_link_libraries(chiaki LibDataChannel::LibDataChannelStatic ${Opus_LIBRARIES})
 	target_include_directories(chiaki PRIVATE ${Opus_INCLUDE_DIRS})
 	target_compile_definitions(chiaki PRIVATE ANYPLAY_HAVE_LIVE)
 	message(STATUS "AnyPlay live: enabled")

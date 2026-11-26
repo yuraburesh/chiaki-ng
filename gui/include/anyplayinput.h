@@ -10,6 +10,7 @@
 
 #include <QObject>
 #include <QHash>
+#include <QSet>
 #include <QList>
 #include <QString>
 #include <QTimer>
@@ -81,6 +82,11 @@ class AnyPlayInput : public QObject
 		bool Tap(const QString &name);
 		void ReleaseAll();
 
+		// 118: що зараз фізично затиснуто (клавіші й кнопки миші) — для тесту і журналу
+		QStringList HeldKeys() const { return QStringList(held.begin(), held.end()); }
+		// Злам машини чи обертання стіка (V, 9/0, K/L) зараз крутить стіки
+		bool MinigameActive() const;
+
 		// Записує в state кнопки, курки й стіки, які зараз іде на приставку
 		void ApplyTo(ChiakiControllerState *state) const;
 
@@ -99,6 +105,7 @@ class AnyPlayInput : public QObject
 		static QVariantMap PadState(const ChiakiControllerState &state);
 
 		// Сигнали від приставки для автоматичного «Транспорт» / «Пішки» і для занурення (викликати в потоці об'єкта)
+		// 118: NoteTriggers одразу перевіряє автоматику (не чекаючи такту), щоб «сів — одразу їдеш»
 		void NoteRumble(uint8_t left, uint8_t right);
 		// empty_*: усі 10 байтів параметрів ефекту нульові (гра прибрала ефект, не змінивши тип)
 		void NoteTriggers(uint8_t type_left, uint8_t type_right, bool empty_left = false, bool empty_right = false);
@@ -196,6 +203,12 @@ class AnyPlayInput : public QObject
 		void NoteSlot(const APBinding &b);
 		bool WheelStep(const APBinding &b);   // колесо зброї відкрите: коліщатко миші переводить вибір на сусідній сектор
 		void AfterRelease();
+		// 118: зміна режиму (автоматика, U, F1–F3, вкладка): усі спец-стани (обертання, злам машини, «утримати» стік,
+		// точний рух, колесо, комбінації) скидаються, а затиснуті W A S D / газ / гальмо одразу діють у новому режимі
+		void ResetForMode();
+		bool Carryable(const APBinding &b, const QString &name) const;
+		// Зупинити злам машини й обертання стіків, хоч клавіші ще затиснуті (машина завелась, газуєш): стіки в центр
+		void StopMinigame(const QString &why);
 		QList<const APBinding *> Slots(const QString &owner) const;
 		APStep Output() const;
 		void SwitchProfile(const QString &target);
@@ -210,6 +223,7 @@ class AnyPlayInput : public QObject
 		QList<APProfile> profiles;
 		QString current_profile;
 		QHash<QString, APBinding> active; // утримувані клавіші -> дія, яку вони почали
+		QSet<QString> held;               // 118: фізично затиснуті клавіші й кнопки миші (і ті, чия дія вже скинута)
 		QList<Tapped> taps;
 		int next_tap_id = 0;
 		QList<APStep> macro;

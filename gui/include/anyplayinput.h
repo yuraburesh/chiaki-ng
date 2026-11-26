@@ -33,7 +33,8 @@ struct APBinding
 {
 	// Hold — тримається, поки тримаєш клавішу; Tap/Turbo лишились лише для сумісності формату.
 	// Precise — точний режим лівого стіка (тримай), StickHold — «утримати» правий стік (перемикач),
-	// Hotwire — злам машини GTA VI (тримай і крути мишею). Див. anyplaystick.h
+	// Hotwire — злам машини GTA VI (тримай: стіки зведені назустріч, миша веде точку дотику). Див. anyplaystick.h
+	// Spin — стік по колу, поки тримаєш (input4: лише відмичка Slim Jim на K/L; для заводу двигуна — Hotwire)
 	enum class Kind { Hold, Tap, Turbo, Macro, Cycle, Spin, Precise, StickHold, Hotwire, None };
 	QString id;
 	QString name;  // показується на екрані клавіш
@@ -84,8 +85,11 @@ class AnyPlayInput : public QObject
 
 		// 118: що зараз фізично затиснуто (клавіші й кнопки миші) — для тесту і журналу
 		QStringList HeldKeys() const { return QStringList(held.begin(), held.end()); }
-		// Злам машини чи обертання стіка (V, 9/0, K/L) зараз крутить стіки
+		// Злам машини (V) чи відмичка (K/L) зараз ведуть стіки
 		bool MinigameActive() const;
+		// input4: стан зламу машини для підказки на екрані (AnyPlayHud):
+		// {active, angle (градуси, + угору), offset (правий стік окремо), rumble (0..100, вібрація від гри), tip (уперше)}
+		QVariantMap MinigameState() const;
 
 		// Записує в state кнопки, курки й стіки, які зараз іде на приставку
 		void ApplyTo(ChiakiControllerState *state) const;
@@ -188,6 +192,8 @@ class AnyPlayInput : public QObject
 		void Kick(float strength);
 		// Автоматика або гравець перемкнули режим, або причина, чому не перемкнули; текст для журналу [anyplay-mode]
 		void VehicleLog(const QString &line);
+		// input4: злам машини почався, закінчився або точка зрушила (MinigameState)
+		void MinigameChanged();
 
 	private:
 		struct Tapped { int id; APStep step; };
@@ -262,11 +268,20 @@ class AnyPlayInput : public QObject
 		bool PreciseRole(const APBinding &b, int *role) const;
 		void UpdatePrecise();
 
-		// «утримати» правий стік і злам машини: точка, яку тягне миша
+		// «утримати» правий стік: точка, яку тягне миша
 		bool stick_hold = false;
+		AnyPlayMousePoint mouse_point;
+		// злам машини (input4): обидва стіки до упору назустріч, миша веде спільну точку дотику по дузі
 		bool hotwire_active = false;
 		QString hotwire_key;
-		AnyPlayMousePoint mouse_point;
+		AnyPlayHotwire hotwire;
+		qint64 hotwire_pressed_at = 0;
+		qint64 hotwire_released_at = -1;
+		int hotwire_count = 0;          // скільки разів тримали V за цю гру (уперше — порада про «Упрощенные мини-игры»)
+		int hotwire_shown = 9999;       // кут, який востаннє показали на екрані (щоб не смикати підказку від кожного пікселя)
+		void StartHotwire(const QString &key);
+		void EndHotwire(bool released);
+		void HotwireMoved();
 
 		// тремор камери від вібрації: кілька кадрів правий стік смикається на ±amp
 		qint64 tremor_until = 0;

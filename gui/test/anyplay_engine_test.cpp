@@ -1,5 +1,6 @@
 // AnyPlay 118: тест рушія клавіш (AnyPlayInput) з розкладкою GTA VI — те, що бачить приставка, коли гравець
-// сідає в машину, виходить, ламає її, відбивається від НПС і піднімає предмет. Справжній час (таймери Qt), ~25 с.
+// сідає в машину, виходить, ламає її, відбивається від НПС і піднімає предмет. Справжній час (таймери Qt), ~35 с.
+// input4: злам V (стіки назустріч, точка дотику мишею), B — △ двічі, сів без △, вихід лише «6 с і рухаєшся».
 //
 // Збірка (Qt 6 Core і Gui; заглушка settings.h з gui/test/stub; розкладки як ресурси):
 //   Q=/usr/include/x86_64-linux-gnu/qt6; B=/tmp/anyplay-engine; mkdir -p $B
@@ -16,6 +17,7 @@
 #include <QThread>
 #include <cstdio>
 #include <cstdlib>
+#include <QVariantMap>
 
 static int failures = 0;
 static int checks = 0;
@@ -114,27 +116,72 @@ int main(int argc, char **argv)
 	CHECK(in.CurrentProfileId() == QLatin1String("foot"));
 	Key(in, "W", false);
 	in.NoteTriggers(0x00, 0x00);
-	Wait(11000 - 1500);                  // вікно «посадки» після останнього F закрилось
+	Wait(500);
 
-	// ── 4. Злам машини: K крутить правий стік; машина завелась (опір на газі) — стік у центр, хоч K ще затиснута ──
-	std::printf("4. злам машини (K), машина завелась\n");
+	// ── 4. input4: злам машини V — обидва стіки до упору назустріч, миша веде точку дотику; без обертання по колу ──
+	std::printf("4. злам машини (V), машина завелась\n");
+	QVariantMap mg;
+	int mg_changes = 0;
+	QObject::connect(&in, &AnyPlayInput::MinigameChanged, [&]() { mg = in.MinigameState(); mg_changes++; });
 	Tap(in, "F");
-	Key(in, "K", true);
-	Wait(300);
-	CHECK(!Pad(in).RightIdle());         // крутиться
-	CHECK(in.MinigameActive());
-	Wait(1500);
+	Key(in, "V", true);
+	Wait(50);
+	CHECK(in.MinigameActive() && in.CapturesMouse());
+	CHECK(mg.value("active").toBool() && mg.value("angle").toInt() == 0 && mg.value("tip").toBool());
+	{
+		const Pad p(in);
+		CHECK(p.s.left_x > 32000 && p.s.left_y == 0);      // лівий до упору вправо
+		CHECK(p.s.right_x < -32000 && p.s.right_y == 0);   // правий до упору вліво
+	}
+	in.MouseDelta(40, -120);              // миша вгору (і трохи вбік — не важить): точка на 30° вгору
+	Wait(30);
+	CHECK(mg.value("angle").toInt() == 30);
+	{
+		const Pad p(in);
+		CHECK(std::abs(p.s.left_x - 28377) < 400 && std::abs(p.s.left_y + 16383) < 400);    // cos 30°, sin 30° угору
+		CHECK(std::abs(p.s.right_x + 28377) < 400 && std::abs(p.s.right_y + 16383) < 400); // дзеркально
+	}
+	// ціле коло мишею не крутить: точка впирається у верх і стоїть
+	for(int i = 0; i < 40; i++)
+		in.MouseDelta(0, -100);
+	Wait(30);
+	CHECK(mg.value("angle").toInt() == 90);
+	{
+		const Pad p(in);
+		CHECK(std::abs(p.s.left_x) < 400 && p.s.left_y < -32000 && std::abs(p.s.right_x) < 400 && p.s.right_y < -32000);
+	}
+	in.MouseDelta(0, 240);                // назад униз на 60°
+	CHECK(mg.value("angle").toInt() == 30);
+	// коліщатко і ↑: дрібно на 2°; ← → лише правий стік; стрілки не йдуть у гру хрестовиною
+	CHECK(in.Tap(QStringLiteral("WheelUp")));
+	CHECK(mg.value("angle").toInt() == 32);
+	Key(in, "Up", true);
+	CHECK(!Pad(in).Btn(CHIAKI_CONTROLLER_BUTTON_DPAD_UP));
+	Key(in, "Up", false);
+	CHECK(mg.value("angle").toInt() == 34);
+	Key(in, "Right", true);
+	CHECK(!Pad(in).Btn(CHIAKI_CONTROLLER_BUTTON_DPAD_RIGHT));
+	Key(in, "Right", false);
+	CHECK(mg.value("offset").toInt() == 3);
+	Key(in, "Left", true); Key(in, "Left", false);
+	CHECK(mg.value("offset").toInt() == 0);
+	// відпустив V — стіки в центр; натиснув знову за 15 с — точка там, де була (34°)
+	Key(in, "V", false);
+	Wait(30);
+	CHECK(!in.MinigameActive() && Pad(in).RightIdle() && Pad(in).LeftIdle() && !mg.value("active").toBool());
+	Key(in, "V", true);
+	Wait(30);
+	CHECK(mg.value("angle").toInt() == 34 && !mg.value("tip").toBool());
+	// мотор завівся: гра дала опір на газі — «Транспорт», злам зупинено, стіки в центр, хоч V ще тримаєш
 	in.NoteTriggers(0x00, 0x21);
 	Wait(250);
 	CHECK(in.CurrentProfileId() == QLatin1String("vehicle"));
-	CHECK(!in.MinigameActive());
-	CHECK(Pad(in).RightIdle());          // зупинився, хоча K ще тримають
-	Wait(200);
-	CHECK(Pad(in).RightIdle());
-	Key(in, "K", false);
-	// у «Транспорті»: V (злам, обидва стіки назустріч), машина вже в «Транспорті» — газ зупиняє злам
+	CHECK(!in.MinigameActive() && !mg.value("active").toBool());
+	CHECK(Pad(in).RightIdle() && Pad(in).LeftIdle());
+	Key(in, "V", false);
+	// у «Транспорті»: V (якщо машина ще не завелась), а натиснув W — злам зупинено, W — газ
 	Key(in, "V", true);
-	Wait(100);
+	Wait(50);
 	CHECK(in.MinigameActive() && !Pad(in).RightIdle());
 	Key(in, "W", true);
 	Wait(50);
@@ -142,24 +189,80 @@ int main(int argc, char **argv)
 	CHECK(Pad(in).RightIdle() && Pad(in).R2());
 	Key(in, "V", false);
 	Key(in, "W", false);
-	// K знову в «Транспорті»: крутиться, бо натиснули заново; відпустили — у центр
+	// K у «Транспорті» тепер нахил назад (вілі), а не обертання; 9 і 0 вільні
 	Key(in, "K", true);
-	Wait(100);
-	CHECK(!Pad(in).RightIdle());
-	Key(in, "K", false);
 	Wait(30);
-	CHECK(Pad(in).RightIdle());
+	CHECK(Pad(in).RightIdle() && Pad(in).s.left_y > 32000);
+	Key(in, "K", false);
+	CHECK(!in.HandleInput(QStringLiteral("9"), true));
+	in.HandleInput(QStringLiteral("9"), false);
 
-	// ── 5. Боротьба: НПС витягує, ефекти зникли, □ (R) часто 5 с — «Транспорт» тримається; витягли — «Пішки» ──
+	// ── 4б. input4: «вийти, лишивши мотор» — B дає △ двічі з проміжком, як на геймпаді ──
+	std::printf("4б. B: △ двічі\n");
+	{
+		QList<qint64> edges;
+		bool was = false;
+		QElapsedTimer bt;
+		bt.start();
+		Key(in, "B", true);
+		while(bt.elapsed() < 450)
+		{
+			const bool on = Pad(in).Btn(CHIAKI_CONTROLLER_BUTTON_PYRAMID);
+			if(on != was)
+				edges.append(bt.elapsed()), was = on;
+			Wait(3);
+		}
+		Key(in, "B", false);
+		std::printf("   △ натиснуто/відпущено: %s мс\n", [&]() { QStringList l; for(qint64 e : edges) l.append(QString::number(e)); return l.join(QStringLiteral(", ")).toStdString(); }().c_str());
+		CHECK(edges.size() == 4);
+		if(edges.size() == 4)
+		{
+			CHECK(edges[1] - edges[0] >= 60 && edges[1] - edges[0] <= 120);   // перше натискання ~80 мс
+			CHECK(edges[2] - edges[1] >= 90 && edges[2] - edges[1] <= 170);   // проміжок ~120 мс
+			CHECK(edges[2] - edges[0] <= 300);                                 // друге — у межах подвійного натискання
+		}
+		// гра прибрала ефекти: «Пішки», а друге △ не відкрило нової «посадки»
+		log.clear();
+		in.NoteTriggers(0x00, 0x00);
+		Wait(300);
+		CHECK(in.CurrentProfileId() == QLatin1String("foot"));
+		Tap(in, "F", 60);                    // гравець сам ще раз F одразу після виходу (двічі F)
+		Wait(50);
+		CHECK(log.join(QStringLiteral(" ")).contains(QStringLiteral("двічі △")));
+	}
+
+	// ── 4в. input4: сів без △ (вікно минуло): стійкий опір на газі 0,8 с, не цілишся — «Транспорт» ──
+	std::printf("4в. сів без △\n");
+	Wait(1000);
+	t.start();
+	in.NoteTriggers(0x21, 0x21);
+	while(in.CurrentProfileId() != QLatin1String("vehicle") && t.elapsed() < 3000)
+		Wait(5);
+	std::printf("   «Транспорт» через %lld мс\n", (long long)t.elapsed());
+	CHECK(in.CurrentProfileId() == QLatin1String("vehicle"));
+	CHECK(t.elapsed() >= 750 && t.elapsed() <= 1000);
+	// провал ефектів 3 с, поки газуєш, — не вихід
+	Key(in, "W", true);
+	in.NoteTriggers(0x00, 0x00);
+	Wait(3000);
+	CHECK(in.CurrentProfileId() == QLatin1String("vehicle"));
+	in.NoteTriggers(0x21, 0x21);
+	Wait(300);
+	Key(in, "W", false);
+
+	// ── 5. Боротьба: НПС витягує, ефекти зникли, □ (R) часто 5 с — «Транспорт» тримається; витягли і пішов — «Пішки» ──
 	std::printf("5. боротьба в машині\n");
 	in.NoteTriggers(0x00, 0x00);
 	for(int i = 0; i < 17; i++)
 		Tap(in, "R", 60), Wait(240);
 	CHECK(in.CurrentProfileId() == QLatin1String("vehicle"));
-	Wait(2000);
-	CHECK(in.CurrentProfileId() == QLatin1String("vehicle"));   // ще 2,5 с після останнього □
+	Key(in, "W", true);                     // витягли, пішов (W у «Транспорті» — газ, курки мовчать)
 	Wait(800);
-	CHECK(in.CurrentProfileId() == QLatin1String("foot"));
+	CHECK(in.CurrentProfileId() == QLatin1String("vehicle"));   // 6 с без ефектів ще не минуло
+	Wait(2000);
+	CHECK(in.CurrentProfileId() == QLatin1String("foot"));     // 6 с і рухаєшся, боротьба скінчилась
+	CHECK(Pad(in).LeftUp() && !Pad(in).R2());                   // W знову крок
+	Key(in, "W", false);
 
 	// ── 6. Зміна режиму вручну (U) скидає «утримати стік» (O) і точний рух ──
 	std::printf("6. U скидає спец-стани\n");
@@ -196,6 +299,31 @@ int main(int argc, char **argv)
 	Key(in, "G", true);
 	CHECK(Pad(in).Btn(CHIAKI_CONTROLLER_BUTTON_DPAD_RIGHT));// підірвати
 	Key(in, "G", false);
+	// K L пішки — відмичка на дверях (правий стік по колу, лише поки тримаєш)
+	Key(in, "K", true);
+	Wait(120);
+	CHECK(!Pad(in).RightIdle() && Pad(in).LeftIdle());
+	Key(in, "K", false);
+	Wait(30);
+	CHECK(Pad(in).RightIdle());
+	// у «Транспорті» N — радіо вимкнути: ← двічі
+	Tap(in, "U");
+	Wait(30);
+	{
+		int presses = 0;
+		bool was = false;
+		Key(in, "N", true);
+		for(int i = 0; i < 120; i++)
+		{
+			const bool on = Pad(in).Btn(CHIAKI_CONTROLLER_BUTTON_DPAD_LEFT);
+			if(on && !was)
+				presses++;
+			was = on;
+			Wait(3);
+		}
+		Key(in, "N", false);
+		CHECK(presses == 2);
+	}
 
 	QSettings().clear();
 	if(failures)

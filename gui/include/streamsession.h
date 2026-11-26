@@ -171,6 +171,8 @@ class StreamSession : public QObject
 	Q_PROPERTY(int framesLost READ GetFramesLost NOTIFY FramesLostChanged)
 	Q_PROPERTY(QString controlProfile READ GetControlProfile NOTIFY ControlProfileChanged)
 	Q_PROPERTY(bool gamepadMode READ GetGamepadMode NOTIFY GamepadModeChanged)
+	// AnyPlay input4: злам машини з клавіатури (V) — {active, angle, offset, rumble, tip} для підказки на екрані
+	Q_PROPERTY(QVariantMap anyplayMinigame READ GetAnyplayMinigame NOTIFY AnyplayMinigameChanged)
 
 	private:
 		SessionLog log;
@@ -446,6 +448,7 @@ class StreamSession : public QObject
 		// AnyPlay: розкладку змінили під час гри — перечитати її без перепідключення
 		Q_INVOKABLE void reloadControls() { if(anyplay) { anyplay->Load(); SendFeedbackState(); emit ControlProfileChanged(); } }
 		bool GetGamepadMode() const { return gamepad_mode; }
+		QVariantMap GetAnyplayMinigame() const { return anyplay && !gamepad_mode ? anyplay->MinigameState() : QVariantMap(); }
 		bool AnyPlayControlsActive() const { return anyplay != nullptr; }
 		ChiakiControllerState mouse_state;
 		qreal mouse_accum_x = 0;
@@ -495,6 +498,7 @@ class StreamSession : public QObject
 		void FecFailure();
 		void ControlProfileChanged();
 		void GamepadModeChanged();
+		void AnyplayMinigameChanged();
 		// AnyPlay: гравець утримав Create (Share) на геймпаді: відкрити або закрити меню AnyPlay
 		void AnyPlayMenuRequested();
 

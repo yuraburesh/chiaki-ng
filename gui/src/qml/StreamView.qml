@@ -486,6 +486,38 @@ Item {
         }
     }
 
+    // AnyPlay input4: злам машини з клавіатури (тримаєш V). Обидва стіки зведені назустріч, миша веде точку дотику:
+    // тут видно, де вона зараз (і вібрація від гри, якщо приставка її шле). Уперше за гру — порада про налаштування GTA VI.
+    AnyPlayHud {
+        id: anyplayHotwire
+        z: 101
+        edge: "bottom"
+        fits: view.anyplayHudFits
+        k: view.anyplayHudK
+        hidden: view.anyplayHudHidden
+        readonly property var st: Chiaki.session && Chiaki.session.anyplayMinigame ? Chiaki.session.anyplayMinigame : ({})
+        readonly property int angle: st.angle || 0
+        readonly property int offset: st.offset || 0
+        readonly property int rumble: st.rumble || 0
+        property bool tipNow: false
+        active: !!st.active
+        onActiveChanged: {
+            if (active && st.tip) {
+                tipNow = true;
+                anyplayHotwireTip.restart();
+            } else if (!active) {
+                tipNow = false;
+            }
+        }
+        label: qsTr("Злам")
+        text: (angle === 0 ? qsTr("точка посередині") : angle > 0 ? qsTr("точка %1° вгору").arg(angle) : qsTr("точка %1° вниз").arg(-angle))
+              + (offset !== 0 ? qsTr(", правий окремо %1%2°").arg(offset > 0 ? "+" : "−").arg(Math.abs(offset)) : "")
+        detail: tipNow ? qsTr("легше: «Упрощенные мини-игры» в налаштуваннях гри")
+                : rumble > 0 ? qsTr("вібрація %1%").arg(rumble)
+                : qsTr("миша вгору-вниз, коліщатко дрібно; відпустиш — стіки в центр")
+    }
+    Timer { id: anyplayHotwireTip; interval: 4500; onTriggered: anyplayHotwire.tipNow = false }
+
     // Маленький індикатор під час гри (вмикається за бажанням у «Якість»): кадри за секунду,
     // швидкість зв'язку, втрати і рівень якості. У верхній смузі ліворуч; пігулку режиму не перекриває:
     // на вузькому вікні спершу ховає рівень якості, а якщо й так тісно — стає під пігулку.

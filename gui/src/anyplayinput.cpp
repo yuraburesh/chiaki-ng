@@ -41,7 +41,9 @@ QString OverrideGroupFor(const QString &layout)
 // v3: автоматика в обидва боки за ефектами курків (anyplayvehicle.h), типово увімкнена; v2 чекала підтвердження після F
 const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle_v3");
 constexpr int VehicleTickMs = 100;       // як часто перевіряємо, чи герой сів у транспорт або вийшов (118: було 200; ще й одразу, щойно змінились курки)
-constexpr qint64 SpinMaxMs = 20000;      // 118: обертання стіка (9/0, K/L) саме зупиняється після стількох секунд утримання
+constexpr qint64 SpinMaxMs = 20000;      // 118: обертання стіка (відмичка K/L) саме зупиняється після стількох секунд утримання
+constexpr int HotwireHintMs = 1500;      // input4: відпустив V, а мотор не завівся (курки мовчать) — стільки чекаємо й підказуємо
+constexpr qint64 HotwireHintMinMs = 1000;// ... якщо тримав V хоч стільки
 constexpr int PreciseTapMs = 300;        // коротше натискання клавіші точного режиму вмикає його до наступного натискання
 constexpr float AimSlowFactor = 0.6f;    // «повільніша миша в прицілі»: чутливість у прицілі
 constexpr int TremorMs = 110;            // тремор камери від вібрації: тривалість одного поштовху
@@ -549,10 +551,7 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 			}
 		}
 		if(kind == APBinding::Kind::Hotwire && name == hotwire_key)
-		{
-			hotwire_active = false;
-			UpdateSpinTimer();
-		}
+			EndHotwire(true);
 		if(spin)
 			UpdateSpinTimer();
 		if(turbo)
@@ -578,10 +577,16 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 	if(MinigameActive() && current_profile == QLatin1String("vehicle") && b.kind == APBinding::Kind::Hold
 		&& (b.out.buttons & (CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_L2)))
 		StopMinigame(QStringLiteral("газ чи гальмо в транспорті (%1)").arg(DisplayName(name)));
-	// злам машини: стрілки дрібно докручують стіки (вліво — проти годинникової)
-	if(hotwire_active && (b.id == QLatin1String("nav_left") || b.id == QLatin1String("nav_right")))
+	// злам машини: ↑ ↓ дрібно ведуть точку (обидва стіки), ← → зсувають лише правий стік (якщо точки не дзеркальні).
+	// Стрілки в цю мить не йдуть у гру хрестовиною (інакше відкрили б телефон чи радіо посеред зламу).
+	if(hotwire_active && (b.id == QLatin1String("nav_up") || b.id == QLatin1String("nav_down")
+		|| b.id == QLatin1String("nav_left") || b.id == QLatin1String("nav_right")))
 	{
-		mouse_point.Rotate(b.id == QLatin1String("nav_left") ? -AnyPlayHotwireStepDeg : AnyPlayHotwireStepDeg);
+		if(b.id == QLatin1String("nav_up") || b.id == QLatin1String("nav_down"))
+			hotwire.Step(b.id == QLatin1String("nav_up") ? AnyPlayHotwireStepDeg : -AnyPlayHotwireStepDeg);
+		else
+			hotwire.Shift(b.id == QLatin1String("nav_right") ? AnyPlayHotwireOffsetStepDeg : -AnyPlayHotwireOffsetStepDeg);
+		HotwireMoved();
 		emit Changed();
 		return true;
 	}
@@ -678,12 +683,9 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 			UpdateSpinTimer();
 			break;
 		case APBinding::Kind::Hotwire:
-			// злам машини: обидва стіки назустріч, далі крутяться за мишею, коліщатком чи стрілками
-			hotwire_active = true;
-			hotwire_key = name;
-			AnyPlayHotwireStart(&mouse_point, AnyPlayHotwireRadiusPx);
+			// злам машини: обидва стіки до упору назустріч, далі мишею вгору-вниз шукаєш точку дотику
 			active.insert(name, b);
-			UpdateSpinTimer();
+			StartHotwire(name);
 			break;
 		case APBinding::Kind::Turbo:
 			active.insert(name, b);
@@ -712,10 +714,11 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 
 bool AnyPlayInput::Tap(const QString &name)
 {
-	// злам машини: поділка коліщатка дрібно докручує обидва стіки
+	// злам машини: поділка коліщатка дрібно веде точку дотику (обидва стіки)
 	if(hotwire_active && (name == QLatin1String("WheelUp") || name == QLatin1String("WheelDown")))
 	{
-		mouse_point.Rotate(name == QLatin1String("WheelUp") ? AnyPlayHotwireStepDeg : -AnyPlayHotwireStepDeg);
+		hotwire.Step(name == QLatin1String("WheelUp") ? AnyPlayHotwireStepDeg : -AnyPlayHotwireStepDeg);
+		HotwireMoved();
 		emit Changed();
 		return true;
 	}
@@ -725,6 +728,8 @@ bool AnyPlayInput::Tap(const QString &name)
 	const APBinding b = *binding;
 	if(!Allowed(b))
 		return true;
+	// input4: коліщатко теж дія гравця (подовжує «посадку»), а перебір зброї — «зброя» для автоматики
+	NoteGameEvent(b);
 	if(b.kind == APBinding::Kind::Cycle && WheelStep(b))
 	{
 		emit Changed();
@@ -866,7 +871,7 @@ void AnyPlayInput::ReleaseAll()
 	wheel_sector = -1;
 	precise_active = false;
 	precise_keys.clear();
-	hotwire_active = false;
+	EndHotwire(false);
 	if(stick_hold)
 	{
 		stick_hold = false;
@@ -901,7 +906,7 @@ void AnyPlayInput::ResetForMode()
 	wheel_sector = -1;
 	precise_active = false;
 	precise_keys.clear();
-	hotwire_active = false;
+	EndHotwire(false);
 	stick_hold = false;
 	mouse_point.Reset();
 	tremor_until = 0;
@@ -948,10 +953,73 @@ void AnyPlayInput::StopMinigame(const QString &why)
 		else
 			++it;
 	}
-	hotwire_active = false;
+	EndHotwire(false);
 	UpdateSpinTimer();
 	emit VehicleLog(QStringLiteral("%1: зупиняю злам машини (%2), стіки в центр; ще раз — натисни клавішу знову").arg(why, keys.join(QStringLiteral(", "))));
 	emit Changed();
+}
+
+// input4: злам машини (V). Обидва стіки до упору назустріч (лівий вправо, правий вліво) — стартове положення
+// міні-гри GTA VI; далі мишею вгору-вниз (коліщатком і ↑ ↓ дрібно) ведеш спільну точку дотику по дузі.
+// Натиснув знову за 15 с — точка там, де була (знайдене місце не губиться, якщо випадково відпустив).
+void AnyPlayInput::StartHotwire(const QString &key)
+{
+	const qint64 now = clock.elapsed();
+	if(hotwire_released_at < 0 || now - hotwire_released_at > AnyPlayHotwireResumeMs)
+		hotwire.Reset();
+	hotwire_active = true;
+	hotwire_key = key;
+	hotwire_pressed_at = now;
+	hotwire_count++;
+	hotwire_shown = 9999;
+	UpdateSpinTimer();
+	emit VehicleLog(QStringLiteral("злам машини (%1): стіки зведені назустріч, точка %2°").arg(DisplayName(key)).arg(qRound(hotwire.angle)));
+	emit MinigameChanged();
+}
+
+void AnyPlayInput::EndHotwire(bool released)
+{
+	if(!hotwire_active)
+		return;
+	hotwire_active = false;
+	const qint64 now = clock.elapsed();
+	const qint64 held_ms = now - hotwire_pressed_at;
+	hotwire_released_at = now;
+	UpdateSpinTimer();
+	emit MinigameChanged();
+	if(!released || preview || !auto_vehicle || held_ms < HotwireHintMinMs || current_profile != QLatin1String("foot"))
+		return;
+	// відпустив V пішки, а мотор не завівся (ефектів транспорту нема): підказка, що робити далі
+	QPointer<AnyPlayInput> guard(this);
+	QTimer::singleShot(HotwireHintMs, this, [guard]() {
+		if(!guard || guard->hotwire_active || guard->current_profile != QLatin1String("foot") || guard->vehicle.KeepSig())
+			return;
+		const QString key = guard->ToggleKeyName();
+		guard->hint = key.isEmpty() ? QStringLiteral("Злам: мотор не завівся, тримай V ще раз і шукай точку")
+			: QStringLiteral("Злам: мотор не завівся, тримай V ще раз. Уже за кермом і їдеш — %1").arg(key);
+		emit guard->VehicleLog(QStringLiteral("злам машини відпущено, курки мовчать: підказка «ще раз V або %1»").arg(key));
+		emit guard->ProfileChanged(guard->StatusText());
+	});
+}
+
+void AnyPlayInput::HotwireMoved()
+{
+	const int shown = qRound(hotwire.angle) * 1000 + qRound(hotwire.offset);
+	if(shown == hotwire_shown)
+		return;
+	hotwire_shown = shown;
+	emit MinigameChanged();
+}
+
+QVariantMap AnyPlayInput::MinigameState() const
+{
+	QVariantMap m;
+	m["active"] = hotwire_active;
+	m["angle"] = qRound(hotwire.angle);
+	m["offset"] = qRound(hotwire.offset);
+	m["rumble"] = qRound(qMax(rumble_left, rumble_right) * 100.0 / 255.0);
+	m["tip"] = hotwire_count == 1;
+	return m;
 }
 
 void AnyPlayInput::UpdateSpinTimer()
@@ -1078,6 +1146,8 @@ void AnyPlayInput::NoteRumble(uint8_t left, uint8_t right)
 	rumble_right = right;
 	const qint64 now = clock.elapsed();
 	vehicle.Rumble(left, right, now);
+	if(hotwire_active)
+		emit MinigameChanged();   // вібрація від гри під час зламу — підказка «тепло» на екрані
 	// тремор камери: від помітної вібрації правий стік кілька кадрів смикається (гра хитає камеру)
 	const int strength = qMax(left, right);
 	if(strength >= TremorMinRumble && !preview && !gamepad_mode && now - tremor_last >= TremorMinGapMs && Option(QStringLiteral("tremor")).toBool())
@@ -1119,8 +1189,23 @@ void AnyPlayInput::NoteGameEvent(const APBinding &b)
 	else if(!global && b.kind != APBinding::Kind::None)
 		vehicle.SetMenu(false, now);   // клавіша дії в грі: меню вже закрите
 	const bool warned = vehicle.warned_no_effects;
-	if(!global && b.kind == APBinding::Kind::Hold && (b.out.buttons & CHIAKI_CONTROLLER_BUTTON_PYRAMID))
+	// input4: будь-яка дія в грі після △ — «посадка» триває (підбіг, витягнув водія, злам)
+	if(!global || b.kind == APBinding::Kind::Hotwire)
+		vehicle.Activity(now);
+	// △: і звичайна клавіша, і комбінація з △ («двічі △» — вийти, лишивши мотор)
+	bool pyramid = b.kind == APBinding::Kind::Hold && (b.out.buttons & CHIAKI_CONTROLLER_BUTTON_PYRAMID);
+	bool wheel = b.kind == APBinding::Kind::Cycle || b.hold_open || (b.kind != APBinding::Kind::Macro && (b.out.buttons & CHIAKI_CONTROLLER_BUTTON_L1));
+	if(b.kind == APBinding::Kind::Macro)
+		for(const APStep &st : b.steps)
+		{
+			pyramid |= (st.buttons & CHIAKI_CONTROLLER_BUTTON_PYRAMID) != 0;
+			wheel |= (st.buttons & CHIAKI_CONTROLLER_BUTTON_L1) != 0;
+		}
+	if(!global && pyramid)
 		vehicle.Interact(now);
+	// input4: колесо зброї, кобура, цифри зброї пішки — опір на R2 якийсь час може бути від зброї
+	if(!global && wheel && b.owner == QLatin1String("foot"))
+		vehicle.Weapon(now);
 	// 118: □ у транспорті (часто — боротьба з НПС, що витягує), обертання стіків (відмичка, злам) подовжує «посадку»
 	if(!global && b.kind == APBinding::Kind::Hold && (b.out.buttons & CHIAKI_CONTROLLER_BUTTON_BOX))
 		vehicle.Box(now);
@@ -1155,8 +1240,11 @@ void AnyPlayInput::TickVehicle()
 	const bool aiming = current_profile == QLatin1String("foot")
 		&& (out & (CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_R2));
 	vehicle.SetAiming(aiming, now);
-	// 118: газ з клавіатури в «Транспорті» (якщо опору довго нема — ти вже пішки); крутиш стіки — «посадка» триває
-	vehicle.SetGas(current_profile == QLatin1String("vehicle") && (out & CHIAKI_CONTROLLER_ANALOG_BUTTON_R2), now);
+	// input4: у «Транспорті» тримають W A S D (газ, гальмо, кермо) — якщо ефектів нема 6 с, ти вже пішки.
+	// Злам машини і відмичка ведуть стіки самі: це не рух.
+	const APStep o = Output();
+	const bool pedals = out & (CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_L2);
+	vehicle.SetMoving(current_profile == QLatin1String("vehicle") && !MinigameActive() && (pedals || o.lx != 0 || o.ly != 0), now);
 	if(MinigameActive())
 		vehicle.Minigame(now);
 	// в «Авіації» автоматика лише виходить (пішки), а не вмикає «Транспорт»: детектор вважає авіацію транспортом
@@ -1231,7 +1319,8 @@ void AnyPlayInput::MouseDelta(double dx, double dy)
 {
 	if(hotwire_active)
 	{
-		mouse_point.Move(dx, dy, AnyPlayHotwireRadiusPx);
+		hotwire.Mouse(dy, MouseSensitivity(current_profile));
+		HotwireMoved();
 		return;
 	}
 	if(stick_hold)
@@ -1408,9 +1497,9 @@ APStep AnyPlayInput::Output() const
 		const double radius = AnyPlayHoldRadiusPx / qMax(0.3f, MouseSensitivity(current_profile));
 		AnyPlayHoldStick(mouse_point, radius, InvertY(), &sum.rx, &sum.ry);
 	}
-	// злам машини: обидва стіки назустріч і крутяться за мишею
+	// злам машини: обидва стіки до упору назустріч, у спільній точці дотику
 	if(hotwire_active)
-		AnyPlayHotwireSticks(mouse_point, &sum.lx, &sum.ly, &sum.rx, &sum.ry);
+		hotwire.Sticks(&sum.lx, &sum.ly, &sum.rx, &sum.ry);
 	// тремор камери від вібрації: кілька кадрів правий стік смикається туди-сюди
 	if(tremor_until && now < tremor_until)
 	{

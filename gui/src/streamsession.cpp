@@ -548,6 +548,8 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		connect(anyplay, &AnyPlayInput::Changed, this, &StreamSession::SendFeedbackState);
 		// підказка про режим на екрані — лише коли грають клавіатурою (геймпадисту «Транспорт. U — пішки» ні до чого)
 		connect(anyplay, &AnyPlayInput::ProfileChanged, this, [this]() { if(!gamepad_mode) emit ControlProfileChanged(); });
+		// AnyPlay input4: злам машини (V) — підказка на екрані, поки тримаєш (кут точки дотику)
+		connect(anyplay, &AnyPlayInput::MinigameChanged, this, &StreamSession::AnyplayMinigameChanged);
 		// AnyPlay 110: у журнал — зміна режиму (для автоматичного «Транспорт» / «Пішки» за сигналами гри)
 		connect(anyplay, &AnyPlayInput::ProfileChanged, this, [this](const QString &status) {
 			CHIAKI_LOGI(log.GetChiakiLog(), "[anyplay-mode] %s", status.toUtf8().constData());

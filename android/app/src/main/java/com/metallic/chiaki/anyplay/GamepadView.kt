@@ -1054,7 +1054,8 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			return
 		shown = false
 		animate().cancel()
-		animate().alpha(0f).setDuration(if(autoHideSec < 0) 180 else 260).start()
+		// 125: м'яке згасання, повільне наприкінці (було 0,18 с різко)
+		animate().alpha(0f).setDuration(550).setInterpolator(android.view.animation.AccelerateDecelerateInterpolator()).start()
 	}
 
 	/** Показати кнопки (дотик до екрана, відкрили редактор) */
@@ -1064,7 +1065,8 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		{
 			shown = true
 			animate().cancel()
-			animate().alpha(1f).setDuration(if(autoHideSec < 0) 60 else 140).start()
+			// з'являються швидко, щоб натискання одразу було видно
+			animate().alpha(1f).setDuration(110).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
 		}
 		scheduleHide()
 	}

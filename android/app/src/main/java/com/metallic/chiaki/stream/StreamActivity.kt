@@ -1632,6 +1632,7 @@ class StreamActivity : AppCompatActivity()
 		if(src and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || src and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK)
 		{
 			anyplayPadAt = SystemClock.elapsedRealtime()
+			com.metallic.chiaki.anyplay.AnyPlayGamepads.active(event.device)
 			if(anyplay && event.keyCode != KeyEvent.KEYCODE_BACK)
 				gamepad()?.physicalInput()   // грають геймпадом: кнопки на екрані ховаються до першого дотику
 		}
@@ -1656,6 +1657,7 @@ class StreamActivity : AppCompatActivity()
 		if(event.source and InputDevice.SOURCE_CLASS_JOYSTICK == InputDevice.SOURCE_CLASS_JOYSTICK)
 		{
 			anyplayPadAt = SystemClock.elapsedRealtime()
+			com.metallic.chiaki.anyplay.AnyPlayGamepads.active(event.device)
 			if(anyplay && padMoved(event))
 				gamepad()?.physicalInput()
 		}

@@ -69,9 +69,27 @@ object PadLayout
 		else -> code
 	}
 
-	// Керування в GTA V на PS5 (і, найімовірніше, в GTA VI): постріл R2, приціл L2, перезарядка ○, сісти в машину △,
-	// стрибок □, біг ✕, укриття R1, колесо зброї L1, телефон — стрілка вгору. Кнопку кожної можна змінити.
-	val PRESETS = listOf(
+	// 125: готові кнопки під гру — ті самі дії, що в розкладках комп'ютера (gui/res/anyplay-controls-gta6.json і
+	// anyplay-controls.json для GTA V). Кнопку кожної можна змінити, свої додаються окремо.
+	val GAMES = listOf("gta6" to "GTA VI", "gta5" to "GTA V", "other" to "Інша гра")
+
+	private val GTA6 = listOf(
+		PadPreset("g6_shoot", "Постріл (R2)", "Постріл", "R2"),
+		PadPreset("g6_aim", "Приціл (L2)", "Приціл", "L2"),
+		PadPreset("g6_cover", "Укриття (R1)", "Укриття", "R1"),
+		PadPreset("g6_car", "Взаємодія, сісти в авто (△)", "Авто", "PYRAMID"),
+		PadPreset("g6_jump", "Стрибок, лізти (✕)", "Стрибок", "CROSS"),
+		PadPreset("g6_crouch", "Присісти (○)", "Присісти", "MOON"),
+		PadPreset("g6_melee", "Ближній бій (□)", "Бій", "BOX"),
+		PadPreset("g6_sprint", "Біг (L3)", "Біг", "L3"),
+		PadPreset("g6_weapons", "Колесо зброї (L1)", "Зброя", "L1"),
+		PadPreset("g6_phone", "Телефон (стрілка вгору)", "Телефон", "UP"),
+		PadPreset("g6_handbrake", "Ручне гальмо в авто (✕)", "Ручник", "CROSS"),
+		PadPreset("g6_horn", "Сигнал, нітро (L3)", "Сигнал", "L3"))
+
+	// GTA V на PS5: постріл R2, приціл L2, перезарядка ○, сісти в машину △, стрибок □, біг ✕, укриття R1, колесо зброї L1,
+	// телефон стрілкою вгору; в авто ручне гальмо R1, сигнал L3, фари стрілкою вправо. id ті самі, що до 125 (збережені кнопки лишаються)
+	private val GTA5 = listOf(
 		PadPreset("shoot", "Постріл (R2)", "Постріл", "R2"),
 		PadPreset("aim", "Приціл (L2)", "Приціл", "L2"),
 		PadPreset("reload", "Перезарядка (○)", "Перезаряд", "MOON"),
@@ -80,7 +98,35 @@ object PadLayout
 		PadPreset("sprint", "Біг (✕)", "Біг", "CROSS"),
 		PadPreset("cover", "Укриття (R1)", "Укриття", "R1"),
 		PadPreset("weapons", "Колесо зброї (L1)", "Зброя", "L1"),
-		PadPreset("phone", "Телефон (стрілка вгору)", "Телефон", "UP"))
+		PadPreset("phone", "Телефон (стрілка вгору)", "Телефон", "UP"),
+		PadPreset("handbrake", "Ручне гальмо в авто (R1)", "Ручник", "R1"),
+		PadPreset("horn", "Клаксон (L3)", "Сигнал", "L3"),
+		PadPreset("lights", "Фари (стрілка вправо)", "Фари", "RIGHT"))
+
+	/** Що робить кнопка в грі (як підказки на екрані керування комп'ютера); ключ — частина малюнка PadMapView */
+	fun action(game: String, part: String): String = (when(game)
+	{
+		"gta6" -> mapOf("L2" to "Приціл. В авто: гальмо, задній хід", "R2" to "Постріл. В авто: газ", "R1" to "Укриття. В авто: стріляти з авто",
+			"L1" to "Колесо зброї. В авто: зброя", "PYRAMID" to "Взаємодія, сісти в авто. В авто: вийти", "MOON" to "Присісти. В авто: фари",
+			"CROSS" to "Стрибок, лізти. В авто: ручне гальмо", "BOX" to "Ближній бій. В авто: удар", "L3" to "Біг. В авто: сигнал, нітро",
+			"R3" to "Глянути назад", "DPAD_UP" to "Телефон", "DPAD_LEFT" to "Радіо. В авто: поворотник", "DPAD_DOWN" to "Ціль, навігація",
+			"DPAD_RIGHT" to "Підірвати, напарник. В авто: поворотник")
+		"gta5" -> mapOf("L2" to "Приціл. В авто: гальмо, задній хід", "R2" to "Постріл. В авто: газ", "R1" to "Укриття. В авто: ручне гальмо",
+			"L1" to "Колесо зброї. В авто: приціл з авто", "PYRAMID" to "Сісти в транспорт. В авто: вийти", "MOON" to "Перезарядка. В авто: кінокамера",
+			"CROSS" to "Біг. В авто: пригнутися", "BOX" to "Стрибок. В авто: зброя транспорту", "L3" to "Присісти. В авто: клаксон",
+			"R3" to "Глянути назад", "DPAD_UP" to "Телефон", "DPAD_LEFT" to "Радіо", "DPAD_DOWN" to "Колесо персонажів",
+			"DPAD_RIGHT" to "Взаємодія. В авто: фари", "SHARE" to "Змінити камеру")
+		else -> emptyMap()
+	}[part]) ?: when(part) { "TOUCHPAD" -> "Мапа"; "OPTIONS" -> "Пауза, меню гри"; "PS" -> "Меню приставки"; "SHARE" -> "Знімок екрана"; else -> "" }
+
+	/** Готові кнопки для гри */
+	fun presets(game: String): List<PadPreset> = when(game) { "gta6" -> GTA6; "gta5" -> GTA5; else -> emptyList() }
+	/** Усі готові (щоб відрізнити їх від своїх кнопок гравця) */
+	val PRESETS = GTA6 + GTA5
+
+	private const val KEY_GAME = "game"
+	fun game(context: Context) = prefs(context).getString(KEY_GAME, "gta6")?.takeIf { g -> GAMES.any { it.first == g } } ?: "gta6"
+	fun setGame(context: Context, g: String) = prefs(context).edit().putString(KEY_GAME, g).apply()
 
 	private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -91,7 +137,7 @@ object PadLayout
 	/** Через скільки секунд без дотиків ховати кнопки (горизонтально), 0 — не ховати, -1 — одразу, щойно відпустив екран */
 	val AUTOHIDE_STEPS = intArrayOf(-1, 5, 10, 20, 0)
 	const val AUTOHIDE_INSTANT = -1
-	const val INSTANT_HIDE_MS = 350L
+	const val INSTANT_HIDE_MS = 1000L   // 125: через секунду після того, як прибрав пальці (було 0,35 с)
 	fun autoHide(context: Context) = prefs(context).getInt(KEY_AUTOHIDE, AUTOHIDE_INSTANT)
 	fun setAutoHide(context: Context, sec: Int) = prefs(context).edit().putInt(KEY_AUTOHIDE, sec).apply()
 

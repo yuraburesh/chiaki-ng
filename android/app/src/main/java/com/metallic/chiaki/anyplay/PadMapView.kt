@@ -19,12 +19,12 @@ import kotlin.math.min
 
 class PadMapView(context: Context): View(context)
 {
-	private class Layer(val x: Float, val y: Float, val w: Float, val h: Float, val src: String, val dark: String?)
+	internal class Layer(val x: Float, val y: Float, val w: Float, val h: Float, val src: String, val dark: String?)
 	{
 		val r = RectF(x, y, x + w, y + h)
 	}
 
-	private companion object
+	companion object
 	{
 		const val PW = 1084f
 		const val PH = 733f
@@ -38,6 +38,13 @@ class PadMapView(context: Context): View(context)
 			"face" to listOf("PYRAMID", "MOON", "CROSS", "BOX"),
 			"lstick" to listOf("L3"), "rstick" to listOf("R3"))
 
+		/** Знак кнопки для підказки */
+		fun markOf(name: String) = when(name)
+		{
+			"DPAD_UP" -> "↑"; "DPAD_DOWN" -> "↓"; "DPAD_LEFT" -> "←"; "DPAD_RIGHT" -> "→"; "CROSS" -> "✕"; "MOON" -> "○"; "BOX" -> "□"; "PYRAMID" -> "△"
+			"SHARE" -> "Create"; "OPTIONS" -> "Options"; "TOUCHPAD" -> "Тачпад"; else -> name
+		}
+
 		/** Частина малюнка → код кнопки для своєї кнопки (PadLayout.BUTTONS) */
 		fun codeOf(name: String) = when(name)
 		{
@@ -47,15 +54,15 @@ class PadMapView(context: Context): View(context)
 
 		fun idOf(name: String) = PARTS.entries.firstOrNull { name in it.value }?.key ?: ""
 
-		private var cache: Data? = null
+		@Volatile private var cache: Any? = null
 	}
 
-	private class Data(val floor: Layer, val base: Layer, val trig: Map<String, Layer>, val sh: Map<String, Layer>,
+	internal class Data(val floor: Layer, val base: Layer, val trig: Map<String, Layer>, val sh: Map<String, Layer>,
 		val caps: Map<String, Layer>, val pressed: Map<String, Layer>, val glow: Map<String, Layer>, val bmp: HashMap<String, Bitmap?>)
 
 	private fun load(): Data?
 	{
-		cache?.let { return it }
+		(cache as? Data)?.let { return it }
 		return try
 		{
 			val j = JSONObject(context.assets.open("anyplay/pad/pad.json").bufferedReader().use { it.readText() })
@@ -86,6 +93,8 @@ class PadMapView(context: Context): View(context)
 	var picked: String? = null
 		private set
 	var onToggle: ((String) -> Unit)? = null
+	/** Торкнулись частини малюнка: її назва (для підказки, що вона робить у грі) */
+	var onTap: ((String) -> Unit)? = null
 	var onPick: ((String) -> Unit)? = null
 
 	private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -174,6 +183,7 @@ class PadMapView(context: Context): View(context)
 		}
 		else
 			onToggle?.invoke(idOf(n))
+		onTap?.invoke(n)
 		invalidate()
 		return true
 	}

@@ -199,6 +199,24 @@ class StreamInput(val context: Context, val preferences: Preferences)
 			return true
 		}
 
+		// AnyPlay 125: DualSense / DualShock 4 через загальний драйвер — кнопки за порядком HID, ставимо на свої місця
+		if(fromPad && com.metallic.chiaki.anyplay.AnyPlayGamepads.genericSony(event.device))
+		{
+			val g = com.metallic.chiaki.anyplay.AnyPlayGamepads.genericKey(event.keyCode)
+			if(g != null)
+			{
+				val down = event.action == KeyEvent.ACTION_DOWN
+				when
+				{
+					g == -1L -> keyControllerState.l2State = if(down) UByte.MAX_VALUE else 0U
+					g == -2L -> keyControllerState.r2State = if(down) UByte.MAX_VALUE else 0U
+					g > 0L -> keyControllerState.buttons = if(down) keyControllerState.buttons or g.toUInt() else keyControllerState.buttons and g.toUInt().inv()
+				}
+				controllerStateUpdated()
+				return true
+			}
+		}
+
 		when(event.keyCode)
 		{
 			KeyEvent.KEYCODE_BUTTON_L2 -> {
@@ -257,8 +275,17 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		motionControllerState.leftY = event.getAxisValue(MotionEvent.AXIS_Y).signedAxis()
 		motionControllerState.rightX = event.getAxisValue(MotionEvent.AXIS_Z).signedAxis()
 		motionControllerState.rightY = event.getAxisValue(MotionEvent.AXIS_RZ).signedAxis()
-		motionControllerState.l2State = triggerValue(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE))
-		motionControllerState.r2State = triggerValue(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS))
+		if(com.metallic.chiaki.anyplay.AnyPlayGamepads.genericSony(event.device))
+		{
+			// загальний драйвер Sony: курки на осях RX/RY (від мінімуму до максимуму), правий стік на Z/RZ
+			motionControllerState.l2State = triggerValue(com.metallic.chiaki.anyplay.AnyPlayGamepads.genericTrigger(event, MotionEvent.AXIS_RX), 0f)
+			motionControllerState.r2State = triggerValue(com.metallic.chiaki.anyplay.AnyPlayGamepads.genericTrigger(event, MotionEvent.AXIS_RY), 0f)
+		}
+		else
+		{
+			motionControllerState.l2State = triggerValue(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE))
+			motionControllerState.r2State = triggerValue(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS))
+		}
 		motionControllerState.buttons = motionControllerState.buttons.let {
 			val dpadX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
 			val dpadY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)

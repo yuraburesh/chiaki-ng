@@ -512,7 +512,9 @@ body.wallet #methods{margin-top:6px}
 
     <!-- як керувати приставкою -->
     <div id="vHelp" class="hidden">
-      <div class="vhead"><div><h2 class="vtitle">Як керувати приставкою</h2><p class="hint">Це працює в будь-якій грі й у меню PS5.</p></div></div>
+      <div class="vhead"><div><h2 class="vtitle">Як керувати</h2><p class="hint">Кнопки в GTA і керування самою приставкою.</p></div></div>
+      <div id="gtaHelp"></div>
+      <p class="cap mt">Приставка: у будь-якій грі й меню PS5</p>
       <div class="grid2" id="help" style="row-gap:0"></div>
     </div>
 
@@ -649,7 +651,7 @@ const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','q
 document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
 const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality', friends: 'vFriends', feel: 'vFeel'};
-const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати приставкою', quality: 'Зображення', friends: 'Друзі', feel: 'Вібрація'};
+const TITLES = {book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати', quality: 'Зображення', friends: 'Друзі', feel: 'Вібрація'};
 let view = null, viewTok = 0, method = null, busy = false;
 
 function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
@@ -1565,7 +1567,22 @@ const HELP = [
   ['Свій геймпад', 'Можна підключити до телефона геймпад через Bluetooth чи кабель і сховати кнопки на екрані: меню AnyPlay, «Кнопки на екрані».', []],
   ['Закінчити гру', 'Відкрий меню AnyPlay й обери «Вийти з гри». Приставку вимикати не треба.', []]
 ];
+// 125: кнопки геймпада в GTA VI і GTA V (ті самі розкладки, що на комп'ютері: gui/res/anyplay-controls*.json)
+const GTA = {"gta6":[["Пішки",[["L2","Приціл, розмова"],["R2","Постріл, кинути, схопити"],["R1","Укриття, пірнути"],["△","Взаємодія, сісти в авто"],["○","Присісти / відпочити"],["✕","Стрибок, лізти, парашут"],["□","Ближній бій"],["L3","Біг, швидше плисти"],["R3","Глянути назад, з ПКМ огляд"],["L1","Сховати / колесо зброї"],["L1","Сховати або дістати зброю"],["↑","Телефон / WAiNK"],["←","Радіо / меню радіо"],["↓","Ціль / навігація"],["→","Підірвати / напарник"],["R1 + →","Змінити героя (Джейсон, Люсія)"],["L3 + R3","Концентрація"]]],["Транспорт",[["R2","Газ, педалі"],["L2","Гальмо, задній хід"],["✕","Ручне гальмо"],["△","Вийти / зупинитись і вийти"],["L3","Сигнал, нітро"],["○","Фари / пригнутися"],["R1","Стріляти з авто, жест"],["□","Удар, відбитись"],["R3","Крикнути / глянути назад"],["L1","Пістолет / зброя авто"],["↑","Телефон / взаємодія"],["←","Поворотник / меню авто"],["↓","Дані авто / навігація"],["→","Поворотник / напарник"],["R1 + →","Змінити героя (Джейсон, Люсія)"]]],["Авіація",[["R2","Тяга, набір висоти"],["L2","Менше тяги, зниження"],["□","Поворот вліво"],["○","Поворот вправо"],["L3","Шасі"],["R1","Зброя"],["△","Вийти"],["R3","Глянути назад"],["L1","Вибір зброї (тримай)"],["↑","Телефон"],["←","Радіо / меню"],["↓","Ціль / навігація"]]]],"gta5":[["Пішки",[["✕","Біг (спринт)"],["□","Стрибок / перелізти"],["L3","Режим стелсу (присісти)"],["R1","Укриття"],["R2","Вогонь / удар"],["L2","Прицілювання"],["L1","Колесо зброї"],["○","Перезарядка"],["→","Взаємодія"],["△","Сісти в транспорт, взаємодія"],["L3 + R3","Особлива здібність"],["Create","Змінити камеру"],["R3","Подивитися назад"],["↓","Колесо персонажів (утримувати)"],["↓","Масштаб радара"],["Create","Меню взаємодії"]]],["Транспорт",[["R2","Газ"],["L2","Гальмо / задній хід"],["R1","Ручне гальмо"],["△","Вийти з транспорту"],["L3","Клаксон"],["→","Фари"],["←","Радіо (колесо станцій)"],["○","Кінематографічна камера"],["✕","Пригнутися"],["L1","Прицілитися з авто"],["R1","Стріляти з авто"],["Create","Змінити камеру"],["R3","Подивитися назад"],["L3 + R3","Особлива здібність"],["□","Зброя транспорту"]]],["Авіація",[["R2","Газ (тяга)"],["L2","Гальмо / зниження"],["L1","Кермо напряму вліво"],["R1","Кермо напряму вправо"],["L3","Шасі"],["□","Зброя"],["R3","Камера зброї"],["△","Вийти"],["Create","Змінити камеру"]]]]};
+let gtaGame = 'gta6', gtaMode = 0;
+try { gtaGame = localStorage.getItem('gtaGame') || 'gta6'; } catch(e) {}
+function renderGta(){
+  const el = $('gtaHelp'); if(!el) return;
+  if(!GTA[gtaGame]) gtaGame = 'gta6';
+  const modes = GTA[gtaGame]; if(gtaMode >= modes.length) gtaMode = 0;
+  el.innerHTML = '<div class="setrow" style="border:0;padding-top:0"><div class="seg">' + [['gta6', 'GTA VI'], ['gta5', 'GTA V']].map(x => '<button type="button" data-gg="' + x[0] + '" class="' + (x[0] === gtaGame ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>'
+    + '<div class="seg">' + modes.map((m, i) => '<button type="button" data-gm="' + i + '" class="' + (i === gtaMode ? 'on' : '') + '">' + m[0] + '</button>').join('') + '</div></div>'
+    + '<div class="grid2" style="row-gap:0">' + modes[gtaMode][1].map(r => '<div class="row"><span class="t">' + esc(r[1]) + '</span><span class="keys">' + r[0].split(' + ').map(k => '<span class="key">' + esc(k) + '</span>').join('') + '</span></div>').join('') + '</div>';
+  el.querySelectorAll('[data-gg]').forEach(b => b.onclick = () => { haptic(); gtaGame = b.dataset.gg; gtaMode = 0; try { localStorage.setItem('gtaGame', gtaGame); } catch(e) {} renderGta(); });
+  el.querySelectorAll('[data-gm]').forEach(b => b.onclick = () => { haptic(); gtaMode = +b.dataset.gm; renderGta(); });
+}
 function loadHelp(){
+  renderGta();
   $('help').innerHTML = HELP.map(h => '<div class="row"><span><span class="t">' + h[0] + '</span><span class="s">' + h[1] + '</span></span><span class="keys">'
     + h[2].map(k => '<span class="key">' + k + '</span>').join('') + '</span></div>').join('');
   show('help');
@@ -1888,7 +1905,7 @@ $('frAdd').addEventListener('keydown', e => { if(e.key === 'Enter') fAdd(); });
 $('frGifts').onclick = () => { haptic(); if(native && native.page) native.page('/app/book.html#friends'); };
 
 // ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
-const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й вібрація'], ['console', 'Керування приставкою'], ['exit', 'Вийти з гри']];
+const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й вібрація'], ['console', 'Кнопки в GTA'], ['exit', 'Вийти з гри']];
 // розділ меню прихований: гостю й тому, хто грає в бронь друга, продовжувати нічого
 const pmHidden = p => ((G.guest || G.helperOf) && p === 'extend') || (G.admin && p === 'friends');
 let pmSel = 'back', pmDetail = false, G = {};
@@ -1920,7 +1937,7 @@ function pmRender(){
   else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити бронювання</p>'; view = 'extend'; loadExtend(); }
   else if(pmSel === 'friends') h = pmFriends();
   else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="small">Нова якість: перепідключення на кілька секунд. Кольори й статистика змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
-  else if(pmSel === 'console'){ h = '<p class="cap">Керування приставкою</p><p class="small">Це працює в будь-якій грі й у меню PS5.</p>'; view = 'help'; loadHelp(); }
+  else if(pmSel === 'console'){ h = '<p class="cap">Кнопки в GTA і приставка</p>'; view = 'help'; loadHelp(); }
   else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="small">' + (G.controls === false
       ? 'Кнопки сховано. Граєш без геймпада? Покажи їх знову.' : 'Пересунь кнопки, зміни розмір, додай «Постріл», «Машина» та інші. Геймпад через Bluetooth ховає кнопки сам.')
     + '</p><div class="actions"><button type="button" class="btn" data-act="layout">Розташування кнопок</button><button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
@@ -1944,7 +1961,7 @@ function pmRender(){
 function ahBox(){
   const v = G.autoHide == null ? -1 : +G.autoHide;
   const opt = [[-1, 'Одразу'], [10, 'Через 10 с'], [0, 'Ніколи']];
-  const txt = v < 0 ? 'Зникають, щойно відпускаєш екран; дотик показує й одразу натискає.'
+  const txt = v < 0 ? 'Плавно зникають за секунду після того, як прибрав пальці; дотик показує й одразу натискає.'
     : v > 0 ? 'Зникають через ' + v + ' с без дотиків; перший дотик лише показує.'
     : 'Завжди на екрані.';
   return '<div class="setrow"><div class="top2"><span class="t">Ховати кнопки</span></div><div class="seg">'

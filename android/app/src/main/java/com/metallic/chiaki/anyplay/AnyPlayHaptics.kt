@@ -270,6 +270,8 @@ object AnyPlayHaptics
 	private var rumbleCtx: Context? = null
 	private var rumbleNow = 0f          // поточна сила 0..1 (після множника налаштувань)
 	private var rumbleStartedAt = 0L
+	private var padRumble = 0f
+	private var padRumbleAt = 0L
 	private val resume = Runnable { rumbleCtx?.let { startRumble(it, rumbleNow, true) } }
 
 	/** Нова сила вібрації від гри: left — важкий мотор, right — легкий (0..255) */
@@ -280,6 +282,16 @@ object AnyPlayHaptics
 		val raw = max(left, (right * 0.8f).roundToInt()) / 255f
 		// крок 1/16: дрібні коливання не перезапускають мотор
 		val s = ((raw * gain) * 16).roundToInt() / 16f
+		// 125: граємо геймпадом з моторчиками — віддача на геймпад, як на приставці
+		if(AnyPlayGamepads.rumbleToPad())
+		{
+			if(rumbleNow > 0f && heldVibrate == 0) stopNow(c)
+			rumbleNow = 0f
+			val now0 = SystemClock.uptimeMillis()
+			if(s < 0.04f) { if(padRumble > 0f) { padRumble = 0f; AnyPlayGamepads.rumble(0f, 0) }; return }
+			if(s != padRumble || now0 - padRumbleAt > 1200) { padRumble = s; padRumbleAt = now0; AnyPlayGamepads.rumble(0.15f + 0.85f * s, 2000) }
+			return
+		}
 		if(s < 0.04f)
 		{
 			if(rumbleNow > 0f) { rumbleNow = 0f; if(heldVibrate == 0) stopNow(c) }
@@ -315,6 +327,8 @@ object AnyPlayHaptics
 	{
 		main.removeCallbacks(resume)
 		rumbleNow = 0f
+		padRumble = 0f
+		AnyPlayGamepads.stop()
 		heldVibrate = 0
 		try { vibrator?.cancel() } catch(e: Exception) {}
 	}

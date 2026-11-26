@@ -44,7 +44,8 @@ Item {
     readonly property var view: buildView(cfg, mode)
     // 115: пояснення до «Автоматично визначати транспорт» з клавішею ручного перемикання з розкладки (U)
     readonly property string toggleKey: { const g = profOf(cfg, "global"); const t = g ? g.bindings.find((x) => x.profile === "toggle" && x.key) : null; return t ? kname(t.key) : ""; }
-    readonly property string autoVehicleText: qsTr("«Транспорт» вмикається, коли герой справді сів у машину (приставка дає опір педалям газу й гальма), «Пішки» — коли вийшов. F (△) лише дія в грі: сісти, взяти, відчинити; програма після неї чекає підтвердження курками і без нього режим не міняє.")
+    // 118: «сів — одразу їдеш»: перший ефект на газі після F, затиснута W одразу газ; боротьба в машині режим не скидає
+    readonly property string autoVehicleText: qsTr("«Транспорт» вмикається, щойно герой сів у машину (гра дає опір чи вібрацію на курку газу), «Пішки» — щойно вийшов. Затиснута W одразу стає газом, а після виходу знову кроком. F (△) лише дія в грі: сісти, взяти, відчинити; без підтвердження курками режим не міняється. Поки часто тиснеш □ у машині (відбиваєшся), режим не скидається.")
         + (toggleKey ? qsTr(" Якщо помилилась: %1 перемикає вручну.").arg(toggleKey) : "")
     readonly property alias wireData: wires.wd    // лінії (для перевірки)
 
@@ -110,6 +111,7 @@ Item {
             return aimPn(b) ? qsTr("по колу; у прицілі: %1").arg(aimPn(b)) : qsTr("по колу");
         }
         if (b.when) return pn + qsTr(", у прицілі");
+        if (d === "tap") return qsTr("на джойстику: %1 коротко").arg(pn);
         if (b.profile === "toggle") return qsTr("вручну, якщо програма помилилась");
         if (b.profile && !b.btn) return qsTr("режим");
         return pn;
@@ -139,7 +141,7 @@ Item {
             const foot = profOf(c, "foot"), tog = glob.find((x) => x.profile === "toggle" && x.key);
             const keys = ["foot", "vehicle", "air"].map(modeKey).filter((k) => k);
             const ent = foot ? tagged(foot).find((x) => x.id === "vehicle" && x.key) : null;
-            v.hint = qsTr("Режим у грі перемикається сам: сів у машину — «Транспорт», вийшов — «Пішки» (програма бачить опір педалей на курках). ")
+            v.hint = qsTr("Режим у грі перемикається сам: сів у машину — «Транспорт», вийшов — «Пішки» (програма бачить опір педалей на курках). Затиснуті W A S D одразу діють у новому режимі. ")
                 + (ent ? qsTr("%1 лише дія в грі (△: сісти, взяти, відчинити), режим вона не міняє. ").arg(bold(kname(ent.key))) : "")
                 + (tog ? qsTr("Якщо помилилась: %1 перемикає пішки і транспорт").arg(bold(kname(tog.key))) + (keys.length ? qsTr(", ") : qsTr(". ")) : qsTr("Якщо треба вручну: "))
                 + (keys.length ? qsTr("%1 обирають режим (на MacBook: Fn + F1), або клацни вкладку тут.").arg(keys.map((k) => bold(kname(k))).join(", "))
@@ -154,6 +156,13 @@ Item {
             if (wheel && wheel.key && up)
                 v.hint += qsTr("<br>Колесо зброї: тримай %1 і обирай сектор клавішами %2, коліщатком або мишею. Цифра зброї: натисни, щоб одразу взяти, або тримай, щоб колесо лишилось відкритим.")
                     .arg(bold(kname(wheel.key))).arg(["up", "left", "down", "right"].map((id) => { const b = tagged(foot).find((x) => x.id === id); return b && b.key ? bold(kname(b.key)) : ""; }).filter((k) => k).join(" "));
+            // 118: GTA VI — хрестовина на літерах, як на геймпаді: коротко одна дія, тримай — друга
+            if (c.layout === "gta6")
+                v.hint += qsTr("<br>Де в назві дві дії через «/», клавіша працює як кнопка геймпада: коротко — перша, тримай — друга (%1: телефон / WAiNK). У прицілі %1 і %2 — масштаб, %3 — інше плече, %4 — підірвати.")
+                    .arg(bold(kname((tagged(foot).find((x) => x.id === "phone") || {}).key)))
+                    .arg(bold(kname((tagged(foot).find((x) => x.id === "minimap") || {}).key)))
+                    .arg(bold(kname((tagged(foot).find((x) => x.id === "radio") || {}).key)))
+                    .arg(bold(kname((tagged(foot).find((x) => x.id === "detonate") || {}).key)));
         } else {
             v.hint = qsTr("Для цієї розкладки один набір клавіш на все.");
         }

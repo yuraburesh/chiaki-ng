@@ -142,33 +142,56 @@ static bool LogHas(AnyPlayVehicleDetector &d, const char *text)
 	return log.find(text) != std::string::npos;
 }
 
-// Послідовність подій, як у журналі клієнта: час, що сталося. Tick — кожні 200 мс, як у програмі.
-struct Ev { int64_t t; char kind; uint8_t a, b; };   // kind: 'T' курки a/b, 'F' △, 'R' вібрація a/b, 'A' приціл a, 'M' меню a, 'U' вручну a (1 транспорт)
+// Послідовність подій, як у журналі клієнта: час, що сталося. Tick — кожні 100 мс, як у програмі (118).
+// kind: 'T' курки a/b, 'F' △, 'R' вібрація a/b, 'A' приціл a, 'M' меню a, 'U' вручну a (1 транспорт),
+//       'B' □, 'G' газ a (1 тисне), 'N' крутить стіки (відмичка, злам)
+struct Ev { int64_t t; char kind; uint8_t a, b; };
 
-// Проганяє події й повертає режим у кінці (true — транспорт), рахуючи перемикання
-static bool Play(const AnyPlayVehicleRules &rules, bool start_vehicle, const Ev *ev, int n, int64_t until, int *switches)
+// Проганяє події й повертає режим у кінці (true — транспорт), рахуючи перемикання; *first — коли перше перемикання, *last — останнє
+static bool Play(const AnyPlayVehicleRules &rules, bool start_vehicle, const Ev *ev, int n, int64_t until, int *switches, int64_t *first = nullptr, int64_t *last = nullptr)
 {
 	AnyPlayVehicleDetector d;
 	d.Reset(rules, start_vehicle, 0);
 	int i = 0;
 	*switches = 0;
-	for(int64_t now = 0; now <= until; now += 200)
+	if(first)
+		*first = -1;
+	for(int64_t now = 0; now <= until; now += 100)
 	{
 		for(; i < n && ev[i].t <= now; i++)
 		{
 			const Ev &e = ev[i];
+			int r = 0;
 			switch(e.kind)
 			{
-				case 'T': Feed(d, e.a, e.b, e.t); break;
+				// у програмі зміна курків одразу запускає перевірку (не чекає такту)
+				case 'T': Feed(d, e.a, e.b, e.t); r = d.Tick(e.t); break;
 				case 'F': d.Interact(e.t); break;
 				case 'R': d.Rumble(e.a, e.b, e.t); break;
 				case 'A': d.SetAiming(e.a != 0, e.t); break;
 				case 'M': d.SetMenu(e.a != 0, e.t); break;
 				case 'U': d.Manual(e.a != 0, e.t); break;
+				case 'B': d.Box(e.t); break;
+				case 'G': d.SetGas(e.a != 0, e.t); break;
+				case 'N': d.Minigame(e.t); break;
+			}
+			if(r)
+			{
+				(*switches)++;
+				if(first && *first < 0)
+					*first = e.t;
+				if(last)
+					*last = e.t;
 			}
 		}
 		if(d.Tick(now))
+		{
 			(*switches)++;
+			if(first && *first < 0)
+				*first = now;
+			if(last)
+				*last = now;
+		}
 	}
 	return d.in_vehicle;
 }
@@ -194,36 +217,36 @@ static void test_vehicle()
 	d.Interact(1000);
 	CHECK(LogHas(d, "чекаю підтвердження"));
 	CHECK(d.Tick(3000) == 0);
-	CHECK(d.Tick(5000) == 0 && !d.in_vehicle);   // рівно 4 с: вікно ще відкрите
-	CHECK(d.Tick(5200) == 0 && !d.in_vehicle);
+	CHECK(d.Tick(11000) == 0 && !d.in_vehicle);   // рівно 10 с: вікно «посадки» ще відкрите
+	CHECK(d.Tick(11100) == 0 && !d.in_vehicle);
 	CHECK(LogHas(d, "без підтвердження"));
 	CHECK(d.f_at < 0);
 
-	// 2. F біля машини: через 1,5 с (анімація) опір на обох педалях → транспорт за 0,3 с
-	d.Interact(10000);
-	Feed(d, RES, RES, 11500);
-	CHECK(d.Tick(11600) == 0);
-	CHECK(d.Tick(11800) == +1);
-	CHECK(d.in_vehicle && LogHas(d, "сів у транспорт: △"));
-	CHECK(d.Tick(12000) == 0);   // не повторює
-
-	// 3. У машині F (вийти): ефекти зникли через 1,2 с → пішки через 0,3 с
+	// 2. F біля машини: через 1,5 с (анімація) опір на педалях → транспорт за 0,1 с
 	d.Interact(20000);
-	Feed(d, OFF, OFF, 21200);
-	CHECK(d.Tick(21400) == 0);
-	CHECK(d.Tick(21500) == -1);
+	Feed(d, RES, RES, 21500);
+	CHECK(d.Tick(21550) == 0);
+	CHECK(d.Tick(21600) == +1);
+	CHECK(d.in_vehicle && LogHas(d, "сів у транспорт: △"));
+	CHECK(d.Tick(21700) == 0);   // не повторює
+
+	// 3. У машині F (вийти): ефекти зникли через 1,2 с → пішки через 0,15 с
+	d.Interact(30000);
+	Feed(d, OFF, OFF, 31200);
+	CHECK(d.Tick(31300) == 0);
+	CHECK(d.Tick(31350) == -1);
 	CHECK(!d.in_vehicle && LogHas(d, "вийшов: △"));
 
-	// 4. У машині без F ефекти зникли (викинуло, загинув): 2,5 с → пішки, не раніше
+	// 4. Без F (місія почалась у машині): обидва курки 1,5 с; ефекти зникли (викинуло) — 3 с → пішки, не раніше
 	AnyPlayVehicleDetector e;
 	e.Reset(gta5, false, 0);
 	Feed(e, RES, RES, 0);
-	CHECK(e.Tick(2400) == 0);
-	CHECK(e.Tick(2500) == +1);   // місія почалась у машині: без △ за 2,5 с
+	CHECK(e.Tick(1400) == 0);
+	CHECK(e.Tick(1500) == +1);
 	CHECK(LogHas(e, "без △"));
 	Feed(e, OFF, OFF, 10000);
-	CHECK(e.Tick(12400) == 0);
-	CHECK(e.Tick(12500) == -1);
+	CHECK(e.Tick(12900) == 0);
+	CHECK(e.Tick(13000) == -1);
 	CHECK(LogHas(e, "без ефектів транспорту"));
 
 	// 5. Пауза в машині: ефекти зникли, хвилину в меню — режим лишається; повернувся, ефекти назад — так само транспорт
@@ -246,7 +269,7 @@ static void test_vehicle()
 	Feed(g, RES, GUN, 0);
 	g.Interact(500);
 	CHECK(g.Tick(30000) == 0 && !g.in_vehicle);
-	// черга з автомата (вібрація на R2) у GTA V теж не транспорт: «сів» лише опір на обох
+	// черга з автомата (вібрація на R2) у GTA V теж не транспорт: «сів» лише опір
 	Feed(g, RES, VIB, 30000);
 	CHECK(g.Tick(60000) == 0 && !g.in_vehicle);
 
@@ -257,9 +280,9 @@ static void test_vehicle()
 	h.SetAiming(true, 0);
 	CHECK(h.Tick(10000) == 0 && !h.in_vehicle);
 	CHECK(LogHas(h, "тримаєш приціл"));
-	h.SetAiming(false, 10000);   // відпустив, а ефект лишився: рахуємо від цієї миті
-	CHECK(h.Tick(12400) == 0);
-	CHECK(h.Tick(12600) == +1);
+	h.SetAiming(false, 10000);   // відпустив, а ефект лишився: рахуємо від цієї миті (без △ — 1,5 с)
+	CHECK(h.Tick(11400) == 0);
+	CHECK(h.Tick(11500) == +1);
 	// у GTA V те саме — не транспорт
 	AnyPlayVehicleDetector h5;
 	h5.Reset(gta5, false, 0);
@@ -267,13 +290,13 @@ static void test_vehicle()
 	h5.Interact(0);
 	CHECK(h5.Tick(10000) == 0);
 
-	// 8. Вібрація двигуна поруч: без △ швидше (1,5 с)
+	// 8. Вібрація двигуна поруч: без △ швидше (1 с)
 	AnyPlayVehicleDetector r;
 	r.Reset(gta5, false, 0);
 	Feed(r, RES, RES, 0);
 	r.Rumble(40, 0, 300);
-	CHECK(r.Tick(1400) == 0);
-	CHECK(r.Tick(1500) == +1);
+	CHECK(r.Tick(900) == 0);
+	CHECK(r.Tick(1000) == +1);
 
 	// 9. Вручну «транспорт» у човні без ефектів: за часом не виходимо; △ (вийти) — пішки
 	AnyPlayVehicleDetector b;
@@ -289,10 +312,12 @@ static void test_vehicle()
 	AnyPlayVehicleDetector m;
 	m.Reset(gta5, false, 0);
 	Feed(m, RES, RES, 0);
-	CHECK(m.Tick(2600) == +1);
+	CHECK(m.Tick(1500) == +1);
 	m.Manual(false, 3000);
 	CHECK(m.Tick(5000) == 0);       // 5 с тиші після ручного
 	CHECK(m.Tick(30000) == 0 && !m.in_vehicle);
+	m.Interact(30500);              // △ біля тієї самої машини: ефект не новий — пішки лишаються
+	CHECK(m.Tick(31000) == 0 && !m.in_vehicle);
 	Feed(m, OFF, OFF, 31000);       // ефект зник і знову з'явився (сів у іншу машину)
 	Feed(m, RES, RES, 40000);
 	m.Interact(40000);
@@ -307,7 +332,7 @@ static void test_vehicle()
 	n.TakeLog();
 	n.Interact(61000);
 	CHECK(n.warned_no_effects && LogHas(n, "не надсилає"));
-	CHECK(n.Tick(70000) == 0 && !n.in_vehicle);
+	CHECK(n.Tick(80000) == 0 && !n.in_vehicle);
 
 	// 12. Авіація (вручну F3): детектор вважає її транспортом і виходить після △ без ефектів
 	AnyPlayVehicleDetector a;
@@ -319,6 +344,7 @@ static void test_vehicle()
 
 	// 13. Вигадані «записи» журналу: типові вечори в GTA V
 	int sw = 0;
+	int64_t at = -1;
 	{
 		// підняв предмет (F) тричі, відчинив двері, постріляв — режим жодного разу не змінився
 		const Ev ev[] = {
@@ -352,6 +378,88 @@ static void test_vehicle()
 		const Ev ev[] = { {1000, 'F', 0, 0}, {5000, 'U', 1, 0}, {30000, 'F', 0, 0} };
 		CHECK(!Play(gta5, false, ev, sizeof(ev) / sizeof(ev[0]), 40000, &sw));
 		CHECK(sw == 1);
+	}
+
+	// ── 118: сценарії з відгуку Юрія ──
+	{
+		// «Сів — одразу їдеш»: F, підбіг і анімація 2,3 с, гра дає опір лише на газі (L2 ще без ефекту) —
+		// «Транспорт» за ≤ 0,2 с від ефекту (у 117: обидва курки, 0,3 с і такт 0,2 с, а то й +2,5 с без △)
+		const Ev ev[] = { {1000, 'F', 0, 0}, {3300, 'T', OFF, RES}, {4500, 'T', RES, RES} };
+		CHECK(Play(gta6, false, ev, sizeof(ev) / sizeof(ev[0]), 10000, &sw, &at));
+		CHECK(sw == 1 && at >= 3300 && at <= 3500);
+	}
+	{
+		// Довга посадка: F, відмичка (крутить правий стік 8 с), ефект на газі через 11 с після F — вікно подовжилось
+		Ev ev[40];
+		int k = 0;
+		ev[k++] = {1000, 'F', 0, 0};
+		for(int64_t t = 1500; t <= 9500; t += 500)
+			ev[k++] = {t, 'N', 0, 0};
+		ev[k++] = {12000, 'T', OFF, VIB};   // двигун завівся: вібрація на газі
+		CHECK(Play(gta6, false, ev, k, 20000, &sw, &at));
+		CHECK(sw == 1 && at >= 12000 && at <= 12200);
+		// без відмички (нічого не крутив) ефект лише на газі через 11 с — уже не «посадка», пішки лишаються
+		const Ev late[] = { {1000, 'F', 0, 0}, {12000, 'T', OFF, VIB} };
+		CHECK(!Play(gta6, false, late, 2, 20000, &sw));
+		CHECK(sw == 0);
+	}
+	{
+		// «Вийшов — одразу пішки»: F у машині, ефекти зникли — «Пішки» за ≤ 0,25 с
+		const Ev ev[] = { {500, 'F', 0, 0}, {2000, 'T', RES, RES}, {10000, 'F', 0, 0}, {11200, 'T', OFF, OFF} };
+		CHECK(!Play(gta6, false, ev, sizeof(ev) / sizeof(ev[0]), 15000, &sw));
+		CHECK(sw == 2);
+	}
+	{
+		// Підняв зброю на F (GTA VI): на L2 опір прицілу, на R2 «зброя» — це не машина
+		// ... і ще раз F, тоді черга з автомата (ЛКМ = R2 «вібрація»): поки тримаєш постріл, ефект не рахується
+		const Ev ev[] = { {1000, 'F', 0, 0}, {1400, 'T', RES, GUN}, {9000, 'F', 0, 0}, {9250, 'A', 1, 0}, {9300, 'T', RES, VIB},
+			{9800, 'T', RES, GUN}, {9850, 'A', 0, 0} };
+		CHECK(!Play(gta6, false, ev, sizeof(ev) / sizeof(ev[0]), 30000, &sw));
+		CHECK(sw == 0);
+		// підняв предмет без ефектів, а потім ішов далі — пішки весь час
+		const Ev item[] = { {1000, 'F', 0, 0}, {1200, 'F', 0, 0}, {5000, 'F', 0, 0} };
+		CHECK(!Play(gta6, false, item, 3, 30000, &sw));
+		CHECK(sw == 0);
+	}
+	{
+		// Боротьба в машині: НПС витягує, гра прибрала ефекти, □ тиснуть кожні 0,3 с 6 с поспіль — «Транспорт» тримається;
+		// відбився, ефекти повернулись — далі газуєш у «Транспорті»
+		Ev ev[60];
+		int k = 0;
+		ev[k++] = {500, 'F', 0, 0};
+		ev[k++] = {2000, 'T', RES, RES};
+		ev[k++] = {10000, 'T', OFF, OFF};
+		for(int64_t t = 10200; t <= 16200; t += 300)
+			ev[k++] = {t, 'B', 0, 0};
+		ev[k++] = {16500, 'T', RES, RES};
+		ev[k++] = {17000, 'G', 1, 0};
+		CHECK(Play(gta6, false, ev, k, 30000, &sw));
+		CHECK(sw == 1);
+		// програв боротьбу (витягли): після останнього □ ще 2,5 с тримаємо, далі «Пішки»
+		int k2 = k - 2;
+		int64_t out = -1;
+		CHECK(!Play(gta6, false, ev, k2, 30000, &sw, &at, &out));
+		CHECK(sw == 2);
+		CHECK(out >= 16200 + 2500 && out <= 16200 + 2600 && at <= 16200 + 2600);   // 2,5 с після останнього □, хоча 3 с без ефектів минули давно
+		// той самий вечір, але □ не тиснули (просто стоїш, гра прибрала ефекти): «Пішки» за 3 с, як і раніше
+		const Ev calm[] = { {500, 'F', 0, 0}, {2000, 'T', RES, RES}, {10000, 'T', OFF, OFF} };
+		CHECK(!Play(gta6, false, calm, 3, 20000, &sw, &at, &out));
+		CHECK(sw == 2 && out == 13000);
+	}
+	{
+		// Викинуло з машини, а гравець газує (W): опору нема 1,5 с — «Пішки» швидше, ніж 3 с
+		const Ev ev[] = { {500, 'F', 0, 0}, {2000, 'T', RES, RES}, {8000, 'G', 1, 0}, {10000, 'T', OFF, OFF} };
+		CHECK(!Play(gta6, false, ev, sizeof(ev) / sizeof(ev[0]), 20000, &sw, &at));
+		CHECK(sw == 2);
+		AnyPlayVehicleDetector q;
+		q.Reset(gta6, false, 0);
+		q.Interact(500);
+		Feed(q, RES, RES, 2000);
+		CHECK(q.Tick(2100) == +1);
+		q.SetGas(true, 8000);
+		Feed(q, OFF, OFF, 10000);
+		CHECK(q.Tick(11400) == 0);
+		CHECK(q.Tick(11500) == -1 && LogHas(q, "газ"));
 	}
 }
 

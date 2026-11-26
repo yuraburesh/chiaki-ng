@@ -40,7 +40,8 @@ QString OverrideGroupFor(const QString &layout)
 }
 // v3: автоматика в обидва боки за ефектами курків (anyplayvehicle.h), типово увімкнена; v2 чекала підтвердження після F
 const QString AutoVehicleKey = QStringLiteral("anyplay/auto_vehicle_v3");
-constexpr int VehicleTickMs = 200;       // як часто перевіряємо, чи герой сів у транспорт або вийшов
+constexpr int VehicleTickMs = 100;       // як часто перевіряємо, чи герой сів у транспорт або вийшов (118: було 200; ще й одразу, щойно змінились курки)
+constexpr qint64 SpinMaxMs = 20000;      // 118: обертання стіка (9/0, K/L) саме зупиняється після стількох секунд утримання
 constexpr int PreciseTapMs = 300;        // коротше натискання клавіші точного режиму вмикає його до наступного натискання
 constexpr float AimSlowFactor = 0.6f;    // «повільніша миша в прицілі»: чутливість у прицілі
 constexpr int TremorMs = 110;            // тремор камери від вібрації: тривалість одного поштовху
@@ -263,6 +264,18 @@ AnyPlayInput::AnyPlayInput(QObject *parent) : QObject(parent)
 			precise_tick = now;
 		}
 		tremor_phase = !tremor_phase;
+		// 118: стік не крутиться вічно, навіть якщо відпускання клавіші загубилось
+		for(auto it = active.begin(); it != active.end();)
+		{
+			if(it->kind == APBinding::Kind::Spin && now - it->pressed_at > SpinMaxMs)
+			{
+				emit VehicleLog(QStringLiteral("обертання стіка (%1) триває понад %2 с: зупиняю, стік у центр").arg(DisplayName(it.key())).arg(SpinMaxMs / 1000));
+				it = active.erase(it);
+			}
+			else
+				++it;
+		}
+		UpdateSpinTimer();
 		if(tremor_until && now >= tremor_until)
 		{
 			tremor_until = 0;
@@ -478,6 +491,11 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 {
 	if(name.isEmpty() || name == MenuKeyName())
 		return false; // ` відкриває меню AnyPlay і в гру не йде
+	// 118: що фізично затиснуто — після зміни режиму W A S D, газ і гальмо продовжують діяти без повторного натискання
+	if(pressed)
+		held.insert(name);
+	else
+		held.remove(name);
 	if(!pressed)
 	{
 		// точний режим: відпущена клавіша руху більше не крутить стік, але стік лишається, де був
@@ -556,6 +574,10 @@ bool AnyPlayInput::HandleInput(const QString &name, bool pressed)
 		return false;
 	APBinding b = *binding; // копія: перемикання режиму нижче робить вказівник недійсним
 	NoteGameEvent(b);
+	// 118: машина вже їде (газ чи гальмо в транспорті), а стіки ще крутяться після зламу — зупиняємо їх
+	if(MinigameActive() && current_profile == QLatin1String("vehicle") && b.kind == APBinding::Kind::Hold
+		&& (b.out.buttons & (CHIAKI_CONTROLLER_ANALOG_BUTTON_R2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_L2)))
+		StopMinigame(QStringLiteral("газ чи гальмо в транспорті (%1)").arg(DisplayName(name)));
 	// злам машини: стрілки дрібно докручують стіки (вліво — проти годинникової)
 	if(hotwire_active && (b.id == QLatin1String("nav_left") || b.id == QLatin1String("nav_right")))
 	{
@@ -840,6 +862,7 @@ void AnyPlayInput::NoteSlot(const APBinding &b)
 
 void AnyPlayInput::ReleaseAll()
 {
+	held.clear();
 	wheel_sector = -1;
 	precise_active = false;
 	precise_keys.clear();
@@ -858,6 +881,76 @@ void AnyPlayInput::ReleaseAll()
 	macro_timer.stop();
 	turbo_timer.stop();
 	spin_timer.stop();
+	emit Changed();
+}
+
+// 118: клавіша, яку можна «перенести» в новий режим, не відпускаючи: рух стіком, газ, гальмо (W A S D).
+// Кнопки, приціл, постріл, △ тощо — ні: їх тримали для старого режиму, нехай натиснуть ще раз.
+bool AnyPlayInput::Carryable(const APBinding &b, const QString &name) const
+{
+	if(b.kind != APBinding::Kind::Hold || !b.profile.isEmpty() || name.startsWith(QLatin1String("Mouse")) || name.startsWith(QLatin1String("Wheel")))
+		return false;
+	const uint32_t pedals = CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_R2;
+	if(b.out.buttons & ~pedals)
+		return false;
+	return b.out.lx != 0 || b.out.ly != 0 || (b.out.buttons & pedals);
+}
+
+void AnyPlayInput::ResetForMode()
+{
+	wheel_sector = -1;
+	precise_active = false;
+	precise_keys.clear();
+	hotwire_active = false;
+	stick_hold = false;
+	mouse_point.Reset();
+	tremor_until = 0;
+	active.clear();
+	taps.clear();
+	macro.clear();
+	macro_index = -1;
+	macro_timer.stop();
+	turbo_timer.stop();
+	// затиснуті клавіші руху одразу діють у новому режимі: сів з затиснутою W — і це вже газ
+	for(const QString &name : std::as_const(held))
+	{
+		const APBinding *found = Find(name);
+		if(!found || !Carryable(*found, name))
+			continue;
+		const APBinding b = *found;
+		if(Allowed(b))
+			active.insert(name, b);
+	}
+	UpdateSpinTimer();
+	emit Changed();
+}
+
+bool AnyPlayInput::MinigameActive() const
+{
+	if(hotwire_active)
+		return true;
+	for(const auto &b : active)
+		if(b.kind == APBinding::Kind::Spin)
+			return true;
+	return false;
+}
+
+void AnyPlayInput::StopMinigame(const QString &why)
+{
+	QStringList keys;
+	for(auto it = active.begin(); it != active.end();)
+	{
+		if(it->kind == APBinding::Kind::Spin || it->kind == APBinding::Kind::Hotwire)
+		{
+			keys.append(DisplayName(it.key()));
+			it = active.erase(it);
+		}
+		else
+			++it;
+	}
+	hotwire_active = false;
+	UpdateSpinTimer();
+	emit VehicleLog(QStringLiteral("%1: зупиняю злам машини (%2), стіки в центр; ще раз — натисни клавішу знову").arg(why, keys.join(QStringLiteral(", "))));
 	emit Changed();
 }
 
@@ -947,6 +1040,9 @@ void AnyPlayInput::SetProfile(const QString &id, const QString &hint_text)
 		return;
 	const QString was = current_profile;
 	current_profile = id;
+	// 118: новий режим — спец-стани скинуті (обертання, «утримати» стік, точний рух), W A S D діють одразу
+	if(id != was)
+		ResetForMode();
 	hint = hint_text;
 	// гравець перемкнув сам (U, F1–F3, вкладка): автоматика приймає це і кілька секунд не сперечається
 	if(auto_vehicle && !preview)
@@ -998,8 +1094,15 @@ void AnyPlayInput::NoteTriggers(uint8_t type_left, uint8_t type_right, bool empt
 {
 	trig_left = type_left;
 	trig_right = type_right;
+	const bool keep_before = vehicle.KeepSig();
 	vehicle.Triggers(AnyPlayTriggerClass(type_left, empty_left), AnyPlayTriggerClass(type_right, empty_right),
 		type_left, type_right, clock.elapsed());
+	// 118: уже «Транспорт», а стіки ще крутяться (злам), і тут з'явились ефекти транспорту — машина завелась
+	if(!preview && current_profile == QLatin1String("vehicle") && !keep_before && vehicle.KeepSig() && MinigameActive())
+		StopMinigame(QStringLiteral("машина завелась (%1)").arg(QString::fromStdString(vehicle.TrigText())));
+	// 118: не чекаємо такту: щойно гра дала ефект транспорту, режим перемикається
+	if(vehicle_timer.isActive())
+		TickVehicle();
 }
 
 // Натиснули клавішу гри: △ — «можливо, сідає чи виходить» (чекаємо підтвердження курками), пауза/мапа — меню гри
@@ -1018,6 +1121,11 @@ void AnyPlayInput::NoteGameEvent(const APBinding &b)
 	const bool warned = vehicle.warned_no_effects;
 	if(!global && b.kind == APBinding::Kind::Hold && (b.out.buttons & CHIAKI_CONTROLLER_BUTTON_PYRAMID))
 		vehicle.Interact(now);
+	// 118: □ у транспорті (часто — боротьба з НПС, що витягує), обертання стіків (відмичка, злам) подовжує «посадку»
+	if(!global && b.kind == APBinding::Kind::Hold && (b.out.buttons & CHIAKI_CONTROLLER_BUTTON_BOX))
+		vehicle.Box(now);
+	if(b.kind == APBinding::Kind::Spin || b.kind == APBinding::Kind::Hotwire)
+		vehicle.Minigame(now);
 	FlushVehicleLog();
 	if(vehicle.warned_no_effects && !warned)
 	{
@@ -1043,9 +1151,14 @@ void AnyPlayInput::TickVehicle()
 		return;
 	const qint64 now = clock.elapsed();
 	// пішки тримають приціл чи постріл: ефекти на курках зараз від зброї, «сів» не рахуємо
+	const uint32_t out = Output().buttons;
 	const bool aiming = current_profile == QLatin1String("foot")
-		&& (Output().buttons & (CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_R2));
+		&& (out & (CHIAKI_CONTROLLER_ANALOG_BUTTON_L2 | CHIAKI_CONTROLLER_ANALOG_BUTTON_R2));
 	vehicle.SetAiming(aiming, now);
+	// 118: газ з клавіатури в «Транспорті» (якщо опору довго нема — ти вже пішки); крутиш стіки — «посадка» триває
+	vehicle.SetGas(current_profile == QLatin1String("vehicle") && (out & CHIAKI_CONTROLLER_ANALOG_BUTTON_R2), now);
+	if(MinigameActive())
+		vehicle.Minigame(now);
 	// в «Авіації» автоматика лише виходить (пішки), а не вмикає «Транспорт»: детектор вважає авіацію транспортом
 	const int verdict = vehicle.Tick(now);
 	const QString why = QString::fromStdString(vehicle.TakeLog());
@@ -1066,9 +1179,18 @@ void AnyPlayInput::ApplyAuto(bool to_vehicle, const QString &why)
 			emit VehicleLog(why);
 		return;
 	}
-	emit VehicleLog(QStringLiteral("авто %1 → %2: %3").arg(current_profile, id, why));
-	ReleaseAll();
+	const QString was = current_profile;
+	const bool minigame = MinigameActive();
 	current_profile = id;
+	// 118: не відпускаємо все: W A S D, затиснуті під час посадки, одразу газ і кермо (і навпаки після виходу);
+	// обертання стіків, злам машини, «утримати» стік і точний рух скидаються
+	ResetForMode();
+	QStringList carried;
+	for(auto it = active.cbegin(); it != active.cend(); ++it)
+		carried.append(DisplayName(it.key()));
+	emit VehicleLog(QStringLiteral("авто %1 → %2: %3%4%5").arg(was, id, why,
+		carried.isEmpty() ? QString() : QStringLiteral("; клавіші діють одразу: %1").arg(carried.join(QStringLiteral(", "))),
+		minigame ? QStringLiteral("; злам машини зупинено, стіки в центр") : QString()));
 	hint = ModeHint(id);
 	emit ProfileChanged(StatusText());
 	emit Changed();

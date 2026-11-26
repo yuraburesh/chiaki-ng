@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- AnyPlay 132: картинка на весь значок (без рамки): яку форму не обрав би телефон (коло, «сквіркл» Samsung, квадрат),
+     вона заповнена малюнком. Середня частина шару — сам малюнок, краї — його продовження під паралакс і маски. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background"/>
-    <foreground android:drawable="@drawable/anyplay_launcher_fg"/>
+    <background android:drawable="@drawable/anyplay_launcher_bg"/>
+    <foreground android:drawable="@android:color/transparent"/>
 </adaptive-icon>

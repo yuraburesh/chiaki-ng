@@ -30,6 +30,7 @@ class StreamViewModel(val application: Application, val connectInfo: ConnectInfo
 	{
 		super.onCleared()
 		_session?.shutdown()
+		input.release()
 	}
 
 	fun setOnScreenControlsEnabled(enabled: Boolean)

@@ -56,13 +56,47 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		}
 	}
 
-	val controllerState: ControllerState get()
+	// AnyPlay 121: поворот екрана — запам'ятований. До цього він запитувався в системи (виклик через Binder) на КОЖНУ
+	// подію датчиків руху: 3 датчики по 250 разів на секунду, і на Galaxy S7 власника головний потік тонув у цих
+	// викликах — екран завантаження завмирав («Крок 1/3 0:12»), далі чорний екран і система закривала застосунок
+	// (журнал 121: головний потік стоїть у StreamInput.getControllerState → getDefaultDisplay)
+	@Volatile private var rotated90 = false
+
+	private fun readRotation()
 	{
-		val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-		@Suppress("DEPRECATION")
-		val rotated90 = windowManager.defaultDisplay.rotation == Surface.ROTATION_90
-		return merge(sensorControllerState, keyControllerState, motionControllerState, touchControllerState, rotated90)
+		try
+		{
+			val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+			@Suppress("DEPRECATION")
+			rotated90 = windowManager.defaultDisplay.rotation == Surface.ROTATION_90
+		}
+		catch(e: Exception) {}
 	}
+
+	private val displayListener = object: android.hardware.display.DisplayManager.DisplayListener {
+		override fun onDisplayAdded(displayId: Int) {}
+		override fun onDisplayRemoved(displayId: Int) {}
+		override fun onDisplayChanged(displayId: Int) { readRotation() }
+	}
+
+	init
+	{
+		readRotation()
+		try { (context.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager).registerDisplayListener(displayListener, null) }
+		catch(e: Exception) {}
+	}
+
+	fun release()
+	{
+		try { (context.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager).unregisterDisplayListener(displayListener) }
+		catch(e: Exception) {}
+	}
+
+	val controllerState: ControllerState get() =
+		merge(sensorControllerState, keyControllerState, motionControllerState, touchControllerState, rotated90)
+
+	// AnyPlay 121: стан з датчиків руху шлемо в гру не частіше ніж раз на 8 мс (кнопки й стіки — одразу)
+	private var sensorSentAt = 0L
 
 	private val sensorControllerState = ControllerState() // from Motion Sensors
 	private val keyControllerState = ControllerState() // from KeyEvents
@@ -101,6 +135,10 @@ class StreamInput(val context: Context, val preferences: Preferences)
 				}
 				else -> return
 			}
+			val now = android.os.SystemClock.uptimeMillis()
+			if(now - sensorSentAt < 8)
+				return
+			sensorSentAt = now
 			controllerStateUpdated()
 		}
 
@@ -111,7 +149,9 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		@OnLifecycleEvent(Lifecycle.Event.ON_RESUME)
 		fun onResume()
 		{
-			val samplingPeriodUs = 4000
+			// 121: 100 разів на секунду (було 250): для руху в грі досить, а старий телефон не захлинається
+			val samplingPeriodUs = 10000
+			readRotation()
 			val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 			listOfNotNull(
 				sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),

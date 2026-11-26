@@ -1,12 +1,12 @@
 // AnyPlay 113: екран «Зображення» — усе про картинку в одному місці. Один і той самий на головному вікні (вкладка
 // «Зображення») і в меню паузи (пункт «Зображення», inGame: true). Розділи:
 //   Якість    — рівень потоку з приставки (роздільність, кадри, бітрейт) з прикладами-плитками, оцінка комп'ютера,
-//               позначки «не потягне» біля важкого, «Авто», індикатор під час гри, перевірка інтернету (поза грою)
-//   Кольори   — яскравість, контраст, насиченість, теплота (колишня «Картинка»); діють одразу
+//               позначки «не потягне» біля важкого, «Авто», перевірка інтернету (поза грою); у грі під плитками —
+//               рядок «Зараз у грі» (кадри, швидкість, втрати, обробка; до 118 це була окрема вкладка «Трансляція зараз»)
 //   Обробка   — що робить комп'ютер з кожним кадром (проста, стандартна, висока якість, ШІ-чіткість, посилена);
-//               позначки, що цей комп'ютер не потягне чи вже не потягнув; «Спробувати ще раз»
-//   Екран і звук — як картинка лягає на екран (як є, наблизити, розтягнути), мікрофон (у грі)
-//   Трансляція зараз (лише в грі) — кадри, швидкість, втрати, яка обробка діє
+//               позначки, що цей комп'ютер не потягне чи вже не потягнув; «Спробувати ще раз». 118: одразу після «Якості»
+//   Кольори   — яскравість, контраст, насиченість, теплота (колишня «Картинка»); діють одразу
+//   Екран і звук — як картинка лягає на екран (як є, наблизити, розтягнути), у грі ще індикатор кадрів у кутку й мікрофон
 // Навігація з клавіатури й геймпада: ↑↓ по рядках, ←→ по вкладках і плитках якості, Enter обирає, ← з першої колонки
 // повертає на пункт меню ліворуч (navLeft). Плитки якості — оригінальна сцена AnyPlay (без кадрів з ігор), відрендерена
 // в чотири картинки: м'яка (540p), чіткіша (720p, 1080p) і з дрібними деталями (ШІ-чіткість); див. gui/res/anyplay-quality.
@@ -18,10 +18,10 @@ import org.streetpea.chiaking
 
 FocusScope {
     id: img
-    property bool inGame: false              // у меню паузи: щільніше, є «Екран і звук», «Трансляція зараз»
+    property bool inGame: false              // у меню паузи: щільніше, «Екран і звук», рядок «Зараз у грі»
     property bool compact: inGame            // менші плитки й відступи
     property Item navLeft: null              // пункт меню ліворуч (←)
-    property string section: "quality"       // quality | colors | render | screen | live
+    property string section: "quality"       // quality | render | colors | screen
     property real maxW: 1180
     readonly property Item firstControl: img // з меню паузи: фокус сюди, далі ↓ по вмісту
     // рівень обрали (меню паузи робить перепідключення саме); from — рівень до вибору; level -1 — «Авто», -2 — нічого не змінилось
@@ -58,12 +58,9 @@ FocusScope {
         { id: ChiakiWindow.VideoPreset.HighQualitySpatial, name: qsTr("ШІ-чіткість"), sub: qsTr("Нейромережа домальовує дрібні деталі, коли екран більший за 1080p. Рахує відеокарта: на тонкому ноутбуці може дати менше кадрів. Типова для «Ультра»."), need: 3 },
         { id: ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial, name: qsTr("Посилена ШІ-чіткість"), sub: qsTr("Удвічі важча нейромережа. Лише для потужної відеокарти."), need: 4 }
     ]
-    readonly property var sections: {
-        const s = [{ id: "quality", text: qsTr("Якість") }, { id: "colors", text: qsTr("Кольори") }, { id: "render", text: qsTr("Обробка") },
-                   { id: "screen", text: inGame ? qsTr("Екран і звук") : qsTr("Екран") }];
-        if (inGame) s.push({ id: "live", text: qsTr("Трансляція зараз") });
-        return s;
-    }
+    // 118: обробка одразу після якості (вона йде за рівнем), кольори далі; «Трансляцію зараз» замінив рядок під плитками
+    readonly property var sections: [{ id: "quality", text: qsTr("Якість") }, { id: "render", text: qsTr("Обробка") },
+                                     { id: "colors", text: qsTr("Кольори") }, { id: "screen", text: inGame ? qsTr("Екран і звук") : qsTr("Екран") }]
     function levelName() { return levelNames[img.cloud.qualityLevel] || levelNames[1]; }
     function levelOn(l) { return !img.cloud.autoQuality && img.cloud.qualityLevel === l; }
     function pickLevel(l) {
@@ -104,29 +101,30 @@ FocusScope {
         return qsTr("«Максимальна» йде на 60 кадр/с, ШІ-чіткість («Ультра») може давати менше кадрів.");
     }
     function capText() {
-        return qsTr("Під час гри цей комп'ютер не встиг з обробкою «%1», тож три дні тримаємо «%2». Якість потоку від цього не змінюється.")
+        return qsTr("Під час гри цей комп'ютер не встиг з обробкою «%1», тож до завтра тримаємо «%2». Якість потоку від цього не змінюється.")
             .arg(img.cloud.renderLabel(img.capFrom)).arg(img.cloud.renderLabel(Math.max(0, Math.min(3, img.cloud.renderCap))));
     }
     function num1(x) { return (isFinite(x) ? x : 0).toFixed(1).replace(".", ","); }
     function zoomText(v) { return v <= -1 ? qsTr("без чорних смуг") : qsTr("%1 x").arg((v >= 0 ? v + 1 : v).toFixed(2).replace(".", ",")); }
     function valueText(v) { return v === 0 ? qsTr("типово") : (v > 0 ? "+" : "") + v; }
-    function liveChips() {
+    // 118: рядок «Зараз у грі» під плитками якості (замість вкладки «Трансляція зараз»): що з картинкою просто зараз.
+    // Тихий, коли все добре; золотом лише те, що не так (на екрані помітно менше кадрів, ніж приходить, втрати, спрощено)
+    function nowText() {
         const s = img.sess, win = img.win;
-        if (!s) return [];
-        const out = [];
-        if (s.host && !Chiaki.settings.streamerMode)
-            out.push({ text: (s.connected ? qsTr("підключено до %1") : qsTr("підключення до %1")).arg(s.host), kind: s.connected ? "ok" : "wait" });
-        out.push({ text: qsTr("з приставки %1 кадр/с").arg(win.streamFps) });
-        out.push({ text: qsTr("на екрані %1 кадр/с").arg(win.shownFps), kind: win.streamFps >= 20 && win.shownFps > 0 && win.shownFps < win.streamFps * 0.8 ? "wait" : "" });
-        out.push({ text: s.measuredBitrateReady === false ? qsTr("швидкість: вимірюю…") : qsTr("%1 Мбіт/с").arg(num1(s.measuredBitrate)) });
+        if (!s) return "";
+        const warn = (t) => "<font color=\"" + ap.gold + "\">" + t + "</font>";
+        const parts = [];
+        const stream = win.streamFps || 0, shown = win.shownFps || 0;
+        if (stream >= 20 && shown > 0 && shown < stream * 0.8)
+            parts.push(warn(qsTr("на екрані %1 з %2 кадр/с").arg(shown).arg(stream)));
+        else
+            parts.push(qsTr("%1 кадр/с").arg(shown > 0 ? Math.min(shown, stream || shown) : stream));
+        parts.push(s.measuredBitrateReady === false ? qsTr("швидкість вимірюю") : qsTr("%1 Мбіт/с").arg(num1(s.measuredBitrate)));
         const loss = (isFinite(s.averagePacketLoss) ? s.averagePacketLoss : 0) * 100;
-        out.push({ text: qsTr("втрати пакетів %1%").arg(num1(loss)), kind: loss > 2 ? "bad" : loss > 0.5 ? "wait" : "" });
-        if (win.droppedFrames > 0)
-            out.push({ text: qsTr("пропущено кадрів за секунду: %1").arg(win.droppedFrames), kind: "wait" });
-        if (s.framesLost > 0)
-            out.push({ text: qsTr("втрачено кадрів у мережі: %1").arg(s.framesLost) });
-        out.push({ text: qsTr("обробка: %1").arg(img.cloud.renderLabel(img.preset)), kind: img.cloud.renderCapped ? "wait" : "" });
-        return out;
+        parts.push(loss > 0.5 ? warn(qsTr("втрати %1%").arg(num1(loss))) : qsTr("втрати %1%").arg(num1(loss)));
+        const r = qsTr("обробка %1").arg(img.cloud.renderLabel(img.preset));
+        parts.push(img.cloud.renderCapped ? warn(r + qsTr(", спрощено")) : r);
+        return parts.join(", ");
     }
 
     // ── навігація з клавіатури й геймпада: ↑↓ по елементах поточного розділу, ←→ по вкладках і плитках ──
@@ -276,7 +274,7 @@ FocusScope {
                             Layout.bottomMargin: img.compact ? 8 : 12
                             role: "hint"
                             text: img.inGame
-                                ? qsTr("Якість потоку з приставки. Інший рівень перепідключить гру на кілька секунд, прогрес у грі не зникає.")
+                                ? qsTr("Інший рівень перепідключить гру на кілька секунд, прогрес у грі не зникає.")
                                 : qsTr("Якість потоку з приставки: роздільність і кадри. Що вища, то більше потрібно інтернету; обробку на комп'ютері підбираємо під рівень. Наведи на плитку, щоб побачити приклад більшим.")
                         }
                         ApOpt {   // «Авто»
@@ -306,11 +304,27 @@ FocusScope {
                                 }
                             }
                         }
+                        // 118: стан поточної гри одним рядком (лише в грі, замість вкладки «Трансляція зараз»)
+                        RowLayout {
+                            id: nowRow
+                            visible: img.inGame && img.live
+                            Layout.fillWidth: true
+                            Layout.topMargin: img.compact ? 10 : 16
+                            spacing: 8
+                            ApText { role: "cap"; text: qsTr("Зараз у грі") }
+                            ApText {
+                                Layout.fillWidth: true
+                                role: "small"; color: ap.mute
+                                rich: true
+                                elide: Text.ElideRight
+                                text: nowRow.visible && img.visible ? img.nowText() : ""
+                            }
+                        }
                         // комп'ютер (у вузькому вікні й у грі — одним рядком під плитками)
                         RowLayout {
                             visible: !qGrid.wide
                             Layout.fillWidth: true
-                            Layout.topMargin: img.compact ? 10 : 16
+                            Layout.topMargin: nowRow.visible ? 6 : (img.compact ? 10 : 16)
                             spacing: 8
                             ApText { role: "cap"; text: qsTr("Твій комп'ютер") }
                             ApChip { text: img.cloud.pcInfo || qsTr("невідомо") }
@@ -351,7 +365,7 @@ FocusScope {
                             ApText { visible: img.cloud.renderCapped; Layout.fillWidth: true; role: "small"; color: ap.gold; text: img.capText() }
                             ApButton { visible: img.cloud.renderCapped; small: true; ghost: true; focusPolicy: Qt.StrongFocus; text: qsTr("Спробувати ще раз"); onClicked: img.cloud.clearRenderCap() }
                         }
-                        ApOpt {   // у грі цей перемикач у «Трансляції зараз»
+                        ApOpt {   // у грі цей перемикач на вкладці «Екран і звук»
                             visible: !img.inGame
                             Layout.fillWidth: true
                             Layout.topMargin: img.compact ? 8 : 14
@@ -383,7 +397,7 @@ FocusScope {
                             text: qsTr("<b>Якість</b> — це відео, яке приставка шле через інтернет: роздільність (540p, 720p, 1080p) і кадри за секунду. Що вища, то більше потрібно швидкості й стабільності зв'язку. Вище 1080p і 60 кадр/с дистанційна гра PS5 не дає.<br>"
                                        + "<b>Обробка</b> — що комп'ютер робить з кожним кадром перед показом: масштабує під екран, згладжує, вирівнює кольори. Її рахує відеокарта вже після того, як відео прийшло.<br>"
                                        + "<b>ШІ-чіткість</b> — нейромережа, яка домальовує дрібні деталі при масштабуванні 1080p на великий екран (наприклад, Retina). Це найважча частина обробки.<br>"
-                                       + "<b>Чому «Ультра» може давати менше кадрів.</b> Відео в «Ультра» те саме, що в «Максимальній», а різниця лише в ШІ-чіткості. На тонкому ноутбуці (MacBook Air, ноутбук без окремої відеокарти) нейромережа не встигає за 60 кадрами, тож на екрані їх 20–40, а ще ноутбук гріється. Тоді AnyPlay сам спрощує обробку, каже про це і три дні не повертає важку. Хочеш 60 кадр/с без ризику — обирай «Максимальну».")
+                                       + "<b>Чому «Ультра» може давати менше кадрів.</b> Відео в «Ультра» те саме, що в «Максимальній», а різниця лише в ШІ-чіткості. На слабшому ноутбуці (MacBook Air з M1, ноутбук без окремої відеокарти) нейромережа може не встигати за 60 кадрами, тож на екрані їх 20–40, а ще ноутбук гріється. Тоді AnyPlay сам спрощує обробку, каже про це і до завтра не повертає важку (з новою версією AnyPlay перевіряє знову). Короткі зупинки картинки через інтернет до цього не рахуються. Хочеш 60 кадр/с без ризику — обирай «Максимальну».")
                         }
                         // перевірка інтернету (поза грою)
                         SpeedCard {
@@ -562,6 +576,18 @@ FocusScope {
                         checked: img.win.videoMode == ChiakiWindow.VideoMode.Stretch
                         onClicked: img.win.videoMode = ChiakiWindow.VideoMode.Stretch
                     }
+                    ApOpt {   // 118: індикатор у кутку (до 118 — у вкладці «Трансляція зараз»)
+                        visible: img.inGame
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: 760
+                        Layout.topMargin: 10
+                        radio: false
+                        text: qsTr("Показувати кадри за секунду і зв'язок у кутку екрана")
+                        sub: qsTr("Маленький рядок під час гри: кадри за секунду, швидкість, втрати, якість")
+                        checked: img.cloud.showStats
+                        onClicked: img.cloud.showStats = !img.cloud.showStats
+                        ApSwitch { activeFocusOnTab: false; checked: img.cloud.showStats; onToggled: img.cloud.showStats = !img.cloud.showStats }
+                    }
                     ApText { visible: img.inGame; role: "cap"; text: qsTr("Звук"); Layout.topMargin: 18; Layout.bottomMargin: 4 }
                     ApOpt {
                         visible: img.inGame
@@ -580,49 +606,6 @@ FocusScope {
                         Layout.topMargin: 10
                         role: "hint"
                         text: qsTr("Мікрофон і гучність — у меню AnyPlay під час гри.")
-                    }
-                }
-
-                // ═════ ТРАНСЛЯЦІЯ ЗАРАЗ (лише в грі) ═════
-                ColumnLayout {
-                    id: livePage
-                    visible: img.section === "live" && img.inGame
-                    Layout.fillWidth: true
-                    spacing: 0
-                    property int tick: 0
-                    Timer { interval: 1000; repeat: true; running: livePage.visible; onTriggered: livePage.tick++ }
-                    ApText {
-                        Layout.fillWidth: true; Layout.maximumWidth: 760
-                        Layout.bottomMargin: 10
-                        role: "hint"
-                        text: qsTr("Що відбувається з картинкою просто зараз. «З приставки» — скільки кадрів приходить, «на екрані» — скільки комп'ютер встигає показати. Якщо на екрані помітно менше, це обробка, а не інтернет.")
-                    }
-                    Flow {
-                        Layout.fillWidth: true
-                        spacing: 6
-                        Repeater {
-                            model: livePage.visible ? (livePage.tick, img.liveChips()) : []
-                            ApChip { required property var modelData; text: modelData.text; kind: modelData.kind || "" }
-                        }
-                    }
-                    ApOpt {
-                        Layout.fillWidth: true
-                        Layout.maximumWidth: 760
-                        Layout.topMargin: 12
-                        radio: false
-                        text: qsTr("Показувати кадри за секунду і зв'язок у кутку екрана")
-                        sub: qsTr("Маленький рядок під час гри: кадри за секунду, швидкість, втрати, якість")
-                        checked: img.cloud.showStats
-                        onClicked: img.cloud.showStats = !img.cloud.showStats
-                        ApSwitch { activeFocusOnTab: false; checked: img.cloud.showStats; onToggled: img.cloud.showStats = !img.cloud.showStats }
-                    }
-                    ApText {
-                        Layout.fillWidth: true; Layout.maximumWidth: 760
-                        Layout.topMargin: 14
-                        role: "small"; color: ap.mute
-                        wrapMode: Text.WordWrap
-                        text: qsTr("Якість: %1. Обробка: %2. Комп'ютер: %3.").arg(img.cloud.autoQuality ? qsTr("Авто, зараз %1").arg(img.levelName()) : img.levelName())
-                            .arg(img.cloud.renderLabel(img.preset)).arg(img.cloud.pcInfo || qsTr("невідомо"))
                     }
                 }
             }

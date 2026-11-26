@@ -88,7 +88,7 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(bool webEngine READ webEngine CONSTANT)
 	// AnyPlay 113, екран «Зображення» (К18): яка обробка картинки діє, чи обмежено її через слабкий ноутбук, оцінка комп'ютера
 	Q_PROPERTY(QString renderName READ renderName NOTIFY renderChanged)     // яка обробка діє зараз: fast | default | high | ai | ai2 | custom
-	Q_PROPERTY(bool renderCapped READ renderCapped NOTIFY renderChanged)     // ноутбук не встигав: обробку тримаємо простішою (3 дні)
+	Q_PROPERTY(bool renderCapped READ renderCapped NOTIFY renderChanged)     // ноутбук не встигав: обробку тримаємо простішою (до доби, до нової версії)
 	Q_PROPERTY(int renderCap READ renderCap NOTIFY renderChanged)            // до якого рівня (0..3), -1 — без обмеження
 	Q_PROPERTY(int renderCappedFrom READ renderCappedFrom NOTIFY renderChanged) // яка обробка (VideoPreset) не потягнулась, -1 — жодна
 	Q_PROPERTY(QString gpuName READ gpuName NOTIFY renderChanged)            // «Apple M2», «NVIDIA GeForce RTX 4060»
@@ -330,8 +330,12 @@ private:
 	QJsonObject admin_cmp_;
 	bool reconnect_once_ = false;
 	struct { int preset = -1; QVariant cap, until; } render_undo_;   // що було до останнього спрощення обробки
-	// вимір обробки під час гри (renderCheck): скільки тиків поспіль кадри на екрані < 80% потоку, перевірка після спрощення
-	struct { int slow = 0; int ticks = 0; int check = 0; int before = 0; int sum = 0; bool gaveUp = false; qint64 hintAt = 0; int hintSlow = 0; } rc_;
+	// вимір обробки під час гри (renderCheck): скільки тиків поспіль кадри на екрані < 80% потоку, перевірка після спрощення.
+	// 118: частки показаних кадрів у тисячних (ratioSum/ratioN — за повільні тики до спрощення, before — їхнє середнє,
+	// sum/n — після); тики, коли картинку ламала мережа (запит ключового кадру, помилка декодера), не рахуються (calm)
+	struct { int slow = 0; int ticks = 0; int check = 0; int before = 0; int sum = 0; int n = 0; int ratioSum = 0; int ratioN = 0;
+		quint32 idr = 0; quint32 errs = 0; int calm = 0; bool gaveUp = false; qint64 hintAt = 0; int hintSlow = 0; } rc_;
+	bool renderTickDisturbed(bool networkOk);   // 118: чи цей тик зіпсувала мережа, а не обробка
 	bool quality_hint_shown_ = false;
 	mutable QString pc_cpu_, pc_mem_, pc_model_;
 	QString pcCpu() const;

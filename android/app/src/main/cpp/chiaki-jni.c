@@ -349,6 +349,7 @@ static void android_chiaki_key_frame_cb(void *user)
 #define ANYPLAY_HAPTIC_MIN 400    // слабший відгук — не вібруємо (на комп'ютері поріг 100, телефон грубіший)
 #define ANYPLAY_HAPTIC_GAP_MS 60  // не частіше, ніж раз на 60 мс (вібромотор телефона частіше й не встигає)
 
+#if ANYPLAY_HAPTICS_VIBRATION
 static void android_chiaki_haptics_cb(uint8_t *buf, size_t buf_size, void *user)
 {
 	AndroidChiakiSession *session = user;
@@ -390,6 +391,7 @@ static void android_chiaki_haptics_cb(uint8_t *buf, size_t buf_size, void *user)
 	event.rumble.right = right;
 	android_chiaki_event_cb(&event, session);
 }
+#endif
 
 JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject result, jobject connect_info_obj, jstring log_file_str, jboolean log_verbose, jobject java_session)
 {
@@ -575,10 +577,14 @@ JNIEXPORT void JNICALL JNI_FCN(sessionCreate)(JNIEnv *env, jobject obj, jobject 
 	chiaki_session_set_event_cb(&session->session, android_chiaki_event_cb, session);
 	// AnyPlay 118.1: з DualSense ігри шлють не «rumble», а тактильний відгук (звук для моторів). Перетворюємо його
 	// на вібрацію телефона, як програма на комп'ютері — на вібрацію геймпада
+	// 118.2: тимчасово вимкнено. Перший процес з гаптикою (119, Galaxy S7) загинув за ~30 с гри без жодного сліду,
+	// а гаптику гра починає слати якраз тоді. Доки причину не видно в журналі падіння, вібрації з гаптики немає
+#if ANYPLAY_HAPTICS_VIBRATION
 	ChiakiAudioSink haptics_sink = { 0 };
 	haptics_sink.user = session;
 	haptics_sink.frame_cb = android_chiaki_haptics_cb;
 	chiaki_session_set_haptics_sink(&session->session, &haptics_sink);
+#endif
 	chiaki_session_set_video_sample_cb(&session->session, android_chiaki_video_decoder_video_sample, &session->video_decoder);
 	session->video_decoder.key_frame_cb = android_chiaki_key_frame_cb;
 	session->video_decoder.key_frame_user = session;

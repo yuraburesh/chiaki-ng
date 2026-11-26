@@ -98,6 +98,7 @@ private class ChiakiNative
 		@JvmStatic external fun psnListDevices(token: String): String
 		@JvmStatic external fun setEnv(name: String, value: String)
 		@JvmStatic external fun setCaBundle(path: String)
+		@JvmStatic external fun setCrashFile(path: String)
 		@JvmStatic external fun psnDiag(): String
 		@JvmStatic external fun sessionPsnStep(ptr: Long): Int
 		@JvmStatic external fun sessionVideoStats(ptr: Long): LongArray?
@@ -149,6 +150,9 @@ object ChiakiPsn
 
 	/** Файл кореневих сертифікатів для всіх HTTPS-запитів бібліотеки (curl і OpenSSL) */
 	fun setCaBundle(path: String) = ChiakiNative.setCaBundle(path)
+
+	/** AnyPlay 118.2: куди рідний код пише падіння (сигнал, потік, стек); вмикає обробник сигналів */
+	fun setCrashFile(path: String) = ChiakiNative.setCrashFile(path)
 
 	fun diag(): PsnDiag
 	{

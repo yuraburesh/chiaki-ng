@@ -13,6 +13,7 @@ add_library(chiaki-jni SHARED
         src/main/cpp/audio-decoder.c
         src/main/cpp/audio-output.h
         src/main/cpp/audio-output.cpp
+        src/main/cpp/crash-handler.c
         src/main/cpp/circular-fifo.hpp)
 target_link_libraries(chiaki-jni chiaki-lib)
 

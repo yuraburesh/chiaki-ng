@@ -145,7 +145,7 @@ object AnyPlayQuality
 		hevcCache = key
 		hevcCacheOk = ok
 		if(!ok)
-			Log.i("AnyPlay", "Апаратного декодера H.265 для $key немає: відео в H.264")
+			AnyPlayDiag.i("Апаратного декодера H.265 для $key немає: відео в H.264")
 		return ok
 	}
 
@@ -170,7 +170,7 @@ object AnyPlayQuality
 	fun hevcFailed(context: Context)
 	{
 		prefs(context).edit().putLong(KEY_HEVC_BROKEN, System.currentTimeMillis() + HEVC_BROKEN_MS).apply()
-		Log.w("AnyPlay", "H.265 на цьому телефоні не показав картинку: наступні підключення в H.264")
+		AnyPlayDiag.w("H.265 на цьому телефоні не показав картинку: наступні підключення в H.264")
 	}
 
 	/** Для сторінки: {auto, level, name, levels: [{title, hint}]} */

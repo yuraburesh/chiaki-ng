@@ -2,6 +2,8 @@
 
 #include "audio-output.h"
 
+#include <chiaki/time.h>
+
 #include "circular-buf.hpp"
 
 #include <chiaki/log.h>
@@ -86,7 +88,21 @@ extern "C" void android_chiaki_audio_output_frame(int16_t *buf, size_t samples_c
 	size_t buf_size = samples_count * sizeof(int16_t);
 	size_t pushed = ao->buf.Push(reinterpret_cast<uint8_t *>(buf), buf_size);
 	if(pushed < buf_size)
-		CHIAKI_LOGW(ao->log, "Audio Output Buffer Overflow!");
+	{
+		// AnyPlay 118.2: рядок на кожен кадр звуку забивав logcat («chatty expire» стирав інші рядки, зокрема
+		// перед смертю процесу) — тепер не частіше ніж раз на 5 с, з кількістю
+		static uint64_t last_ms = 0;
+		static uint32_t skipped = 0;
+		uint64_t now = chiaki_time_now_monotonic_ms();
+		if(now - last_ms >= 5000)
+		{
+			CHIAKI_LOGW(ao->log, "Audio Output Buffer Overflow! (%u more since the last message)", (unsigned)skipped);
+			last_ms = now;
+			skipped = 0;
+		}
+		else
+			skipped++;
+	}
 }
 
 oboe::DataCallbackResult AudioOutputCallback::onAudioReady(oboe::AudioStream *stream, void *audio_data, int32_t num_frames)

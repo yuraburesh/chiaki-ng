@@ -66,6 +66,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 	override fun onCreate(savedInstanceState: Bundle?)
 	{
 		super.onCreate(savedInstanceState)
+		AnyPlayDiag.install(this)   // 118.2: журнал програми, записи падінь і зависань
 		state = if(loggedIn) "wait" else "login"
 		// сторінка на весь екран, під системними панелями видно тло AnyPlay; відступи рахує anyplayFrame
 		WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -99,8 +100,9 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			intent.removeExtra(EXTRA_ACTION)
 			play()
 		}
-		if(savedInstanceState == null)
-			AnyPlayCloud.reportCrashIfAny(this)   // минулого разу гра обірвалась падінням — журнал для підтримки
+		// минулого разу гра обірвалась падінням — журнал для підтримки. 118.2: і тоді, коли система відновлює екран
+		// після смерті процесу (savedInstanceState не порожній) — саме так було на Galaxy S7, і звіт не йшов
+		AnyPlayCloud.reportCrashIfAny(this)
 	}
 
 	/** Повернулись зі сторінки сервера (AnyPlayPageActivity) з командою */
@@ -112,6 +114,12 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		intent.removeExtra(EXTRA_ACTION)
 		if(a == "play" && loggedIn)
 			play()
+	}
+
+	override fun onTrimMemory(level: Int)
+	{
+		super.onTrimMemory(level)
+		AnyPlayDiag.trimMemory(this, level)
 	}
 
 	override fun onDestroy()

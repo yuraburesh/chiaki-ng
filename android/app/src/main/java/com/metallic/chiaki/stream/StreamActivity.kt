@@ -2,6 +2,7 @@
 
 package com.metallic.chiaki.stream
 
+import com.metallic.chiaki.anyplay.AnyPlayDiag
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.app.AlertDialog
@@ -86,6 +87,8 @@ class StreamActivity : AppCompatActivity()
 		private const val ANYPLAY_BEAT_MS = 20000L
 		private const val ANYPLAY_BANNER_MS = 20000L
 		private const val HIDE_UI_TIMEOUT_MS = 2000L
+		/** 118.2: у цьому процесі гру вже запускали (інакше екран гри відтворила система після смерті процесу) */
+		@Volatile private var gameStartedInProcess = false
 	}
 
 	private lateinit var viewModel: StreamViewModel
@@ -97,6 +100,7 @@ class StreamActivity : AppCompatActivity()
 	override fun onCreate(savedInstanceState: Bundle?)
 	{
 		super.onCreate(savedInstanceState)
+		AnyPlayDiag.install(this)
 
 		val connectInfo = IntentCompat.getParcelableExtra(intent, EXTRA_CONNECT_INFO, ConnectInfo::class.java)
 		if(connectInfo == null)
@@ -104,6 +108,17 @@ class StreamActivity : AppCompatActivity()
 			finish()
 			return
 		}
+		// 118.2: процес загинув посеред гри, і Android сам відтворив екран гри зі старими даними (журнал Galaxy S7:
+		// сесія підключалась сама, без поверхні, екран завантаження висів на кроці 1, потім чорний екран).
+		// Такий екран одразу закриваємо: головний екран під ним покаже стан броні, а «Грати» почне гру як слід
+		if(savedInstanceState != null && !gameStartedInProcess && intent.getBooleanExtra(EXTRA_ANYPLAY, false))
+		{
+			AnyPlayDiag.w("Екран гри відновлено після смерті процесу: закриваю, гравець почне гру знову з головного екрана")
+			Toast.makeText(this, "Гру перервано: Android закрив програму. Натисни «Грати», щоб підключитись знову.", Toast.LENGTH_LONG).show()
+			finish()
+			return
+		}
+		gameStartedInProcess = true
 
 		viewModel = ViewModelProvider(this, viewModelFactory {
 			StreamViewModel(application, connectInfo)
@@ -284,6 +299,7 @@ class StreamActivity : AppCompatActivity()
 	private var wAutoReconnects = 0     // автоматичних перепідключень підряд без картинки
 	private var wDecoderReset = false   // декодер уже створювали заново в цій біді
 	private var wHevcMarked = false     // уже записали «H.265 тут не тягне»
+	private var wNoSurfaceSession: Any? = null   // для якої сесії вже записали «кадри є, поверхні немає»
 
 	/** Екранний геймпад AnyPlay (у фрагменті з розмітки; id фрагмента дістається обгортці, тому шукаємо за id самого геймпада) */
 	private fun gamepad(): GamepadView? = findViewById(R.id.gamepadView)
@@ -553,7 +569,7 @@ class StreamActivity : AppCompatActivity()
 	{
 		if(isFinishing || dialogContents == AnyPlayEndDialog)
 			return
-		Log.i("AnyPlay", "Підключаюсь заново: $why")
+		AnyPlayDiag.i("Підключаюсь заново: $why")
 		if(!auto)
 			wAutoReconnects = 0
 		dialog?.dismiss()
@@ -567,7 +583,7 @@ class StreamActivity : AppCompatActivity()
 	/** «Скасувати» на екрані завантаження: вийти з гри на головний екран */
 	private fun anyplayCancelLoading()
 	{
-		Log.i("AnyPlay", "Завантаження гри скасовано кнопкою")
+		AnyPlayDiag.i("Завантаження гри скасовано кнопкою")
 		anyplayLoading?.hide(false)
 		finish()
 	}
@@ -594,7 +610,7 @@ class StreamActivity : AppCompatActivity()
 	{
 		if(wTrouble == kind)
 			return
-		Log.i("AnyPlay", "Сторож картинки: $kind")
+		AnyPlayDiag.i("Сторож картинки: $kind")
 		wTrouble = kind
 		wStep = 0
 		wDecoderReset = false
@@ -646,8 +662,11 @@ class StreamActivity : AppCompatActivity()
 			wTrouble = ""
 			wStep = 0
 		}
-		val v = if(st == StreamStateConnected) s?.videoStats() else null
-		if(st != StreamStateConnected || v == null || v.size < 4)
+		// 118.2: стан беремо і з самої сесії: якщо кадри вже йдуть, екран завантаження не стоїть на кроці 1,
+		// навіть коли подія «підключено» до екрана не дійшла
+		val v = s?.videoStats()
+		val connectedLike = st == StreamStateConnected || (v != null && v.isNotEmpty() && v[0] > 0)
+		if(!connectedLike || v == null || v.size < 4)
 		{
 			// ще підключаємось (ключ від сервера, PSN, рукостискання з приставкою)
 			if(loadSince == 0L)
@@ -690,14 +709,14 @@ class StreamActivity : AppCompatActivity()
 			if(!wShown)
 			{
 				wShown = true
-				Log.i("AnyPlay", "Перша картинка через ${now - loadSince} мс від початку підключення" +
+				AnyPlayDiag.i("Перша картинка через ${now - loadSince} мс від початку підключення" +
 					(if(colorOn) " (з обробкою кольорів)" else "") + ", формат " + vs.connectInfo.videoProfile.codec)
 			}
 			everShown = true
 			loadSince = 0L
 			wAutoReconnects = 0
 			if(wTrouble != "")
-				Log.i("AnyPlay", "Сторож картинки: картинка повернулась ($wTrouble, кроків ${wStep})")
+				AnyPlayDiag.i("Сторож картинки: картинка повернулась ($wTrouble, кроків ${wStep})")
 			wTrouble = ""
 			wStep = 0
 			l.hide()
@@ -708,7 +727,7 @@ class StreamActivity : AppCompatActivity()
 		val recreated = if(v.size > 5) v[5] else 0L
 		if(colorOn && recreated >= 1)
 		{
-			Log.w("AnyPlay", "Сторож: декодер створювали заново ($recreated) з обробкою кольорів — вимикаю її")
+			AnyPlayDiag.w("Сторож: декодер створювали заново ($recreated) з обробкою кольорів — вимикаю її")
 			vs.blockColor()
 		}
 		if(recreated >= 2 && vs.connectInfo.videoProfile.codec == com.metallic.chiaki.lib.Codec.CODEC_H265 && !wHevcMarked)
@@ -753,10 +772,15 @@ class StreamActivity : AppCompatActivity()
 				wNewTrouble("start_no_picture")
 				stage = AnyPlayLoading.Stage.ALMOST
 				detail = if(!hasCodec) "Картинка вже йде, запускаю відео на телефоні." else "Картинка вже йде, ще мить."
+				if(!vs.hasSurface && t > 4000 && wNoSurfaceSession !== s)
+				{
+					wNoSurfaceSession = s
+					AnyPlayDiag.w("Сторож: кадри йдуть (${vin}), а поверхні екрана немає вже ${t / 1000} с")
+				}
 				when(wDue(t, 2500, 5000, 7500, 11000))
 				{
 					0 -> vs.requestKeyFrame("android_start_no_picture")
-					1 -> { wDecoderReset = true; Log.i("AnyPlay", "Сторож: декодер заново (кадрів прийшло $vin, показано $dec)"); vs.resetDecoder() }
+					1 -> { wDecoderReset = true; AnyPlayDiag.i("Сторож: декодер заново (кадрів прийшло $vin, показано $dec)"); vs.resetDecoder() }
 					2 -> if(colorOn) vs.blockColor() else vs.requestKeyFrame("android_start_no_picture")
 					3 -> wGiveUpOrReconnect("кадри приходять ($vin), а на екрані нічого${if(!hasCodec) ", декодер не створився" else ""}", true)
 				}
@@ -795,7 +819,7 @@ class StreamActivity : AppCompatActivity()
 			when(wDue(outStall, 2500, 5000, 7500, 11000))
 			{
 				0 -> vs.requestKeyFrame("android_picture_stalled")
-				1 -> { wDecoderReset = true; Log.i("AnyPlay", "Сторож: декодер заново посеред гри"); vs.resetDecoder() }
+				1 -> { wDecoderReset = true; AnyPlayDiag.i("Сторож: декодер заново посеред гри"); vs.resetDecoder() }
 				2 -> if(colorOn) vs.blockColor() else vs.requestKeyFrame("android_picture_stalled")
 				3 -> wGiveUpOrReconnect("картинка зависла посеред гри ${outStall / 1000} с, кадри приходять", false)
 			}
@@ -976,6 +1000,12 @@ class StreamActivity : AppCompatActivity()
 			val ctx = applicationContext
 			Thread { AnyPlayCloud.heartbeat(ctx, false) }.start()
 		}
+	}
+
+	override fun onTrimMemory(level: Int)
+	{
+		super.onTrimMemory(level)
+		AnyPlayDiag.trimMemory(this, level)
 	}
 
 	override fun onDestroy()
@@ -1224,7 +1254,7 @@ class StreamActivity : AppCompatActivity()
 			if(anyplayTakeoverJob?.isActive != true)
 			{
 				// пояснення — на екрані завантаження («приставка ще зайнята…»), окреме спливне вікно не потрібне
-				Log.i("AnyPlay", "Приставка ще зайнята (${if(anyplayRetrySelf) "попереднє підключення цього телефона" else "інший пристрій"}), повтор за 3 с")
+				AnyPlayDiag.i("Приставка ще зайнята (${if(anyplayRetrySelf) "попереднє підключення цього телефона" else "інший пристрій"}), повтор за 3 с")
 				anyplayTakeoverJob = lifecycleScope.launch {
 					delay(TAKEOVER_RETRY_MS)
 					viewModel.session.shutdown()

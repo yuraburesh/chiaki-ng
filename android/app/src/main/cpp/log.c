@@ -8,6 +8,8 @@
 #include <errno.h>
 #include <jni.h>
 #include <pthread.h>
+#include <stdio.h>
+#include <time.h>
 
 #include "chiaki-jni.h"
 
@@ -96,29 +98,27 @@ static void log_cb_android_file(ChiakiLogLevel level, const char *msg, void *use
 	FILE *f = user;
 	if(!f)
 		return;
+	char tag;
 	switch(level)
 	{
-		case CHIAKI_LOG_DEBUG:
-			fwrite("[D] ", 4, 1, f);
-			break;
-		case CHIAKI_LOG_VERBOSE:
-			fwrite("[V] ", 4, 1, f);
-			break;
-		case CHIAKI_LOG_INFO:
-			fwrite("[I] ", 4, 1, f);
-			break;
-		case CHIAKI_LOG_WARNING:
-			fwrite("[W] ", 4, 1, f);
-			break;
-		case CHIAKI_LOG_ERROR:
-			fwrite("[E] ", 4, 1, f);
-			break;
-		default:
-			fwrite("[?] ", 4, 1, f);
-			break;
+		case CHIAKI_LOG_DEBUG: tag = 'D'; break;
+		case CHIAKI_LOG_VERBOSE: tag = 'V'; break;
+		case CHIAKI_LOG_INFO: tag = 'I'; break;
+		case CHIAKI_LOG_WARNING: tag = 'W'; break;
+		case CHIAKI_LOG_ERROR: tag = 'E'; break;
+		default: tag = '?'; break;
 	}
-	fwrite(msg, strlen(msg), 1, f);
-	fwrite("\n", 1, 1, f);
+	// AnyPlay 118.2: час кожного рядка і запис на диск одразу. До цього рядки сиділи в буфері stdio, і коли процес
+	// гинув, хвіст журналу пропадав (журнал Galaxy S7 обривався посеред «Senkusha sending P»)
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	struct tm tm;
+	time_t secs = ts.tv_sec;
+	localtime_r(&secs, &tm);
+	flockfile(f);
+	fprintf(f, "[%c] %02d:%02d:%02d.%03ld %s\n", tag, tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000, msg);
+	fflush(f);
+	funlockfile(f);
 }
 
 ChiakiErrorCode android_chiaki_file_log_init(ChiakiLog *log, uint32_t level, const char *file)

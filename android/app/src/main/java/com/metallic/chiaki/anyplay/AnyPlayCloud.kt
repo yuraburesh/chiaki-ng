@@ -132,6 +132,7 @@ object AnyPlayCloud
 
 	// ── журнал для підтримки (К13): власник бачить його в CRM у картці клієнта ──
 	private const val KEY_LIVE = "stream_live"
+	private const val KEY_CRASH_REPORTED = "crash_reported_at"
 
 	/** Гра йде (true) або закрилась як слід (false). Якщо застосунок упав посеред гри, позначка лишиться — надішлемо журнал при наступному запуску */
 	fun markLive(context: Context, live: Boolean)
@@ -143,10 +144,15 @@ object AnyPlayCloud
 	fun reportCrashIfAny(context: Context)
 	{
 		val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-		if(!prefs.getBoolean(KEY_LIVE, false))
+		// 118.2: і падіння поза грою (файли падінь новіші за минулий звіт)
+		val crashAt = AnyPlayDiag.lastCrashAt(context)
+		val crashed = crashAt > prefs.getLong(KEY_CRASH_REPORTED, 0)
+		if(!prefs.getBoolean(KEY_LIVE, false) && !crashed)
 			return
-		prefs.edit().putBoolean(KEY_LIVE, false).apply()
-		uploadLog(context, "error", "Минулого разу гра закрилась несподівано (застосунок перезапустився)")
+		prefs.edit().putBoolean(KEY_LIVE, false).putLong(KEY_CRASH_REPORTED, maxOf(crashAt, 1L)).apply()
+		AnyPlayDiag.w("Минулого разу програма закрилась несподівано${if(crashed) " (є запис падіння)" else ""}: надсилаю журнал")
+		uploadLog(context, "error", "Минулого разу гра закрилась несподівано (застосунок перезапустився)" +
+			if(crashed) ", є запис падіння" else "", force = true)
 	}
 
 	// AnyPlay 118.1: журнал для підтримки. До 118 бралися лише 2 останні сесії (хвости по 160 КБ), тож з багатьох спроб
@@ -222,6 +228,17 @@ object AnyPlayCloud
 			.append(", Android ").append(Build.VERSION.RELEASE).append(" (SDK ").append(Build.VERSION.SDK_INT).append(")\n")
 		if(note.isNotEmpty())
 			sb.append(note).append("\n")
+		// 118.2: падіння й зависання (якщо були за добу) — першими, далі журнал самої програми (усі процеси)
+		try
+		{
+			val crashes = AnyPlayDiag.crashReport(context)
+			if(crashes.isNotEmpty())
+				sb.append("\n===== ПАДІННЯ І ЗАВИСАННЯ =====").append(crashes).append("\n")
+			val app = AnyPlayDiag.appLogTail(context, 60 * 1024)
+			if(app.isNotEmpty())
+				sb.append("\n===== журнал програми =====\n").append(app).append("\n")
+		}
+		catch(e: Exception) {}
 		try
 		{
 			val p = AnyPlayQuality.videoProfile(context)
@@ -271,7 +288,7 @@ object AnyPlayCloud
 	 * Надіслати журнал на сервер у фоні. reason: request (адмін попросив), error (збій), app.
 	 * Самі (не request) — не частіше ніж раз на 2 хв.
 	 */
-	fun uploadLog(context: Context, reason: String, note: String = "")
+	fun uploadLog(context: Context, reason: String, note: String = "", force: Boolean = false)
 	{
 		val app = context.applicationContext
 		if(token(app).isEmpty())
@@ -286,12 +303,12 @@ object AnyPlayCloud
 				return
 			prefs.edit().putLong(KEY_LOG_REQ_SENT, now).apply()
 		}
-		else
+		else if(!force)
 		{
 			val last = prefs.getLong(KEY_LOG_SENT, 0)
 			if(now - last in 0 until LOG_AUTO_GAP_MS)
 			{
-				android.util.Log.i("AnyPlay", "Журнал ($reason: $note) не надсилаю: минулий був ${(now - last) / 1000} с тому")
+				AnyPlayDiag.i("Журнал ($reason: $note) не надсилаю: минулий був ${(now - last) / 1000} с тому")
 				return
 			}
 			prefs.edit().putLong(KEY_LOG_SENT, now).apply()
@@ -314,9 +331,9 @@ object AnyPlayCloud
 				conn.setFixedLengthStreamingMode(body.size)
 				conn.outputStream.use { it.write(body) }
 				val code = conn.responseCode
-				android.util.Log.i("AnyPlay", "Журнал ($reason) надіслано: ${text.size / 1024} КБ тексту, ${body.size / 1024} КБ стиснуто, відповідь $code")
+				AnyPlayDiag.i("Журнал ($reason) надіслано: ${text.size / 1024} КБ тексту, ${body.size / 1024} КБ стиснуто, відповідь $code")
 			}
-			catch(e: Exception) { android.util.Log.w("AnyPlay", "Журнал не надіслано: ${e.javaClass.simpleName}") }
+			catch(e: Exception) { AnyPlayDiag.w("Журнал не надіслано: ${e.javaClass.simpleName}") }
 			finally { conn?.disconnect() }
 		}.apply { isDaemon = true; name = "anyplay-log" }.start()
 	}

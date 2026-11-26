@@ -2,6 +2,7 @@
 
 package com.metallic.chiaki.session
 
+import com.metallic.chiaki.anyplay.AnyPlayDiag
 import android.graphics.SurfaceTexture
 import android.util.Log
 import android.view.*
@@ -48,7 +49,7 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 						state.leftX.toInt() != 0 || state.leftY.toInt() != 0 || state.rightX.toInt() != 0 || state.rightY.toInt() != 0))
 				{
 					inputLogged = s
-					Log.i("AnyPlay", "Ввід: перше натискання в цій сесії пішло в гру (кнопки 0x${state.buttons.toString(16)}, стан ${_state.value?.javaClass?.simpleName})")
+					AnyPlayDiag.i("Ввід: перше натискання в цій сесії пішло в гру (кнопки 0x${state.buttons.toString(16)}, стан ${_state.value?.javaClass?.simpleName})")
 				}
 			}
 		}
@@ -125,7 +126,7 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 						{
 							val step = session.psnStep()
 							val diag = ChiakiPsn.diag()
-							Log.e("AnyPlay", "PSN connect failed: step $step, error ${err.value} ($err), HTTP ${diag.http}, curl ${diag.curl}: ${diag.line}")
+							AnyPlayDiag.e("PSN connect failed: step $step, error ${err.value} ($err), HTTP ${diag.http}, curl ${diag.curl}: ${diag.line}")
 							_state.postValue(StreamStatePsnFailed(err, step, diag))
 						}
 					}
@@ -195,7 +196,7 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		if(colorBlocked)
 			return
 		colorBlocked = true
-		Log.w("AnyPlay", "Обробка кольорів не показала картинку: до кінця гри картинка напряму")
+		AnyPlayDiag.w("Обробка кольорів не показала картинку: до кінця гри картинка напряму")
 		colorParams = null
 		routeSurface()
 	}
@@ -241,7 +242,7 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		{
 			// 118.1: до цього тут був лише return — декодер так і не отримував поверхню, і гра йшла без картинки
 			// («Received video data, but decoder is not initialized» у журналі Galaxy S7). Тепер — картинка напряму
-			Log.e("AnyPlay", "Обробка кольорів недоступна на цьому телефоні: картинка напряму")
+			AnyPlayDiag.e("Обробка кольорів недоступна на цьому телефоні: картинка напряму")
 			r.release()
 			colorBlocked = true
 			colorParams = null
@@ -254,7 +255,7 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 		session?.setSurface(input)
 		if(!r.attachOutput())
 		{
-			Log.e("AnyPlay", "Обробка кольорів не підключилась до екрана: картинка напряму")
+			AnyPlayDiag.e("Обробка кольорів не підключилась до екрана: картинка напряму")
 			colorBlocked = true
 			colorParams = null
 			surface = out

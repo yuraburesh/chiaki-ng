@@ -337,7 +337,7 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 			lastFailed = !r.ok
 			if(!r.ok)
 			{
-				Log.w("AnyPlay", "Оновлення: перевірка не вдалась (HTTP ${r.status}), повтор за хвилину")
+				AnyPlayDiag.w("Оновлення: перевірка не вдалась (HTTP ${r.status}), повтор за хвилину")
 				done?.invoke(null)
 				return@launch
 			}
@@ -345,11 +345,11 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 			val raw = r.json.optJSONObject("update")
 			val u = AnyPlayUpdate.parse(raw)
 			if(u != null)
-				Log.i("AnyPlay", "Оновлення: доступна збірка ${u.build}${if(u.mandatory) " (обов'язкова)" else ""}, у нас ${BuildConfig.ANYPLAY_BUILD}")
+				AnyPlayDiag.i("Оновлення: доступна збірка ${u.build}${if(u.mandatory) " (обов'язкова)" else ""}, у нас ${BuildConfig.ANYPLAY_BUILD}")
 			else if(raw != null)
-				Log.w("AnyPlay", "Оновлення: сервер дав збірку ${raw.optInt("build")}, але без правильного файлу (https, sha256, size) — пропускаю")
+				AnyPlayDiag.w("Оновлення: сервер дав збірку ${raw.optInt("build")}, але без правильного файлу (https, sha256, size) — пропускаю")
 			else
-				Log.i("AnyPlay", "Оновлення: нової збірки немає (у нас ${BuildConfig.ANYPLAY_BUILD})")
+				AnyPlayDiag.i("Оновлення: нової збірки немає (у нас ${BuildConfig.ANYPLAY_BUILD})")
 			val changed = offer?.build != u?.build || offer?.mandatory != u?.mandatory
 			offer = u
 			if(changed)
@@ -407,7 +407,7 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 			b.setOnCancelListener { snooze(u) }
 		}
 		shownThisRun = u.build
-		Log.i("AnyPlay", "Оновлення: показую вікно «Доступна версія ${u.build}»")
+		AnyPlayDiag.i("Оновлення: показую вікно «Доступна версія ${u.build}»")
 		val d = present(b)
 		offerDialog = if(blocking) d else null
 	}
@@ -889,7 +889,7 @@ class AnyPlayUpdater(private val activity: AppCompatActivity, private val canSho
 	{
 		phase = Phase.IDLE
 		job = null
-		Log.w("AnyPlay", "Оновлення до ${u.build} не вдалось: $why")
+		AnyPlayDiag.w("Оновлення до ${u.build} не вдалось: $why")
 		onChanged()
 		dismissDialog()
 		whenVisible {

@@ -208,6 +208,9 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int)
 	{
 		relayout()
+		// 128: вертикально кнопки завжди на екрані (під картинкою вони нічого не закривають)
+		if(!landscape && !shown)
+			reveal()
 		scheduleHide()
 	}
 
@@ -318,7 +321,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		{
 			area.set(0f, min(videoBottom.toFloat(), h * 0.6f), w, h - safeBottom)
 			val byW = w / d / 380f * 1.1f
-			val byH = area.height() / d / 500f
+			val byH = area.height() / d / 450f   // 128: вертикально кнопки трохи більші (місця під картинкою досить)
 			unit = d * min(byW, byH).coerceIn(0.7f, 1.4f)
 		}
 		for(it in items)
@@ -383,7 +386,51 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	}
 
 	// ── малювання ──
-	private fun al(a: Int) = (a * opacity).toInt().coerceIn(0, 255)
+	/** 128: вертикально кнопки стоять на власному тлі під картинкою — тож вони щільні й об'ємні, як на справжньому
+	 *  геймпаді (кольорові символи як на DualShock 4), без прозорості. Горизонтально — скляні поверх гри, як були */
+	private val solid get() = !landscape
+	private fun al(a: Int) = if(solid) 255 else (a * opacity).toInt().coerceIn(0, 255)
+	private val grad = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+	private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+	private val SOLID_HI = Color.rgb(78, 74, 98)
+	private val SOLID_LO = Color.rgb(30, 27, 42)
+	private val SOLID_PRESS_HI = Color.rgb(52, 48, 70)
+	private val SOLID_PRESS_LO = Color.rgb(24, 21, 34)
+	private val ACCENT = Color.rgb(143, 227, 255)
+	private val SOLID_INK = Color.rgb(232, 229, 242)
+
+	/** Тінь під кнопкою і об'ємне тіло (світло зверху ліворуч), натиснута — нижче й темніша, з кільцем підсвітки */
+	private fun solidShape(canvas: Canvas, pressed: Boolean, draw: (Paint) -> Unit, bounds: RectF)
+	{
+		val lift = if(pressed) dp(0.6f) else dp(2.2f)
+		canvas.save()
+		canvas.translate(0f, lift)
+		fill.color = Color.argb(if(pressed) 90 else 150, 0, 0, 0)
+		draw(fill)
+		canvas.restore()
+		grad.shader = android.graphics.LinearGradient(bounds.left, bounds.top, bounds.left + bounds.width() * 0.35f, bounds.bottom,
+			if(pressed) SOLID_PRESS_HI else SOLID_HI, if(pressed) SOLID_PRESS_LO else SOLID_LO, android.graphics.Shader.TileMode.CLAMP)
+		draw(grad)
+		grad.shader = null
+		edge.color = if(pressed) ACCENT else Color.argb(46, 255, 255, 255)
+		draw(edge)
+		if(pressed)
+		{
+			glow.strokeWidth = edge.strokeWidth * 4f
+			glow.color = Color.argb(70, 143, 227, 255)
+			draw(glow)
+		}
+	}
+
+	/** Колір символу кнопки, як на DualShock 4: трикутник зелений, коло червоне, хрестик синій, квадрат рожевий */
+	private fun faceColor(g: Int): Int = when(g)
+	{
+		G_PYRAMID -> Color.rgb(64, 226, 170)
+		G_MOON -> Color.rgb(255, 92, 108)
+		G_CROSS -> Color.rgb(122, 170, 255)
+		G_BOX -> Color.rgb(246, 140, 220)
+		else -> SOLID_INK
+	}
 	private val idleFill get() = Color.argb(al(42), 255, 255, 255)
 	private val pressedFill get() = Color.argb(al(135), 143, 227, 255)
 	private val idleEdge get() = Color.argb(al(160), 255, 255, 255)
@@ -395,8 +442,12 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		if(!landscape)
 		{
 			// під картинкою — темне тло в кольорах AnyPlay
-			fill.color = Color.rgb(29, 26, 43)
-			canvas.drawRect(0f, area.top, width.toFloat(), height.toFloat(), fill)
+			// 128: тло як матовий корпус геймпада: трохи світліше вгорі, з тонкою світлою смугою під картинкою
+			grad.shader = android.graphics.LinearGradient(0f, area.top, 0f, height.toFloat(), Color.rgb(40, 36, 58), Color.rgb(22, 20, 33), android.graphics.Shader.TileMode.CLAMP)
+			canvas.drawRect(0f, area.top, width.toFloat(), height.toFloat(), grad)
+			grad.shader = null
+			fill.color = Color.argb(90, 143, 227, 255)
+			canvas.drawRect(0f, area.top, width.toFloat(), area.top + dp(1.5f), fill)
 		}
 		shade.color = Color.argb(al(60), 0, 0, 0)
 		glyph.color = ink
@@ -419,6 +470,11 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 
 	private fun body(canvas: Canvas, rect: RectF, radius: Float, pressed: Boolean)
 	{
+		if(solid)
+		{
+			solidShape(canvas, pressed, { p -> canvas.drawRoundRect(rect, radius, radius, p) }, rect)
+			return
+		}
 		fill.color = if(pressed) pressedFill else idleFill
 		canvas.drawRoundRect(rect, radius, radius, fill)
 		canvas.drawRoundRect(rect, radius, radius, shade)
@@ -428,6 +484,12 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 
 	private fun circle(canvas: Canvas, cx: Float, cy: Float, r: Float, pressed: Boolean)
 	{
+		if(solid)
+		{
+			tmp.set(cx - r, cy - r, cx + r, cy + r)
+			solidShape(canvas, pressed, { p -> canvas.drawCircle(cx, cy, r, p) }, RectF(tmp))
+			return
+		}
 		fill.color = if(pressed) pressedFill else idleFill
 		canvas.drawCircle(cx, cy, r, fill)
 		canvas.drawCircle(cx, cy, r, shade)
@@ -445,6 +507,30 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		val r = min(k.rect.width(), k.rect.height()) / 2
 		val cx = k.cx
 		val cy = k.cy
+		// вертикально натиснута кнопка «просідає»
+		val sunk = solid && k.pressed
+		if(sunk)
+		{
+			canvas.save()
+			canvas.translate(0f, dp(1.6f))
+		}
+		if(solid)
+		{
+			glyph.color = if(k.glyph in intArrayOf(G_CROSS, G_MOON, G_BOX, G_PYRAMID)) faceColor(k.glyph) else SOLID_INK
+			text.color = SOLID_INK
+		}
+		drawKeyBody(canvas, k, r, cx, cy)
+		if(sunk)
+			canvas.restore()
+		if(solid)
+		{
+			glyph.color = ink
+			text.color = ink
+		}
+	}
+
+	private fun drawKeyBody(canvas: Canvas, k: Key, r: Float, cx: Float, cy: Float)
+	{
 		when(k.glyph)
 		{
 			G_TEXT ->
@@ -490,7 +576,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 				// як ковпачок стіка: коло з кільцем усередині і підписом
 				circle(canvas, cx, cy, r, k.pressed)
 				val a = glyph.alpha
-				glyph.alpha = al(110)
+				glyph.alpha = if(solid) 80 else al(110)
 				canvas.drawCircle(cx, cy, r * 0.72f, glyph)
 				glyph.alpha = a
 				text.textSize = r * 0.62f
@@ -576,7 +662,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		val s = it.bounds.height() * 0.16f
 		tmp.set(it.cx - s * 1.5f, it.cy - s, it.cx + s * 1.5f, it.cy + s)
 		val a = glyph.alpha
-		glyph.alpha = al(150)
+		glyph.alpha = if(solid) 120 else al(150)
 		canvas.drawRoundRect(tmp, s * 0.5f, s * 0.5f, glyph)
 		glyph.alpha = a
 	}
@@ -608,11 +694,21 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 			path.lineTo(x0, yi)
 			path.close()
 			val pressed = dpadMask and masks[i] != 0U
-			fill.color = if(pressed) pressedFill else idleFill
-			canvas.drawPath(path, fill)
-			canvas.drawPath(path, shade)
-			edge.color = if(pressed) pressedEdge else idleEdge
-			canvas.drawPath(path, edge)
+			if(solid)
+			{
+				val b = RectF()
+				path.computeBounds(b, true)
+				solidShape(canvas, pressed, { p -> canvas.drawPath(path, p) }, b)
+				glyph.color = SOLID_INK
+			}
+			else
+			{
+				fill.color = if(pressed) pressedFill else idleFill
+				canvas.drawPath(path, fill)
+				canvas.drawPath(path, shade)
+				edge.color = if(pressed) pressedEdge else idleEdge
+				canvas.drawPath(path, edge)
+			}
 			// стрілка на пелюстці
 			val ay = yo + (yi - yo) * 0.42f
 			val aw = half * 0.42f
@@ -627,6 +723,11 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		val active = s.pointer >= 0
 		val ring = it.hw
 		val knob = ring * 0.55f
+		if(solid)
+		{
+			drawSolidStick(canvas, s, ring, knob, active)
+			return
+		}
 		fill.color = Color.argb(al(if(active) 46 else 26), 255, 255, 255)
 		canvas.drawCircle(s.cx, s.cy, ring, fill)
 		canvas.drawCircle(s.cx, s.cy, ring, shade)
@@ -640,6 +741,35 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		canvas.drawCircle(hx, hy, knob, shade)
 		edge.color = if(s.click) pressedEdge else idleEdge
 		canvas.drawCircle(hx, hy, knob, edge)
+	}
+
+	/** 128: стік як на геймпаді — заглиблення в корпусі і гумовий ковпачок з увігнутим кільцем */
+	private fun drawSolidStick(canvas: Canvas, s: Stick, ring: Float, knob: Float, active: Boolean)
+	{
+		// заглиблення: темніше до краю, світла риска знизу
+		grad.shader = android.graphics.RadialGradient(s.cx, s.cy, ring, intArrayOf(Color.rgb(22, 19, 32), Color.rgb(14, 12, 22)), null, android.graphics.Shader.TileMode.CLAMP)
+		canvas.drawCircle(s.cx, s.cy, ring, grad)
+		grad.shader = null
+		edge.color = if(active) Color.argb(150, 143, 227, 255) else Color.argb(36, 255, 255, 255)
+		canvas.drawCircle(s.cx, s.cy, ring, edge)
+		val travel = ring - knob * 0.8f
+		val hx = s.cx + s.dx * travel
+		val hy = s.cy + s.dy * travel
+		// тінь ковпачка
+		fill.color = Color.argb(160, 0, 0, 0)
+		canvas.drawCircle(hx, hy + dp(if(s.click) 1f else 3f), knob, fill)
+		grad.shader = android.graphics.RadialGradient(hx - knob * 0.3f, hy - knob * 0.4f, knob * 1.5f,
+			intArrayOf(if(s.click) SOLID_PRESS_HI else Color.rgb(92, 88, 114), SOLID_LO), null, android.graphics.Shader.TileMode.CLAMP)
+		canvas.drawCircle(hx, hy, knob, grad)
+		// увігнута середина
+		grad.shader = android.graphics.RadialGradient(hx, hy + knob * 0.15f, knob * 0.72f,
+			intArrayOf(Color.rgb(34, 31, 46), Color.rgb(52, 48, 68)), null, android.graphics.Shader.TileMode.CLAMP)
+		canvas.drawCircle(hx, hy, knob * 0.7f, grad)
+		grad.shader = null
+		edge.color = if(s.click || active) ACCENT else Color.argb(50, 255, 255, 255)
+		canvas.drawCircle(hx, hy, knob, edge)
+		edge.color = Color.argb(30, 255, 255, 255)
+		canvas.drawCircle(hx, hy, knob * 0.7f, edge)
 	}
 
 	private fun drawEditFrames(canvas: Canvas)
@@ -1064,7 +1194,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 
 	private fun hideNow()
 	{
-		if(editMode || anyPointer() || !shown || autoHideSec == 0)
+		if(editMode || anyPointer() || !shown || autoHideSec == 0 || !landscape)
 			return
 		shown = false
 		animate().cancel()
@@ -1088,7 +1218,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	/** Натиснули справжній геймпад: кнопки на екрані одразу ховаються, доки не торкнуться екрана */
 	fun physicalInput()
 	{
-		if(shown && !editMode && autoHideSec != 0 && !anyPointer())
+		if(shown && landscape && !editMode && autoHideSec != 0 && !anyPointer())
 		{
 			removeCallbacks(hideRunnable)
 			hideNow()

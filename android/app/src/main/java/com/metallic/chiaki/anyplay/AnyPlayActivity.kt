@@ -196,7 +196,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 			// «Грати тут»: забрати гру з іншого пристрою клієнта (той сам зупинить стрім)
 			"takeover" -> if(!isAdmin) play(true)
 			// «Кнопки на екрані»: редактор розташування без гри
-			"layout" -> PadEditorDialog(this).show()
+			"layout" -> PadEditorDialog(this, arg == "map").show()
 			"retry", "refresh" -> if(loggedIn && state != "pairing") lifecycleScope.launch { refresh() }
 			"update" -> updater.updateNow {
 				openBot()

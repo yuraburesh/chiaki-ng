@@ -1,5 +1,5 @@
 // AnyPlay 125: статистика під час гри, як на комп'ютері (StreamView.qml, anyplayStats): кадри за секунду,
-// швидкість, пінг, втрати. Скляна пігулка в кольорах AnyPlay; «Докладно» — картка з усіма цифрами.
+// швидкість, пінг, втрати. 128: тонкий скляний рядок угорі; «Докладно» — той самий рядок з підписами й рештою цифр.
 // Дотики крізь неї проходять у гру (кнопки під нею працюють). Місце обирає StreamActivity: там, де немає кнопок.
 package com.metallic.chiaki.anyplay
 
@@ -41,13 +41,12 @@ class AnyPlayStatsHud(context: Context): View(context)
 		set(value) { if(field != value) { field = value; requestLayout(); invalidate() } }
 	private var st: Stats? = null
 
-	private val glass = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xE0221D2E.toInt() }
+	private val glass = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xB8221D2E.toInt() }
 	private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f); color = 0x40FFFFFF }
 	private val shine = Paint(Paint.ANTI_ALIAS_FLAG)
 	private val dot = Paint(Paint.ANTI_ALIAS_FLAG)
-	private val big = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = AnyPlayStyle.bodyMedium(context); textSize = dp(12f); color = AnyPlayStyle.INK }
-	private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = AnyPlayStyle.body(context); textSize = dp(11.5f); color = AnyPlayStyle.MUTE }
-	private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = AnyPlayStyle.displayMedium(context); textSize = dp(10.5f); color = 0x8CFFFFFF.toInt(); letterSpacing = 0.12f }
+	private val big = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = AnyPlayStyle.bodyMedium(context); textSize = dp(11f); color = AnyPlayStyle.INK }
+	private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = AnyPlayStyle.body(context); textSize = dp(10f); color = 0x8CFFFFFF.toInt() }
 	private val rect = RectF()
 
 	init
@@ -66,7 +65,7 @@ class AnyPlayStatsHud(context: Context): View(context)
 		st = s
 		if(wasNull != (s == null))
 			requestLayout()
-		else if(width > 0 && measureW() > width + dp(2f))
+		else if(width > 0 && kotlin.math.abs(measureW() - width) > dp(4f))
 			requestLayout()
 		invalidate()
 	}
@@ -84,41 +83,57 @@ class AnyPlayStatsHud(context: Context): View(context)
 	private fun lossColor(l: Double) = if(l < 0.5) AnyPlayStyle.MUTE else if(l < 2) AnyPlayStyle.GOLD else AnyPlayStyle.BAD
 	private fun pingColor(p: Long) = if(p in 1..39) AnyPlayStyle.MUTE else if(p in 40..79) AnyPlayStyle.GOLD else if(p >= 80) AnyPlayStyle.BAD else AnyPlayStyle.MUTE
 
-	/** Короткий рядок: [текст, колір, жирний] */
-	private fun shortParts(s: Stats): List<Triple<String, Int, Boolean>> = listOfNotNull(
-		Triple("${fps(s)} FPS", fpsColor(s), true),
-		Triple("${num(s.mbps, if(s.mbps < 10) 1 else 0)} Мбіт/с", AnyPlayStyle.MUTE, false),
-		if(s.pingMs > 0) Triple("${s.pingMs} мс", pingColor(s.pingMs), false) else null,
-		Triple("${num(s.lossPct, 1)}%", lossColor(s.lossPct), false))
+	/** 128: і коротко, і докладно — один тонкий рядок угорі: [підпис або null, значення, колір значення] */
+	private class Part(val label: String?, val value: String, val color: Int)
 
-	private fun fullRows(s: Stats): List<Triple<String, String, Int>> = listOf(
-		Triple("КАДРИ", "${fps(s)} з ${s.target} за секунду", fpsColor(s)),
-		Triple("З ПРИСТАВКИ", "${s.fpsStream.roundToInt()} кадрів/с, пропущено ${s.dropped}", AnyPlayStyle.MUTE),
-		Triple("ШВИДКІСТЬ", "${num(s.mbps, 1)} Мбіт/с", AnyPlayStyle.INK),
-		Triple("ПІНГ", if(s.pingMs > 0) "${s.pingMs} мс до приставки" else "вимірюю…", pingColor(s.pingMs)),
-		Triple("ВТРАТИ", "${num(s.lossPct, 1)}% пакетів", lossColor(s.lossPct)),
-		Triple("ВІДЕО", "${s.codec} ${s.width}×${s.height}", AnyPlayStyle.MUTE),
-		Triple("ЯКІСТЬ", s.quality, AnyPlayStyle.MUTE))
-
-	private val padX get() = dp(10f)
-	private val gap get() = dp(9f)
-
-	private fun measureW(): Float
+	private fun parts(s: Stats): List<Part>
 	{
-		val s = st ?: return 0f
-		return if(mode == FULL)
+		val p = ArrayList<Part>()
+		if(mode == FULL)
 		{
-			val rows = fullRows(s)
-			val lw = rows.maxOf { label.measureText(it.first) }
-			val vw = rows.maxOf { big.measureText(it.second) }
-			padX * 2 + lw + dp(10f) + vw
+			p += Part("Кадри", "${fps(s)}/${s.target}", fpsColor(s))
+			p += Part("Швидкість", "${num(s.mbps, 1)} Мбіт/с", AnyPlayStyle.INK)
+			p += Part("Пінг", if(s.pingMs > 0) "${s.pingMs} мс" else "…", if(s.pingMs > 0) pingColor(s.pingMs) else AnyPlayStyle.MUTE)
+			p += Part("Втрати", "${num(s.lossPct, 1)}%", lossColor(s.lossPct))
+			p += Part("Пропущено", "${s.dropped}", if(s.dropped > 0) AnyPlayStyle.GOLD else AnyPlayStyle.MUTE)
+			p += Part(null, "${s.height}p ${s.codec}", AnyPlayStyle.MUTE)
+			p += Part(null, s.quality, AnyPlayStyle.MUTE)
 		}
 		else
 		{
-			val parts = shortParts(s)
-			padX * 2 + dp(6f) + gap + parts.sumOf { (if(it.third) big else small).measureText(it.first).toDouble() }.toFloat() + gap * (parts.size - 1)
+			p += Part(null, "${fps(s)} FPS", fpsColor(s))
+			p += Part(null, "${num(s.mbps, if(s.mbps < 10) 1 else 0)} Мбіт/с", AnyPlayStyle.INK)
+			if(s.pingMs > 0) p += Part(null, "${s.pingMs} мс", pingColor(s.pingMs))
+			p += Part(null, "${num(s.lossPct, 1)}%", lossColor(s.lossPct))
 		}
+		return p
 	}
+
+	/** Найбільша ширина (задає StreamActivity: ширина екрана без відступів) — зайве з кінця відкидаємо */
+	var maxW = Int.MAX_VALUE
+		set(value) { if(field != value) { field = value; requestLayout() } }
+
+	private val padX get() = dp(9f)
+	private val gap get() = dp(10f)
+	private val lgap get() = dp(4f)
+
+	private fun partW(p: Part) = (p.label?.let { label.measureText(it) + lgap } ?: 0f) + big.measureText(p.value)
+
+	/** Що влазить у maxW */
+	private fun fitted(s: Stats): List<Part>
+	{
+		val all = parts(s)
+		var n = all.size
+		while(n > 1 && widthOf(all.subList(0, n)) > maxW)
+			n--
+		return all.subList(0, n)
+	}
+
+	private fun widthOf(ps: List<Part>) = padX * 2 + dp(3f) + gap + ps.sumOf { partW(it).toDouble() }.toFloat() + gap * (ps.size - 1)
+
+	private fun measureW(): Float = st?.let { widthOf(fitted(it)) } ?: 0f
+
+	private val barH get() = dp(20f)
 
 	override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int)
 	{
@@ -128,9 +143,7 @@ class AnyPlayStatsHud(context: Context): View(context)
 			setMeasuredDimension(0, 0)
 			return
 		}
-		val w = measureW()
-		val h = if(mode == FULL) dp(10f) * 2 + fullRows(s).size * dp(17f) else dp(24f)
-		setMeasuredDimension(w.roundToInt() + 1, h.roundToInt())
+		setMeasuredDimension(measureW().roundToInt() + 1, barH.roundToInt())
 	}
 
 	override fun onDraw(canvas: Canvas)
@@ -139,45 +152,34 @@ class AnyPlayStatsHud(context: Context): View(context)
 		if(mode == OFF)
 			return
 		rect.set(0f, 0f, width.toFloat(), height.toFloat())
-		val r = if(mode == FULL) dp(6f) else height / 2f
+		val r = height / 2f
 		canvas.drawRoundRect(rect, r, r, glass)
 		shine.shader = LinearGradient(0f, 0f, 0f, height * 0.6f, 0x14FFFFFF, Color.TRANSPARENT, Shader.TileMode.CLAMP)
 		canvas.drawRoundRect(rect, r, r, shine)
 		rect.inset(dp(0.5f), dp(0.5f))
 		canvas.drawRoundRect(rect, r, r, rim)
-		if(mode == FULL)
-		{
-			val rows = fullRows(s)
-			val lw = rows.maxOf { label.measureText(it.first) }
-			var y = dp(10f) + dp(12.5f)
-			for(row in rows)
-			{
-				canvas.drawText(row.first, padX, y, label)
-				big.color = row.third
-				canvas.drawText(row.second, padX + lw + dp(10f), y, big)
-				y += dp(17f)
-			}
-			big.color = AnyPlayStyle.INK
-			return
-		}
 		// риска кольору кадрів зліва, як на комп'ютері
 		val cy = height / 2f
 		dot.color = fpsColor(s)
-		rect.set(padX, cy - dp(6f), padX + dp(3f), cy + dp(6f))
+		rect.set(padX, cy - dp(5f), padX + dp(3f), cy + dp(5f))
 		canvas.drawRoundRect(rect, dp(1.5f), dp(1.5f), dot)
 		var x = padX + dp(3f) + gap
-		for(p in shortParts(s))
+		val base = cy - (big.descent() + big.ascent()) / 2
+		for(p in fitted(s))
 		{
-			val paint = if(p.third) big else small
-			paint.color = p.second
-			canvas.drawText(p.first, x, cy - (paint.descent() + paint.ascent()) / 2, paint)
-			x += paint.measureText(p.first) + gap
+			if(p.label != null)
+			{
+				canvas.drawText(p.label, x, base, label)
+				x += label.measureText(p.label) + lgap
+			}
+			big.color = p.color
+			canvas.drawText(p.value, x, base, big)
+			x += big.measureText(p.value) + gap
 		}
 		big.color = AnyPlayStyle.INK
-		small.color = AnyPlayStyle.MUTE
 	}
 
 	/** Ширина потрібна для вибору місця ще до розмітки */
 	fun wantWidth(): Int = max(0f, measureW()).roundToInt()
-	fun wantHeight(): Int = st?.let { if(mode == FULL) (dp(20f) + fullRows(it).size * dp(17f)).roundToInt() else dp(24f).roundToInt() } ?: 0
+	fun wantHeight(): Int = if(st != null) barH.roundToInt() else 0
 }

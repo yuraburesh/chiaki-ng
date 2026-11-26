@@ -371,32 +371,38 @@ class StreamActivity : AppCompatActivity()
 		}
 	}
 
-	/** Панель статистики туди, де немає кнопок: угорі по центру, ліворуч, праворуч, потім унизу */
+	/** 128: статистика — тонкий рядок угорі: по центру, а якщо там кнопки — ліворуч чи праворуч угорі */
 	private fun placeHud(h: AnyPlayStatsHud)
 	{
 		val w = binding.root.width
 		val ht = binding.root.height
-		val hw = h.wantWidth()
-		val hh = h.wantHeight()
-		if(w == 0 || hw == 0)
+		if(w == 0)
 			return
 		val dp = resources.displayMetrics.density
-		val m = (8 * dp).toInt()
-		val cut = ViewCompat.getRootWindowInsets(binding.root)?.getInsets(WindowInsetsCompat.Type.displayCutout())
-		val cl = cut?.left ?: 0
-		val cr = cut?.right ?: 0
-		val ct = cut?.top ?: 0
+		val m = (6 * dp).toInt()
+		// відступи системи (виріз камери, заокруглені кути) — свої на кожному телефоні
+		val ins = ViewCompat.getRootWindowInsets(binding.root)?.getInsets(WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.systemBars())
+		val cl = ins?.left ?: 0
+		val cr = ins?.right ?: 0
+		val ct = ins?.top ?: 0
+		h.maxW = w - cl - cr - 2 * m
+		val hw = h.wantWidth()
+		val hh = h.wantHeight()
+		if(hw == 0)
+			return
 		val portrait = ht > w
-		val (x, y) = if(portrait && anyplayControls) (m + cl) to (ct + m)
+		val top = ct + m
+		val center = (cl + (w - cl - cr - hw) / 2) to top
+		val (x, y) = if(portrait || !anyplayControls) center
 		else
 		{
-			val busy = if(anyplayControls) gamepad()?.occupied() ?: emptyList() else emptyList()
-			val cands = listOf((w - hw) / 2 to m, (m + cl) to m, (w - hw - m - cr) to m, (m + cl) to (ht - hh - m), (w - hw - m - cr) to (ht - hh - m))
+			val busy = gamepad()?.occupied() ?: emptyList()
+			val cands = listOf(center, (m + cl) to top, (w - hw - m - cr) to top)
 			val pad = 4 * dp
 			cands.firstOrNull { (cx, cy) ->
 				val r = android.graphics.RectF(cx - pad, cy - pad, cx + hw + pad, cy + hh + pad)
 				busy.none { android.graphics.RectF.intersects(it, r) }
-			} ?: cands[0]
+			} ?: center
 		}
 		if(h.translationX != x.toFloat() || h.translationY != y.toFloat())
 		{
@@ -1241,7 +1247,7 @@ class StreamActivity : AppCompatActivity()
 	}
 
 	/** Редактор «Розташування кнопок» поверх гри: поки він відкритий, екранні кнопки в гру не йдуть */
-	private fun openPadEditor()
+	private fun openPadEditor(map: Boolean = false)
 	{
 		if(padEditor?.isOpen == true)
 			return
@@ -1253,7 +1259,7 @@ class StreamActivity : AppCompatActivity()
 			padEditor = PadEditor(this, binding.root, pad) {
 				padEditor = null
 				hideSystemUI()
-			}.also { it.open() }
+			}.also { it.open(map) }
 		}
 	}
 
@@ -1320,7 +1326,7 @@ class StreamActivity : AppCompatActivity()
 				"layout" ->
 				{
 					anyplayMenu?.dismiss()
-					openPadEditor()
+					openPadEditor(arg == "map")
 				}
 				// гру продовжили й оплатили: новий кінець гри — одразу, не чекаючи наступного сигналу серверу
 				"refresh" -> lifecycleScope.launch {

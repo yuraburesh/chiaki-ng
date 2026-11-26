@@ -56,6 +56,7 @@ targets:
           - ProfileName: DirectionalGamepad
         LSApplicationQueriesSchemes: [tg]
         NSLocalNetworkUsageDescription: "AnyPlay з'єднується з приставкою PS5 для гри."
+        NSMicrophoneUsageDescription: "Щоб друзі чули тебе, коли ви дивитесь гру разом."
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:

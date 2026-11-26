@@ -92,7 +92,7 @@ final class GamepadOverlay: UIView
 			area = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top - safe.bottom)
 		}
 		let unit: CGFloat = landscape ? (min(bounds.width, bounds.height) / 380).clamped(0.85, 1.35)
-			: min(bounds.width / 380 * 1.1, area.height / 500).clamped(0.7, 1.4)
+			: min(bounds.width / 380 * 1.1, area.height / 450).clamped(0.7, 1.4)
 		let map = landscape ? land : port
 		for it in items
 		{
@@ -111,15 +111,38 @@ final class GamepadOverlay: UIView
 	private func item(_ id: String) -> Item { items.first { $0.id == id }! }
 
 	// ── малювання ──
-	private var alphaK: CGFloat { 0.7 }
+	private var alphaK: CGFloat { solid ? 1 : 0.7 }
+	/** 128: вертикально кнопки на власному тлі під картинкою — щільні й об'ємні, як на геймпаді, символи кольорові як на DualShock 4 */
+	private var solid: Bool { !landscape }
+	private let accent = UIColor(red: 143 / 255, green: 227 / 255, blue: 1, alpha: 1)
+	private let solidInk = UIColor(red: 232 / 255, green: 229 / 255, blue: 242 / 255, alpha: 1)
+	private func faceColor(_ k: String) -> UIColor
+	{
+		switch k
+		{
+		case "pyramid": return UIColor(red: 64 / 255, green: 226 / 255, blue: 170 / 255, alpha: 1)
+		case "moon": return UIColor(red: 1, green: 92 / 255, blue: 108 / 255, alpha: 1)
+		case "cross": return UIColor(red: 122 / 255, green: 170 / 255, blue: 1, alpha: 1)
+		default: return UIColor(red: 246 / 255, green: 140 / 255, blue: 220 / 255, alpha: 1)
+		}
+	}
 
 	override func draw(_ rect: CGRect)
 	{
 		guard let ctx = UIGraphicsGetCurrentContext() else { return }
 		if !landscape
 		{
-			ctx.setFillColor(UIColor(red: 29 / 255, green: 26 / 255, blue: 43 / 255, alpha: 1).cgColor)
-			ctx.fill(CGRect(x: 0, y: area.minY, width: bounds.width, height: bounds.height - area.minY))
+			// тло як матовий корпус геймпада, тонка світла смуга під картинкою
+			let bg = CGRect(x: 0, y: area.minY, width: bounds.width, height: bounds.height - area.minY)
+			let colors = [UIColor(red: 40 / 255, green: 36 / 255, blue: 58 / 255, alpha: 1).cgColor, UIColor(red: 22 / 255, green: 20 / 255, blue: 33 / 255, alpha: 1).cgColor] as CFArray
+			if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1])
+			{
+				ctx.saveGState(); ctx.clip(to: bg)
+				ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: bg.minY), end: CGPoint(x: 0, y: bg.maxY), options: [])
+				ctx.restoreGState()
+			}
+			accent.withAlphaComponent(0.35).setFill()
+			UIRectFill(CGRect(x: 0, y: area.minY, width: bounds.width, height: 1.5))
 		}
 		for it in items
 		{
@@ -153,7 +176,7 @@ final class GamepadOverlay: UIView
 				{
 					let c = CGPoint(x: it.center.x + CGFloat(dx) * off, y: it.center.y + CGFloat(dy) * off)
 					body(ctx, UIBezierPath(ovalIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)), isPressed(k))
-					glyph(ctx, k, c, r * 0.42)
+					glyph(ctx, k, c, r * 0.42, color: solid ? faceColor(k) : nil)
 				}
 			case .dpad:
 				let r = it.size.width / 2, half = r * 0.27
@@ -171,6 +194,7 @@ final class GamepadOverlay: UIView
 				let i = it.id == "lstick" ? 0 : 1
 				let s = sticks[i], ring = it.size.width / 2, knob = ring * 0.55
 				let active = s.touch != nil
+				if solid { solidStick(ctx, s, ring, knob, active); continue }
 				UIColor.white.withAlphaComponent((active ? 0.18 : 0.1) * alphaK).setFill()
 				let ringPath = UIBezierPath(ovalIn: CGRect(x: s.origin.x - ring, y: s.origin.y - ring, width: 2 * ring, height: 2 * ring))
 				ringPath.fill()
@@ -182,8 +206,48 @@ final class GamepadOverlay: UIView
 		}
 	}
 
+	/** Об'ємна кнопка: тінь знизу, світло зверху ліворуч, натиснута — нижче, темніша, з кільцем підсвітки */
+	private func solidBody(_ ctx: CGContext, _ p: UIBezierPath, _ pressed: Bool)
+	{
+		let b = p.bounds
+		ctx.saveGState()
+		ctx.translateBy(x: 0, y: pressed ? 0.6 : 2.2)
+		UIColor(white: 0, alpha: pressed ? 0.35 : 0.6).setFill()
+		p.fill()
+		ctx.restoreGState()
+		let hi = pressed ? UIColor(red: 52 / 255, green: 48 / 255, blue: 70 / 255, alpha: 1) : UIColor(red: 78 / 255, green: 74 / 255, blue: 98 / 255, alpha: 1)
+		let lo = pressed ? UIColor(red: 24 / 255, green: 21 / 255, blue: 34 / 255, alpha: 1) : UIColor(red: 30 / 255, green: 27 / 255, blue: 42 / 255, alpha: 1)
+		if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [hi.cgColor, lo.cgColor] as CFArray, locations: [0, 1])
+		{
+			ctx.saveGState(); ctx.addPath(p.cgPath); ctx.clip()
+			ctx.drawLinearGradient(g, start: CGPoint(x: b.minX, y: b.minY), end: CGPoint(x: b.minX + b.width * 0.35, y: b.maxY), options: [])
+			ctx.restoreGState()
+		}
+		if pressed { accent.withAlphaComponent(0.28).setStroke(); p.lineWidth = 4.5; p.stroke() }
+		(pressed ? accent : UIColor(white: 1, alpha: 0.18)).setStroke()
+		p.lineWidth = 1.1
+		p.stroke()
+	}
+
+	/** Стік як на геймпаді: заглиблення в корпусі й гумовий ковпачок з увігнутою серединою */
+	private func solidStick(_ ctx: CGContext, _ s: Stick, _ ring: CGFloat, _ knob: CGFloat, _ active: Bool)
+	{
+		let well = UIBezierPath(ovalIn: CGRect(x: s.origin.x - ring, y: s.origin.y - ring, width: 2 * ring, height: 2 * ring))
+		UIColor(red: 16 / 255, green: 14 / 255, blue: 25 / 255, alpha: 1).setFill(); well.fill()
+		(active ? accent.withAlphaComponent(0.6) : UIColor(white: 1, alpha: 0.14)).setStroke(); well.lineWidth = 1.1; well.stroke()
+		let travel = ring - knob * 0.8
+		let k = CGPoint(x: s.origin.x + s.dx * travel, y: s.origin.y + s.dy * travel)
+		let cap = UIBezierPath(ovalIn: CGRect(x: k.x - knob, y: k.y - knob, width: 2 * knob, height: 2 * knob))
+		solidBody(ctx, cap, s.click)
+		let dish = UIBezierPath(ovalIn: CGRect(x: k.x - knob * 0.7, y: k.y - knob * 0.7, width: 1.4 * knob, height: 1.4 * knob))
+		UIColor(red: 38 / 255, green: 35 / 255, blue: 52 / 255, alpha: 1).setFill(); dish.fill()
+		UIColor(white: 1, alpha: 0.1).setStroke(); dish.lineWidth = 1; dish.stroke()
+		if active && !s.click { accent.setStroke(); cap.lineWidth = 1.2; cap.stroke() }
+	}
+
 	private func body(_ ctx: CGContext, _ p: UIBezierPath, _ pressed: Bool)
 	{
+		if solid { solidBody(ctx, p, pressed); return }
 		(pressed ? UIColor(red: 143 / 255, green: 227 / 255, blue: 1, alpha: 0.53 * alphaK) : UIColor.white.withAlphaComponent(0.16 * alphaK)).setFill()
 		p.fill()
 		(pressed ? UIColor(red: 143 / 255, green: 227 / 255, blue: 1, alpha: 0.94 * alphaK) : UIColor.white.withAlphaComponent(0.63 * alphaK)).setStroke()
@@ -193,15 +257,15 @@ final class GamepadOverlay: UIView
 
 	private func line(_ ctx: CGContext, _ a: CGPoint, _ b: CGPoint)
 	{
-		ctx.setStrokeColor(UIColor.white.withAlphaComponent(0.92 * alphaK).cgColor)
+		ctx.setStrokeColor((solid ? solidInk : UIColor.white.withAlphaComponent(0.92 * alphaK)).cgColor)
 		ctx.setLineWidth(1.6); ctx.setLineCap(.round)
 		ctx.move(to: a); ctx.addLine(to: b); ctx.strokePath()
 	}
 
-	private func glyph(_ ctx: CGContext, _ k: String, _ c: CGPoint, _ g: CGFloat)
+	private func glyph(_ ctx: CGContext, _ k: String, _ c: CGPoint, _ g: CGFloat, color: UIColor? = nil)
 	{
-		ctx.setStrokeColor(UIColor.white.withAlphaComponent(0.92 * alphaK).cgColor)
-		ctx.setLineWidth(1.6)
+		ctx.setStrokeColor((color ?? UIColor.white.withAlphaComponent(0.92 * alphaK)).cgColor)
+		ctx.setLineWidth(solid ? 2 : 1.6)
 		switch k
 		{
 		case "cross": ctx.move(to: CGPoint(x: c.x - g, y: c.y - g)); ctx.addLine(to: CGPoint(x: c.x + g, y: c.y + g)); ctx.move(to: CGPoint(x: c.x + g, y: c.y - g)); ctx.addLine(to: CGPoint(x: c.x - g, y: c.y + g))
@@ -214,7 +278,7 @@ final class GamepadOverlay: UIView
 
 	private func text(_ s: String, _ c: CGPoint, _ size: CGFloat)
 	{
-		let a: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: size, weight: .semibold), .foregroundColor: UIColor.white.withAlphaComponent(0.92 * alphaK)]
+		let a: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: size, weight: .semibold), .foregroundColor: solid ? solidInk : UIColor.white.withAlphaComponent(0.92 * alphaK)]
 		let t = NSAttributedString(string: s, attributes: a)
 		let sz = t.size()
 		t.draw(at: CGPoint(x: c.x - sz.width / 2, y: c.y - sz.height / 2))
@@ -483,7 +547,8 @@ final class GamepadOverlay: UIView
 	/** Грають справжнім геймпадом: кнопки ховаються до першого дотику */
 	func physicalInput()
 	{
-		guard shown, Prefs.autoHide != 0, !anyTouch() else { return }
+		// 128: вертикально кнопки завжди на екрані (під картинкою вони нічого не закривають)
+		guard shown, landscape, Prefs.autoHide != 0, !anyTouch() else { return }
 		hideWork?.cancel()
 		shown = false
 		UIView.animate(withDuration: 0.4) { self.alpha = 0.01 }

@@ -67,7 +67,8 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 
 	val isOpen get() = panel != null
 
-	fun open()
+	/** map — одразу відкрити «Джойстик» (малюнок DualSense, де обирають кнопки) */
+	fun open(map: Boolean = false)
 	{
 		if(panel != null)
 			return
@@ -90,6 +91,8 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		if(!portrait)
 			setCollapsed(true)
 		refresh()
+		if(map)
+			parent.post { chooseButtons() }
 	}
 
 	/** save: «Готово» або «Назад» — зберегти; «Скасувати» — повернути як було */
@@ -289,7 +292,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 		hideBtn = TextView(activity)   // старе поле, текст рахує hideText()
 
 		p.addView(row(
-			smallButton("Джойстик…", true) { chooseButtons() },
+			smallButton("🎮 Джойстик", true) { chooseButtons() },
 			smallButton("Скинути", false) { confirmReset() },
 			smallButton("Скасувати", false) { close(false) }))
 		// повна панель: «Готово» угорі завжди видно
@@ -575,7 +578,7 @@ class PadEditor(private val activity: Activity, private val parent: FrameLayout,
 }
 
 /** Редактор кнопок з головного екрана, без гри: темне поле замість картинки */
-class PadEditorDialog(private val activity: Activity): Dialog(activity, R.style.AnyPlayTheme)
+class PadEditorDialog(private val activity: Activity, private val map: Boolean = false): Dialog(activity, R.style.AnyPlayTheme)
 {
 	private var editor: PadEditor? = null
 
@@ -612,7 +615,7 @@ class PadEditorDialog(private val activity: Activity): Dialog(activity, R.style.
 		root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> root.post { arrange() } }
 		root.post {
 			arrange()
-			editor = PadEditor(activity, root, pad) { dismiss() }.also { it.open() }
+			editor = PadEditor(activity, root, pad) { dismiss() }.also { it.open(map) }
 		}
 	}
 

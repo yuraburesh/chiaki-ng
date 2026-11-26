@@ -66,7 +66,7 @@ final class HomeViewController: UIViewController, WebHost
 
 	private func render(push: Bool = true)
 	{
-		var o: [String: Any] = ["state": state, "loggedIn": loggedIn, "busy": busy, "admin": isAdmin, "skew": skew, "build": Cloud.build,
+		var o: [String: Any] = ["state": state, "loggedIn": loggedIn, "busy": busy, "admin": isAdmin, "skew": skew, "build": Cloud.build, "platform": "ios",
 			"user": loggedIn ? (session["user"] as? String ?? "") : "", "quality": Quality.json,
 			"pairShort": state == "pairing" ? pairShort : "", "pairBot": pairBot]
 		var s: [String: Any] = [:]

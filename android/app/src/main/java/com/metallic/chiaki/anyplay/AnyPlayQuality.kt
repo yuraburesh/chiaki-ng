@@ -70,7 +70,16 @@ object AnyPlayQuality
 		val sp = prefs(context)
 		val now = System.currentTimeMillis()
 		val lvl = level(context)
-		if(sp.getBoolean(KEY_UP, false) && lvl < levels.size - 1 && now > sp.getLong(KEY_NO_UP_UNTIL, 0))
+		// 128: «Авто» на старих телефонах (Android 10 і старші, як Galaxy S7) не йде вище «Оптимальної»: 1080p у H.264
+		// на 15 Мбіт/с їхній Wi-Fi і декодер тягнуть на межі, і за кілька хвилин картинка сиплеться. Вибрати вручну можна.
+		val autoMax = if(Build.VERSION.SDK_INT < Build.VERSION_CODES.R) 1 else levels.size - 1
+		if(lvl > autoMax)
+		{
+			setLevel(context, autoMax)
+			sp.edit().remove(KEY_UP).apply()
+			return
+		}
+		if(sp.getBoolean(KEY_UP, false) && lvl < autoMax && now > sp.getLong(KEY_NO_UP_UNTIL, 0))
 		{
 			setLevel(context, lvl + 1)
 			sp.edit().putLong(KEY_RAISED_AT, now).apply()

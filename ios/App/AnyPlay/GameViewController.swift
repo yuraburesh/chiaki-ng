@@ -56,14 +56,18 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		pad.isHidden = !Prefs.controls
 		view.addSubview(pad)
 
-		hud.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-		hud.textColor = UIColor(white: 1, alpha: 0.85)
-		hud.backgroundColor = UIColor(red: 34 / 255, green: 29 / 255, blue: 46 / 255, alpha: 0.88)
-		hud.layer.cornerRadius = 12
+		// 128: статистика — тонкий рядок угорі
+		hud.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+		hud.textColor = UIColor(white: 1, alpha: 0.88)
+		hud.backgroundColor = UIColor(red: 34 / 255, green: 29 / 255, blue: 46 / 255, alpha: 0.72)
+		hud.layer.cornerRadius = 10
 		hud.layer.masksToBounds = true
 		hud.textAlignment = .center
 		hud.isHidden = true
-		hud.numberOfLines = 0
+		hud.numberOfLines = 1
+		hud.adjustsFontSizeToFitWidth = true
+		hud.minimumScaleFactor = 0.75
+		hud.isUserInteractionEnabled = false
 		view.addSubview(hud)
 
 		loading.backgroundColor = UIColor(red: 0x2b / 255.0, green: 0x27 / 255.0, blue: 0x40 / 255.0, alpha: 1)
@@ -243,9 +247,34 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			let dt = max(0.5, now.timeIntervalSince(prev.0))
 			let fps = Int(Double(fin - prev.1) / dt)
 			let mbps = Double(bytes - prev.2) * 8 / dt / 1e6
-			var t = String(format: " %d FPS   %.1f Мбіт/с   %d мс   %.1f%% ", fps, mbps, s.rttMs, lossNow * 100).replacingOccurrences(of: ".", with: ",")
-			if Prefs.hud == 2 { t += String(format: "\n H.265 %dx%d   %@   втрачено кадрів %d ", Quality.profile.width, Quality.profile.height, Quality.name, Int(lost - prev.3)) }
-			hud.text = t
+			let target = max(1, Int(Quality.profile.fps))
+			let fpsColor: UIColor = fps >= target * 9 / 10 ? UIColor(red: 201 / 255, green: 245 / 255, blue: 216 / 255, alpha: 1)
+				: fps >= target * 6 / 10 ? UIColor(red: 1, green: 217 / 255, blue: 160 / 255, alpha: 1) : UIColor(red: 1, green: 154 / 255, blue: 154 / 255, alpha: 1)
+			let mute = UIColor(white: 1, alpha: 0.55), ink = UIColor(white: 1, alpha: 0.92)
+			let t = NSMutableAttributedString()
+			func add(_ label: String?, _ value: String, _ c: UIColor)
+			{
+				if t.length > 0 { t.append(NSAttributedString(string: "   ")) }
+				if let l = label { t.append(NSAttributedString(string: l + " ", attributes: [.foregroundColor: mute])) }
+				t.append(NSAttributedString(string: value.replacingOccurrences(of: ".", with: ","), attributes: [.foregroundColor: c]))
+			}
+			if Prefs.hud == 2
+			{
+				add("Кадри", "\(fps)/\(target)", fpsColor)
+				add("Швидкість", String(format: "%.1f Мбіт/с", mbps), ink)
+				add("Пінг", "\(s.rttMs) мс", ink)
+				add("Втрати", String(format: "%.1f%%", lossNow * 100), ink)
+				add("Пропущено", "\(Int(lost - prev.3))", mute)
+				add(nil, "\(Quality.profile.height)p H.265", mute)
+			}
+			else
+			{
+				add(nil, "\(fps) FPS", fpsColor)
+				add(nil, String(format: "%.1f Мбіт/с", mbps), ink)
+				add(nil, "\(s.rttMs) мс", ink)
+				add(nil, String(format: "%.1f%%", lossNow * 100), ink)
+			}
+			hud.attributedText = t
 			hud.isHidden = menu != nil
 			layoutHud()
 		}
@@ -263,10 +292,13 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	private func layoutHud()
 	{
 		guard !hud.isHidden else { return }
-		let size = hud.sizeThatFits(CGSize(width: view.bounds.width - 32, height: 200))
-		let x = (view.bounds.width - size.width - 8) / 2
-		let y = view.bounds.height > view.bounds.width ? videoView.frame.minY + 8 : 6
-		hud.frame = CGRect(x: x, y: y, width: size.width + 8, height: size.height + 6)
+		let safe = view.safeAreaInsets
+		let maxW = view.bounds.width - safe.left - safe.right - 16
+		let size = hud.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: 20))
+		let w = min(maxW, size.width + 18)
+		let x = safe.left + (view.bounds.width - safe.left - safe.right - w) / 2
+		let y = view.bounds.height > view.bounds.width ? max(videoView.frame.minY, safe.top) + 6 : max(6, safe.top)
+		hud.frame = CGRect(x: x, y: y, width: w, height: 20)
 		view.bringSubviewToFront(hud)
 	}
 

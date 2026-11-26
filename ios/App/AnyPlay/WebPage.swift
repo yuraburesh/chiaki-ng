@@ -163,12 +163,20 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 			a.popoverPresentationController?.sourceRect = CGRect(x: web.bounds.midX, y: web.bounds.midY, width: 1, height: 1)
 			p.present(a, animated: true)
 		case "watch":
-			let code = (m["c"] as? String ?? "").uppercased().filter { $0.isLetter || $0.isNumber }
-			if let u = URL(string: Cloud.server + "/app/watch.html?r=" + code) { UIApplication.shared.open(u) }
+			// 128: «Дивитись» — у програмі, як на Android (без геймпада — з екранними кнопками помічника)
+			let code = String((m["c"] as? String ?? "").uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }.prefix(12))
+			if !code.isEmpty { presenter?.present(ServerPageViewController(path: "/app/watch.html?r=" + code + (GamepadInput.shared.connected ? "" : "&pad=1"), watch: true), animated: true) }
 		case "page":
-			alert("Подарунки друзям поки в боті AnyPlay: там кнопка «Друзі».")
+			// 128: друзі й подарунки (book.html) — у програмі, як на комп'ютері
+			let path = m["p"] as? String ?? ""
+			if path.hasPrefix("/app/book.html"), !path.contains("..") { presenter?.present(ServerPageViewController(path: path), animated: true) }
 		case "psnLogin":
-			alert("Вхід у свій PSN поки робиться в програмі на Android чи комп'ютері або через бота. Грати можна вже зараз на спільному акаунті AnyPlay.")
+			// 128: вхід у свій PSN на сторінці Sony, як на Android і комп'ютері
+			let vc = PsnLoginViewController(create: m["c"] as? Bool ?? false) { [weak self] error in
+				self?.alert(error ?? "Вхід у PSN виконано. Адміністратор додасть твій профіль на приставку: це кілька хвилин.")
+				self?.eval("window.__anyplayEvent && window.__anyplayEvent('psn')")
+			}
+			presenter?.present(vc, animated: true)
 		case "setQuality":
 			if Quality.select(m["c"] as? Int ?? -1) { host?.qualityChanged() }
 			push()

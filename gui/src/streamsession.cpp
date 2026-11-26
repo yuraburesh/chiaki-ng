@@ -296,6 +296,10 @@ StreamSessionConnectInfo::StreamSessionConnectInfo(
 	// remote connection
 	else
 		video_profile = chiaki_target_is_ps5(target) ? settings->GetVideoProfileRemotePS5(): settings->GetVideoProfileRemotePS4();
+	// AnyPlay 118: гравець сам обрав «Відео для всіх браузерів» у трансляції — гра в H.264 (той самий бітрейт), щоб
+	// глядачі в будь-якому браузері бачили відео без перекодування
+	if(chiaki_target_is_ps5(target) && chiaki_codec_is_h265(video_profile.codec) && AnyPlayLive::compatVideoWanted())
+		video_profile.codec = CHIAKI_CODEC_H264;
 	this->target = target;
 	this->nickname = std::move(nickname);
 	this->host = std::move(host);
@@ -355,6 +359,9 @@ StreamSessionConnectInfo::StreamSessionConnectInfo(
 
 static void AudioSettingsCb(uint32_t channels, uint32_t rate, void *user);
 static void AudioFrameCb(int16_t *buf, size_t samples_count, void *user);
+static void LiveOpusHeaderCb(ChiakiAudioHeader *header, void *user);
+static void LiveOpusFrameCb(uint8_t *buf, size_t buf_size, void *user);
+static bool LiveVideoSampleCb(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool frame_recovered, void *user);
 static void HapticsFrameCb(uint8_t *buf, size_t buf_size, void *user);
 #ifdef Q_OS_MACOS
 static void MacMicRequestCb(Authorization authorization, void *user);
@@ -610,8 +617,12 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 	display_sink.cantdisplay_cb = CantDisplayCb;
 	chiaki_session_ctrl_set_display_sink(&session, &display_sink);
 	chiaki_opus_decoder_set_cb(&opus_decoder, AudioSettingsCb, AudioFrameCb, this);
+	// AnyPlay 118: пакети Opus з PS5 спершу бачить трансляція (копія для глядачів, без розкодування), далі — декодер
+	chiaki_opus_decoder_get_sink(&opus_decoder, &anyplay_opus_sink);
 	ChiakiAudioSink audio_sink;
-	chiaki_opus_decoder_get_sink(&opus_decoder, &audio_sink);
+	audio_sink.user = this;
+	audio_sink.header_cb = LiveOpusHeaderCb;
+	audio_sink.frame_cb = LiveOpusFrameCb;
 	chiaki_session_set_audio_sink(&session, &audio_sink);
 	ChiakiAudioHeader audio_header;
 	chiaki_audio_header_set(&audio_header, 2, 16, MICROPHONE_SAMPLES * 100, MICROPHONE_SAMPLES);
@@ -636,7 +647,8 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 	else
 	{
 #endif
-		chiaki_session_set_video_sample_cb(&session, chiaki_ffmpeg_decoder_video_sample_cb, ffmpeg_decoder);
+		// AnyPlay 118: стиснений кадр з PS5 спершу бачить трансляція (копія для глядачів), далі — декодер гравця
+		chiaki_session_set_video_sample_cb(&session, LiveVideoSampleCb, ffmpeg_decoder);
 #if CHIAKI_LIB_ENABLE_PI_DECODER
 	}
 #endif
@@ -2377,8 +2389,6 @@ void StreamSession::StopSdeckHaptics()
 
 void StreamSession::PushAudioFrame(int16_t *og_buf, size_t samples_count)
 {
-	// AnyPlay 116: звук гри для трансляції друзям — копія до гучності гравця (вимкнена трансляція: одна перевірка)
-	AnyPlayLive::tapGameAudio(og_buf, samples_count, audio_out_sample_size >= 2 ? audio_out_sample_size / sizeof(int16_t) : 2);
 	if(!audio_out || !audio_volume)
 		return;
 
@@ -3474,6 +3484,14 @@ void StreamSession::ReportVideoCorrupt(const char *reason, bool decoder_error)
 	chiaki_mutex_unlock(&session.stream_connection.state_mutex);
 }
 
+void StreamSession::RequestLiveKeyframe()
+{
+	// лише запит до приставки: приймач гравця не переходить у «чекаю ключовий», його кадри йдуть далі як є
+	ChiakiErrorCode err = chiaki_session_request_idr(&session);
+	if(err != CHIAKI_ERR_SUCCESS)
+		CHIAKI_LOGW(log.GetChiakiLog(), "[anyplay-live] key frame request for viewers failed: %s", chiaki_error_string(err));
+}
+
 bool StreamSession::RequestIDR()
 {
 	ChiakiErrorCode err = chiaki_session_request_idr(&session);
@@ -3501,6 +3519,7 @@ class StreamSessionPrivate
 		}
 
 		static void PushAudioFrame(StreamSession *session, int16_t *buf, size_t samples_count)	{ session->PushAudioFrame(buf, samples_count); }
+		static ChiakiAudioSink OpusSink(StreamSession *session)	{ return session->anyplay_opus_sink; }
 		static void PushHapticsFrame(StreamSession *session, uint8_t *buf, size_t buf_size)	{ session->PushHapticsFrame(buf, buf_size); }
 #ifdef Q_OS_MACOS
 		static void SetMicAuthorization(StreamSession *session, Authorization authorization)                 { session->SetMicAuthorization(authorization); }
@@ -3526,6 +3545,31 @@ static void AudioFrameCb(int16_t *buf, size_t samples_count, void *user)
 {
 	auto session = reinterpret_cast<StreamSession *>(user);
 	StreamSessionPrivate::PushAudioFrame(session, buf, samples_count);
+}
+
+// AnyPlay 118: трансляція бере стиснені дані гри як є (коли вона вимкнена — лічильник байтів і одна перевірка)
+static void LiveOpusHeaderCb(ChiakiAudioHeader *header, void *user)
+{
+	auto session = reinterpret_cast<StreamSession *>(user);
+	AnyPlayLive::tapGameAudioHeader(header->channels, header->rate, header->frame_size);
+	const ChiakiAudioSink inner = StreamSessionPrivate::OpusSink(session);
+	if(inner.header_cb)
+		inner.header_cb(header, inner.user);
+}
+
+static void LiveOpusFrameCb(uint8_t *buf, size_t buf_size, void *user)
+{
+	auto session = reinterpret_cast<StreamSession *>(user);
+	AnyPlayLive::tapGameOpus(buf, buf_size);
+	const ChiakiAudioSink inner = StreamSessionPrivate::OpusSink(session);
+	if(inner.frame_cb)
+		inner.frame_cb(buf, buf_size, inner.user);
+}
+
+static bool LiveVideoSampleCb(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool frame_recovered, void *user)
+{
+	AnyPlayLive::tapVideoSample(buf, buf_size);
+	return chiaki_ffmpeg_decoder_video_sample_cb(buf, buf_size, frames_lost, frame_recovered, user);
 }
 
 #ifdef Q_OS_MACOS

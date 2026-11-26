@@ -1,10 +1,11 @@
-// AnyPlay 116: трансляція гри друзям (Cloudflare Realtime SFU через наш сервер), голос, чат, допомога друга.
-// Для QML: Chiaki.live. Медіа (кодування, WebRTC) — у anyplaylivemedia.*, тут — стан, сервер, правила.
-// Сервер: scratchpad/team7/контракт.md (/api/live/*), методи для QML: scratchpad/team7/контракт-трансляція.md.
+// AnyPlay 116–118: трансляція гри друзям (Cloudflare Realtime SFU через наш сервер), голос, чат, допомога друга.
+// Для QML: Chiaki.live. Медіа (пересилання, WebRTC) — у anyplaylivemedia.*, тут — стан, сервер, правила.
+// Сервер: scratchpad/team7/контракт.md (/api/live/*), методи для QML: scratchpad/team8/контракт-трансляція.md.
 //
-// Головне правило: гравцю нічого не заважає. Трансляція не торкається з'єднання з PS5, кадри береться
-// копією-посиланням не частіше потрібного, кодування — в окремому потоці з низьким пріоритетом, а якщо гра
-// в гравця почала страждати, трансляція сама знижує якість і далі стає на паузу.
+// Головне правило (118): гравцю нічого не заважає. Трансляція нічого не розкодовує й не кодує: глядачі отримують
+// ті самі стиснені кадри H.264/H.265 і пакети Opus, що прийшли з PS5 (див. anyplaylivemedia.h). Якість і кадри —
+// як у гравця. Ефір сам не стає на паузу й не знижує якість: зупиняє його лише гравець, а якщо зник інтернет —
+// трансляція чекає й повертається сама. Чи потягне вихідний інтернет — перевіряємо ДО старту.
 #pragma once
 
 #include <QObject>
@@ -23,10 +24,10 @@
 
 #include <chiaki/controller.h>
 
-struct AVFrame;
 class AnyPlayCloud;
 class QmlBackend;
 class StreamSession;
+class QNetworkAccessManager;
 struct AnyPlayLiveMedia;
 
 class AnyPlayLive : public QObject
@@ -35,18 +36,28 @@ class AnyPlayLive : public QObject
 	Q_PROPERTY(bool supported READ supported NOTIFY changed)
 	Q_PROPERTY(QString unsupportedText READ unsupportedText NOTIFY changed)
 	Q_PROPERTY(QVariantMap features READ features NOTIFY changed)     // з /api/live/config: live, helper, handoff, friends, gifts
-	Q_PROPERTY(QString state READ state NOTIFY changed)               // off | starting | live | paused | error
+	Q_PROPERTY(QString state READ state NOTIFY changed)               // off | checking | starting | live | reconnecting | error
 	Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
-	Q_PROPERTY(QString quality READ quality NOTIFY changed)           // 540p | 720p
+	Q_PROPERTY(QString quality READ quality NOTIFY changed)           // "game": глядачі бачать гру такою ж, як гравець
 	Q_PROPERTY(bool gameAudio READ gameAudio NOTIFY changed)
 	Q_PROPERTY(bool micOn READ micOn NOTIFY changed)
 	Q_PROPERTY(int micVolume READ micVolume NOTIFY changed)           // 0…200, 100 — як є
 	Q_PROPERTY(bool voicesOn READ voicesOn NOTIFY changed)
 	Q_PROPERTY(int voiceVolume READ voiceVolume NOTIFY changed)       // 0…100
-	Q_PROPERTY(QString encoderName READ encoderName NOTIFY changed)
-	Q_PROPERTY(int liveFps READ liveFps NOTIFY changed)
-	Q_PROPERTY(int liveKbps READ liveKbps NOTIFY changed)
+	Q_PROPERTY(QString encoderName READ encoderName NOTIFY changed)   // "" — нічого не кодуємо (лишено для старого QML)
+	Q_PROPERTY(int liveFps READ liveFps NOTIFY changed)               // кадрів/с, що йдуть глядачам
+	Q_PROPERTY(int liveKbps READ liveKbps NOTIFY changed)             // кбіт/с, що йдуть глядачам (вихідний інтернет)
 	Q_PROPERTY(int liveHeight READ liveHeight NOTIFY changed)
+	// гра зараз (те, що трансляція пересилатиме): кодек, потік, кадри
+	Q_PROPERTY(QString gameCodec READ gameCodec NOTIFY gameChanged)   // "H.264" | "H.265" | ""
+	Q_PROPERTY(int gameKbps READ gameKbps NOTIFY gameChanged)         // середнє за 10 с
+	Q_PROPERTY(int gameFps READ gameFps NOTIFY gameChanged)
+	Q_PROPERTY(int needKbps READ needKbps NOTIFY gameChanged)         // скільки вихідного інтернету треба трансляції
+	Q_PROPERTY(int uplinkKbps READ uplinkKbps NOTIFY changed)         // остання перевірка (−1 — не міряли)
+	Q_PROPERTY(bool viewersLag READ viewersLag NOTIFY changed)        // вихідний канал не встигає: у глядачів картинка завмирає
+	Q_PROPERTY(bool compatVideo READ compatVideo NOTIFY gameChanged)  // «Відео для всіх браузерів»: гра в H.264
+	Q_PROPERTY(bool compatPending READ compatPending NOTIFY gameChanged)   // увімкнено, але діє з наступного підключення гри
+	Q_PROPERTY(QString browserNote READ browserNote NOTIFY gameChanged)    // хто з глядачів побачить відео (для H.265)
 	Q_PROPERTY(QString roomId READ roomId NOTIFY changed)             // номер кімнати на сервері (рядком)
 	Q_PROPERTY(QString code READ code NOTIFY changed)                 // код кімнати («AB3K9M»)
 	Q_PROPERTY(QString link READ link NOTIFY changed)                 // посилання для Telegram (міні-застосунок)
@@ -73,9 +84,14 @@ public:
 
 	static AnyPlayLive *instance();
 
-	// ── гачки з інших потоків (дешеві, коли трансляції нема: одна атомарна перевірка) ──
-	static void tapVideoFrame(const AVFrame *frame);   // QmlMainWindow::presentFrame
-	static void tapGameAudio(const int16_t *pcm, size_t frames, unsigned channels);   // StreamSession::PushAudioFrame (48 кГц)
+	// ── гачки з потоків chiaki (дешеві; коли трансляції нема — лічильник байтів і погляд на перший байт) ──
+	// кожен зразок відео, що йде в декодер (заголовок SPS/PPS або кадр), — як є, стиснений
+	static void tapVideoSample(const uint8_t *data, size_t size);
+	// звук гри: заголовок (канали, частота, тривалість пакета) і кожен пакет Opus з PS5 (size 0 — втрачений)
+	static void tapGameAudioHeader(unsigned channels, unsigned rate, unsigned frameSize);
+	static void tapGameOpus(const uint8_t *data, size_t size);
+	// StreamSessionConnectInfo: гравець обрав «Відео для всіх браузерів» — гра в H.264 замість H.265
+	static bool compatVideoWanted();
 
 	// StreamSession (головний потік), перед chiaki_session_set_controller_state: поки керує друг — його стан;
 	// PS гравця миттєво забирає керування. Повертає true, якщо стан замінено.
@@ -97,7 +113,16 @@ public:
 	int micVolume() const { return mic_volume_; }
 	bool voicesOn() const { return voices_on_; }
 	int voiceVolume() const { return voice_volume_; }
-	QString encoderName() const { return encoder_name_; }
+	QString encoderName() const { return QString(); }
+	QString gameCodec() const;
+	int gameKbps() const { return game_kbps_; }
+	int gameFps() const { return game_fps_; }
+	int needKbps() const;
+	int uplinkKbps() const { return uplink_kbps_; }
+	bool viewersLag() const { return viewers_lag_; }
+	bool compatVideo() const { return compat_video_; }
+	bool compatPending() const;
+	QString browserNote() const;
 	int liveFps() const { return live_fps_; }
 	int liveKbps() const { return live_kbps_; }
 	int liveHeight() const { return live_height_; }
@@ -143,9 +168,12 @@ public:
 	Q_INVOKABLE void returnFull();                                // «Повернути собі»
 	Q_INVOKABLE void acceptHandover(const QString &id = QString());   // друг: «Грати» (одразу, якщо вже передано; інакше чекати)
 	Q_INVOKABLE void setWatching(const QString &code);            // друг відкрив/закрив («») перегляд у програмі
+	Q_INVOKABLE void setCompatVideo(bool on);                     // «Відео для всіх браузерів» (діє з наступного підключення гри)
+	Q_INVOKABLE void holdForReconnect(int seconds = 120);         // гра зараз перепідключиться (за згодою гравця): ефір чекає
 
 signals:
 	void changed();
+	void gameChanged();
 	void viewersChanged();
 	void chatChanged();
 	void controlChanged();
@@ -161,11 +189,18 @@ private:
 	void setState(const QString &state, const QString &text = QString());
 	void fail(const QString &text);
 	void teardown(bool tellServer);
-	void onEncoderStatus(bool ok, const QString &encoder, const QString &err);
+	void checkUplink();
+	void uplinkResult(int kbps, const QString &why);
 	void beginServer();
 	void negotiatePublish();
 	void openChannels();
 	void goLive();
+	// інтернет зник / гра перепідключається: ефір чекає й повертається сам
+	void enterReconnecting(const QString &text);
+	void scheduleRepublish(int delayMs);
+	void republish();
+	void requestKeyframe(const char *why);
+	void gameTick();
 
 	// черга змін сесії SFU: кожна зміна (з її offer/answer) завершується до початку наступної
 	void enqueue(std::function<void(std::function<void()> next)> op);
@@ -189,9 +224,7 @@ private:
 	void pokeSession();
 	void pushState(const QJsonObject &fields);
 
-	void adaptTick();
-	void applyLevel(int level, const char *why);
-	void setPaused(bool paused, const QString &reason);
+	void statsTick();
 	void updateStatusText();
 
 	void openMic();
@@ -217,9 +250,40 @@ private:
 	int mic_volume_ = 100;
 	bool voices_on_ = true;
 	int voice_volume_ = 80;
-	QString encoder_name_;
 	int live_fps_ = 0, live_kbps_ = 0, live_height_ = 0;
 	quint32 generation_ = 0;   // кожен старт — нове покоління: відповіді від старого ігноруються
+	quint32 pub_gen_ = 0;      // кожне з'єднання з SFU (перше й після обриву) — своє покоління
+
+	// гра (для перевірки до старту й для меню)
+	int game_kbps_ = 0, game_fps_ = 0, game_peak_kbps_ = 0;
+	QList<qint64> game_bytes_hist_;   // байти відео+звуку за кожну секунду, до 10
+	qint64 game_bytes_last_ = 0;
+	int game_frames_last_ = 0;
+	QString game_codec_;
+	bool compat_video_ = false;
+	QTimer game_timer_;
+
+	// перевірка вихідного інтернету до старту
+	int uplink_kbps_ = -1;
+	qint64 uplink_at_ms_ = 0;
+	int pace_kbps_ = 0;
+	QNetworkAccessManager *nam_ = nullptr;
+
+	// обрив / перепідключення
+	bool ever_live_ = false;          // цей ефір уже йшов: помилки далі — привід чекати, а не вимикати
+	bool republish_busy_ = false;
+	int republish_tries_ = 0;
+	qint64 last_poll_ok_ms_ = 0;
+	qint64 session_error_ms_ = 0;     // гра щойно завершилась з помилкою (зв'язок)
+	qint64 hold_until_ms_ = 0;        // чекаємо нову сесію гри до цього часу
+	quint32 header_gen_seen_ = 0;
+	QTimer republish_timer_, disconnect_timer_;
+	bool viewers_lag_ = false;
+	int last_overflows_ = 0;
+	QList<qint64> overflow_times_;
+	qint64 last_key_ms_ = 0;
+	bool key_pending_ = false;
+	int key_requests_ = 0;
 
 	QString token_;            // токен учасника-гравця (з /api/live/start)
 	QString room_id_, code_, link_, web_link_, bot_link_, qr_, session_id_;
@@ -271,22 +335,14 @@ private:
 	bool op_busy_ = false;
 	QList<std::function<void()>> gathered_waiters_;
 
-	QTimer poll_timer_, adapt_timer_, connect_timer_;
-
-	// адаптація
-	int level_ = 0, start_level_ = 0;
-	int bad_streak_ = 0, good_streak_ = 0;
-	qint64 up_blocked_until_ms_ = 0, last_up_ms_ = 0, last_stats_ms_ = 0;
-	bool paused_ = false;
-	QString pause_reason_;
-	double base_loss_ = 0;
-	int base_samples_ = 0;
-	int last_pipe_dropped_ = 0, last_frames_ = 0;
+	QTimer poll_timer_, stats_timer_, connect_timer_;
+	qint64 last_stats_ms_ = 0;
+	int last_frames_ = 0;
 	qint64 last_bytes_ = 0;
 
 	// К14 за проміжок
 	struct Beat
 	{
-		int seconds = 0, fps_sum = 0, kbps_sum = 0, enc_us_max = 0, paused_s = 0, level_max = 0, downs = 0;
+		int seconds = 0, fps_sum = 0, kbps_sum = 0, reconnect_s = 0, skipped = 0, overflows = 0, keys = 0, rtt_max = 0;
 	} beat_;
 };

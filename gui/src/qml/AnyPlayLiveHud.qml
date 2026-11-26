@@ -62,9 +62,10 @@ Item {
         }
         function onStateChanged() {
             const st = lh.api.state;
-            if (st === "paused")
-                lh.notice(qsTr("Трансляція"), qsTr("На паузі: твоя гра важливіша"), 4000);
-            else if (st === "on" && lh.prevState === "paused")
+            // ефір сам не стає на паузу: лише чекає, коли зник інтернет чи гра перепідключається
+            if (st === "reconnecting")
+                lh.notice(qsTr("Трансляція"), lh.api.reason || qsTr("Немає зв'язку, ефір повернеться сам"), 4000);
+            else if (st === "on" && lh.prevState === "reconnecting")
                 lh.notice(qsTr("Трансляція"), qsTr("Знову в ефірі"), 2500);
             else if (st === "error" && lh.api.reason)
                 lh.notice(qsTr("Трансляція"), lh.api.reason, 6000);
@@ -100,13 +101,13 @@ Item {
         hidden: lh.hidden
         active: lh.active
         readonly property var speakers: lh.api ? lh.api.viewers.filter(v => v.speaking && !v.muted) : []
-        toneGradient: !lh.api || (!lh.api.friendControls && lh.api.state !== "paused")
+        toneGradient: !lh.api || (!lh.api.friendControls && lh.api.state !== "reconnecting")
         tone: lh.api && lh.api.friendControls ? ap.cyan : ap.gold
-        textColor: lh.api && lh.api.friendControls ? ap.cyan : lh.api && lh.api.state === "paused" ? ap.gold : ap.ink
+        textColor: lh.api && lh.api.friendControls ? ap.cyan : lh.api && lh.api.state === "reconnecting" ? ap.gold : ap.ink
         label: lh.api && lh.api.friendControls ? qsTr("Керує друг") : qsTr("Ефір")
         text: !lh.api ? "" : lh.api.friendControls ? lh.api.controlBy
-            : lh.api.state === "paused" ? qsTr("пауза")
-            : lh.api.state === "starting" ? qsTr("підключаю…")
+            : lh.api.state === "reconnecting" ? qsTr("чекаю зв'язок")
+            : lh.api.state === "starting" || lh.api.state === "checking" ? qsTr("підключаю…")
             : qsTr("%1 %2").arg(lh.api.viewers.length).arg(lh.api.viewers.length === 1 ? qsTr("глядач") : lh.api.viewers.length >= 2 && lh.api.viewers.length <= 4 ? qsTr("глядачі") : qsTr("глядачів"))
         detail: !lh.api ? "" : lh.api.friendControls
             ? (lh.api.takeBackKey ? qsTr("Забрати: %1").arg(lh.api.takeBackKey) : qsTr("Забрати: ` і Enter"))

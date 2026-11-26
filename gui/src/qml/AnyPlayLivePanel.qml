@@ -1,5 +1,6 @@
-// AnyPlay 116: меню гри → «Друзі й трансляція». Три розділи:
-//   Трансляція     — почати (540p / 720p, звук гри), стан (в ефірі, пауза, знижено), глядачі, запросити (посилання, QR, друзі)
+// AnyPlay 116–118: меню гри → «Друзі й трансляція». Три розділи:
+//   Трансляція     — почати (звук гри, «Відео для всіх браузерів»), що піде глядачам і скільки вихідного інтернету треба,
+//                    стан (в ефірі, чекаю зв'язок), глядачі, «Посилання для всіх» (копіювати, QR), окремо Telegram і друзі
 //   Голос і чат    — мікрофон для глядачів і гучність голосів, чат (пишеш тут, у грі повідомлення видно в чорних смугах)
 //   Допомога друга — «Передати керування» (друг керує через трансляцію) і «Передати повністю» (друг грає зі своєї програми)
 // Поки керує друг — угорі кожного розділу велика картка «Керує Андрій» з «Забрати керування» (фокус одразу на ній).
@@ -59,6 +60,16 @@ FocusScope {
     }
 
     Connections { target: lp.api; ignoreUnknownSignals: true; function onMessage(text) { lp.say(text); } }
+
+    // «Відео для всіх браузерів» діє з наступного підключення гри: гравець сам натискає «Перепідключити гру зараз»
+    // (без його згоди гру не перепідключаємо). Ефір і посилання лишаються, глядачі зачекають кілька секунд.
+    signal exitGame()
+    function reconnectGame() {
+        if (lp.demo) { say(qsTr("У грі тут гра перепідключилась би на кілька секунд у форматі H.264 (прогрес у грі не зникає).")); return; }
+        api.holdForReconnect(180);
+        if (lp.cloud) lp.cloud.reconnectOnce = true;
+        lp.exitGame();
+    }
     onVisibleChanged: {
         if (visible) { readPrefs(); if (api) api.loadConfig(); if (section === "chat" && api) api.markRead(); }
         else { dropConfirm(); note = ""; }
@@ -217,7 +228,7 @@ FocusScope {
                     Layout.fillWidth: true
                     spacing: 0
 
-                    // немає апаратного кодувальника: чесно пояснюємо й нічого не вмикаємо
+                    // модуля трансляції немає в цій збірці: чесно пояснюємо й нічого не вмикаємо
                     ApText {
                         visible: !!lp.api && !lp.api.supported
                         Layout.fillWidth: true; Layout.maximumWidth: 760
@@ -229,10 +240,10 @@ FocusScope {
                         Layout.fillWidth: true; Layout.maximumWidth: 760
                         Layout.topMargin: 10
                         role: "small"
-                        text: qsTr("Голосовий чат і «Допомога друга» працюють разом з трансляцією, тож на цьому комп'ютері їх теж немає. Друзі, подарунки й перегляд трансляцій друзів доступні в головному вікні, вкладка «Друзі».")
+                        text: qsTr("Голосовий чат і «Допомога друга» працюють разом з трансляцією, тож у цій збірці їх теж немає. Друзі, подарунки й перегляд трансляцій друзів доступні в головному вікні, вкладка «Друзі».")
                     }
 
-                    // вимкнено: що це і як почати
+                    // вимкнено: що це, скільки інтернету треба, як почати
                     GridLayout {
                         visible: !!lp.api && lp.api.supported && !lp.api.on
                         Layout.fillWidth: true
@@ -247,14 +258,14 @@ FocusScope {
                             ApText {
                                 Layout.fillWidth: true
                                 role: "lead"
-                                text: qsTr("Друзі дивляться твою гру з телефона, комп'ютера чи просто в Telegram, говорять з тобою й підказують. До %1 глядачів.").arg(lp.api ? lp.api.maxViewers : 5)
+                                text: qsTr("Друзі дивляться твою гру з будь-якого пристрою: телефона, комп'ютера чи телевізора, просто в браузері, без програми й без Telegram. До %1 глядачів.").arg(lp.api ? lp.api.maxViewers : 5)
                             }
                             ApText {
                                 Layout.fillWidth: true
                                 role: "small"
-                                text: qsTr("Твоїй грі це не заважає: картинку стискає відеокарта, окремо від гри. Якщо комп'ютер чи інтернет почне не встигати, трансляція сама знизить якість або стане на паузу.")
+                                text: qsTr("Твоїй грі це не заважає: програма нічого не перекодовує, а пересилає глядачам ті самі кадри й звук, що приходять з приставки. Тому глядачі бачять гру в тій самій якості, що й ти.")
                             }
-                            Feature { Layout.topMargin: 6; title: qsTr("Відео твоєї гри"); sub: qsTr("720p чи 540p, 30 кадр/с; звук гри — за бажанням") }
+                            Feature { Layout.topMargin: 6; title: qsTr("Відео твоєї гри"); sub: qsTr("та сама якість і кадри, що в тебе; звук гри — за бажанням") }
                             Feature { title: qsTr("Голос, як у Discord"); sub: qsTr("ти говориш, друзі коментують і підказують") }
                             Feature { title: qsTr("Чат"); sub: qsTr("повідомлення видно в чорній смузі під картинкою, гру не закривають") }
                             Feature { title: qsTr("Допомога друга"); sub: qsTr("друг може пройти складну місію за тебе"); hairline: false }
@@ -264,20 +275,29 @@ FocusScope {
                             Layout.maximumWidth: lp.colW
                             Layout.alignment: Qt.AlignTop
                             spacing: 0
-                            ApText { role: "cap"; text: qsTr("Якість для глядачів"); Layout.bottomMargin: 4 }
-                            ApOpt {
-                                text: qsTr("720p")
-                                sub: qsTr("чітко, близько 2,5 Мбіт/с вихідного інтернету")
-                                checked: startQ.value === 720
-                                onClicked: startQ.value = 720
+                            ApText { role: "cap"; text: qsTr("Що піде глядачам"); Layout.bottomMargin: 6 }
+                            ApText {
+                                Layout.fillWidth: true
+                                role: "body"
+                                text: lp.api && lp.api.gameText ? qsTr("Гра зараз: %1").arg(lp.api.gameText) : qsTr("Гра зараз: чекаю картинку…")
+                            }
+                            ApText {
+                                visible: !!lp.api && lp.api.needKbps > 0
+                                Layout.fillWidth: true
+                                Layout.topMargin: 4
+                                role: "small"
+                                text: lp.api ? qsTr("Трансляція відправляє в інтернет стільки ж, скільки гра приходить до тебе. Потрібно вихідного інтернету: від %1 Мбіт/с.").arg(lp.api.mbps(lp.api.needKbps))
+                                               + (lp.api.uplinkKbps > 0 ? " " + qsTr("Остання перевірка: %1 Мбіт/с.").arg(lp.api.mbps(lp.api.uplinkKbps)) : "") : ""
+                            }
+                            ApText {
+                                visible: !!lp.api && lp.api.browserNote !== ""
+                                Layout.fillWidth: true
+                                Layout.topMargin: 4
+                                role: "small"
+                                text: lp.api ? lp.api.browserNote : ""
                             }
                             ApOpt {
-                                text: qsTr("540p")
-                                sub: qsTr("для слабкого вихідного інтернету, близько 1,2 Мбіт/с")
-                                checked: startQ.value === 540
-                                onClicked: startQ.value = 540
-                            }
-                            ApOpt {
+                                Layout.topMargin: 8
                                 radio: false
                                 text: qsTr("Звук гри")
                                 sub: startQ.audio ? qsTr("глядачі чують гру і твій голос") : qsTr("глядачі чують лише твій голос")
@@ -285,13 +305,28 @@ FocusScope {
                                 onClicked: startQ.audio = !startQ.audio
                                 ApSwitch { activeFocusOnTab: false; checked: startQ.audio; onToggled: startQ.audio = !startQ.audio }
                             }
+                            CompatOpt {}
                             ApButton {
                                 id: startBtn
                                 Layout.topMargin: 14
                                 enabled: !!lp.api && lp.api.featLive
                                 focusPolicy: Qt.StrongFocus
-                                text: qsTr("Почати трансляцію")
-                                onClicked: lp.api.start(startQ.value, startQ.audio)
+                                text: lp.api && lp.api.state === "error" ? qsTr("Спробувати ще раз") : qsTr("Почати трансляцію")
+                                onClicked: lp.api.start(startQ.audio)
+                            }
+                            ApText {   // не вийшло (наприклад, бракує вихідного інтернету): чесна причина й що робити
+                                visible: !!lp.api && lp.api.state === "error" && lp.api.reason !== ""
+                                Layout.fillWidth: true
+                                Layout.topMargin: 10
+                                role: "small"; color: ap.gold
+                                text: lp.api ? lp.api.reason : ""
+                            }
+                            ApText {
+                                visible: !!lp.api && lp.api.featLive && lp.api.state !== "error"
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                role: "small"
+                                text: qsTr("Перед стартом програма кілька секунд перевіряє інтернет на відправлення. Якщо його бракує, скаже одразу, а не зупинятиме ефір посеред гри.")
                             }
                             ApText {   // власник вимкнув трансляції в CRM або ще не вписав ключі
                                 visible: !!lp.api && !lp.api.featLive
@@ -300,23 +335,25 @@ FocusScope {
                                 role: "small"; color: ap.gold
                                 text: qsTr("Трансляції зараз вимкнені: їх вмикає власник AnyPlay.")
                             }
-                            QtObject { id: startQ; property int value: lp.api ? lp.api.quality : 720; property bool audio: lp.api ? lp.api.gameAudio : true }
+                            QtObject { id: startQ; property bool audio: lp.api ? lp.api.gameAudio : true }
                         }
                     }
 
-                    // увімкнено: стан, глядачі, запросити, налаштування
+                    // увімкнено: стан, глядачі, посилання, налаштування
                     RowLayout {
                         visible: !!lp.api && lp.api.on
                         Layout.fillWidth: true
                         Layout.bottomMargin: 10
                         spacing: 8
                         ApChip {
-                            kind: lp.api && lp.api.state === "paused" ? "wait" : lp.api && lp.api.state === "starting" ? "" : "live"
-                            text: lp.api && lp.api.state === "paused" ? qsTr("Пауза") : lp.api && lp.api.state === "starting" ? qsTr("Підключаю…") : qsTr("В ефірі")
+                            kind: !lp.api ? "" : lp.api.state === "reconnecting" ? "wait" : lp.api.state === "on" ? "live" : ""
+                            text: !lp.api ? "" : lp.api.state === "reconnecting" ? qsTr("Чекаю зв'язок")
+                                : lp.api.state === "checking" ? qsTr("Перевіряю інтернет…")
+                                : lp.api.state === "starting" ? qsTr("Підключаю…") : qsTr("В ефірі")
                         }
                         ApChip {
                             visible: !!lp.api && lp.api.sendText !== ""
-                            kind: lp.api && lp.api.reduced ? "wait" : ""
+                            kind: lp.api && lp.api.viewersLag ? "wait" : ""
                             text: lp.api ? lp.api.sendText : ""
                         }
                         ApChip {
@@ -325,12 +362,13 @@ FocusScope {
                         Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
                     }
                     ApText {
-                        visible: !!lp.api && lp.api.on && lp.api.reason !== ""
+                        visible: !!lp.api && lp.api.on && (lp.api.reason !== "" || lp.api.viewersLag)
                         Layout.fillWidth: true; Layout.maximumWidth: 900
                         Layout.bottomMargin: 10
                         role: "small"
-                        color: lp.api && lp.api.state === "error" ? ap.bad : ap.gold
-                        text: lp.api ? lp.api.reason : ""
+                        color: ap.gold
+                        text: !lp.api ? "" : lp.api.reason !== "" ? lp.api.reason
+                            : qsTr("Інтернет на відправлення не встигає за грою, тож у глядачів картинка часом завмирає на мить. Твоя гра йде як є, ефір не зупиняється.")
                     }
                     GridLayout {
                         visible: !!lp.api && lp.api.on
@@ -338,7 +376,7 @@ FocusScope {
                         columns: lp.wide ? 2 : 1
                         columnSpacing: 28
                         rowSpacing: 14
-                        // ліворуч: глядачі й запросити
+                        // ліворуч: глядачі й посилання
                         ColumnLayout {
                             Layout.preferredWidth: lp.colW
                             Layout.maximumWidth: lp.colW
@@ -350,17 +388,17 @@ FocusScope {
                                 Layout.fillWidth: true
                                 Layout.topMargin: 6
                                 role: "small"
-                                text: qsTr("Поки нікого. Надішли посилання чи запроси друзів нижче.")
+                                text: qsTr("Поки нікого. Надішли посилання нижче.")
                             }
                             Repeater {
                                 model: lp.api ? lp.api.viewers : []
                                 ViewerRow { required property var modelData; v: modelData }
                             }
-                            ApText { role: "cap"; text: qsTr("Запросити"); Layout.topMargin: 16; Layout.bottomMargin: 6 }
+                            ApText { role: "cap"; text: qsTr("Посилання для всіх"); Layout.topMargin: 16; Layout.bottomMargin: 6 }
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 10
-                                // QR для телефона: сервер картинки не дає, малюємо самі з посилання для браузера
+                                // QR для телефона чи телевізора: сервер картинки не дає, малюємо самі з посилання для браузера
                                 AnyPlayQr {
                                     visible: !!lp.api && lp.api.qr === "" && valid
                                     Layout.preferredWidth: 112; Layout.preferredHeight: 112
@@ -379,7 +417,7 @@ FocusScope {
                                     spacing: 6
                                     Text {
                                         Layout.fillWidth: true
-                                        text: lp.api ? (lp.api.webLink || lp.api.watchUrl).replace(/^https?:\/\//, "") : ""
+                                        text: lp.api ? lp.api.qrText.replace(/^https?:\/\//, "") : ""
                                         elide: Text.ElideMiddle
                                         font.family: ap.body; font.pixelSize: ap.fsSub
                                         color: ap.mute
@@ -390,40 +428,35 @@ FocusScope {
                                         font.family: ap.display; font.weight: Font.Medium; font.pixelSize: 17; font.letterSpacing: 3
                                         color: ap.gold
                                     }
-                                    Flow {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-                                        ApButton {
-                                            small: true
-                                            focusPolicy: Qt.StrongFocus
-                                            text: qsTr("Надіслати в Telegram")
-                                            onClicked: {
-                                                lp.cloud.openExternal("https://t.me/share/url?url=" + encodeURIComponent(lp.api.watchUrl)
-                                                                      + "&text=" + encodeURIComponent(qsTr("Дивись, як я граю в AnyPlay")));
-                                                lp.say(qsTr("Відкрив Telegram: обери друга. Гра тут іде далі."));
-                                            }
-                                        }
-                                        ApButton {
-                                            small: true; ghost: true
-                                            focusPolicy: Qt.StrongFocus
-                                            text: qsTr("Копіювати посилання")
-                                            onClicked: { lp.api.copyLink(); lp.say(qsTr("Посилання скопійовано: надішли його другу. Відкривається в Telegram і в браузері.")); }
-                                        }
+                                    ApButton {
+                                        small: true
+                                        focusPolicy: Qt.StrongFocus
+                                        text: qsTr("Копіювати посилання")
+                                        onClicked: { lp.api.copyWebLink(); lp.say(qsTr("Посилання скопійовано. Воно відкривається в будь-якому браузері: на телефоні, комп'ютері чи телевізорі, без програми й без входу.")); }
                                     }
                                 }
                             }
                             ApText {
-                                visible: !!lp.api && lp.api.canInvite && lp.notWatching().length > 0
                                 Layout.fillWidth: true
-                                Layout.topMargin: 10
+                                Layout.topMargin: 8
                                 role: "small"
-                                text: qsTr("Друзям — запрошення в бот, з кнопкою «Дивитись»:")
+                                text: qsTr("Посилання чи QR відкриваються в будь-якому браузері. Глядач лише пише ім'я, ні програма, ні Telegram не потрібні.")
                             }
                             Flow {
                                 Layout.fillWidth: true
-                                Layout.topMargin: 6
+                                Layout.topMargin: 8
                                 spacing: 8
-                                Repeater {
+                                ApButton {
+                                    small: true; ghost: true
+                                    focusPolicy: Qt.StrongFocus
+                                    text: qsTr("Надіслати в Telegram")
+                                    onClicked: {
+                                        lp.cloud.openExternal("https://t.me/share/url?url=" + encodeURIComponent(lp.api.watchUrl)
+                                                              + "&text=" + encodeURIComponent(qsTr("Дивись, як я граю в AnyPlay")));
+                                        lp.say(qsTr("Відкрив Telegram: обери друга. Гра тут іде далі."));
+                                    }
+                                }
+                                Repeater {   // друзям — запрошення в бот, з кнопкою «Дивитись»
                                     model: lp.api && lp.api.canInvite ? lp.notWatching() : []
                                     ApButton {
                                         required property var modelData
@@ -435,26 +468,27 @@ FocusScope {
                                 }
                             }
                         }
-                        // праворуч: як іде трансляція
+                        // праворуч: що бачать глядачі
                         ColumnLayout {
                             Layout.preferredWidth: lp.colW
                             Layout.maximumWidth: lp.colW
                             Layout.alignment: Qt.AlignTop
                             spacing: 0
-                            ApText { role: "cap"; text: qsTr("Якість для глядачів"); Layout.bottomMargin: 4 }
-                            ApOpt {
-                                text: qsTr("720p")
-                                sub: qsTr("близько 2,5 Мбіт/с вихідного інтернету")
-                                checked: !!lp.api && lp.api.quality === 720
-                                onClicked: lp.api.setQuality(720)
+                            ApText { role: "cap"; text: qsTr("Що бачать глядачі"); Layout.bottomMargin: 6 }
+                            ApText {
+                                Layout.fillWidth: true
+                                role: "body"
+                                text: lp.api && lp.api.gameText ? qsTr("Гру як у тебе: %1").arg(lp.api.gameText) : qsTr("Гру як у тебе")
+                            }
+                            ApText {
+                                visible: !!lp.api && lp.api.browserNote !== ""
+                                Layout.fillWidth: true
+                                Layout.topMargin: 4
+                                role: "small"
+                                text: lp.api ? lp.api.browserNote : ""
                             }
                             ApOpt {
-                                text: qsTr("540p")
-                                sub: qsTr("близько 1,2 Мбіт/с, для слабкого інтернету")
-                                checked: !!lp.api && lp.api.quality === 540
-                                onClicked: lp.api.setQuality(540)
-                            }
-                            ApOpt {
+                                Layout.topMargin: 8
                                 radio: false
                                 text: qsTr("Звук гри")
                                 sub: lp.api && lp.api.gameAudio ? qsTr("глядачі чують гру і твій голос") : qsTr("глядачі чують лише твій голос")
@@ -462,11 +496,12 @@ FocusScope {
                                 onClicked: lp.api.setGameAudio(!lp.api.gameAudio)
                                 ApSwitch { activeFocusOnTab: false; checked: !!lp.api && lp.api.gameAudio; onToggled: lp.api.setGameAudio(!lp.api.gameAudio) }
                             }
+                            CompatOpt {}
                             ApText {
                                 Layout.fillWidth: true
                                 Layout.topMargin: 10
                                 role: "small"
-                                text: qsTr("Твоя гра завжди важливіша: якщо комп'ютер почне губити кадри, трансляція сама знизить якість, а далі стане на паузу.")
+                                text: qsTr("Ефір іде, доки ти його не зупиниш. Якщо зникне інтернет, глядачі зачекають, а трансляція повернеться сама.")
                             }
                             ApButton {
                                 Layout.topMargin: 14
@@ -806,6 +841,38 @@ FocusScope {
             }
         }
         ApChip { text: Math.round(vs.value) + "%" }
+    }
+
+    // ── «Відео для всіх браузерів»: гра в H.264, щоб відео відкривалось будь-де (діє з наступного підключення гри) ──
+    component CompatOpt: ColumnLayout {
+        visible: !!lp.api && lp.api.canCompat
+        Layout.fillWidth: true
+        spacing: 0
+        ApOpt {
+            radio: false
+            text: qsTr("Відео для всіх браузерів")
+            sub: lp.api && lp.api.compatVideo
+                ? qsTr("гра йде у форматі H.264: відео відкривається будь-де; у тебе картинка трохи менш чітка при тій самій швидкості")
+                : qsTr("вимкнено: формат, як дає приставка, у тебе найчіткіша картинка")
+            checked: !!lp.api && lp.api.compatVideo
+            onClicked: lp.api.setCompatVideo(!lp.api.compatVideo)
+            ApSwitch { activeFocusOnTab: false; checked: !!lp.api && lp.api.compatVideo; onToggled: lp.api.setCompatVideo(!lp.api.compatVideo) }
+        }
+        ApText {
+            visible: !!lp.api && lp.api.compatPending
+            Layout.fillWidth: true
+            Layout.topMargin: 6
+            role: "small"; color: ap.gold
+            text: qsTr("Почне діяти після перепідключення гри: це 5–10 секунд, прогрес у грі не зникає. Ефір і посилання лишаються, глядачі зачекають.")
+        }
+        ApButton {
+            visible: !!lp.api && lp.api.compatPending
+            Layout.topMargin: 8
+            small: true; ghost: true
+            focusPolicy: Qt.StrongFocus
+            text: qsTr("Перепідключити гру зараз")
+            onClicked: lp.reconnectGame()
+        }
     }
 
     // ── що вміє трансляція (коли ще не почали): рядок з назвою і підписом ──

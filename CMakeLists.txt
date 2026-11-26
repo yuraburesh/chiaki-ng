@@ -43,7 +43,7 @@ if(WIN32 OR APPLE)
 else()
 	set(ANYPLAY_LIVE_DEFAULT OFF)
 endif()
-option(ANYPLAY_LIVE "AnyPlay: broadcast to friends (libdatachannel, hardware H.264)" ${ANYPLAY_LIVE_DEFAULT})
+option(ANYPLAY_LIVE "AnyPlay: broadcast to friends (libdatachannel, game video and audio forwarded as is)" ${ANYPLAY_LIVE_DEFAULT})
 
 set(CHIAKI_VERSION_MAJOR 1)
 set(CHIAKI_VERSION_MINOR 10)

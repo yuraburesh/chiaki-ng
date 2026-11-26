@@ -1,5 +1,5 @@
-// AnyPlay 116: трансляція гри друзям. Див. anyplaylive.h, scratchpad/team7/контракт.md (сервер)
-// і scratchpad/team7/контракт-трансляція.md (методи для QML).
+// AnyPlay 116–118: трансляція гри друзям. Див. anyplaylive.h, scratchpad/team7/контракт.md (сервер)
+// і scratchpad/team8/контракт-трансляція.md (методи для QML).
 #include "anyplaylive.h"
 #include "anyplaycloud.h"
 #include "anyplayupdater.h"
@@ -11,6 +11,10 @@
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QRandomGenerator>
 #include <QSettings>
 #include <QtEndian>
 #include <QtGlobal>
@@ -64,26 +68,16 @@ const char *const kChannelEvents = "events";   // службові повідо�
 const int kPollMs = 2000;          // pollEvery: це ж і «гравець живий» для сервера
 const int kInputStaleMs = 500;     // від помічника нічого не було — нейтральний стан
 const int kChatMax = 100;
+const int kKeyMinGapMs = 3000;     // ключовий кадр у приставки — не частіше разу на 3 с
+const int kHoldGameMs = 180000;    // гра перепідключається: ефір чекає її до 3 хв
+const qint64 kUplinkCacheMs = 10 * 60 * 1000;   // перевірку інтернету не повторюємо 10 хв
+// перевірка вихідного інтернету: той самий сервіс, що на екрані «Якість» (AnyPlaySpeedTest)
+const char *const kUplinkUrl = "https://speed.cloudflare.com/__up";
 
 // пакет вводу помічника (контракт.md, п. 4.1): 28 байтів, little-endian
 const int kInputPacketSize = 28;
 const uint8_t kInputMagic = 0xA7;
 const uint8_t kInputVersion = 1;
-
-struct Level
-{
-	int w, h, fps, kbps;
-};
-// сходинки якості: 0–1 для 720p, з 2 — для 540p; нижче — лише коли гравцеві гірше
-const Level kLevels[] = {
-	{ 1280, 720, 30, 2500 },
-	{ 1280, 720, 30, 1800 },
-	{ 960, 540, 30, 1500 },
-	{ 960, 540, 24, 1000 },
-	{ 960, 540, 15, 700 },
-	{ 640, 360, 15, 450 },
-};
-const int kMaxLevel = int(sizeof(kLevels) / sizeof(kLevels[0])) - 1;
 
 qint64 nowMs() { return QDateTime::currentMSecsSinceEpoch(); }
 
@@ -96,21 +90,12 @@ static AnyPlayLive *g_instance = nullptr;
 // Усе, що живе в інших потоках. Знищується лише після того, як усі потоки зупинено.
 struct AnyPlayLiveMedia
 {
-	anyplaylive::VideoPipeline video;
-	std::mutex peer_mutex;                       // кодування й звук шлють у peer зі своїх потоків
+	anyplaylive::Forwarder fwd;                  // стиснене відео й Opus гри → WebRTC (без перекодування)
+	std::mutex peer_mutex;                       // пересилання й мікрофон шлють у peer зі своїх потоків
 	std::unique_ptr<anyplaylive::Peer> peer;
 	anyplaylive::VoiceMixer mixer;
 	std::mutex mid_mutex;
 	std::map<std::string, std::string> mid_owner;   // mid треку голосу → memberId глядача
-	std::atomic<unsigned> remb_kbps{ 0 };
-
-	// звук гри: копія з потоку звуку chiaki, кодування — у своєму потоці
-	std::mutex audio_mutex;
-	std::condition_variable audio_cv;
-	std::deque<std::vector<int16_t>> audio_q;
-	bool audio_quit = false;
-	std::thread audio_thread;
-	anyplaylive::OpusPacker game_opus;
 	std::atomic<bool> game_on{ false };
 
 	// мікрофон гравця і голоси глядачів (SDL)
@@ -126,10 +111,17 @@ struct AnyPlayLiveMedia
 	}
 };
 
-static std::atomic<anyplaylive::VideoPipeline *> g_video{ nullptr };
-static std::atomic<int> g_video_inflight{ 0 };
-static std::atomic<AnyPlayLiveMedia *> g_audio{ nullptr };
-static std::atomic<int> g_audio_inflight{ 0 };
+// що бачать потоки chiaki
+static std::atomic<anyplaylive::Forwarder *> g_fwd{ nullptr };
+static std::atomic<int> g_fwd_inflight{ 0 };
+static std::atomic<AnyPlayLiveMedia *> g_game_audio{ nullptr };
+static std::atomic<unsigned> g_audio_frame{ 480 };     // тривалість пакета Opus з PS5 (48 кГц), із заголовка звуку
+static std::atomic<int64_t> g_game_bytes{ 0 };          // усі байти відео й звуку гри (для оцінки потоку до старту)
+static std::atomic<int> g_game_frames{ 0 };
+// заголовок потоку (SPS/PPS або VPS/SPS/PPS): приходить на початку гри й при зміні роздільності
+static std::mutex g_header_mutex;
+static anyplaylive::StreamHeader g_header;
+static std::atomic<quint32> g_header_gen{ 0 };
 
 static void SDLCALL liveMicCb(void *user, Uint8 *stream, int len)
 {
@@ -144,10 +136,10 @@ static void SDLCALL liveVoiceCb(void *user, Uint8 *stream, int len)
 	m->mixer.pull(reinterpret_cast<int16_t *>(stream), static_cast<size_t>(len) / 4);
 }
 
-static bool allowSoftwareEncoder()
+static anyplaylive::StreamHeader currentHeader()
 {
-	// лише для перевірок розробника: у клієнтів програмне кодування заборонене (забирало б процесор у гри)
-	return qEnvironmentVariableIntValue("ANYPLAY_LIVE_SOFTWARE") == 1;
+	std::lock_guard<std::mutex> lock(g_header_mutex);
+	return g_header;
 }
 #else
 struct AnyPlayLiveMedia
@@ -166,8 +158,8 @@ AnyPlayLive::AnyPlayLive(AnyPlayCloud *cloud, QmlBackend *backend, QObject *pare
 	g_instance = this;
 	chiaki_controller_state_set_idle(&remote_state_);
 	QSettings st;
-	quality_ = st.value(QStringLiteral("anyplay/live_quality"), QStringLiteral("720p")).toString() == QLatin1String("540p")
-		? QStringLiteral("540p") : QStringLiteral("720p");
+	quality_ = QStringLiteral("game");
+	compat_video_ = st.value(QStringLiteral("anyplay/live_compat_h264"), false).toBool();
 	game_audio_ = st.value(QStringLiteral("anyplay/live_game_audio"), true).toBool();
 	mic_on_ = st.value(QStringLiteral("anyplay/live_mic"), false).toBool();
 	voices_on_ = st.value(QStringLiteral("anyplay/live_voices"), true).toBool();
@@ -184,9 +176,23 @@ AnyPlayLive::AnyPlayLive(AnyPlayCloud *cloud, QmlBackend *backend, QObject *pare
 
 	poll_timer_.setInterval(kPollMs);
 	connect(&poll_timer_, &QTimer::timeout, this, &AnyPlayLive::poll);
-	adapt_timer_.setInterval(1000);
-	connect(&adapt_timer_, &QTimer::timeout, this, &AnyPlayLive::adaptTick);
+	stats_timer_.setInterval(1000);
+	connect(&stats_timer_, &QTimer::timeout, this, &AnyPlayLive::statsTick);
+	// потік гри (кодек, Мбіт/с, кадри) — раз на секунду, поки йде гра: одне читання двох лічильників
+	game_timer_.setInterval(1000);
+	connect(&game_timer_, &QTimer::timeout, this, &AnyPlayLive::gameTick);
 	connect_timer_.setSingleShot(true);
+	republish_timer_.setSingleShot(true);
+	connect(&republish_timer_, &QTimer::timeout, this, &AnyPlayLive::republish);
+	// libdatachannel каже «disconnected», коли кілька секунд немає відповіді; часто з'єднання вертається само
+	disconnect_timer_.setSingleShot(true);
+	disconnect_timer_.setInterval(5000);
+	connect(&disconnect_timer_, &QTimer::timeout, this, [this]() {
+		if(state_ != QLatin1String("live"))
+			return;
+		enterReconnecting(tr("Зник інтернет. Ефір повернеться сам, щойно зв'язок з'явиться."));
+		scheduleRepublish(5000);   // з'єднання не повернулось саме: нове, щойно буде інтернет
+	});
 	hello_timer_.setInterval(1000);
 	connect(&hello_timer_, &QTimer::timeout, this, &AnyPlayLive::sendHello);
 	remote_watchdog_.setInterval(100);
@@ -211,18 +217,42 @@ AnyPlayLive::AnyPlayLive(AnyPlayCloud *cloud, QmlBackend *backend, QObject *pare
 	connect(&handoff_timer_, &QTimer::timeout, this, &AnyPlayLive::pollHandoff);
 	QTimer::singleShot(2000, this, &AnyPlayLive::loadConfig);
 
+	connect(backend, &QmlBackend::sessionError, this, [this]() { session_error_ms_ = nowMs(); });
 	connect(backend, &QmlBackend::sessionChanged, this, [this](StreamSession *s) {
 		session_ = s;
 		if(s)
-			return;
-		// гра закінчилась (бронь, вихід, передали другові): трансляцію вимикаємо
-		if(state_ != QLatin1String("off") && state_ != QLatin1String("error"))
 		{
-			teardown(true);
-			emit message(tr("Гра закінчилась, трансляцію вимкнено."));
+			if(!game_timer_.isActive())
+				game_timer_.start();
+			return;
 		}
+		game_timer_.stop();
+		game_kbps_ = game_fps_ = game_peak_kbps_ = 0;
+		game_bytes_hist_.clear();
+		emit gameChanged();
+		if(state_ == QLatin1String("off") || state_ == QLatin1String("error"))
+			return;
+		// гра перепідключається (зміна якості чи «Відео для всіх браузерів» за згодою гравця, або обірвався зв'язок
+		// з приставкою): ефір не вимикаємо, глядачі чекають, кімната лишається, посилання те саме
+		const bool reconnecting_game = (cloud_ && cloud_->property("reconnectOnce").toBool())
+			|| (session_error_ms_ && nowMs() - session_error_ms_ < 5000) || nowMs() < hold_until_ms_;
+		if(reconnecting_game && ever_live_)
+		{
+			hold_until_ms_ = qMax(hold_until_ms_, nowMs() + kHoldGameMs);
+			header_gen_seen_ = 0;
+#ifdef ANYPLAY_HAVE_LIVE
+			header_gen_seen_ = g_header_gen.load();
+#endif
+			enterReconnecting(tr("Гра перепідключається. Ефір продовжиться сам, глядачі зачекають."));
+			return;
+		}
+		// гра закінчилась (бронь, вихід, передали другові): трансляцію вимикаємо
+		teardown(true);
+		emit message(tr("Гра закінчилась, трансляцію вимкнено."));
 	});
 	session_ = backend->qmlSession();
+	if(session_)
+		game_timer_.start();
 }
 
 AnyPlayLive::~AnyPlayLive()
@@ -243,53 +273,83 @@ bool AnyPlayLive::supported() const
 
 // ───────────────────────────── гачки з інших потоків ─────────────────────────────
 
-void AnyPlayLive::tapVideoFrame(const AVFrame *frame)
+void AnyPlayLive::tapVideoSample(const uint8_t *data, size_t size)
 {
 #ifdef ANYPLAY_HAVE_LIVE
-	if(!g_video.load(std::memory_order_relaxed))
+	if(!data || size < 5)
 		return;
-	g_video_inflight.fetch_add(1);
-	anyplaylive::VideoPipeline *p = g_video.load();
-	if(p && p->wantsFrame(anyplaylive::nowUs()))
-		p->offer(frame);
-	g_video_inflight.fetch_sub(1);
+	g_game_bytes.fetch_add(static_cast<int64_t>(size), std::memory_order_relaxed);
+	// заголовок (рідко: початок гри, зміна роздільності) — запам'ятовуємо завжди, навіть без трансляції, щоб
+	// знати кодек і мати SPS/PPS для глядачів. Дешево: дивимось лише перші два байти першої NAL.
+	size_t at = data[2] == 1 ? 3 : (data[2] == 0 && data[3] == 1 ? 4 : 0);
+	bool header = false;
+	if(at && at + 1 < size)
+	{
+		if(anyplaylive::headerCodec(data + at, size - at) != anyplaylive::Codec::Unknown)
+		{
+			anyplaylive::StreamHeader h;
+			if(anyplaylive::parseHeaderSample(data, size, &h))
+			{
+				header = true;
+				{
+					std::lock_guard<std::mutex> lock(g_header_mutex);
+					g_header = std::move(h);
+				}
+				g_header_gen.fetch_add(1);
+			}
+		}
+	}
+	if(!header)
+		g_game_frames.fetch_add(1, std::memory_order_relaxed);
+	if(!g_fwd.load(std::memory_order_relaxed))
+		return;
+	g_fwd_inflight.fetch_add(1);
+	if(anyplaylive::Forwarder *f = g_fwd.load())
+		f->pushVideo(data, size, anyplaylive::nowUs());
+	g_fwd_inflight.fetch_sub(1);
 #else
-	Q_UNUSED(frame);
+	Q_UNUSED(data);
+	Q_UNUSED(size);
 #endif
 }
 
-void AnyPlayLive::tapGameAudio(const int16_t *pcm, size_t frames, unsigned channels)
+void AnyPlayLive::tapGameAudioHeader(unsigned channels, unsigned rate, unsigned frameSize)
 {
 #ifdef ANYPLAY_HAVE_LIVE
-	if(!g_audio.load(std::memory_order_relaxed) || !pcm || !frames)
-		return;
-	g_audio_inflight.fetch_add(1);
-	AnyPlayLiveMedia *m = g_audio.load();
-	if(m && m->game_on.load(std::memory_order_relaxed))
-	{
-		std::vector<int16_t> st(frames * 2);
-		if(channels == 2)
-			memcpy(st.data(), pcm, frames * 2 * sizeof(int16_t));
-		else
-			for(size_t i = 0; i < frames; i++)
-			{
-				const int16_t l = pcm[i * (channels ? channels : 1)];
-				const int16_t r = channels >= 2 ? pcm[i * channels + 1] : l;
-				st[i * 2] = l;
-				st[i * 2 + 1] = r;
-			}
-		{
-			std::lock_guard<std::mutex> lock(m->audio_mutex);
-			if(m->audio_q.size() < 20)   // ~200 мс; більше — потік кодування не встигає, старе не потрібне
-				m->audio_q.push_back(std::move(st));
-		}
-		m->audio_cv.notify_one();
-	}
-	g_audio_inflight.fetch_sub(1);
+	// Opus у WebRTC завжди з часом 48 кГц; PS5 шле 48 кГц стерео, пакети по 480 (10 мс)
+	if(frameSize && rate)
+		g_audio_frame.store(static_cast<unsigned>(static_cast<uint64_t>(frameSize) * 48000 / rate));
+	anyplaylive::logf("game audio: %u ch, %u Hz, %u samples per packet", channels, rate, frameSize);
 #else
-	Q_UNUSED(pcm);
-	Q_UNUSED(frames);
 	Q_UNUSED(channels);
+	Q_UNUSED(rate);
+	Q_UNUSED(frameSize);
+#endif
+}
+
+void AnyPlayLive::tapGameOpus(const uint8_t *data, size_t size)
+{
+#ifdef ANYPLAY_HAVE_LIVE
+	g_game_bytes.fetch_add(static_cast<int64_t>(size), std::memory_order_relaxed);
+	if(!g_game_audio.load(std::memory_order_relaxed))
+		return;
+	g_fwd_inflight.fetch_add(1);
+	AnyPlayLiveMedia *m = g_game_audio.load();
+	if(m && m->game_on.load(std::memory_order_relaxed))
+		m->fwd.pushAudio(data, size, g_audio_frame.load(std::memory_order_relaxed));
+	g_fwd_inflight.fetch_sub(1);
+#else
+	Q_UNUSED(data);
+	Q_UNUSED(size);
+#endif
+}
+
+bool AnyPlayLive::compatVideoWanted()
+{
+#ifdef ANYPLAY_HAVE_LIVE
+	return QSettings().value(QStringLiteral("anyplay/live_compat_h264"), false).toBool();
+#else
+	return false;
 #endif
 }
 
@@ -419,11 +479,7 @@ void AnyPlayLive::updateStatusText()
 		const int n = viewers_.size();
 		status_text_ = n == 0 ? tr("Трансляція йде. Чекаємо на глядачів.")
 			: tr("Трансляція йде. Глядачів: %1").arg(n);
-		if(level_ > start_level_)
-			status_text_ += tr(". Якість знижено, щоб гра не гальмувала");
 	}
-	else if(state_ == QLatin1String("paused"))
-		status_text_ = pause_reason_.isEmpty() ? tr("Трансляцію призупинено.") : pause_reason_;
 	else if(state_ == QLatin1String("off"))
 		status_text_ = handed_over_ ? tr("Гру передано. Тепер грає: %1").arg(handoff_name_) : QString();
 }
@@ -435,10 +491,109 @@ void AnyPlayLive::fail(const QString &text)
 	emit message(text);
 }
 
+// ───────────────────────────── гра: кодек, потік, кадри ─────────────────────────────
+
+void AnyPlayLive::gameTick()
+{
+#ifdef ANYPLAY_HAVE_LIVE
+	const qint64 bytes = g_game_bytes.load();
+	const int frames = g_game_frames.load();
+	const qint64 db = game_bytes_last_ ? qMax<qint64>(0, bytes - game_bytes_last_) : 0;
+	const int df = game_frames_last_ ? qMax(0, frames - game_frames_last_) : 0;
+	const bool first = !game_bytes_last_;
+	game_bytes_last_ = bytes;
+	game_frames_last_ = frames;
+	if(first)
+		return;
+	game_bytes_hist_.append(db);
+	while(game_bytes_hist_.size() > 10)
+		game_bytes_hist_.removeFirst();
+	qint64 sum = 0, peak = 0;
+	for(qint64 b : std::as_const(game_bytes_hist_))
+	{
+		sum += b;
+		peak = qMax(peak, b);
+	}
+	const int kbps = static_cast<int>(sum * 8 / 1000 / qMax(1, int(game_bytes_hist_.size())));
+	const int peak_kbps = static_cast<int>(peak * 8 / 1000);
+	const anyplaylive::Codec c = currentHeader().codec;
+	const QString codec = QString::fromLatin1(anyplaylive::codecName(c));
+	// QML оновлюємо лише на помітні зміни: меню закрите — нічого не перемальовується
+	const bool notable = codec != game_codec_ || qAbs(kbps - game_kbps_) > qMax(300, game_kbps_ / 10)
+		|| qAbs(df - game_fps_) > 3;
+	game_peak_kbps_ = peak_kbps;
+	if(notable)
+	{
+		game_codec_ = codec;
+		game_kbps_ = kbps;
+		game_fps_ = df;
+		emit gameChanged();
+	}
+	// гра перепідключилась, поки ефір чекав: щойно прийшов новий заголовок — знову в ефір (кодек міг змінитись)
+	if(state_ == QLatin1String("reconnecting") && hold_until_ms_ && session_ && g_header_gen.load() != header_gen_seen_)
+	{
+		hold_until_ms_ = 0;
+		qInfo() << "[anyplay-live] game is back: publishing again";
+		scheduleRepublish(0);
+	}
+	else if(state_ == QLatin1String("reconnecting") && hold_until_ms_ && nowMs() > hold_until_ms_)
+	{
+		hold_until_ms_ = 0;
+		teardown(true);
+		emit message(tr("Гра не повернулась за 3 хвилини, трансляцію вимкнено."));
+	}
+#endif
+}
+
+QString AnyPlayLive::gameCodec() const
+{
+	return game_codec_;
+}
+
+int AnyPlayLive::needKbps() const
+{
+	// пересилання = потік гри як є (відео + звук) + заголовки RTP/SRTP і запас на ключові кадри
+	const int base = qMax(game_kbps_, game_peak_kbps_ * 8 / 10);
+	return base > 0 ? base * 125 / 100 + 300 : 0;
+}
+
+bool AnyPlayLive::compatPending() const
+{
+	return compat_video_ && game_codec_ == QLatin1String("H.265");
+}
+
+QString AnyPlayLive::browserNote() const
+{
+	if(game_codec_ == QLatin1String("H.265"))
+		return tr("Відео йде у форматі H.265, як його дає приставка. Його показують Safari (iPhone, iPad, Mac) і Chrome від версії 136 "
+		          "на Android, Windows і Mac. У Firefox і старих браузерах буде лише звук і чат. Щоб відео відкривалось будь-де, "
+		          "увімкни «Відео для всіх браузерів».");
+	if(game_codec_ == QLatin1String("H.264"))
+		return tr("Відео йде у форматі H.264: його показує будь-який сучасний браузер на телефоні, комп'ютері чи телевізорі.");
+	return QString();
+}
+
+void AnyPlayLive::setCompatVideo(bool on)
+{
+	if(on == compat_video_)
+		return;
+	compat_video_ = on;
+	QSettings().setValue(QStringLiteral("anyplay/live_compat_h264"), on);
+	qInfo().noquote() << "[anyplay-live] compatible video (H.264 game stream):" << on;
+	emit gameChanged();
+}
+
+void AnyPlayLive::holdForReconnect(int seconds)
+{
+	hold_until_ms_ = nowMs() + qBound(10, seconds, 600) * 1000LL;
+}
+
+// ───────────────────────────── старт: перевірка вихідного інтернету ─────────────────────────────
+
 void AnyPlayLive::start(const QString &quality, bool gameAudio)
 {
+	Q_UNUSED(quality);   // глядачі бачать гру такою ж, як гравець: якості для трансляції окремо немає
 #ifndef ANYPLAY_HAVE_LIVE
-	Q_UNUSED(quality);
 	Q_UNUSED(gameAudio);
 	emit message(unsupported_text_);
 #else
@@ -449,101 +604,161 @@ void AnyPlayLive::start(const QString &quality, bool gameAudio)
 		emit message(tr("Трансляцію можна ввімкнути під час гри."));
 		return;
 	}
-	quality_ = quality == QLatin1String("540p") ? QStringLiteral("540p") : QStringLiteral("720p");
+	if(!currentHeader().valid())
+	{
+		emit message(tr("Зачекай кілька секунд, поки з'явиться картинка гри, і спробуй ще раз."));
+		return;
+	}
 	game_audio_ = gameAudio;
-	QSettings st;
-	st.setValue(QStringLiteral("anyplay/live_quality"), quality_);
-	st.setValue(QStringLiteral("anyplay/live_game_audio"), game_audio_);
+	QSettings().setValue(QStringLiteral("anyplay/live_game_audio"), game_audio_);
 
 	generation_++;
-	setState(QStringLiteral("starting"), tr("Готуємо трансляцію…"));
-	media_ = std::make_unique<AnyPlayLiveMedia>();
-	start_level_ = level_ = quality_ == QLatin1String("540p") ? 2 : 0;
-	paused_ = false;
-	bad_streak_ = good_streak_ = 0;
-	up_blocked_until_ms_ = last_up_ms_ = last_stats_ms_ = 0;
-	base_loss_ = 0;
-	base_samples_ = 0;
-	last_frames_ = last_pipe_dropped_ = 0;
-	last_bytes_ = 0;
+	ever_live_ = false;
+	republish_tries_ = 0;
+	hold_until_ms_ = 0;
 	last_chat_id_ = -1;
-	const Level &l = kLevels[level_];
-	anyplaylive::VideoConfig cfg;
-	cfg.width = l.w;
-	cfg.height = l.h;
-	cfg.fps = l.fps;
-	cfg.kbps = l.kbps;
-	live_height_ = l.h;
-	AnyPlayLiveMedia *m = media_.get();
-	const quint32 gen = generation_;
-	QPointer<AnyPlayLive> self(this);
-	m->video.setPaused(true);   // кадри беремо лише тоді, коли є куди слати
-	m->video.start(cfg, allowSoftwareEncoder(),
-		[m](const std::vector<uint8_t> &au, bool, int64_t capture_us) {
-			std::lock_guard<std::mutex> lock(m->peer_mutex);
-			if(m->peer)
-				m->peer->sendVideo(au, capture_us);
-		},
-		[self, gen](bool ok, const std::string &encoder, const std::string &err) {
-			const QString enc = QString::fromStdString(encoder), e = QString::fromStdString(err);
-			QMetaObject::invokeMethod(QCoreApplication::instance(), [self, gen, ok, enc, e]() {
-				if(self && self->generation_ == gen)
-					self->onEncoderStatus(ok, enc, e);
-			}, Qt::QueuedConnection);
-		});
-	g_video.store(&m->video);
+	last_frames_ = 0;
+	last_bytes_ = 0;
+	last_overflows_ = 0;
+	overflow_times_.clear();
+	viewers_lag_ = false;
+	key_requests_ = 0;
+	beat_.skipped = beat_.overflows = 0;
+	media_ = std::make_unique<AnyPlayLiveMedia>();
 
-	// весь запуск не довше 30 с
+	// весь запуск не довше 40 с (перевірка інтернету до 8 с)
+	const quint32 gen = generation_;
 	connect_timer_.disconnect();
 	connect(&connect_timer_, &QTimer::timeout, this, [this, gen]() {
-		if(generation_ == gen && state_ == QLatin1String("starting"))
+		if(generation_ == gen && (state_ == QLatin1String("starting") || state_ == QLatin1String("checking")))
 			fail(tr("Трансляція не запустилась: сервер трансляцій не відповів вчасно. Спробуй ще раз."));
 	});
-	connect_timer_.start(30000);
-	qInfo().noquote() << "[anyplay-live] start quality" << quality_ << "gameAudio" << game_audio_;
+	connect_timer_.start(40000);
+	qInfo().noquote() << "[anyplay-live] start: game" << game_codec_ << game_kbps_ << "kbps, need" << needKbps()
+	                  << "kbps, gameAudio" << game_audio_;
+	checkUplink();
 #endif
 }
 
-void AnyPlayLive::onEncoderStatus(bool ok, const QString &encoder, const QString &err)
+void AnyPlayLive::checkUplink()
 {
-	if(!ok)
+	const int need = needKbps();
+	// свіжа перевірка (до 10 хв) — не повторюємо: друга спроба поспіль не має знову забивати канал
+	if(uplink_kbps_ > 0 && nowMs() - uplink_at_ms_ < kUplinkCacheMs && uplink_kbps_ >= need)
 	{
-		qWarning().noquote() << "[anyplay-live] no hardware encoder:" << err;
-		if(state_ == QLatin1String("starting"))
-		{
-			unsupported_text_ = tr("На цьому комп'ютері немає апаратного кодувальника відео, тому трансляцію не ввімкнути: "
-			                       "кодування процесором забирало б ресурси в гри.");
-			fail(unsupported_text_);
-		}
-		else
-			fail(tr("Кодувальник відео зупинився, трансляцію вимкнено."));
+		uplinkResult(uplink_kbps_, QStringLiteral("cached"));
 		return;
 	}
-	encoder_name_ = encoder;
-	unsupported_text_.clear();
-	emit changed();
-	if(state_ == QLatin1String("starting") && token_.isEmpty())
-		beginServer();
+	setState(QStringLiteral("checking"), tr("Перевіряю інтернет на відправлення (кілька секунд)…"));
+	if(!nam_)
+		nam_ = new QNetworkAccessManager(this);
+	// ~2,5 с потоку з потрібною швидкістю, від 1,5 до 12 МБ. Гравець у цей час у меню, гра на паузі.
+	const qint64 bytes = qBound<qint64>(qint64(1500000), static_cast<qint64>(qMax(need, 8000)) * 1000 / 8 * 5 / 2, qint64(12000000));
+	QByteArray payload(static_cast<int>(bytes), Qt::Uninitialized);
+	QRandomGenerator *rnd = QRandomGenerator::global();
+	for(int i = 0; i + 4 <= payload.size(); i += 4)
+	{
+		const quint32 x = rnd->generate();
+		memcpy(payload.data() + i, &x, 4);
+	}
+	QNetworkRequest req{QUrl(QString::fromLatin1(kUplinkUrl))};
+	req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/octet-stream"));
+	req.setTransferTimeout(10000);
+	const quint32 gen = generation_;
+	auto clock = std::make_shared<QElapsedTimer>();
+	auto first = std::make_shared<qint64>(-1);
+	auto sent = std::make_shared<qint64>(0);
+	auto done = std::make_shared<bool>(false);
+	QNetworkReply *reply = nam_->post(req, payload);
+	clock->start();
+	auto finish = [this, gen, reply, clock, first, sent, done, bytes](bool complete) {
+		if(*done)
+			return;
+		*done = true;
+		const qint64 t0 = *first >= 0 ? *first : 0;
+		const qint64 ms = clock->elapsed() - t0;
+		const qint64 b = complete ? bytes : *sent;
+		reply->abort();
+		reply->deleteLater();
+		if(gen != generation_)
+			return;
+		int kbps = -1;
+		if(ms > 200 && b >= 500000)
+			kbps = static_cast<int>(b * 8 / ms);   // біт/мс = кбіт/с
+		uplinkResult(kbps, complete ? QStringLiteral("measured") : QStringLiteral("partial"));
+	};
+	connect(reply, &QNetworkReply::uploadProgress, this, [clock, first, sent, finish](qint64 s, qint64) {
+		if(s > 0 && *first < 0)
+			*first = clock->elapsed();
+		*sent = s;
+		if(clock->elapsed() > 8000)
+			finish(false);
+	});
+	connect(reply, &QNetworkReply::finished, this, [reply, finish]() {
+		finish(reply->error() == QNetworkReply::NoError);
+	});
+	QTimer::singleShot(9000, this, [finish]() { finish(false); });
+}
+
+void AnyPlayLive::uplinkResult(int kbps, const QString &why)
+{
+	const int need = needKbps();
+	if(kbps > 0)
+	{
+		uplink_kbps_ = kbps;
+		uplink_at_ms_ = nowMs();
+	}
+	qInfo().noquote() << "[anyplay-live] uplink" << kbps << "kbps (" << why << "), game" << game_kbps_ << "kbps, need" << need;
+	auto mbps = [](int k) { return QString::number(k / 1000.0, 'f', 1).replace(QLatin1Char('.'), QLatin1Char(',')); };
+	if(kbps > 0 && need > 0 && kbps < need)
+	{
+		// чесно й до старту: трансляція пересилає гру як є, тому знизити її якість окремо для глядачів не можна
+		uplink_kbps_ = kbps;
+		fail(tr("Трансляцію не ввімкнути: інтернет на відправлення зараз %1 Мбіт/с, а трансляції треба щонайменше %2 Мбіт/с "
+		        "(гра йде %3 Мбіт/с, і глядачі отримують її як є, без перекодування). Що можна зробити: у меню «Зображення» "
+		        "обери якість нижче (гра піде меншим потоком) або під'єднай комп'ютер кабелем і спробуй ще раз.")
+			.arg(mbps(kbps), mbps(need), mbps(game_kbps_)));
+		return;
+	}
+	// межа швидкості відправлення: не більше 90 % виміряного (щоб не забити канал гравця), але з запасом на ключові кадри
+	const int base = qMax(need, 4000);
+	pace_kbps_ = kbps > 0 ? qMax(qMin(kbps * 9 / 10, qMax(base * 5 / 2, base + 8000)), base * 11 / 10)
+	                      : qMax(base * 2, base + 8000);
+	if(kbps <= 0)
+		qWarning() << "[anyplay-live] uplink check failed, pacing at" << pace_kbps_ << "kbps";
+	setState(QStringLiteral("starting"), tr("Готуємо трансляцію…"));
+	beginServer();
 }
 
 void AnyPlayLive::beginServer()
 {
 	QJsonObject body;
-	body["quality"] = quality_;
+	// сервер знає лише 720p/540p (контракт.md, п. 2.1); глядачі однаково отримують гру як є
+	body["quality"] = QStringLiteral("720p");
 	body["gameAudio"] = game_audio_;
 	body["access"] = QStringLiteral("link");
 	const quint32 gen = generation_;
 	api(kApiStart, body, [this, gen](bool ok, int status, const QJsonObject &o) {
 		if(gen != generation_)
 			return;
-		token_ = o.value(QStringLiteral("token")).toString();
-		if(!ok || token_.isEmpty())
+		const QString token = o.value(QStringLiteral("token")).toString();
+		if(!ok || token.isEmpty())
 		{
+			if(ever_live_)
+			{
+				scheduleRepublish(5000);   // ефір уже йшов: інтернет чи сервер повернуться — спробуємо знову
+				return;
+			}
 			token_.clear();
 			fail(errorText(status, o, tr("Не вдалося почати трансляцію. Спробуй ще раз.")));
 			return;
 		}
+		const QString old_code = code_;
+		token_ = token;
+		last_poll_ok_ms_ = nowMs();
 		applyRoomState(o);
+		if(ever_live_ && !old_code.isEmpty() && code_ != old_code)
+			emit message(tr("Інтернету не було довго, тож кімната трансляції нова: надішли друзям нове посилання."));
 		negotiatePublish();
 	});
 }
@@ -567,24 +782,51 @@ void AnyPlayLive::negotiatePublish()
 {
 #ifdef ANYPLAY_HAVE_LIVE
 	const quint32 gen = generation_;
-	api(kSfuSession, QJsonObject(), [this, gen](bool ok, int status, const QJsonObject &o) {
-		if(gen != generation_)
+	const quint32 pub = ++pub_gen_;
+	republish_busy_ = true;
+	// помилка до першого ефіру — чесна помилка; після — чекаємо й пробуємо знову (інтернет зник ненадовго)
+	auto failed = [this](const QString &text) {
+		republish_busy_ = false;
+		if(ever_live_)
+		{
+			qWarning().noquote() << "[anyplay-live] publish failed, retrying:" << text;
+			scheduleRepublish(qMin(15000, 3000 * (1 + republish_tries_++)));
+		}
+		else
+			fail(text);
+	};
+	api(kSfuSession, QJsonObject(), [this, gen, pub, failed](bool ok, int status, const QJsonObject &o) {
+		if(gen != generation_ || pub != pub_gen_)
 			return;
 		session_id_ = o.value(QStringLiteral("sessionId")).toString();
 		if(!ok || session_id_.isEmpty())
 		{
-			fail(errorText(status, o, tr("Сервер трансляцій не відповів. Спробуй ще раз.")));
+			if(ever_live_ && (status == 401 || status == 403 || status == 404 || status == 410))
+			{
+				// кімнату закрито, поки не було інтернету: відкриваємо знову
+				republish_busy_ = false;
+				token_.clear();
+				beginServer();
+				return;
+			}
+			failed(errorText(status, o, tr("Сервер трансляцій не відповів. Спробуй ще раз.")));
 			return;
 		}
 		ice_urls_ = iceUrls(o.value(QStringLiteral("iceServers")).toArray());
 		if(ice_urls_.isEmpty())
 			ice_urls_ << QStringLiteral("stun:stun.cloudflare.com:3478");
 
+		const anyplaylive::StreamHeader header = currentHeader();
+		if(!header.valid())
+		{
+			failed(tr("Немає картинки гри, трансляції нічого показувати."));
+			return;
+		}
 		AnyPlayLiveMedia *m = media_.get();
 		QPointer<AnyPlayLive> self(this);
-		auto post = [self, gen](std::function<void(AnyPlayLive *)> f) {
-			QMetaObject::invokeMethod(QCoreApplication::instance(), [self, gen, f]() {
-				if(self && self->generation_ == gen)
+		auto post = [self, gen, pub](std::function<void(AnyPlayLive *)> f) {
+			QMetaObject::invokeMethod(QCoreApplication::instance(), [self, gen, pub, f]() {
+				if(self && self->generation_ == gen && self->pub_gen_ == pub)
 					f(self.data());
 			}, Qt::QueuedConnection);
 		};
@@ -593,8 +835,32 @@ void AnyPlayLive::negotiatePublish()
 			const QString st = QString::fromStdString(s);
 			post([st](AnyPlayLive *me) {
 				qInfo().noquote() << "[anyplay-live] peer" << st;
-				if(st == QLatin1String("failed") || st == QLatin1String("closed"))
-					me->fail(tr("Зв'язок трансляції обірвався. Увімкни трансляцію ще раз."));
+				if(st == QLatin1String("connected"))
+				{
+					me->disconnect_timer_.stop();
+					if(me->state_ == QLatin1String("reconnecting") && me->input_channel_ >= 0 && me->session_)
+					{
+						me->setState(QStringLiteral("live"));
+						if(me->media_)
+							me->media_->fwd.setVideoOn(true);
+						me->requestKeyframe("reconnected");
+					}
+				}
+				else if(st == QLatin1String("disconnected"))
+				{
+					if(!me->disconnect_timer_.isActive())
+						me->disconnect_timer_.start();
+				}
+				else if(st == QLatin1String("failed") || st == QLatin1String("closed"))
+				{
+					if(me->ever_live_)
+					{
+						me->enterReconnecting(tr("Зник інтернет. Ефір повернеться сам, щойно зв'язок з'явиться."));
+						me->scheduleRepublish(2000);
+					}
+					else
+						me->fail(tr("Не вдалося з'єднатися з сервером трансляцій. Спробуй ще раз."));
+				}
 			});
 		};
 		cb.gathered = [post]() {
@@ -605,8 +871,7 @@ void AnyPlayLive::negotiatePublish()
 					w();
 			});
 		};
-		cb.keyframe = [m]() { m->video.requestKeyframe(); };
-		cb.remb = [m](unsigned kbps) { m->remb_kbps.store(kbps); };
+		cb.keyframe = [post]() { post([](AnyPlayLive *me) { me->requestKeyframe("pli"); }); };
 		cb.remoteAudio = [m](const std::string &mid, const uint8_t *data, size_t size) {
 			std::string who;
 			{
@@ -639,20 +904,48 @@ void AnyPlayLive::negotiatePublish()
 		std::string err;
 		if(!peer->create(urls, &err))
 		{
-			fail(tr("Не вдалося підготувати з'єднання трансляції (%1).").arg(QString::fromStdString(err)));
+			failed(tr("Не вдалося підготувати з'єднання трансляції (%1).").arg(QString::fromStdString(err)));
 			return;
 		}
-		peer->addVideo(kTrackVideo, kLevels[0].kbps * 2.5);
+		const std::string fmtp = anyplaylive::sdpFmtp(header.codec, header.annexB);
+		peer->addVideo(kTrackVideo, header.codec, fmtp, pace_kbps_);
 		peer->addAudio(kTrackGame, 2);   // трек є завжди; коли звук гри вимкнено, по ньому просто нічого не йде
 		peer->addAudio(kTrackMic, 1);
+		qInfo().noquote() << "[anyplay-live] publish" << anyplaylive::codecName(header.codec) << QString::fromStdString(fmtp)
+		                  << "pace" << pace_kbps_ << "kbps";
+		std::unique_ptr<anyplaylive::Peer> old;
 		{
 			std::lock_guard<std::mutex> lock(m->peer_mutex);
+			old = std::move(m->peer);
 			m->peer = std::move(peer);
 		}
+		if(old)
+			old->close();
+		input_channel_ = events_channel_ = -1;
+		// пересилання: той самий кодек, що й гра; кадри підуть, щойно з'єднаємось і буде ключовий
+		m->fwd.setPaceKbps(pace_kbps_);
+		if(!m->fwd.running())
+		{
+			m->fwd.start(header.codec, header,
+				[m](const std::vector<uint8_t> &au, bool, int64_t us) {
+					std::lock_guard<std::mutex> lock(m->peer_mutex);
+					if(m->peer)
+						m->peer->sendVideo(au, us);
+				},
+				[m](const uint8_t *d, size_t n, uint32_t samples) { m->sendAudio(kTrackGame, d, n, static_cast<int>(samples)); },
+				[self](const char *why) {
+					const QByteArray w(why);
+					QMetaObject::invokeMethod(QCoreApplication::instance(), [self, w]() {
+						if(self)
+							self->requestKeyframe(w.constData());
+					}, Qt::QueuedConnection);
+				});
+		}
+		m->fwd.setVideoOn(false);   // до з'єднання кадри не беремо
 		// m=application одразу в першому offer: datachannels/establish не потрібен (контракт.md, п. 3.1)
 		m->peer->makeOffer(true);
-		whenGathered([this, gen]() {
-			if(gen != generation_ || !media_ || !media_->peer)
+		whenGathered([this, gen, pub, failed]() {
+			if(gen != generation_ || pub != pub_gen_ || !media_ || !media_->peer)
 				return;
 			QJsonObject sd;
 			sd["type"] = QStringLiteral("offer");
@@ -669,8 +962,8 @@ void AnyPlayLive::negotiatePublish()
 			QJsonObject body;
 			body["sessionDescription"] = sd;
 			body["tracks"] = tracks;
-			api(kSfuTracks, body, [this, gen](bool ok, int status, const QJsonObject &o) {
-				if(gen != generation_)
+			api(kSfuTracks, body, [this, gen, pub, failed](bool ok, int status, const QJsonObject &o) {
+				if(gen != generation_ || pub != pub_gen_)
 					return;
 				const QJsonObject answer = o.value(QStringLiteral("sessionDescription")).toObject();
 				std::string err;
@@ -678,20 +971,20 @@ void AnyPlayLive::negotiatePublish()
 					|| !media_->peer->applyAnswer(answer.value(QStringLiteral("sdp")).toString().toStdString(), &err))
 				{
 					qWarning().noquote() << "[anyplay-live] publish failed:" << QString::fromStdString(err);
-					fail(errorText(status, o, tr("Сервер трансляцій не прийняв відео. Спробуй ще раз.")));
+					failed(errorText(status, o, tr("Сервер трансляцій не прийняв відео. Спробуй ще раз.")));
 					return;
 				}
 				for(const QJsonValue &v : o.value(QStringLiteral("tracks")).toArray())
 					if(v.toObject().contains(QStringLiteral("errorCode")))
 						qWarning().noquote() << "[anyplay-live] track error" << compact(v.toObject());
 				// чекаємо з'єднання з SFU (ICE + DTLS), далі канали даних
-				waitFor([this]() { return media_ && media_->peer && media_->peer->connected(); }, 15000, [this, gen](bool connected) {
-					if(gen != generation_)
+				waitFor([this]() { return media_ && media_->peer && media_->peer->connected(); }, 15000, [this, gen, pub, failed](bool connected) {
+					if(gen != generation_ || pub != pub_gen_)
 						return;
 					if(connected)
 						openChannels();
 					else
-						fail(tr("Не вдалося з'єднатися з сервером трансляцій. Можливо, мережа блокує WebRTC."));
+						failed(tr("Не вдалося з'єднатися з сервером трансляцій. Можливо, мережа блокує WebRTC."));
 				});
 			});
 		});
@@ -782,6 +1075,7 @@ void AnyPlayLive::openChannels()
 {
 #ifdef ANYPLAY_HAVE_LIVE
 	const quint32 gen = generation_;
+	const quint32 pub = pub_gen_;
 	QJsonObject input, events;
 	input["location"] = QStringLiteral("local");
 	input["dataChannelName"] = QString::fromLatin1(kChannelInput);
@@ -789,8 +1083,8 @@ void AnyPlayLive::openChannels()
 	events["dataChannelName"] = QString::fromLatin1(kChannelEvents);
 	QJsonObject body;
 	body["dataChannels"] = QJsonArray{ input, events };
-	api(kSfuChannels, body, [this, gen](bool ok, int status, const QJsonObject &o) {
-		if(gen != generation_)
+	api(kSfuChannels, body, [this, gen, pub](bool ok, int status, const QJsonObject &o) {
+		if(gen != generation_ || pub != pub_gen_)
 			return;
 		int in_id = -1, ev_id = -1;
 		for(const QJsonValue &v : o.value(QStringLiteral("dataChannels")).toArray())
@@ -811,7 +1105,14 @@ void AnyPlayLive::openChannels()
 		if(!ok || in_id < 0 || ev_id < 0 || !media_->peer->openChannel(in_id, kChannelInput, in_ordered, in_rexmit)
 			|| !media_->peer->openChannel(ev_id, kChannelEvents, true, -1))
 		{
-			fail(errorText(status, o, tr("Сервер трансляцій не відкрив канал керування. Спробуй ще раз.")));
+			const QString text = errorText(status, o, tr("Сервер трансляцій не відкрив канал керування. Спробуй ще раз."));
+			if(ever_live_)
+			{
+				republish_busy_ = false;
+				scheduleRepublish(qMin(15000, 3000 * (1 + republish_tries_++)));
+			}
+			else
+				fail(text);
 			return;
 		}
 		input_channel_ = in_id;
@@ -825,59 +1126,145 @@ void AnyPlayLive::goLive()
 {
 #ifdef ANYPLAY_HAVE_LIVE
 	connect_timer_.stop();
+	republish_busy_ = false;
+	republish_tries_ = 0;
 	AnyPlayLiveMedia *m = media_.get();
-	m->mixer.setEnabled(voices_on_);
-	m->mixer.setVolume(voice_volume_ / 100.0f);
-	for(const qint64 id : std::as_const(muted_))
-		m->mixer.setMuted(QString::number(id).toStdString(), true);
-	// звук гри: власний потік кодування
-	m->game_opus.open(2, 96, false);
-	m->audio_quit = false;
-	m->audio_thread = std::thread([m]() {
-		while(true)
-		{
-			std::vector<int16_t> chunk;
-			{
-				std::unique_lock<std::mutex> lock(m->audio_mutex);
-				m->audio_cv.wait(lock, [m]() { return m->audio_quit || !m->audio_q.empty(); });
-				if(m->audio_quit)
-					break;
-				chunk = std::move(m->audio_q.front());
-				m->audio_q.pop_front();
-			}
-			m->game_opus.push(chunk.data(), chunk.size() / 2, [m](const uint8_t *d, size_t n, int samples) {
-				m->sendAudio(kTrackGame, d, n, samples);
-			});
-		}
-	});
+	const bool again = ever_live_;
+	ever_live_ = true;
+	if(!again)
+	{
+		m->mixer.setEnabled(voices_on_);
+		m->mixer.setVolume(voice_volume_ / 100.0f);
+		for(const qint64 id : std::as_const(muted_))
+			m->mixer.setMuted(QString::number(id).toStdString(), true);
+	}
+	// звук гри: пакети Opus з PS5 як є (без розкодування й кодування)
 	m->game_on.store(game_audio_);
-	g_audio.store(m);
-	m->video.setPaused(false);
-	m->video.requestKeyframe();
-	if(mic_on_)
+	g_game_audio.store(m);
+	m->fwd.setAudioOn(true);
+	// відео: від наступного ключового кадру, який просимо в приставки зараз
+	g_fwd.store(&m->fwd);
+	m->fwd.waitKey("live");
+	m->fwd.setVideoOn(true);
+	requestKeyframe(again ? "republished" : "start");
+	if(mic_on_ && !m->mic_dev)
 		openMic();
 	poll_timer_.start();
-	adapt_timer_.start();
+	stats_timer_.start();
 	setState(QStringLiteral("live"));
 	QJsonObject st;
 	st["paused"] = false;
 	st["muted"] = !mic_on_;
 	pushState(st);
 	poll();
+	// голоси: після нового з'єднання підписки на голоси глядачів треба зробити знову
+	for(auto it = people_.begin(); it != people_.end(); ++it)
+	{
+		it.value().voiceMid.clear();
+		it.value().voicePending = false;
+	}
 	reconcileVoices();
-	emit message(tr("Трансляцію ввімкнено. Надішли друзям посилання."));
-	qInfo().noquote() << "[anyplay-live] live room" << room_id_ << "code" << code_ << "encoder" << encoder_name_
-	                  << "session" << session_id_;
+	if(again)
+		emit message(tr("Трансляція знову в ефірі."));
+	else
+		emit message(tr("Трансляцію ввімкнено. Надішли друзям посилання."));
+	qInfo().noquote() << "[anyplay-live]" << (again ? "back live" : "live") << "room" << room_id_ << "code" << code_
+	                  << "codec" << game_codec_ << "session" << session_id_;
 #endif
+}
+
+void AnyPlayLive::enterReconnecting(const QString &text)
+{
+#ifdef ANYPLAY_HAVE_LIVE
+	if(media_)
+		media_->fwd.setVideoOn(false);
+#endif
+	disconnect_timer_.stop();
+	if(state_ != QLatin1String("reconnecting"))
+		qInfo().noquote() << "[anyplay-live] reconnecting:" << text;
+	setState(QStringLiteral("reconnecting"), text);
+}
+
+void AnyPlayLive::scheduleRepublish(int delayMs)
+{
+	if(token_.isEmpty() && !ever_live_)
+		return;
+	republish_timer_.start(qMax(0, delayMs));
+}
+
+void AnyPlayLive::republish()
+{
+#ifdef ANYPLAY_HAVE_LIVE
+	if(!media_ || !ever_live_ || state_ == QLatin1String("off") || state_ == QLatin1String("error"))
+		return;
+	if(!session_ || nowMs() < hold_until_ms_)
+	{
+		// гра ще не повернулась: чекаємо (gameTick запустить, щойно буде новий заголовок)
+		if(!hold_until_ms_)
+			scheduleRepublish(3000);
+		return;
+	}
+	if(republish_busy_)
+	{
+		scheduleRepublish(3000);
+		return;
+	}
+	enterReconnecting(status_text_.isEmpty() ? tr("Відновлюю ефір…") : status_text_);
+	// заголовок і кодек могли змінитись (гра перепідключилась): пересилання — наново
+	media_->fwd.stop();
+	g_fwd.store(nullptr);
+	while(g_fwd_inflight.load())
+		std::this_thread::yield();
+	if(token_.isEmpty())
+		beginServer();
+	else
+		negotiatePublish();
+#endif
+}
+
+void AnyPlayLive::requestKeyframe(const char *why)
+{
+	// ключовий кадр від PS5: новий глядач, PLI, після обриву. Не частіше разу на 3 с; запит у проміжку — один
+	// відкладений повтор. Просимо напряму (chiaki_session_request_idr), БЕЗ «чекати ключовий кадр» у приймачі
+	// гравця: його картинка не зупиняється й нічого не помічає.
+	if(!session_)
+		return;
+	const qint64 now = nowMs();
+	if(last_key_ms_ && now - last_key_ms_ < kKeyMinGapMs)
+	{
+		if(!key_pending_)
+		{
+			key_pending_ = true;
+			const quint32 gen = generation_;
+			const QByteArray w(why);
+			QTimer::singleShot(static_cast<int>(kKeyMinGapMs - (now - last_key_ms_)) + 10, this, [this, gen, w]() {
+				key_pending_ = false;
+				if(gen == generation_ && (state_ == QLatin1String("live") || state_ == QLatin1String("reconnecting")))
+					requestKeyframe(w.constData());
+			});
+		}
+		return;
+	}
+	last_key_ms_ = now;
+	key_requests_++;
+	beat_.keys++;
+	qInfo().noquote() << "[anyplay-live] key frame request:" << why;
+	QMetaObject::invokeMethod(session_.data(), "RequestLiveKeyframe", Qt::QueuedConnection);
 }
 
 void AnyPlayLive::teardown(bool tellServer)
 {
 	generation_++;
+	pub_gen_++;
 	poll_timer_.stop();
-	adapt_timer_.stop();
+	stats_timer_.stop();
 	connect_timer_.stop();
 	hello_timer_.stop();
+	republish_timer_.stop();
+	disconnect_timer_.stop();
+	republish_busy_ = false;
+	ever_live_ = false;
+	hold_until_ms_ = 0;
 	ops_.clear();
 	op_busy_ = false;
 	gathered_waiters_.clear();
@@ -901,22 +1288,13 @@ void AnyPlayLive::teardown(bool tellServer)
 		}
 		AnyPlayLiveMedia *m = media_.get();
 		// спершу від'єднуємо гачки й чекаємо, поки потоки гри вийдуть із них
-		g_audio.store(nullptr);
-		while(g_audio_inflight.load())
+		g_fwd.store(nullptr);
+		g_game_audio.store(nullptr);
+		while(g_fwd_inflight.load())
 			std::this_thread::yield();
-		{
-			std::lock_guard<std::mutex> lock(m->audio_mutex);
-			m->audio_quit = true;
-		}
-		m->audio_cv.notify_all();
-		if(m->audio_thread.joinable())
-			m->audio_thread.join();
+		m->fwd.stop();
 		closeMic();
 		closeVoiceOut();
-		g_video.store(nullptr);
-		while(g_video_inflight.load())
-			std::this_thread::yield();
-		m->video.stop();
 		std::unique_ptr<anyplaylive::Peer> peer;
 		{
 			std::lock_guard<std::mutex> lock(m->peer_mutex);
@@ -950,9 +1328,8 @@ void AnyPlayLive::teardown(bool tellServer)
 	bot_link_.clear();
 	qr_.clear();
 	my_member_ = 0;
-	paused_ = false;
-	pause_reason_.clear();
 	live_fps_ = live_kbps_ = 0;
+	viewers_lag_ = false;
 	state_ = QStringLiteral("off");
 	updateStatusText();
 	emit controlChanged();
@@ -1013,12 +1390,22 @@ void AnyPlayLive::poll()
 		const QString err = o.value(QStringLiteral("error")).toString();
 		if(status == 404 || status == 410 || err == QLatin1String("closed"))
 		{
+			// інтернету довго не було і сервер закрив кімнату (гравець мовчав > 90 с): відкриваємо нову сам
+			if(ever_live_ && (state_ == QLatin1String("reconnecting") || nowMs() - last_poll_ok_ms_ > 20000))
+			{
+				qInfo() << "[anyplay-live] room closed while offline: opening again";
+				token_.clear();
+				enterReconnecting(tr("Зник інтернет. Ефір повернеться сам, щойно зв'язок з'явиться."));
+				scheduleRepublish(0);
+				return;
+			}
 			teardown(false);
 			emit message(errorText(status, o, tr("Трансляцію завершено.")));
 			return;
 		}
 		if(!ok)
 			return;   // тимчасові збої зв'язку трансляцію не зупиняють
+		last_poll_ok_ms_ = nowMs();
 		applyRoomState(o);
 	});
 }
@@ -1029,7 +1416,7 @@ void AnyPlayLive::applyRoomState(const QJsonObject &o)
 	if(room.isEmpty())
 		return;
 	if(room.value(QStringLiteral("status")).toString() == QLatin1String("closed")
-		&& (state_ == QLatin1String("live") || state_ == QLatin1String("paused")))
+		&& (state_ == QLatin1String("live") || state_ == QLatin1String("reconnecting")))
 	{
 		teardown(false);
 		emit message(tr("Трансляцію завершено на сервері."));
@@ -1097,6 +1484,7 @@ void AnyPlayLive::applyRoomState(const QJsonObject &o)
 
 	// глядачі
 	QSet<qint64> seen;
+	bool newcomer = false;
 	for(const QJsonValue &v : o.value(QStringLiteral("members")).toArray())
 	{
 		const QJsonObject mo = v.toObject();
@@ -1106,6 +1494,8 @@ void AnyPlayLive::applyRoomState(const QJsonObject &o)
 		if(!id)
 			continue;
 		seen.insert(id);
+		if(!people_.contains(id))
+			newcomer = true;
 		Member &p = people_[id];
 		p.id = id;
 		p.userId = mo.value(QStringLiteral("userId")).toVariant().toLongLong();
@@ -1139,6 +1529,17 @@ void AnyPlayLive::applyRoomState(const QJsonObject &o)
 		}
 	if(rebuildViewers())
 		any = true;
+	// новий глядач: ключовий кадр зараз і ще раз за 3 с (поки він підключає відео, перший може проминути);
+	// далі він сам попросить через PLI, якщо треба
+	if(newcomer && state_ == QLatin1String("live"))
+	{
+		requestKeyframe("viewer");
+		const quint32 kgen = generation_;
+		QTimer::singleShot(kKeyMinGapMs + 100, this, [this, kgen]() {
+			if(kgen == generation_ && state_ == QLatin1String("live"))
+				requestKeyframe("viewer-repeat");
+		});
+	}
 
 	// чат: нові повідомлення
 	for(const QJsonValue &v : o.value(QStringLiteral("chat")).toArray())
@@ -1406,7 +1807,7 @@ void AnyPlayLive::takeControl()
 
 void AnyPlayLive::grantControl(qint64 uid)
 {
-	if((state_ != QLatin1String("live") && state_ != QLatin1String("paused")) || !people_.contains(uid))
+	if((state_ != QLatin1String("live") && state_ != QLatin1String("reconnecting")) || !people_.contains(uid))
 		return;
 	if(control_member_ == uid)
 		return;
@@ -1782,24 +2183,8 @@ void AnyPlayLive::applyServerHint(const QJsonObject &o)
 
 void AnyPlayLive::setQuality(const QString &quality)
 {
-	const QString q = quality == QLatin1String("540p") ? QStringLiteral("540p") : QStringLiteral("720p");
-	if(q == quality_)
-		return;
-	quality_ = q;
-	QSettings().setValue(QStringLiteral("anyplay/live_quality"), quality_);
-	start_level_ = quality_ == QLatin1String("540p") ? 2 : 0;
-	if(state_ == QLatin1String("live"))
-	{
-		applyLevel(qMax(start_level_, level_ <= 1 ? start_level_ : level_), "quality");
-		QJsonObject st;
-		st["quality"] = quality_;
-		pushState(st);
-		QJsonObject ev;
-		ev["t"] = QStringLiteral("quality");
-		ev["value"] = quality_;
-		sendEvent(ev);
-	}
-	emit changed();
+	// 118: окремої якості для глядачів немає — вони отримують гру як є (лишено для старого QML)
+	Q_UNUSED(quality);
 }
 
 void AnyPlayLive::setGameAudio(bool on)
@@ -1810,7 +2195,7 @@ void AnyPlayLive::setGameAudio(bool on)
 	QSettings().setValue(QStringLiteral("anyplay/live_game_audio"), on);
 #ifdef ANYPLAY_HAVE_LIVE
 	if(media_)
-		media_->game_on.store(on && !paused_);
+		media_->game_on.store(on);
 #endif
 	QJsonObject st;
 	st["gameAudio"] = on;
@@ -1824,7 +2209,7 @@ void AnyPlayLive::setMicOn(bool on)
 		return;
 	mic_on_ = on;
 	QSettings().setValue(QStringLiteral("anyplay/live_mic"), on);
-	if(state_ == QLatin1String("live") || state_ == QLatin1String("paused"))
+	if(state_ == QLatin1String("live") || state_ == QLatin1String("reconnecting"))
 	{
 		if(on)
 			openMic();
@@ -1983,188 +2368,85 @@ void AnyPlayLive::closeVoiceOut()
 #endif
 }
 
-// ───────────────────────────── захист гравця: адаптація й пауза ─────────────────────────────
+// ───────────────────────────── показники (раз на секунду) ─────────────────────────────
+// Лише рахуємо й показуємо. Нічого не вмикає, не вимикає й не знижує: ефір зупиняє тільки гравець.
 
-void AnyPlayLive::applyLevel(int level, const char *why)
+void AnyPlayLive::statsTick()
 {
 #ifdef ANYPLAY_HAVE_LIVE
-	level = qBound(0, level, kMaxLevel);
-	if(!media_ || level == level_)
+	if(!media_ || (state_ != QLatin1String("live") && state_ != QLatin1String("reconnecting")))
 		return;
-	if(level > level_)
-		beat_.downs++;
-	qInfo().noquote() << "[anyplay-live] quality level" << level_ << "->" << level << "reason" << why;
-	level_ = level;
-	const Level &l = kLevels[level];
-	anyplaylive::VideoConfig cfg;
-	cfg.width = l.w;
-	cfg.height = l.h;
-	cfg.fps = l.fps;
-	cfg.kbps = l.kbps;
-	media_->video.reconfigure(cfg);
-	live_height_ = l.h;
-	updateStatusText();
-	emit changed();
-#else
-	Q_UNUSED(level);
-	Q_UNUSED(why);
-#endif
-}
-
-void AnyPlayLive::setPaused(bool paused, const QString &reason)
-{
-#ifdef ANYPLAY_HAVE_LIVE
-	if(paused == paused_ || !media_)
-		return;
-	paused_ = paused;
-	pause_reason_ = paused ? reason : QString();
-	media_->video.setPaused(paused);
-	media_->game_on.store(!paused && game_audio_);
-	if(!paused)
-		media_->video.requestKeyframe();
-	qInfo().noquote() << "[anyplay-live]" << (paused ? "paused:" : "resumed") << reason;
-	setState(paused ? QStringLiteral("paused") : QStringLiteral("live"));
-	// сервер пише в чат «Трансляція на паузі: …», глядачі дізнаються одразу через events
-	QJsonObject st;
-	st["paused"] = paused;
-	st["pauseText"] = pause_reason_;
-	pushState(st);
-	QJsonObject ev;
-	ev["t"] = QStringLiteral("pause");
-	ev["on"] = paused;
-	ev["text"] = pause_reason_;
-	sendEvent(ev);
-	emit message(paused ? tr("Трансляцію призупинено, щоб гра не гальмувала. Вона відновиться сама.")
-	                    : tr("Трансляцію відновлено."));
-#else
-	Q_UNUSED(paused);
-	Q_UNUSED(reason);
-#endif
-}
-
-void AnyPlayLive::adaptTick()
-{
-#ifdef ANYPLAY_HAVE_LIVE
-	if(!media_ || (state_ != QLatin1String("live") && state_ != QLatin1String("paused")))
-		return;
-	StreamSession *s = session_.data();
-	QmlMainWindow *w = backend_->qmlWindow();
-	const double loss = s ? s->GetAveragePacketLoss() * 100.0 : 0.0;
-	const int stream_fps = w ? w->property("streamFps").toInt() : 0;
-	const int shown_fps = w ? w->property("shownFps").toInt() : 0;
-	const int dropped = w ? w->droppedFrames() : 0;   // за останню секунду
-
-	// трансляція: кадри, байти, час кодування
-	const int frames = media_->video.frames_encoded.load();
-	const int pipe_dropped = media_->video.frames_dropped.load();
-	const qint64 bytes = media_->peer ? media_->peer->videoBytesSent() : 0;
+	anyplaylive::Forwarder &f = media_->fwd;
+	const int frames = f.frames_sent.load();
+	const qint64 bytes = f.bytes_sent.load();
 	const int fps = qMax(0, frames - last_frames_);
 	const int kbps = static_cast<int>(qMax<qint64>(0, bytes - last_bytes_) * 8 / 1000);
-	const int pipe_drop = qMax(0, pipe_dropped - last_pipe_dropped_);
 	last_frames_ = frames;
-	last_pipe_dropped_ = pipe_dropped;
 	last_bytes_ = bytes;
-	const int enc_us = media_->video.encode_us_avg.load();
-	const unsigned remb = media_->remb_kbps.load();
-	const Level &l = kLevels[level_];
-
-	if(live_fps_ != fps || live_kbps_ != kbps)
+	const bool live = state_ == QLatin1String("live");
+	int rtt = 0, loss = 0;
 	{
-		live_fps_ = paused_ ? 0 : fps;
-		live_kbps_ = paused_ ? 0 : kbps;
+		std::lock_guard<std::mutex> lock(media_->peer_mutex);
+		if(media_->peer)
+		{
+			rtt = media_->peer->rttMs();
+			loss = media_->peer->lossPercent();
+		}
+	}
+	// вихідний канал не встигав (кадри глядачам пропущено до ключового) — за останню хвилину
+	const int ov = f.overflows.load();
+	const qint64 now = nowMs();
+	for(int i = last_overflows_; i < ov; i++)
+		overflow_times_.append(now);
+	last_overflows_ = ov;
+	while(!overflow_times_.isEmpty() && now - overflow_times_.first() > 60000)
+		overflow_times_.removeFirst();
+	const bool lag = overflow_times_.size() >= 2;
+	if(lag != viewers_lag_)
+	{
+		viewers_lag_ = lag;
+		qInfo().noquote() << "[anyplay-live] viewers lag" << lag << "backlog" << f.backlog_ms.load() << "ms, rtt" << rtt << "loss" << loss;
+		emit changed();
+	}
+	// довго немає ключового кадру (запит загубився): просимо ще раз
+	if(live && f.waiting_key.load() && f.frames_skipped.load() > 0)
+		requestKeyframe("still-waiting");
+	const int show_fps = live ? fps : 0, show_kbps = live ? kbps : 0;
+	if(live_fps_ != show_fps || qAbs(live_kbps_ - show_kbps) > qMax(200, live_kbps_ / 10))
+	{
+		live_fps_ = show_fps;
+		live_kbps_ = show_kbps;
 		emit changed();
 	}
 	beat_.seconds++;
-	beat_.fps_sum += live_fps_;
-	beat_.kbps_sum += live_kbps_;
-	beat_.enc_us_max = qMax(beat_.enc_us_max, enc_us);
-	beat_.level_max = qMax(beat_.level_max, level_);
-	if(paused_)
-		beat_.paused_s++;
+	beat_.fps_sum += show_fps;
+	beat_.kbps_sum += show_kbps;
+	beat_.rtt_max = qMax(beat_.rtt_max, rtt);
+	if(!live)
+		beat_.reconnect_s++;
 	// показники для власника в CRM (контракт.md, п. 2.1: stats) раз на 10 с
-	if(nowMs() - last_stats_ms_ > 10000)
+	if(now - last_stats_ms_ > 10000)
 	{
-		last_stats_ms_ = nowMs();
+		last_stats_ms_ = now;
 		QJsonObject stats;
 		stats["kbps"] = live_kbps_;
 		stats["fps"] = live_fps_;
-		stats["height"] = kLevels[level_].h;
-		stats["level"] = level_;
-		stats["encoder"] = encoder_name_;
-		stats["encMs"] = qRound(enc_us / 100.0) / 10.0;
-		stats["dropped"] = pipe_dropped;
+		stats["codec"] = game_codec_;
+		stats["encoder"] = QStringLiteral("passthrough");
+		stats["gameKbps"] = game_kbps_;
+		stats["uplinkKbps"] = uplink_kbps_;
+		stats["paceKbps"] = pace_kbps_;
+		stats["skipped"] = f.frames_skipped.load();
+		stats["overflows"] = ov;
+		stats["keyReq"] = key_requests_;
+		stats["rttMs"] = rtt;
+		stats["loss"] = loss;
 		stats["helper"] = remote_active_;
-		if(paused_)
-			stats["reason"] = pause_reason_.left(60);
+		if(!live)
+			stats["reason"] = QStringLiteral("reconnecting");
 		QJsonObject st;
 		st["stats"] = stats;
 		pushState(st);
-	}
-
-	// базові втрати гравця: перші секунди трансляції (до неї ми про гру нічого не знали)
-	if(base_samples_ < 5 && qIsFinite(loss))
-	{
-		base_loss_ = (base_loss_ * base_samples_ + loss) / (base_samples_ + 1);
-		base_samples_++;
-		return;
-	}
-	const double loss_limit = qMax(3.0, base_loss_ + 2.0);
-	const bool player_bad = (qIsFinite(loss) && loss > loss_limit)
-		|| (stream_fps >= 20 && shown_fps > 0 && shown_fps < stream_fps * 0.85 && dropped > 3);
-	const int interval_us = 1000000 / qMax(1, l.fps);
-	const bool encoder_bad = !paused_ && (enc_us > interval_us * 0.7 || pipe_drop > l.fps / 4);
-	const bool uplink_bad = !paused_ && remb > 0 && remb < static_cast<unsigned>(l.kbps * 0.7);
-	const qint64 now = nowMs();
-
-	if(paused_)
-	{
-		if(player_bad)
-		{
-			good_streak_ = 0;
-			return;
-		}
-		// 20 с спокою — пробуємо знову з найлегшої якості
-		if(++good_streak_ >= 20)
-		{
-			good_streak_ = 0;
-			applyLevel(kMaxLevel, "resume");
-			setPaused(false, QString());
-		}
-		return;
-	}
-	if(player_bad || encoder_bad || uplink_bad)
-	{
-		good_streak_ = 0;
-		bad_streak_++;
-		const char *why = player_bad ? "player" : encoder_bad ? "encoder" : "uplink";
-		if(bad_streak_ >= 2 && level_ < kMaxLevel)
-		{
-			if(last_up_ms_ && now - last_up_ms_ < 15000)
-				up_blocked_until_ms_ = now + 5 * 60 * 1000;   // щойно піднялись і знову погано: вгору не раніше ніж за 5 хв
-			// канал не тягне — одразу на сходинку, що вміщається в оцінку SFU
-			int next = level_ + 1;
-			if(uplink_bad)
-				while(next < kMaxLevel && static_cast<unsigned>(kLevels[next].kbps) > remb * 0.8)
-					next++;
-			applyLevel(next, why);
-			bad_streak_ = 0;
-			qInfo().noquote() << "[anyplay-live] adapt" << why << "loss" << loss << "base" << base_loss_ << "fps" << stream_fps
-			                  << "/" << shown_fps << "dropped" << dropped << "enc_us" << enc_us << "pipe_drop" << pipe_drop << "remb" << remb;
-		}
-		else if(bad_streak_ >= 4 && level_ >= kMaxLevel)
-		{
-			bad_streak_ = 0;
-			setPaused(true, player_bad ? tr("Трансляцію призупинено, щоб гра в гравця не гальмувала. Скоро продовжимо.")
-			                           : tr("Трансляцію призупинено: інтернет гравця не встигає. Скоро продовжимо."));
-		}
-		return;
-	}
-	bad_streak_ = 0;
-	if(++good_streak_ >= 30 && level_ > start_level_ && now >= up_blocked_until_ms_)
-	{
-		good_streak_ = 0;
-		last_up_ms_ = now;
-		applyLevel(level_ - 1, "recovered");
 	}
 	// «хто говорить» у списку глядачів
 	if(!people_.isEmpty())
@@ -2178,22 +2460,38 @@ QJsonObject AnyPlayLive::takeHeartbeatStats()
 	if(beat_.seconds == 0 && state_ == QLatin1String("off"))
 		return o;
 	const int n = qMax(1, beat_.seconds);
-	o["liveOn"] = state_ == QLatin1String("live") || state_ == QLatin1String("paused");
+	o["liveOn"] = state_ == QLatin1String("live") || state_ == QLatin1String("reconnecting");
 	o["liveState"] = state_;
 	o["liveViewers"] = viewers_.size();
 	o["liveFps"] = beat_.fps_sum / n;
 	o["liveKbps"] = beat_.kbps_sum / n;
-	o["liveHeight"] = kLevels[level_].h;
-	o["liveLevel"] = beat_.level_max;
-	o["liveDowns"] = beat_.downs;
-	o["livePausedS"] = beat_.paused_s;
-	o["liveEncMs"] = qRound(beat_.enc_us_max / 100.0) / 10.0;
-	if(!encoder_name_.isEmpty())
-		o["liveEncoder"] = encoder_name_;
+	o["liveHeight"] = live_height_;
+	o["liveLevel"] = 0;                    // 118: сходинок якості немає
+	o["liveDowns"] = 0;
+	o["livePausedS"] = beat_.reconnect_s;  // секунди без зв'язку (перепідключення)
+	o["liveEncMs"] = 0;                    // нічого не кодуємо
+	o["liveEncoder"] = QStringLiteral("passthrough");
+	o["liveCodec"] = game_codec_;
+	o["liveUplink"] = uplink_kbps_;
+	o["liveKeyReq"] = beat_.keys;
+	o["liveRtt"] = beat_.rtt_max;
+#ifdef ANYPLAY_HAVE_LIVE
+	if(media_)
+	{
+		const int sk = media_->fwd.frames_skipped.load(), ov = media_->fwd.overflows.load();
+		o["liveSkipped"] = sk - beat_.skipped;
+		o["liveOverflows"] = ov - beat_.overflows;
+		beat_.skipped = sk;
+		beat_.overflows = ov;
+	}
+#endif
 	if(control_member_)
 		o["liveCtl"] = remote_active_;
 	if(handed_over_)
 		o["liveHandedOver"] = true;
+	const int sk = beat_.skipped, ov = beat_.overflows;
 	beat_ = Beat();
+	beat_.skipped = sk;
+	beat_.overflows = ov;
 	return o;
 }

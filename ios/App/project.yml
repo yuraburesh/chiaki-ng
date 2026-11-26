@@ -20,7 +20,7 @@ targets:
     platform: iOS
     sources:
       - path: AnyPlay
-      - path: Resources/anyplay
+      - path: Resources/web
         type: folder
         buildPhase: resources
       - path: Resources/cacert.pem

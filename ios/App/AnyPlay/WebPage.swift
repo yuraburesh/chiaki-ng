@@ -59,7 +59,7 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 		web.scrollView.contentInsetAdjustmentBehavior = .never
 		web.scrollView.bounces = false
 		web.navigationDelegate = self
-		if let url = Bundle.main.url(forResource: "app", withExtension: "html", subdirectory: "anyplay")
+		if let url = Bundle.main.url(forResource: "app", withExtension: "html", subdirectory: "web")
 		{
 			var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
 			c?.fragment = page

@@ -157,8 +157,7 @@ final class GamepadOverlay: UIView
 				}
 			case .dpad:
 				let r = it.size.width / 2, half = r * 0.27
-				for (i, bit) in [Btn.up, Btn.right, Btn.down, Btn.left].enumerated()
-				{
+				for (i, bit) in [Btn.up, Btn.right, Btn.down, Btn.left].enumerated() {
 					ctx.saveGState()
 					ctx.translateBy(x: it.center.x, y: it.center.y)
 					ctx.rotate(by: CGFloat(i) * .pi / 2)
@@ -313,8 +312,7 @@ final class GamepadOverlay: UIView
 				touchpadId = onTouchpad?(-1, tpX(p), tpY(p), false) ?? -1
 				continue
 			}
-			for i in 0..<2 where sticks[i].touch == nil && stickZone(i).contains(p)
-			{
+			for i in 0..<2 where sticks[i].touch == nil && stickZone(i).contains(p) {
 				sticks[i].touch = t
 				if landscape { sticks[i].origin = p } else { sticks[i].origin = item(i == 0 ? "lstick" : "rstick").center; moveStick(i, p) }
 				sticks[i].click = Date().timeIntervalSince(sticks[i].lastUp) < 0.3

@@ -36,6 +36,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      # рідна частина змінюється рідко: готовий xcframework з кешу (збірка програми тоді ~3 хв замість ~15)
+      - name: Кеш рідної частини
+        id: corecache
+        uses: actions/cache/restore@v4
+        with:
+          path: out/AnyPlayCore.xcframework
+          key: anyplay-ios-core-${{ hashFiles('lib/**', 'ios/core/**', 'cmake/**', 'third-party/CMakeLists.txt', 'CMakeLists.txt', '.gitmodules') }}-v1
       - name: Інструменти
         run: |
           brew install ninja protobuf@29 || true
@@ -43,6 +50,7 @@ jobs:
           echo "PROTOC_BIN=$(brew --prefix)/opt/protobuf@29/bin/protoc" >> "$GITHUB_ENV"
           "$(brew --prefix)/opt/protobuf@29/bin/protoc" --version
       - name: Налаштування (iOS arm64)
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: |
           cmake -S . -B build-ios -G Ninja \
             -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
@@ -55,8 +63,10 @@ jobs:
             -DCURL_USE_LIBPSL=OFF -DCURL_USE_LIBSSH2=OFF -DUSE_LIBIDN2=OFF -DCURL_ZSTD=OFF -DCURL_BROTLI=OFF -DUSE_NGHTTP2=OFF \
             -DCURL_DISABLE_LDAP=ON -DENABLE_IPV6=ON
       - name: Збірка
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: cmake --build build-ios --target anyplay-core -j 4
       - name: Одна бібліотека й xcframework
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: |
           set -e
           mkdir -p out/lib out/include
@@ -68,6 +78,12 @@ jobs:
           ls -la out/lib
           # перевірка: усі потрібні символи на місці
           nm -gU out/lib/libAnyPlayCore.a 2>/dev/null | grep -E ' _(anyplay_core_create|chiaki_session_init|opus_decode|curl_easy_init|EVP_EncryptInit)$' || true
+      - name: Зберегти рідну частину в кеш
+        if: steps.corecache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: out/AnyPlayCore.xcframework
+          key: ${{ steps.corecache.outputs.cache-primary-key }}
       # ── сама програма: ресурси ті самі, що на Android; проєкт Xcode робить XcodeGen ──
       - name: Проєкт Xcode
         run: |

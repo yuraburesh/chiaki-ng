@@ -49,8 +49,7 @@ enum PlayTarget
 		if err != 0 { return nil }
 		let text = String(cString: buf)
 		var out: [(String, String, Bool)] = []
-		for line in text.split(separator: "\n").dropFirst()
-		{
+		for line in text.split(separator: "\n").dropFirst() {
 			let p = line.split(separator: "\t", omittingEmptySubsequences: false)
 			if p.count >= 3 { out.append((String(p[0]), String(p[1]), p[2] == "1")) }
 		}

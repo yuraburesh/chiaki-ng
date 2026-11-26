@@ -84,8 +84,8 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 	func push()
 	{
 		var js = ""
-		for (k, v) in WebPage.state(host)
-			js += "window.__apSet&&window.__apSet(\(jsQuote(k)),\(jsQuote(v)));"
+		let st = WebPage.state(host)
+		for (k, v) in st { js += "window.__apSet&&window.__apSet(\(jsQuote(k)),\(jsQuote(v)));" }
 		web.evaluateJavaScript(js, completionHandler: nil)
 	}
 

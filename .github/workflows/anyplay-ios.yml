@@ -9,7 +9,7 @@ on:
       runner:
         description: "Машина GitHub (macos-26, macos-15, macos-15-intel), якщо на одній черга"
         type: string
-        default: macos-26
+        default: macos-15-intel
   push:
     branches: [anyplay]
     paths:
@@ -28,8 +28,8 @@ concurrency:
 
 jobs:
   core:
-    # macos-15 часто не дістається (черга на машини Apple), macos-14 більше немає; macos-26 — новий Xcode
-    runs-on: ${{ inputs.runner || 'macos-26' }}
+    # машини Apple (macos-15, macos-26) часто в черзі й не дістаються; Intel збирає для iPhone так само
+    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

@@ -11,6 +11,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate
 		return true
 	}
 
+	// 147: програму закрили (змахнули) посеред гри — чемно відпускаємо приставку, щоб з іншого пристрою можна було
+	// підключитись одразу, а не чекати, поки PS5 сама вирішить, що гравця нема
+	func applicationWillTerminate(_ application: UIApplication)
+	{
+		GameViewController.active?.terminateNow()
+	}
+
 	func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration
 	{
 		let c = UISceneConfiguration(name: "Default", sessionRole: session.role)

@@ -33,6 +33,18 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	// ── 145: головна під час гри ──
 	/** Гра, з якої вийшли на головну, не закриваючи її */
 	static weak var parked: GameViewController?
+	/** 147: гра, що зараз іде (для закриття програми) */
+	static weak var active: GameViewController?
+
+	func terminateNow()
+	{
+		guard !ended else { return }
+		ended = true
+		Log.add(2, "Програму закрили посеред гри: відпускаємо приставку")
+		timers.forEach { $0.invalidate() }
+		session?.closeNow()
+		session = nil
+	}
 	private var parkedAway = false
 
 	private func park()
@@ -127,6 +139,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	override func viewDidLoad()
 	{
 		super.viewDidLoad()
+		GameViewController.active = self
 		Sticks.reload()
 		view.backgroundColor = .black
 		view.addSubview(videoView)

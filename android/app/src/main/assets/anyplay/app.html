@@ -993,7 +993,8 @@ function renderSide(){
   if(!H.admin){
     tiles.push(['data-tab="psn"', 'psn', 'Мій PSN', psn]);
     if(document.body.classList.contains('friends')) tiles.push(['data-tab="friends"', 'gift', 'Друзі', ['', 'і подарунки']]);
-    tiles.push(['data-act="bot"', 'help', 'Допомога', ['', 'бот у Telegram']]);
+    // 146: чат з підтримкою в самій програмі (webapp/support.html), без переходу в Telegram
+    tiles.push(['data-act="support"', 'help', 'Підтримка', H.support && H.support.unread ? ['wait', 'нових: ' + H.support.unread] : ['', 'чат у програмі']]);
   }
   h += '<p class="cap">Налаштування</p><div class="tiles">' + tiles.map(t => '<button type="button" class="tile" ' + t[0] + '>' + ICON[t[1]]
     + '<span class="tt">' + esc(t[2]) + '</span><span class="tv ' + t[3][0] + '">' + esc(t[3][1]) + '</span></button>').join('') + '</div>';
@@ -2398,6 +2399,7 @@ document.addEventListener('click', e => {
 // ── запуск ──
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act],[data-tab]'); if(!t) return;
+  if(t.dataset.act === 'support'){ haptic(); if(native && native.page) native.page('/app/support.html'); else act('bot'); return; }
   if(t.dataset.act){ haptic(); act(t.dataset.act, t.dataset.arg); }
   else if(t.dataset.tab){ haptic(); goTab(t.dataset.tab, t.dataset.sub); }
 });

@@ -147,6 +147,18 @@ final class Session
 		audio.stop()
 	}
 
+	/** 147: програма закривається — зупинити й звільнити зараз (до ~3 с): приставка отримує «до побачення» */
+	func closeNow()
+	{
+		guard let c = core else { return }
+		core = nil
+		delegate = nil
+		audio.stop()
+		let done = DispatchSemaphore(value: 0)
+		DispatchQueue.global().async { anyplay_core_psn_cancel(c); anyplay_core_free(c); done.signal() }
+		_ = done.wait(timeout: .now() + 3)
+	}
+
 	static func quitText(_ reason: Int) -> String { String(cString: anyplay_core_quit_string(Int32(reason))) }
 	static func quitIsError(_ reason: Int) -> Bool { anyplay_core_quit_is_error(Int32(reason)) }
 }

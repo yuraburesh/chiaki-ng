@@ -530,6 +530,7 @@ static void *session_thread_func(void *arg)
 	err = chiaki_cond_timedwait_pred(&session->state_cond, &session->state_mutex,
 		session->rudp ? SESSION_RUDP_CTRL_WAIT_MS : SESSION_EXPECT_CTRL_START_MS, session_check_state_pred_ctrl_start, session);
 	CHECK_STOP(quit_ctrl);
+	CHIAKI_LOGI(session->log, "AnyPlay: ctrl wait done (rudp %d, session id %d)", session->rudp ? 1 : 0, session->ctrl_session_id_received ? 1 : 0);
 
 	if(session->ctrl_failed)
 	{

@@ -2814,9 +2814,13 @@ CHIAKI_EXPORT ChiakiErrorCode holepunch_session_create_offer(Session *session)
         }
         case GATEWAY_STATUS_FOUND: {
             memcpy(candidate_local->addr, session->gw.lan_ip, sizeof(session->gw.lan_ip));
+            // AnyPlay 145: скільки триває запит до роутера (у журналах між «Ctrl connected» і цим рядком — 10 с)
+            const uint64_t upnp_start = chiaki_time_now_monotonic_ms();
+            CHIAKI_LOGI(session->log, "holepunch_session_create_offer: asking router (UPnP) for port %u", local_port);
             if(upnp_add_udp_port_mapping(session->log, &session->gw, local_port, local_port))
             {
-                CHIAKI_LOGI(session->log, "holepunch_session_create_offer: Added local UPNP port mapping to port %u", local_port);
+                CHIAKI_LOGI(session->log, "holepunch_session_create_offer: Added local UPNP port mapping to port %u (%llu ms)", local_port,
+                    (unsigned long long)(chiaki_time_now_monotonic_ms() - upnp_start));
                 have_addr = get_client_addr_remote_upnp(session->log, &session->gw, candidate_remote->addr);
             }
             else

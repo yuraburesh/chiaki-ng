@@ -835,7 +835,8 @@ class StreamActivity : AppCompatActivity()
 	{
 		if(qualityOverlay != null) { then(); return }
 		val sv = binding.surfaceView
-		val w = sv.width, h = sv.height
+		val w = sv.width
+		val h = sv.height
 		fun build(shot: android.graphics.Bitmap?)
 		{
 			val box = FrameLayout(this).apply { isClickable = true; alpha = 0f }

@@ -163,6 +163,9 @@ final class GamepadInput
 		guard let g = c.extendedGamepad else { return }
 		// 139: кнопки PS, Options, Create і тачпад — у гру, а не системі iPad (PS відкривав «Ігри» Apple у Safari)
 		for e in [g.buttonHome, g.buttonMenu, g.buttonOptions] as [GCControllerElement?] { e?.preferredSystemGestureState = .disabled }
+		// 142: і всі інші елементи геймпада (на новіших iPadOS кнопка PS — окремий елемент профілю)
+		for e in c.physicalInputProfile.allElements { e.preferredSystemGestureState = .disabled }
+		Log.add(2, "Геймпад: \(c.vendorName ?? "?"), кнопку PS забрали в системи (\(g.buttonHome?.preferredSystemGestureState == .disabled ? "так" : "ні"))")
 		if let ds = g as? GCDualSenseGamepad { ds.touchpadButton.preferredSystemGestureState = .disabled }
 		if let d4 = g as? GCDualShockGamepad { d4.touchpadButton.preferredSystemGestureState = .disabled }
 		g.valueChangedHandler = { [weak self] gp, _ in self?.read(gp) }

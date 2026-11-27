@@ -60,6 +60,9 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         GCSupportsControllerUserInteraction: true
+        # 142: програма — гра: iPad не перехоплює геймпад (кнопка PS відкривала «Ігри» Apple)
+        GCSupportsGameMode: true
+        LSApplicationCategoryType: public.app-category.games
         GCSupportedGameControllers:
           - ProfileName: ExtendedGamepad
           - ProfileName: DirectionalGamepad

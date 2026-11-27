@@ -85,6 +85,8 @@ final class VideoView: UIView
 		}
 		if paramsChanged { makeFormat() }
 		guard let fmt = format, !frame.isEmpty else { return }
+		// 139: програма згорнута — кадри не показуємо (екран у фоні недоступний, шар перейшов би в «збій»)
+		if paused { needKey = true; return }
 		if needKey && !key { return }
 		needKey = false
 		enqueue(frame, fmt)
@@ -169,10 +171,21 @@ final class VideoView: UIView
 		lock.lock(); shown += 1; lock.unlock()
 	}
 
+	/** 139: згорнули — не показувати кадри; повернулись — чистий шар і чекаємо ключовий кадр.
+	 *  Формат (SPS/PPS) лишаємо: приставка шле його лише на початку трансляції, без нього картинка була б чорною назавжди */
+	var paused = false
+	func resume()
+	{
+		paused = false
+		needKey = true
+		display.flush()
+		if display.status == .failed { display.flushAndRemoveImage() }
+	}
+
 	/** Нове підключення: старий формат і кадри не потрібні */
 	func reset()
 	{
-		format = nil; vps = nil; sps = nil; pps = nil; needKey = true
+		format = nil; vps = nil; sps = nil; pps = nil; needKey = true; paused = false
 		display.flushAndRemoveImage()
 	}
 }

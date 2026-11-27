@@ -27,6 +27,27 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	private var reminded = false
 	private var ended = false
 	private var connected = false
+	private var menuCombo = false
+	private var navHeld: Set<String> = []
+	private var heldFromMenu: UInt32 = 0
+
+	/** 139: стрілки чи стік — пункт меню, ✕ — натиснути, ○ — назад (на першому екрані — повернутись у гру) */
+	private func menuNav(_ p: PadState)
+	{
+		let t: Int16 = 20000
+		var now: Set<String> = []
+		if p.buttons & Btn.up != 0 || p.ly < -t || p.ry < -t { now.insert("up") }
+		if p.buttons & Btn.down != 0 || p.ly > t || p.ry > t { now.insert("down") }
+		if p.buttons & Btn.left != 0 || p.lx < -t || p.rx < -t { now.insert("left") }
+		if p.buttons & Btn.right != 0 || p.lx > t || p.rx > t { now.insert("right") }
+		if p.buttons & Btn.cross != 0 { now.insert("ok") }
+		if p.buttons & Btn.moon != 0 { now.insert("back") }
+		for c in ["up", "down", "left", "right", "ok", "back"] where now.contains(c) && !navHeld.contains(c)
+		{
+			menu?.eval("window.__anyplayPad && window.__anyplayPad('\(c)')")
+		}
+		navHeld = now
+	}
 	private var statPrev: (Date, UInt64, UInt64, UInt64)?
 	private var lossNow: Double = 0
 	var onFinish: (() -> Void)?
@@ -228,7 +249,30 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		}
 		var st = touchState
 		if menu != nil { st = PadState() }   // поки відкрите меню, екранні кнопки в гру не йдуть
-		let merged = st.merged(GamepadInput.shared.state)
+		// 139: Create + Options разом на геймпаді (Tab на клавіатурі) — меню AnyPlay; у гру ця пара не йде
+		var phys = GamepadInput.shared.state
+		let pair = Btn.share | Btn.options
+		if phys.buttons & pair == pair
+		{
+			if !menuCombo
+			{
+				menuCombo = true
+				Haptics.shared.tap(.ui)
+				if menu != nil { closeMenu() } else { DispatchQueue.main.async { self.showMenu("menu") } }
+			}
+		}
+		else if phys.buttons & pair == 0 { menuCombo = false }
+		if menuCombo { phys.buttons &= ~pair }
+		// 139: меню відкрите — геймпад і клавіатура керують меню, а не грою
+		if menu != nil { menuNav(phys); heldFromMenu = phys.buttons; phys = PadState() }
+		else
+		{
+			navHeld = []
+			// кнопка, якою закрили меню (○), не йде в гру, поки її не відпустять
+			heldFromMenu &= phys.buttons
+			phys.buttons &= ~heldFromMenu
+		}
+		let merged = st.merged(phys)
 		if merged == lastSent { return }
 		lastSent = merged
 		s.setController(merged)
@@ -451,6 +495,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	{
 		guard !ended else { return }
 		backgrounded = true
+		videoView.paused = true
 		pad.releaseAll()
 		touchState = PadState()
 		GamepadInput.shared.reset()
@@ -482,8 +527,15 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		if let s = session, connected
 		{
 			Log.add(2, "Повернулись у гру: з'єднання збережене")
-			videoView.reset()
+			videoView.resume()
 			s.requestIDR()
+			// ключовий кадр інколи губиться: просимо ще раз, якщо картинка не пішла
+			let before = videoView.shownCount
+			DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+				guard let self = self, self.session === s, self.videoView.shownCount == before else { return }
+				Log.add(3, "Після повернення картинки нема: ще раз просимо ключовий кадр")
+				s.requestIDR()
+			}
 			return
 		}
 		Log.add(2, "Повернулись у гру: підключаємось знову")

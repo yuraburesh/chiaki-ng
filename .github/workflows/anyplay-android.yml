@@ -19,7 +19,7 @@ permissions:
 # новіший push зупиняє ще не завершену збірку старішого
 concurrency:
   group: anyplay-android-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: false   # 139: коміти [ios] не скасовують збірку Android, що вже йде
 
 jobs:
   android:

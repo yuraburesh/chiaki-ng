@@ -73,7 +73,8 @@ final class GamepadInput
 		b(on(.leftShift), Btn.l3)
 		b(on(.keyC), Btn.r3)
 		b(on(.escape), Btn.options)
-		b(on(.keyM), Btn.share)
+		b(on(.keyM) || on(.tab), Btn.share)
+		if on(.tab) { s.buttons |= Btn.options }   // 139: Tab — меню AnyPlay (як Create + Options на геймпаді)
 		b(on(.keyP), Btn.ps)
 		b(on(.keyN) || on(.keyV), Btn.touchpad)
 		b(on(.one), Btn.up)
@@ -140,6 +141,10 @@ final class GamepadInput
 	private func attach(_ c: GCController)
 	{
 		guard let g = c.extendedGamepad else { return }
+		// 139: кнопки PS, Options, Create і тачпад — у гру, а не системі iPad (PS відкривав «Ігри» Apple у Safari)
+		for e in [g.buttonHome, g.buttonMenu, g.buttonOptions] as [GCControllerElement?] { e?.preferredSystemGestureState = .disabled }
+		if let ds = g as? GCDualSenseGamepad { ds.touchpadButton.preferredSystemGestureState = .disabled }
+		if let d4 = g as? GCDualShockGamepad { d4.touchpadButton.preferredSystemGestureState = .disabled }
 		g.valueChangedHandler = { [weak self] gp, _ in self?.read(gp) }
 	}
 

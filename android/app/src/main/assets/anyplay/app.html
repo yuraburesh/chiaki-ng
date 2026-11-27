@@ -290,6 +290,8 @@ body.wallet #methods{margin-top:6px}
 .pm-back{display:none;font:500 15px var(--display);letter-spacing:1.6px;text-transform:uppercase;color:var(--ink);align-self:stretch;text-align:left;padding:12px 0 10px;
   /* 138: «‹ Меню» завжди видно вгорі, навіть коли розділ прогорнуто вниз */
   position:sticky;top:-14px;z-index:3;margin-top:-14px;background:#0d0a16;border-bottom:1px solid var(--hair)}
+/* 139: керування меню геймпадом: вибраний пункт обведено */
+.padfocus{outline:2px solid #8fe3ff !important;outline-offset:3px;border-radius:4px}
 /* 138: повзунки не крутяться від гортання сторінки: рухаються лише, коли палець явно веде вбік */
 .sl{touch-action:pan-y}
 .sl input[type=range]{pointer-events:none}
@@ -1704,7 +1706,8 @@ const KEYS_IOS = ['Клавіатура й миша', [
   [['Shift', 'C'], 'L3 і R3'],
   [['1 2 3 4'], 'Хрестовина: ↑ ↓ ← →'],
   [['Esc', 'P'], 'OPTIONS і PS'],
-  [['M', 'N'], 'Create і тачпад']]];
+  [['M', 'N'], 'Create і тачпад'],
+  [['Tab'], 'Меню AnyPlay (на геймпаді: Create + Options разом)']]];
 const GTA = {"gta6":[["Пішки",[["L2","Приціл, розмова"],["R2","Постріл, кинути, схопити"],["R1","Укриття, пірнути"],["△","Взаємодія, сісти в авто"],["○","Присісти / відпочити"],["✕","Стрибок, лізти, парашут"],["□","Ближній бій"],["L3","Біг, швидше плисти"],["R3","Глянути назад, з ПКМ огляд"],["L1","Сховати / колесо зброї"],["L1","Сховати або дістати зброю"],["↑","Телефон / WAiNK"],["←","Радіо / меню радіо"],["↓","Ціль / навігація"],["→","Підірвати / напарник"],["R1 + →","Змінити героя (Джейсон, Люсія)"],["L3 + R3","Концентрація"]]],["Транспорт",[["R2","Газ, педалі"],["L2","Гальмо, задній хід"],["✕","Ручне гальмо"],["△","Вийти / зупинитись і вийти"],["L3","Сигнал, нітро"],["○","Фари / пригнутися"],["R1","Стріляти з авто, жест"],["□","Удар, відбитись"],["R3","Крикнути / глянути назад"],["L1","Пістолет / зброя авто"],["↑","Телефон / взаємодія"],["←","Поворотник / меню авто"],["↓","Дані авто / навігація"],["→","Поворотник / напарник"],["R1 + →","Змінити героя (Джейсон, Люсія)"]]],["Авіація",[["R2","Тяга, набір висоти"],["L2","Менше тяги, зниження"],["□","Поворот вліво"],["○","Поворот вправо"],["L3","Шасі"],["R1","Зброя"],["△","Вийти"],["R3","Глянути назад"],["L1","Вибір зброї (тримай)"],["↑","Телефон"],["←","Радіо / меню"],["↓","Ціль / навігація"]]]],"gta5":[["Пішки",[["✕","Біг (спринт)"],["□","Стрибок / перелізти"],["L3","Режим стелсу (присісти)"],["R1","Укриття"],["R2","Вогонь / удар"],["L2","Прицілювання"],["L1","Колесо зброї"],["○","Перезарядка"],["→","Взаємодія"],["△","Сісти в транспорт, взаємодія"],["L3 + R3","Особлива здібність"],["Create","Змінити камеру"],["R3","Подивитися назад"],["↓","Колесо персонажів (утримувати)"],["↓","Масштаб радара"],["Create","Меню взаємодії"]]],["Транспорт",[["R2","Газ"],["L2","Гальмо / задній хід"],["R1","Ручне гальмо"],["△","Вийти з транспорту"],["L3","Клаксон"],["→","Фари"],["←","Радіо (колесо станцій)"],["○","Кінематографічна камера"],["✕","Пригнутися"],["L1","Прицілитися з авто"],["R1","Стріляти з авто"],["Create","Змінити камеру"],["R3","Подивитися назад"],["L3 + R3","Особлива здібність"],["□","Зброя транспорту"]]],["Авіація",[["R2","Газ (тяга)"],["L2","Гальмо / зниження"],["L1","Кермо напряму вліво"],["R1","Кермо напряму вправо"],["L3","Шасі"],["□","Зброя"],["R3","Камера зброї"],["△","Вийти"],["Create","Змінити камеру"]]]]};
 let gtaGame = 'gta6', gtaMode = 0;
 try { gtaGame = localStorage.getItem('gtaGame') || 'gta6'; } catch(e) {}
@@ -2131,6 +2134,51 @@ function pmInit(){
   wFetch();
   fLoad(true);   // друзі й моя передача гри (якщо сервер це вміє)   // баланс для «Продовжити гру»: з балансу чи переказом (у адміна й на старому сервері його немає)
 }
+// 139: меню геймпадом (iPhone/iPad: GameViewController шле up/down/left/right/ok/back).
+// Стрілки чи лівий стік — до найближчого пункту в той бік, ✕ — натиснути, ○ — назад або закрити меню.
+let padEl = null;
+function padItems(){
+  return [...document.querySelectorAll('#pm button, #pm input[type=range], #pm a[href]')].filter(e => {
+    if(e.disabled) return false;
+    const r = e.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden';
+  });
+}
+function padFocus(e){
+  if(padEl) padEl.classList.remove('padfocus');
+  padEl = e;
+  if(e){ e.classList.add('padfocus'); e.scrollIntoView({block: 'nearest', behavior: 'smooth'}); }
+}
+window.__anyplayPad = function(cmd){
+  if(MODE !== 'menu') return false;
+  const items = padItems();
+  if(padEl && !items.includes(padEl)) padEl = null;
+  if(cmd === 'back'){
+    if(pmDetail && getComputedStyle($('pmBack')).display !== 'none'){ pmDetail = false; anim($('pm')); pmRender(); padFocus(null); }
+    else closeApp();
+    return true;
+  }
+  if(!padEl){ padFocus(items.find(e => e.classList.contains('on')) || items[0] || null); return true; }
+  if(cmd === 'ok'){ haptic(); padEl.click(); setTimeout(() => { if(!padItems().includes(padEl)) padFocus(padItems().find(e => e.classList.contains('on')) || null); }, 60); return true; }
+  // повзунок: ← → міняють значення
+  if(padEl.type === 'range' && (cmd === 'left' || cmd === 'right')){
+    const st = +padEl.step || 1, v = Math.max(+padEl.min, Math.min(+padEl.max, +padEl.value + (cmd === 'left' ? -5 : 5) * st));
+    padEl.value = v; padEl.dispatchEvent(new Event('input')); padEl.dispatchEvent(new Event('change')); return true;
+  }
+  const a = padEl.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+  let best = null, bestS = 1e9;
+  for(const e of items){
+    if(e === padEl) continue;
+    const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, dx = x - ax, dy = y - ay;
+    const main = cmd === 'up' ? -dy : cmd === 'down' ? dy : cmd === 'left' ? -dx : dx;
+    const side = cmd === 'up' || cmd === 'down' ? Math.abs(dx) : Math.abs(dy);
+    if(main <= 2) continue;
+    const sc = main + side * 2.5;
+    if(sc < bestS){ bestS = sc; best = e; }
+  }
+  if(best){ haptic(); padFocus(best); }
+  return true;
+};
 function pmRender(){
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === pmSel));
   $('pm').classList.toggle('detail', pmDetail);
@@ -2155,7 +2203,11 @@ function pmRender(){
     + (until ? ' Повернутись можна з головного екрана кнопкою «Грати» до <b>' + until + '</b>.' : ' Повернутись можна з головного екрана кнопкою «Грати».')
     + '</p><div class="actions"><button type="button" class="btn" data-act="exit">Вийти з гри</button><button type="button" class="btn ghost" id="pmStay">Залишитись</button></div>';
   $('pmText').innerHTML = h;
-  if(pmSel === 'friends') liveWire();
+  if(pmSel === 'friends'){
+    liveWire();
+    if($('pmInvite')) $('pmInvite').onclick = () => { haptic(); fShare(); };
+    if($('pmCode')) $('pmCode').onclick = () => { if(F && F.me && F.me.code) copy(F.me.code); };
+  }
   if(pmSel === 'controls') feelWire($('pmText'), pmRender);
   $('pmText').querySelectorAll('[data-ah]').forEach(b => b.onclick = () => {
     haptic(); G.autoHide = +b.dataset.ah; act('autohide', b.dataset.ah); pmRender();
@@ -2186,8 +2238,14 @@ function pmFriends(){
   h += handBox();
   if(canHand() && !OH) h += '<p class="small">Складна місія? Передай гру другу, повернути можна будь-коли. Обери друга:</p>';
   h += '<div class="fr">' + friendsList() + '</div>';
+  // 139: запросити друга прямо з меню гри; передати гру («доступ другу») можна тому, хто вже в друзях
+  if(F && !(F.friends || []).length){
+    h += '<p class="small">Передати гру другу (він пограє замість тебе, а повернути гру можна будь-коли) можна тому, хто вже у тебе в друзях.</p>';
+    if(F.me && F.me.code) h += '<div class="row"><span><span class="t">Мій код друга</span><span class="s">' + esc(F.me.code) + '</span></span></div>'
+      + '<div class="actions"><button type="button" class="btn" id="pmInvite">Запросити друга</button><button type="button" class="btn ghost" id="pmCode">Копіювати код</button></div>';
+  }
   h += liveBox();
-  h += '<p class="small" style="margin-top:6px">Додати друзів можна на головному екрані, вкладка «Друзі».</p>';
+  if(F && (F.friends || []).length) h += '<p class="small" style="margin-top:6px">Додати ще друзів можна на головному екрані, вкладка «Друзі».</p>';
   return h;
 }
 // ── 124: трансляція з телефона (AnyPlayLive.kt): друзі дивляться гру за посиланням у будь-якому браузері чи Telegram ──
@@ -2196,7 +2254,7 @@ function liveInfo(){ return nativeJson('live'); }
 function liveBox(){
   LV = liveInfo();
   if(!LV) return '';
-  if(!LV.supported) return '<p class="cap" style="margin-top:14px">Трансляція</p><p class="small">У цій версії програми трансляції немає. Онови програму.</p>';
+  if(!LV.supported) return APPLE ? '' : '<p class="cap" style="margin-top:14px">Трансляція</p><p class="small">У цій версії програми трансляції немає. Онови програму.</p>';
   let h = '<p class="cap" style="margin-top:14px">Трансляція для друзів</p>';
   const st = LV.state;
   if(st === 'off' || st === 'error'){

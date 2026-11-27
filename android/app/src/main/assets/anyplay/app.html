@@ -1684,6 +1684,8 @@ const HELP = [
     [['Геймпад'], 'Свій геймпад через Bluetooth чи кабель: кнопки на екрані горизонтально сховаються самі.'],
     [['Вийти'], 'Закінчити гру: меню AnyPlay → «Вийти з гри». Приставку вимикати не треба.']]]
 ];
+// 137: iPhone/iPad (на iPad сторінка в програмі каже «Macintosh», тож дивимось і на дотик)
+const APPLE = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 // 134: клавіатура й миша на iPad (GamepadInput.swift)
 const KEYS_IOS = ['Клавіатура й миша', [
   [['W A S D'], 'Рух (лівий стік)'],
@@ -1720,7 +1722,7 @@ function helpCard(title, rows){
 function renderGta(){
   const el = $('helpBody'); if(!el) return;
   let h = '<div class="hseg">' + segHtml('gg', ['GTA VI', 'GTA V', 'Приставка'], ['gta6', 'gta5', 'ps'].indexOf(gtaGame)) + '</div>';
-  if(gtaGame === 'ps') h += '<div class="hgrid">' + HELP.concat(/iPad|iPhone/.test(navigator.userAgent) ? [KEYS_IOS] : []).map(c => helpCard(c[0], c[1])).join('') + '</div>';
+  if(gtaGame === 'ps') h += '<div class="hgrid">' + HELP.concat(APPLE ? [KEYS_IOS] : []).map(c => helpCard(c[0], c[1])).join('') + '</div>';
   else {
     const modes = GTA[gtaGame]; if(gtaMode >= modes.length) gtaMode = 0;
     h += '<div class="hseg">' + segHtml('gm', modes.map(m => m[0]), gtaMode) + '</div>';
@@ -2102,8 +2104,11 @@ function pmRender(){
   else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="small">Нова якість: перепідключення на кілька секунд. Кольори й статистика змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
   else if(pmSel === 'console'){ h = '<p class="cap">Кнопки в GTA і приставка</p>'; view = 'help'; loadHelp(); }
   else if(pmSel === 'controls') h = '<p class="cap">Кнопки на екрані</p><p class="small">' + (G.controls === false
-      ? 'Кнопки сховано. Граєш без геймпада? Покажи їх знову.' : 'Пересунь кнопки, зміни розмір, додай «Постріл», «Машина» та інші. Горизонтально геймпад через Bluetooth ховає кнопки сам, вертикально вони завжди на екрані.')
-    + '</p><div class="actions"><button type="button" class="btn" data-act="layout" data-arg="map">Джойстик: які кнопки</button><button type="button" class="btn ghost" data-act="layout">Розташування</button><button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
+      ? 'Кнопки сховано. Граєш без геймпада? Покажи їх знову.' : APPLE
+        ? 'У «Джойстику» обери, які кнопки є на екрані, увімкни L3 і R3, зміни розмір і прозорість. Горизонтально геймпад чи клавіатура через Bluetooth ховають кнопки самі, вертикально вони завжди на екрані.'
+        : 'Пересунь кнопки, зміни розмір, додай «Постріл», «Машина» та інші. Горизонтально геймпад через Bluetooth ховає кнопки сам, вертикально вони завжди на екрані.')
+    + '</p><div class="actions"><button type="button" class="btn" data-act="layout" data-arg="map">' + (APPLE ? 'Джойстик' : 'Джойстик: які кнопки') + '</button>' + (APPLE ? '' : '<button type="button" class="btn ghost" data-act="layout">Розташування</button>')
+    + '<button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
     + (G.controls === false ? '' : ahBox())
     + '<p class="cap" style="margin-top:16px">Вібрація</p>' + feelBox();
   else if(pmSel === 'exit') h = '<p class="cap bad">Вийти з гри</p><p class="lead">Трансляція закриється, але час гри йде далі.'

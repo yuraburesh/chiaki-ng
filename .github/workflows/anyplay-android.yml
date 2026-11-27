@@ -23,13 +23,13 @@ concurrency:
 
 jobs:
   android:
-    # мітки в повідомленні коміту: якщо є [win] [mac] [arm] [intel] [linux], а [android] немає — Android не збираємо
+    # мітки в повідомленні коміту: якщо є [win] [mac] [arm] [intel] [linux] [ios], а [android] немає — Android не збираємо
     # (як і в anyplay.yml: мітки = «збирати лише це»); без міток — як завжди, за зміненими файлами
     if: >-
       ${{ github.event_name != 'push' || contains(github.event.head_commit.message, '[android]') ||
       !(contains(github.event.head_commit.message, '[win]') || contains(github.event.head_commit.message, '[mac]') ||
       contains(github.event.head_commit.message, '[arm]') || contains(github.event.head_commit.message, '[intel]') ||
-      contains(github.event.head_commit.message, '[linux]')) }}
+      contains(github.event.head_commit.message, '[linux]') || contains(github.event.head_commit.message, '[ios]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

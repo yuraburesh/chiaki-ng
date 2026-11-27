@@ -405,7 +405,10 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			Prefs.autoHide = Int(arg) ?? -1
 			pad.scheduleHide()
 		case "layout":
-			menu?.alert("Пересувати кнопки на iPhone можна буде в наступній версії. Зараз вони стоять так само, як типово на Android.")
+			// 137: «Джойстик» — які кнопки на екрані, L3/R3, розмір, прозорість
+			let v = PadSettingsViewController()
+			v.onClose = { [weak self] in self?.pad.reloadPrefs() }
+			present(v, animated: true)
 		case "refresh":
 			heartbeat()
 		default:

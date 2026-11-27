@@ -130,7 +130,7 @@ final class HomeViewController: UIViewController, WebHost
 			let kind = name == "adminPsnLogin" ? "login" : name
 			let uid = ((try? JSONSerialization.jsonObject(with: Data(arg.utf8))) as? [String: Any])?["userId"] ?? 0
 			page.eval("window.__anyplayAdmin && window.__anyplayAdmin(\(jsQuote(jsonText(["kind": kind, "ok": false, "userId": uid, "text": "Прив'язка приставки на iPhone ще не працює: зроби це з телефона на Android або з комп'ютера."]))))")
-		case "layout": page.alert("Розташування кнопок на iPhone з'явиться в наступній версії. Зараз кнопки стоять типово, як на Android.")
+		case "layout": present(PadSettingsViewController(), animated: true)   // 137: «Джойстик»
 		case "logout":
 			let a = UIAlertController(title: nil, message: "Вийти з AnyPlay на цьому пристрої?", preferredStyle: .alert)
 			a.addAction(UIAlertAction(title: "Скасувати", style: .cancel))

@@ -52,6 +52,21 @@ final class GamepadOverlay: UIView
 	}
 
 	private var area = CGRect.zero
+	// 137: «Джойстик» — сховані кнопки й окремі L3/R3
+	private var hiddenIds: Set<String> = []
+	private func vis(_ id: String) -> Bool
+	{
+		if id == "menu" { return true }
+		if id == "l3" || id == "r3" { return Prefs.padL3R3 && !hiddenIds.contains(id) }
+		return !hiddenIds.contains(id)
+	}
+
+	/** Налаштування «Джойстика» змінились */
+	func reloadPrefs()
+	{
+		releaseAll()
+		setNeedsLayout()
+	}
 	private var landscape: Bool { bounds.width > bounds.height }
 
 	// натиснуте
@@ -91,9 +106,11 @@ final class GamepadOverlay: UIView
 			let top = min(videoBottom, bounds.height * 0.6)
 			area = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top - safe.bottom)
 		}
-		let unit: CGFloat = landscape ? (min(bounds.width, bounds.height) / 380).clamped(0.85, 1.35)
+		let unit0: CGFloat = landscape ? (min(bounds.width, bounds.height) / 380).clamped(0.85, 1.35)
 			: min(bounds.width / 380 * 1.1, area.height / 450).clamped(0.7, 1.4)
+		hiddenIds = Prefs.padHidden
 		let map = landscape ? land : port
+		let unit = unit0 * CGFloat(Prefs.padScale)
 		for it in items
 		{
 			let p = map[it.id] ?? .init(x: 0.5, y: 0.5)
@@ -111,7 +128,7 @@ final class GamepadOverlay: UIView
 	private func item(_ id: String) -> Item { items.first { $0.id == id }! }
 
 	// ── малювання ──
-	private var alphaK: CGFloat { solid ? 1 : 0.7 }
+	private var alphaK: CGFloat { solid ? 1 : CGFloat(Prefs.padAlpha) }
 	/** 128: вертикально кнопки на власному тлі під картинкою — щільні й об'ємні, як на геймпаді, символи кольорові як на DualShock 4 */
 	private var solid: Bool { !landscape }
 	private let accent = UIColor(red: 143 / 255, green: 227 / 255, blue: 1, alpha: 1)
@@ -144,7 +161,7 @@ final class GamepadOverlay: UIView
 			accent.withAlphaComponent(0.35).setFill()
 			UIRectFill(CGRect(x: 0, y: area.minY, width: bounds.width, height: 1.5))
 		}
-		for it in items
+		for it in items where vis(it.id)
 		{
 			switch it.kind
 			{
@@ -303,7 +320,7 @@ final class GamepadOverlay: UIView
 			let d = hypot(p.x - c.x, p.y - c.y)
 			if best == nil || d < best!.1 { best = (id, d) }
 		}
-		for it in items
+		for it in items where vis(it.id)
 		{
 			switch it.kind
 			{
@@ -365,18 +382,18 @@ final class GamepadOverlay: UIView
 				continue
 			}
 			let d = item("dpad")
-			if dpadTouch == nil && hypot(p.x - d.center.x, p.y - d.center.y) <= d.size.width * 0.58
+			if dpadTouch == nil && vis("dpad") && hypot(p.x - d.center.x, p.y - d.center.y) <= d.size.width * 0.58
 			{
 				dpadTouch = t; dpadMask = dpadMaskAt(p); Haptics.shared.tap(.tick); continue
 			}
 			let tp = item("touchpad")
-			if touchpadTouch == nil && tp.frame.contains(p)
+			if touchpadTouch == nil && vis("touchpad") && tp.frame.contains(p)
 			{
 				touchpadTouch = t; touchpadDownAt = Date(); touchpadDownPoint = p
 				touchpadId = onTouchpad?(-1, tpX(p), tpY(p), false) ?? -1
 				continue
 			}
-			for i in 0..<2 where sticks[i].touch == nil && stickZone(i).contains(p) {
+			for i in 0..<2 where sticks[i].touch == nil && vis(i == 0 ? "lstick" : "rstick") && stickZone(i).contains(p) {
 				sticks[i].touch = t
 				if landscape { sticks[i].origin = p } else { sticks[i].origin = item(i == 0 ? "lstick" : "rstick").center; moveStick(i, p) }
 				sticks[i].click = Date().timeIntervalSince(sticks[i].lastUp) < 0.3

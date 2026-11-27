@@ -119,4 +119,29 @@ enum Prefs
 		get { d.object(forKey: "controls") as? Bool ?? true }
 		set { d.set(newValue, forKey: "controls") }
 	}
+
+	// 137: «Джойстик» — сховані кнопки екрана, окремі L3/R3 (типово вимкнено), розмір, прозорість поверх гри
+	static var padHidden: Set<String>
+	{
+		get { Set(d.stringArray(forKey: "padHidden") ?? []) }
+		set { d.set(Array(newValue).sorted(), forKey: "padHidden") }
+	}
+
+	static var padL3R3: Bool
+	{
+		get { d.bool(forKey: "padL3R3") }
+		set { d.set(newValue, forKey: "padL3R3") }
+	}
+
+	static var padScale: Double
+	{
+		get { (d.object(forKey: "padScale") as? Double ?? 1).clamped(0.7, 1.5) }
+		set { d.set(newValue, forKey: "padScale") }
+	}
+
+	static var padAlpha: Double
+	{
+		get { (d.object(forKey: "padAlpha") as? Double ?? 0.7).clamped(0.3, 1) }
+		set { d.set(newValue, forKey: "padAlpha") }
+	}
 }

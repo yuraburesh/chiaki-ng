@@ -12,6 +12,8 @@ final class GamepadInput
 	/** Усе разом: геймпад, клавіатура й миша (134) */
 	var state: PadState { padState.merged(keyState).merged(mouseState) }
 	private var padState = PadState()
+	/** 138: справжній геймпад зараз щось натискає (кнопка, курок або стік помітно відхилено) */
+	var gamepadActive: Bool { padState.buttons != 0 || padState.l2 > 30 || padState.r2 > 30 || [padState.lx, padState.ly, padState.rx, padState.ry].contains { abs(Int($0)) > 8000 } }
 	private var keyState = PadState()
 	private var mouseState = PadState()
 	private var mouseDX: CGFloat = 0, mouseDY: CGFloat = 0

@@ -89,7 +89,8 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 
 		GamepadInput.shared.start()
 		GamepadInput.shared.onChange = { [weak self] _ in
-			self?.pad.physicalInput()
+			// 138: ховаємо кнопки лише від справжнього геймпада (не від руху миші чи клавіатури)
+			if GamepadInput.shared.gamepadActive { self?.pad.physicalInput() }
 			self?.sendController()
 		}
 		videoView.onNeedKeyFrame = { [weak self] in self?.session?.requestIDR() }

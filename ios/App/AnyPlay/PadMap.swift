@@ -380,11 +380,11 @@ final class PadSettingsViewController: UIViewController
 		Prefs.padHidden = []
 		Prefs.padL3R3 = false
 		Prefs.padScale = 1
-		Prefs.padAlpha = 0.7
+		Prefs.padAlpha = 0.8
 		map.off = []
 		l3.setOn(false, animated: true)
 		size.setValue(1, animated: true)
-		opacity.setValue(0.7, animated: true)
+		opacity.setValue(0.8, animated: true)
 		updateValues()
 		note.text = "Усі кнопки на екрані, розмір і прозорість — типові."
 	}

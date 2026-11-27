@@ -110,8 +110,9 @@ enum Prefs
 	static var autoHide: Int
 	{
 		// 134: на iPad кнопки типово не ховаються (екран великий, а сховані кнопки там здавалися відсутніми)
-		get { d.object(forKey: "autohide") as? Int ?? (UIDevice.current.userInterfaceIdiom == .pad ? 0 : -1) }
-		set { d.set(newValue, forKey: "autohide") }
+		// 138: новий ключ — старий вибір «ховати одразу» на iPad ховав кнопки горизонтально, і здавалось, що їх немає
+		get { d.object(forKey: "autohide138") as? Int ?? (UIDevice.current.userInterfaceIdiom == .pad ? 0 : -1) }
+		set { d.set(newValue, forKey: "autohide138") }
 	}
 
 	static var controls: Bool
@@ -141,7 +142,7 @@ enum Prefs
 
 	static var padAlpha: Double
 	{
-		get { (d.object(forKey: "padAlpha") as? Double ?? 0.7).clamped(0.3, 1) }
+		get { (d.object(forKey: "padAlpha") as? Double ?? 0.8).clamped(0.3, 1) }
 		set { d.set(newValue, forKey: "padAlpha") }
 	}
 }

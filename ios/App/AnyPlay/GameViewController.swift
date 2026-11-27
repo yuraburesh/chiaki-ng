@@ -28,6 +28,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	private var ended = false
 	private var connected = false
 	private var menuCombo = false
+	private var busyRetries = 0
 	private var watchFrames: UInt64 = 0
 	private var watchAt = Date()
 	private var watchShown = false
@@ -249,6 +250,22 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		if backgrounded
 		{
 			session?.close(); session = nil; connected = false
+			return
+		}
+		let why = Session.quitText(reason) + " " + text
+		// 143: попередня гра ще не закрилась на приставці (перезапуск програми) — приставка звільняється за кілька секунд
+		if why.contains("already in use") && busyRetries < 4
+		{
+			busyRetries += 1
+			Log.add(2, "Приставка ще зайнята попередньою грою: спроба \(busyRetries) за 5 с")
+			session?.close(); session = nil; connected = false
+			setLoading("Приставка ще закриває попередню гру. Пробуємо ще раз…")
+			DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.reconnectFresh() }
+			return
+		}
+		if why.lowercased().contains("shutting down")
+		{
+			end("Приставку вимкнули або перевели в режим спокою. Увімкни її і натисни «Грати» ще раз.")
 			return
 		}
 		let msg = Session.quitIsError(reason)

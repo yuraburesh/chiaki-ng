@@ -827,10 +827,84 @@ class StreamActivity : AppCompatActivity()
 			wTrouble = "stuck"
 	}
 
+	// ── 152: плавна зміна якості ──
+	private var qualityOverlay: View? = null
+	private var qualitySince = 0L
+
+	private fun showQualityOverlay(then: () -> Unit)
+	{
+		if(qualityOverlay != null) { then(); return }
+		val sv = binding.surfaceView
+		val w = sv.width, h = sv.height
+		fun build(shot: android.graphics.Bitmap?)
+		{
+			val box = FrameLayout(this).apply { isClickable = true; alpha = 0f }
+			if(shot != null)
+			{
+				// дешеве розмиття, яке працює і на старих Android: зменшити в 24 рази і розтягнути назад зі згладжуванням
+				val small = android.graphics.Bitmap.createScaledBitmap(shot, (w / 24).coerceAtLeast(1), (h / 24).coerceAtLeast(1), true)
+				val img = android.widget.ImageView(this).apply {
+					setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, small).apply { isFilterBitmap = true })
+					scaleType = android.widget.ImageView.ScaleType.FIT_XY
+				}
+				val loc = IntArray(2); sv.getLocationInWindow(loc)
+				val rl = IntArray(2); binding.root.getLocationInWindow(rl)
+				box.addView(img, FrameLayout.LayoutParams(w, h).apply { leftMargin = loc[0] - rl[0]; topMargin = loc[1] - rl[1] })
+			}
+			box.addView(View(this).apply { setBackgroundColor(android.graphics.Color.argb(110, 13, 10, 22)) },
+				FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+			val col = LinearLayout(this).apply {
+				orientation = LinearLayout.VERTICAL
+				gravity = Gravity.CENTER
+				addView(android.widget.ProgressBar(this@StreamActivity))
+				addView(TextView(this@StreamActivity).apply {
+					text = "Міняємо якість: ${AnyPlayQuality.name(this@StreamActivity)}. Кілька секунд…"
+					setTextColor(AnyPlayStyle.INK)
+					textSize = 15f
+					gravity = Gravity.CENTER
+					setPadding(0, (12 * resources.displayMetrics.density).toInt(), 0, 0)
+				})
+			}
+			box.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+			binding.root.addView(box, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+			box.animate().alpha(1f).setDuration(300).start()
+			qualityOverlay = box
+			qualitySince = SystemClock.elapsedRealtime()
+			then()
+		}
+		if(w <= 0 || h <= 0 || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) { build(null); return }
+		try
+		{
+			val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+			PixelCopy.request(sv, bmp, { r -> build(if(r == PixelCopy.SUCCESS) bmp else null) }, android.os.Handler(android.os.Looper.getMainLooper()))
+		}
+		catch(e: Throwable) { build(null) }
+	}
+
+	private fun hideQualityOverlay()
+	{
+		val o = qualityOverlay ?: return
+		qualityOverlay = null
+		o.animate().alpha(0f).setDuration(450).withEndAction { (o.parent as? ViewGroup)?.removeView(o) }.start()
+	}
+
 	/** Раз на пів секунди: що показати на екрані завантаження і чи не час рятувати картинку */
 	private fun anyplayWatchTick()
 	{
 		val l = anyplayLoading ?: return
+		// 152: зміна якості — замість екрана завантаження розмита остання картинка; нова пішла — розмиття тане
+		if(qualityOverlay != null)
+		{
+			val vv = viewModel.session.session?.videoStats()
+			val going = viewModel.session.state.value == StreamStateConnected && vv != null && vv.size > 1 && vv[1] > 0
+			if(going || SystemClock.elapsedRealtime() - qualitySince > 20000 || isFinishing)
+				hideQualityOverlay()
+			else
+			{
+				l.hide(false)
+				return
+			}
+		}
 		val now = SystemClock.elapsedRealtime()
 		if(isFinishing || dialogContents != null || padEditor?.isOpen == true)
 		{
@@ -1145,6 +1219,7 @@ class StreamActivity : AppCompatActivity()
 	/** Сервер AnyPlay завершив гру: зупиняємо стрім і пояснюємо чому */
 	private fun anyplayEnd(text: String, code: String = "")
 	{
+		hideQualityOverlay()
 		if(dialogContents == AnyPlayEndDialog || isFinishing)
 			return
 		anyplayBeatJob?.cancel()
@@ -1417,13 +1492,17 @@ class StreamActivity : AppCompatActivity()
 
 		override fun qualityChanged()
 		{
-			// нова якість діє з нового підключення
-			Toast.makeText(this@StreamActivity, "Якість: ${AnyPlayQuality.name(this@StreamActivity)}. Підключаюсь заново…", Toast.LENGTH_LONG).show()
+			// нова якість діє з нового підключення (так влаштована PS5). 152: плавно — остання картинка лишається
+			// розмитою, посередині «Міняємо якість…», нова картинка з'являється з-під неї
 			anyplayMenu?.dismiss()
-			viewModel.session.shutdown()
-			anyplaySelfRetryWindow()
-			loadSince = SystemClock.elapsedRealtime()
-			anyplayFreshConnect(2500)
+			val lan = viewModel.session.connectInfo.psnToken == null
+			AnyPlayDiag.i("Якість: ${AnyPlayQuality.name(this@StreamActivity)}, плавне перепідключення (${if(lan) "домашня мережа" else "PSN"})")
+			showQualityOverlay {
+				viewModel.session.shutdown()
+				anyplaySelfRetryWindow()
+				loadSince = SystemClock.elapsedRealtime()
+				anyplayFreshConnect(if(lan) 800 else 2500)
+			}
 		}
 	}
 

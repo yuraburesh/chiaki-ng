@@ -2,6 +2,7 @@
 // Сервер дає ключ PSN → шукаємо приставку → пробиваємо з'єднання → відео, звук, керування.
 // Вертикально картинка 16:9 угорі, кнопки під нею; горизонтально картинка на весь екран, кнопки поверх.
 import UIKit
+import GameController
 
 final class GameViewController: UIViewController, SessionDelegate, WebHost
 {
@@ -83,6 +84,22 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			hoverLast = p
 		default: hoverLast = nil
 		}
+	}
+
+	/** 152: iPadOS 27 віддає кнопку PS (Home) системі, і програма сама змінити це не може (так влаштувала Apple).
+	 *  Тому один раз, коли грають геймпадом, пропонуємо відкрити саме той екран Параметрів, де це вмикається */
+	private func askHomeButtonOnce()
+	{
+		let key = "askedHomeButton152"
+		guard !UserDefaults.standard.bool(forKey: key), GamepadInput.shared.connected, presentedViewController == nil else { return }
+		if #available(iOS 27.0, *) {} else { return }
+		UserDefaults.standard.set(true, forKey: key)
+		let a = UIAlertController(title: "Кнопка PS на геймпаді",
+			message: "iPad забирає кнопку PS собі (відкриває свої панелі). Щоб вона працювала як на приставці, у Параметрах, що відкриються, для кнопки Home у програмах обери передавати її програмі. Це треба зробити лише раз.\n\nБез цього меню приставки відкривається так: Create + Options разом, далі «Кнопка PS».",
+			preferredStyle: .alert)
+		a.addAction(UIAlertAction(title: "Не зараз", style: .cancel))
+		a.addAction(UIAlertAction(title: "Відкрити Параметри", style: .default) { _ in GamepadInput.openHomeButtonSettings() })
+		present(a, animated: true)
 	}
 
 	private var hintLabel: UILabel?
@@ -197,6 +214,8 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		}
 		// 145: клавіатура й миша як на Mac; ` — меню AnyPlay; режим «Пішки/Транспорт/Авіація» — підказка на екрані
 		KeyLayout.shared.startGame()
+		// 152: події геймпада — лише в GameController (iPad не перетворює їх на свої дії інтерфейсу)
+		if #available(iOS 18.0, *) { view.addInteraction(GCEventInteraction()) }
 		// 150: трекпад без захоплення курсора — рух курсора над грою теж крутить камеру
 		let hover = UIHoverGestureRecognizer(target: self, action: #selector(hovered(_:)))
 		view.addGestureRecognizer(hover)
@@ -325,6 +344,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	{
 		connected = true
 		if switchView != nil { switchFrames = videoView.shownCount; finishSwitch() }
+		askHomeButtonOnce()
 		watchAt = Date(); watchShown = false
 		Log.add(2, "Курсор захоплено: \(view.window?.windowScene?.pointerLockState?.isLocked == true ? "так" : "ні")")
 		Log.add(2, "Кнопки на екрані: показ \(Prefs.controls), ховати \(Prefs.autoHide), сховані \(Prefs.padHidden.sorted()), прозорість \(Prefs.padAlpha), розмір \(Prefs.padScale); клавіатура \(GamepadInput.shared.keyboardConnected), розкладка \(KeyLayout.shared.layout)")

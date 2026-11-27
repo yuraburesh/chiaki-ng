@@ -72,6 +72,29 @@ enum Cloud
 
 	static func session() async -> CloudResult { await request("GET", "/api/app/session") }
 
+	private static var logSentAt = Date.distantPast
+
+	/** 136: журнал програми для підтримки (як на Android): адмін попросив (sendLog) або збій гри */
+	static func uploadLog(reason: String, note: String = "")
+	{
+		if reason != "request" && Date().timeIntervalSince(logSentAt) < 120 { return }
+		logSentAt = Date()
+		let d = UIDevice.current
+		var model = utsname(); uname(&model)
+		let hw = withUnsafeBytes(of: &model.machine) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+		let text = "AnyPlay iOS \(build), \(d.model) \(hw), iOS \(d.systemVersion)\n" + (note.isEmpty ? "" : note + "\n")
+			+ "якість: \(Quality.name), кнопки на екрані: \(Prefs.controls), геймпад: \(GamepadInput.shared.connected), клавіатура: \(GamepadInput.shared.keyboardConnected)\n\n" + Log.text()
+		guard !token.isEmpty, let url = URL(string: server + "/api/app/log?reason=" + reason) else { return }
+		var r = URLRequest(url: url, timeoutInterval: 30)
+		r.httpMethod = "POST"
+		r.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type")
+		r.setValue(String(build), forHTTPHeaderField: "X-AnyPlay-Build")
+		r.setValue("ios", forHTTPHeaderField: "X-AnyPlay-Platform")
+		r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+		r.httpBody = Data(String(text.suffix(400_000)).utf8)
+		URLSession.shared.dataTask(with: r).resume()
+	}
+
 	static func heartbeat(streaming: Bool, stats: [String: Any]? = nil) async -> CloudResult
 	{
 		var body: [String: Any] = ["streaming": streaming]

@@ -19,6 +19,8 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	private var timers: [Timer] = []
 	private var touchState = PadState()
 	private var lastSent = PadState()
+	private var inputLogged = false
+	private var blockLogged = false
 	private var endAt: Date?            // кінець гри за годинником телефона
 	private var continues = false
 	private var guest = false
@@ -150,6 +152,13 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			end(err)
 			return
 		}
+		if target.lanAddr != nil
+		{
+			// 136: домашня мережа — без PSN, одразу гра
+			loadingText.text = "Приставка поруч, підключаємось напряму…"
+			if s.start() != 0 { end("Не вдалося почати гру. Спробуй ще раз.") }
+			return
+		}
 		let duid = target.duid
 		DispatchQueue.global(qos: .userInitiated).async {
 			let watch = Timer(timeInterval: 0.5, repeats: true) { [weak self, weak s] _ in
@@ -184,6 +193,12 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	func sessionQuit(reason: Int, text: String)
 	{
 		guard !ended else { return }
+		Log.add(3, "Трансляція закрилась: \(reason) \(text)")
+		if backgrounded
+		{
+			session?.close(); session = nil; connected = false
+			return
+		}
 		let msg = Session.quitIsError(reason)
 			? "Приставка завершила трансляцію (\(Session.quitText(reason))). Так буває, коли PS5 перезапускається або до неї підключився інший пристрій."
 			: "Трансляцію завершено."
@@ -200,13 +215,26 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 
 	private func sendController()
 	{
-		guard connected, let s = session else { return }
+		guard connected, let s = session else
+		{
+			if !blockLogged && (touchState != PadState() || GamepadInput.shared.state != PadState())
+			{
+				blockLogged = true
+				Log.add(3, "Ввід: натискання не пішло в гру — з'єднання ще не готове (connected \(connected), сесія \(session != nil))")
+			}
+			return
+		}
 		var st = touchState
 		if menu != nil { st = PadState() }   // поки відкрите меню, екранні кнопки в гру не йдуть
 		let merged = st.merged(GamepadInput.shared.state)
 		if merged == lastSent { return }
 		lastSent = merged
 		s.setController(merged)
+		if !inputLogged && merged != PadState()
+		{
+			inputLogged = true
+			Log.add(2, "Ввід: перше натискання пішло в гру (кнопки 0x\(String(merged.buttons, radix: 16)), з екрана: \(st != PadState()), геймпад/клавіатура: \(GamepadInput.shared.state != PadState()))")
+		}
 	}
 
 	// ── сервер: час гри, кінець, телеметрія ──
@@ -221,6 +249,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			if let left = r.json["left"] as? Double { endAt = Date().addingTimeInterval(left) }
 			else if let left = r.json["left"] as? Int { endAt = Date().addingTimeInterval(Double(left)) }
 			continues = r.json["continues"] as? Bool ?? false
+			if r.json["sendLog"] as? Bool == true { Cloud.uploadLog(reason: "request", note: "Адміністратор попросив журнал (гра)") }
 			guest = r.json["guest"] as? Bool ?? guest
 			if (r.json["continue"] as? Bool) == false
 			{
@@ -409,15 +438,28 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	// повернувся, і програма сама підключається знову. Кнопки й клавіші відпускаємо, щоб нічого не «залипало»
 	private var backgrounded = false
 
+	// 136: з'єднання тримаємо й у фоні (як Android): програма грає звук гри, тож iOS не присипляє її (фоновий режим
+	// «звук»). Повернувся до 10 хв — гра одразу далі, без нового підключення. Довше — закриваємо й підключаємось знову
+	private var bgTimer: Timer?
+
 	@objc private func background()
 	{
 		guard !ended else { return }
 		backgrounded = true
 		pad.releaseAll()
 		touchState = PadState()
-		lastSent = PadState()
 		GamepadInput.shared.reset()
+		sendController()
 		Haptics.shared.stopRumble()
+		Log.add(2, "Програму згорнуто: з'єднання з приставкою тримаємо до 10 хв")
+		bgTimer?.invalidate()
+		bgTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: false) { [weak self] _ in self?.stopInBackground() }
+	}
+
+	private func stopInBackground()
+	{
+		guard backgrounded, !ended else { return }
+		Log.add(2, "У фоні понад 10 хв: трансляцію закрито")
 		closeMenu()
 		session?.close()
 		session = nil
@@ -430,9 +472,21 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	{
 		guard !ended, backgrounded else { return }
 		backgrounded = false
+		bgTimer?.invalidate(); bgTimer = nil
 		GamepadInput.shared.reset()
+		if let s = session, connected
+		{
+			Log.add(2, "Повернулись у гру: з'єднання збережене")
+			videoView.reset()
+			s.requestIDR()
+			return
+		}
+		Log.add(2, "Повернулись у гру: підключаємось знову")
 		setLoading("Повертаємось у гру…")
-		// приставці потрібна мить, щоб закрити попереднє підключення
+		session?.close()
+		session = nil
+		connected = false
+		// приставці потрібна мить, щоб закрити попередню трансляцію
 		DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.reconnectFresh() }
 	}
 
@@ -440,6 +494,8 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	{
 		guard !ended else { return }
 		ended = true
+		Log.add(3, "Гра закінчилась: " + text)
+		Cloud.uploadLog(reason: "error", note: "Гра закінчилась: " + text)
 		cleanup()
 		let a = UIAlertController(title: nil, message: text, preferredStyle: .alert)
 		a.addAction(UIAlertAction(title: "Зрозуміло", style: .default) { [weak self] _ in self?.dismissGame() })

@@ -60,6 +60,8 @@ h2{font:600 22px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
   font:600 16px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase;min-width:220px;text-align:center;
   transition:transform .12s cubic-bezier(.2,.8,.2,1),background-color .15s,border-color .15s,opacity .15s,box-shadow .2s}
 .btn:active{transform:scale(.97)}
+/* 136: трикутник «грати» (символ ▶ на iPhone/iPad малювався синьою емодзі) */
+.tri{display:inline-block;width:0;height:0;border-style:solid;border-width:.42em 0 .42em .7em;border-color:transparent transparent transparent currentColor;margin-right:-2px}
 .btn:active{background:#fff}
 .btn[disabled]{opacity:.45}
 .btn.ghost{background:none;color:var(--ink);border-color:var(--edge);font-size:14px;letter-spacing:1.6px;min-width:0;padding:11px 18px}
@@ -849,7 +851,7 @@ function heroUser(){
       return '<span class="eyebrow">Гостьовий доступ</span>'
         + (end > 0 ? '<div class="timer play" id="tick" data-to="' + end + '">' + dur(end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>')
         + facts([end > 0 ? 'до <b>' + esc(fmtTime(end)) + '</b>' : '', psnFact(c)]) + '<p class="lead">Граєш, поки приставка вільна.</p>'
-        + '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button></div>';
+        + '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>Грати</button></div>';
     }
     let h = '<span class="eyebrow">' + (end > 0 ? 'Можна грати!' : 'Твоя гра') + '</span>';
     if(H.busy) return h + '<p class="big">Шукаємо приставку…</p><p class="lead">' + (end > 0 ? 'Твій час до <b>' + esc(fmtTime(end)) + '</b>. ' : '') + 'Це займає до хвилини.</p><div class="spin"></div>';
@@ -857,7 +859,7 @@ function heroUser(){
     const checking = !!(bk && bk.paymentChecking);   // гра в кредит: час вийшов, оплату продовження ще перевіряють
     h += facts([end > 0 ? 'до <b>' + esc(fmtTime(end)) + '</b>' : '', psnFact(c)]);
     if(checking) h += '<p class="lead">Оплату продовження ще перевіряємо, тому гра йде далі. Підтвердять, і час додасться сам.</p>';
-    return h + '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button>'
+    return h + '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>Грати</button>'
       + (checking ? '' : bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити<span class="lg"> бронювання</span></button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
   }
   // приставка тримає одне підключення: поки клієнт грає на іншому своєму пристрої, тут «Грати» немає (інакше той вибило б)
@@ -867,7 +869,7 @@ function heroUser(){
     if(s.canTakeover) return '<span class="eyebrow">Гра вже йде</span><p class="big">На іншому пристрої</p>'
       + '<p class="lead">' + (s.otherSeen > 20 ? 'Схоже, на ' + dev + ' гру вже закрили. ' : 'Зараз ти граєш на ' + dev + '. ')
       + 'Натисни «Грати тут», і гра продовжиться на цьому телефоні, а там зупиниться. Твій час не змінюється.</p>'
-      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="takeover">▶ Грати тут</button><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>');
+      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="takeover"><i class="tri"></i>Грати тут</button><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>');
     return '<span class="eyebrow">Гра вже йде</span><p class="big">На іншому пристрої</p>'
       + '<p class="lead">Зараз ти граєш на ' + dev + '. Приставка тримає лише одне підключення: закрий гру там (меню AnyPlay → «Вийти з гри»), і тут з\'явиться кнопка «Грати».</p>'
       + '<div class="actions"><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>';
@@ -902,12 +904,12 @@ function heroHandoff(s, st){
   if(ho.role === 'friend' && st === 'play')
     return '<span class="eyebrow">Гра друга</span>' + (ho.end > 0 ? '<div class="timer play" id="tick" data-to="' + ho.end + '">' + dur(ho.end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>')
       + '<p class="lead">' + owner + ' передав тобі свою гру' + (until ? ' до <b>' + until + '</b>' : '') + '. Він може повернути її собі будь-коли, тоді гра тут зупиниться.</p>'
-      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="play">▶ Грати</button><button type="button" class="btn ghost" data-hand="giveback">Повернути гру</button></div>');
+      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>Грати</button><button type="button" class="btn ghost" data-hand="giveback">Повернути гру</button></div>');
   if(ho.role === 'owner' && ho.state === 'active' && st === 'other_device'){
     const fr = F && F.friends ? F.friends.find(f => f.id === ho.friend.id) : null, live = fr && fr.live;
     return '<span class="eyebrow">Гра в друга</span><p class="big">Зараз грає ' + friend + '</p>'
       + '<p class="lead">Ти передав гру другу. Час броні йде як завжди' + (until ? ', до <b>' + until + '</b>' : '') + '. Повернути гру собі можна будь-коли: у друга вона зупиниться, а тут почнеться твоя.</p>'
-      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="takeover">▶ Повернути собі</button>'
+      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="takeover"><i class="tri"></i>Повернути собі</button>'
         + (live ? '<button type="button" class="btn ghost" data-watch="' + esc(live.code) + '">Дивитись</button>' : '') + '</div>')
       + (live ? '' : '<p class="small" style="margin-top:10px">Дивитись гру друга можна, коли він увімкне трансляцію в програмі на комп\'ютері.</p>');
   }

@@ -52,6 +52,8 @@ targets:
             UIWindowSceneSessionRoleApplication:
               - UISceneConfigurationName: Default
                 UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).SceneDelegate"
+        # 136: звук гри грає й у фоні — тоді iOS не присипляє програму і з'єднання з приставкою не рветься
+        UIBackgroundModes: [audio]
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: true

@@ -101,6 +101,7 @@ final class HomeViewController: UIViewController, WebHost
 		}
 		session = r.json
 		if let now = r.json["now"] as? Int { skew = now - Int(Date().timeIntervalSince1970) }
+		if r.json["sendLog"] as? Bool == true { Cloud.uploadLog(reason: "request", note: "Адміністратор попросив журнал (головний екран)") }
 		switch r.str("state")
 		{
 		case "play", "no_console", "update", "other_device": state = r.str("state")

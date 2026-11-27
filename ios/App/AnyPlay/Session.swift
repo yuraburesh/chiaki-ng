@@ -78,12 +78,27 @@ final class Session
 			Log.add(Int(level), String(cString: msg))
 		}
 		var err: Int32 = 0
-		let c: OpaquePointer? = target.token.withCString { tok in
-			info.psn_token = tok
-			return "0.0.0.0".withCString { host in
+		let c: OpaquePointer?
+		if let addr = target.lanAddr
+		{
+			// 136: домашня мережа — напряму за адресою, ключами прив'язки, без PSN
+			withUnsafeMutableBytes(of: &info.regist_key) { p in for (i, b) in target.registKey.prefix(16).enumerated() { p[i] = b } }
+			withUnsafeMutableBytes(of: &info.morning) { p in for (i, b) in target.morning.prefix(16).enumerated() { p[i] = b } }
+			c = addr.withCString { host in
 				info.host = host
-				return withUnsafePointer(to: &info) { ip in
-					withUnsafePointer(to: &cb) { cp in anyplay_core_create(ip, cp, &err) }
+				info.psn_token = nil
+				return withUnsafePointer(to: &info) { ip in withUnsafePointer(to: &cb) { cp in anyplay_core_create(ip, cp, &err) } }
+			}
+		}
+		else
+		{
+			c = target.token.withCString { tok in
+				info.psn_token = tok
+				return "0.0.0.0".withCString { host in
+					info.host = host
+					return withUnsafePointer(to: &info) { ip in
+						withUnsafePointer(to: &cb) { cp in anyplay_core_create(ip, cp, &err) }
+					}
 				}
 			}
 		}

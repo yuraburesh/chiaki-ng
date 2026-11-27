@@ -416,3 +416,144 @@ int anyplay_core_psn_devices(const char *token, char *out, size_t out_size)
 		chiaki_holepunch_free_device_list(&devices);
 	return CHIAKI_ERR_SUCCESS;
 }
+
+// ── 136: приставка в домашній мережі (як на Android і комп'ютері): напряму, без PSN — за секунди ──
+// iOS без особливого дозволу Apple не шле широкомовних пакетів, тож питаємо кожну адресу своєї мережі /24 окремо
+#include <chiaki/discovery.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <strings.h>
+#include <unistd.h>
+#include <chiaki/time.h>
+
+typedef struct
+{
+	const char *mac;
+	ChiakiMutex mutex;
+	char addr[64];
+	int state;   // 0 немає, 1 увімкнена, 2 спокій
+} LanFind;
+
+static void lan_cb(ChiakiDiscoveryHost *host, void *user)
+{
+	LanFind *f = user;
+	if(!host->host_id || !host->host_addr || strcasecmp(host->host_id, f->mac) != 0)
+		return;
+	chiaki_mutex_lock(&f->mutex);
+	snprintf(f->addr, sizeof(f->addr), "%s", host->host_addr);
+	f->state = host->state == CHIAKI_DISCOVERY_HOST_STATE_READY ? 1 : 2;
+	chiaki_mutex_unlock(&f->mutex);
+}
+
+static int lan_state(LanFind *f)
+{
+	chiaki_mutex_lock(&f->mutex);
+	int st = f->state;
+	chiaki_mutex_unlock(&f->mutex);
+	return st;
+}
+
+static void lan_ping_all(ChiakiDiscovery *d, uint32_t net, uint32_t self)
+{
+	ChiakiDiscoveryPacket p = { 0 };
+	p.cmd = CHIAKI_DISCOVERY_CMD_SRCH;
+	p.protocol_version = CHIAKI_DISCOVERY_PROTOCOL_VERSION_PS5;
+	for(uint32_t i = 1; i < 255; i++)
+	{
+		uint32_t ip = net | i;
+		if(ip == self)
+			continue;
+		struct sockaddr_in a = { 0 };
+		a.sin_len = sizeof(a);
+		a.sin_family = AF_INET;
+		a.sin_port = htons(CHIAKI_DISCOVERY_PORT_PS5);
+		a.sin_addr.s_addr = htonl(ip);
+		chiaki_discovery_send(d, &p, (struct sockaddr *)&a, sizeof(a));
+	}
+}
+
+int anyplay_core_lan_find(const char *mac_hex, const char *regist_key, int search_ms, int wake_ms, char *addr_out, size_t addr_size)
+{
+	if(!mac_hex || !addr_out || addr_size < 8)
+		return -1;
+	if(!atomic_exchange(&lib_ready, true))
+		chiaki_lib_init();
+	// своя адреса й мережа (Wi-Fi чи дротова)
+	uint32_t self = 0, mask = 0;
+	struct ifaddrs *ifs = NULL;
+	if(getifaddrs(&ifs) == 0)
+	{
+		for(struct ifaddrs *i = ifs; i; i = i->ifa_next)
+		{
+			if(!i->ifa_addr || i->ifa_addr->sa_family != AF_INET || !i->ifa_netmask || (i->ifa_flags & IFF_LOOPBACK) || !(i->ifa_flags & IFF_UP))
+				continue;
+			if(strncmp(i->ifa_name, "en", 2) != 0)
+				continue;   // en0 — Wi-Fi, en1… — дріт; pdp_ip (мобільний інтернет) не беремо
+			self = ntohl(((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr);
+			mask = ntohl(((struct sockaddr_in *)i->ifa_netmask)->sin_addr.s_addr);
+			break;
+		}
+		freeifaddrs(ifs);
+	}
+	if(!self)
+		return -2;   // не в Wi-Fi
+	uint32_t net = self & 0xffffff00;   // питаємо /24 навколо себе (більші мережі вдома рідкість)
+	(void)mask;
+	static ChiakiLog lan_log;
+	chiaki_log_init(&lan_log, CHIAKI_LOG_ERROR | CHIAKI_LOG_WARNING, chiaki_log_cb_print, NULL);
+	ChiakiDiscovery d;
+	if(chiaki_discovery_init(&d, &lan_log, AF_INET) != CHIAKI_ERR_SUCCESS)
+		return -3;
+	LanFind f = { 0 };
+	f.mac = mac_hex;
+	chiaki_mutex_init(&f.mutex, false);
+	ChiakiDiscoveryThread t;
+	int result = -4;
+	if(chiaki_discovery_thread_start(&t, &d, lan_cb, &f) == CHIAKI_ERR_SUCCESS)
+	{
+		uint64_t start = chiaki_time_now_monotonic_ms();
+		uint64_t until = start + (uint64_t)search_ms;
+		uint64_t last_ping = 0;
+		bool woke = false;
+		while(chiaki_time_now_monotonic_ms() < until)
+		{
+			int st = lan_state(&f);
+			if(st == 1)
+				break;
+			if(st == 2 && !woke && regist_key && wake_ms > 0)
+			{
+				// у режимі спокою: будимо ключем прив'язки й чекаємо довше
+				woke = true;
+				char key[17] = { 0 };
+				strncpy(key, regist_key, 16);
+				uint64_t cred = strtoull(key, NULL, 16);
+				chiaki_mutex_lock(&f.mutex);
+				char host[64]; snprintf(host, sizeof(host), "%s", f.addr);
+				chiaki_mutex_unlock(&f.mutex);
+				chiaki_discovery_wakeup(&lan_log, &d, host, cred, true);
+				until = chiaki_time_now_monotonic_ms() + (uint64_t)wake_ms;
+			}
+			uint64_t now = chiaki_time_now_monotonic_ms();
+			if(now - last_ping >= 1000)
+			{
+				last_ping = now;
+				lan_ping_all(&d, net, self);
+			}
+			usleep(30 * 1000);
+		}
+		chiaki_discovery_thread_stop(&t);
+		if(lan_state(&f) == 1)
+		{
+			snprintf(addr_out, addr_size, "%s", f.addr);
+			result = 0;
+		}
+		else
+			result = lan_state(&f) == 2 ? 2 : 1;
+	}
+	chiaki_mutex_fini(&f.mutex);
+	chiaki_discovery_fini(&d);
+	return result;
+}
+

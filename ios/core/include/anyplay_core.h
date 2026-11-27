@@ -99,6 +99,13 @@ enum
 	ANYPLAY_BTN_OPTIONS = 1 << 12, ANYPLAY_BTN_SHARE = 1 << 13, ANYPLAY_BTN_TOUCHPAD = 1 << 14, ANYPLAY_BTN_PS = 1 << 15
 };
 
+/**
+ * 136: шукає приставку в домашній мережі (за MAC з прив'язки, 12 hex-символів). 0 — знайдено, адреса в addr_out;
+ * 1 — немає в мережі; 2 — у режимі спокою й не прокинулась; від'ємне — телефон не в Wi-Fi чи помилка.
+ * regist_key — ключ прив'язки (rp_regist_key, текст hex) для команди «прокинься». Блокує потік.
+ */
+int anyplay_core_lan_find(const char *mac_hex, const char *regist_key, int search_ms, int wake_ms, char *addr_out, size_t addr_size);
+
 #ifdef __cplusplus
 }
 #endif

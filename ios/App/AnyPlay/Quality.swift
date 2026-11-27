@@ -144,8 +144,9 @@ enum Prefs
 	/** 145: чутливість миші й трекпада (камера), як на Mac: 0,3…3 */
 	static var mouseSpeed: Double
 	{
-		get { (d.object(forKey: "mouseSpeed") as? Double ?? 1).clamped(0.3, 3) }
-		set { d.set(newValue, forKey: "mouseSpeed") }
+		// 150: з налаштувань на сторінці («Стіки й вібрація» → «Миша й трекпад»)
+		get { ((feel["mouseSpeed"] as? NSNumber)?.doubleValue ?? 1).clamped(0.3, 3) }
+		set { var f = feel; f["mouseSpeed"] = newValue; feel = f }
 	}
 
 	static var padAlpha: Double

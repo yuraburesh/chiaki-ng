@@ -215,6 +215,8 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 				o.removeValue(forKey: "amp")
 				Prefs.feel = o
 				Sticks.reload()
+				// 150: розкладку клавіатури змінили посеред гри — одразу
+				if let k = o["keyLayout"] as? String, k != KeyLayout.shared.layout { KeyLayout.shared.load(k) }
 			}
 		case "feelTest":
 			Haptics.shared.demo(m["w"] as? String ?? "")

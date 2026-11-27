@@ -563,7 +563,7 @@ final class GamepadOverlay: UIView
 		let w = DispatchWorkItem { [weak self] in
 			guard let s = self, !s.anyTouch(), s.shown else { return }
 			s.shown = false
-			UIView.animate(withDuration: 0.55, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) { s.alpha = 0.01 }
+			UIView.animate(withDuration: 0.55, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) { s.alpha = 0.03 }
 		}
 		hideWork = w
 		DispatchQueue.main.asyncAfter(deadline: .now() + (ah < 0 ? 1.0 : Double(ah)), execute: w)
@@ -586,6 +586,6 @@ final class GamepadOverlay: UIView
 		guard shown, landscape, Prefs.autoHide != 0, !anyTouch() else { return }
 		hideWork?.cancel()
 		shown = false
-		UIView.animate(withDuration: 0.4) { self.alpha = 0.01 }
+		UIView.animate(withDuration: 0.4) { self.alpha = 0.03 }
 	}
 }

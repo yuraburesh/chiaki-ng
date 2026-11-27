@@ -148,7 +148,8 @@ final class KeyLayout
 	/** Гра почалась: визначник транспорту з нуля */
 	func startGame()
 	{
-		if profiles.isEmpty { load(UserDefaults.standard.string(forKey: "keyLayout") ?? "gta6") }
+		let want = Prefs.feel["keyLayout"] as? String ?? "gta6"
+		if profiles.isEmpty || want != layout { load(want) }
 		current = "foot"
 		releaseAll()
 		if let v = vehicle { ap_vehicle_free(v) }

@@ -116,8 +116,31 @@ final class GamepadInput
 		}
 	}
 
+	private var gcMouseAt = Date.distantPast
+
+	/** 150: запасний шлях — рух курсора над грою (UIHoverGestureRecognizer), коли iPad не дав захопити курсор
+	 *  і GameController рухів миші не шле */
+	func pointerDelta(_ dx: CGFloat, _ dy: CGFloat)
+	{
+		guard Date().timeIntervalSince(gcMouseAt) > 0.5 else { return }
+		if !hoverLogged { hoverLogged = true; Log.add(2, "Трекпад: рух через курсор (захоплення курсора не спрацювало)") }
+		accX += dx * 1.5; accY += dy * 1.5
+		startMouseTimer()
+	}
+	private var hoverLogged = false
+
+	private func startMouseTimer()
+	{
+		if mouseTimer == nil
+		{
+			mouseTick = Date()
+			mouseTimer = Timer.scheduledTimer(withTimeInterval: 0.008, repeats: true) { [weak self] _ in self?.mouseStep() }
+		}
+	}
+
 	private func mouseMoved(_ dx: CGFloat, _ dy: CGFloat)
 	{
+		gcMouseAt = Date()
 		if !mouseLogged { mouseLogged = true; Log.add(2, "Миша/трекпад: перший рух (\(dx), \(dy))") }
 		accX += dx; accY += dy
 		if mouseTimer == nil

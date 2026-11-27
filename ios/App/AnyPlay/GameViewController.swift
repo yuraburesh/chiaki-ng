@@ -71,6 +71,20 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 
 	var isRunning: Bool { !ended && session != nil }
 
+	private var hoverLast: CGPoint?
+	@objc private func hovered(_ g: UIHoverGestureRecognizer)
+	{
+		let p = g.location(in: view)
+		switch g.state
+		{
+		case .began: hoverLast = p
+		case .changed:
+			if let l = hoverLast, menu == nil { GamepadInput.shared.pointerDelta(p.x - l.x, p.y - l.y) }
+			hoverLast = p
+		default: hoverLast = nil
+		}
+	}
+
 	private var hintLabel: UILabel?
 	private func showHint(_ text: String)
 	{
@@ -183,6 +197,9 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		}
 		// 145: клавіатура й миша як на Mac; ` — меню AnyPlay; режим «Пішки/Транспорт/Авіація» — підказка на екрані
 		KeyLayout.shared.startGame()
+		// 150: трекпад без захоплення курсора — рух курсора над грою теж крутить камеру
+		let hover = UIHoverGestureRecognizer(target: self, action: #selector(hovered(_:)))
+		view.addGestureRecognizer(hover)
 		KeyLayout.shared.onMode = { [weak self] name in self?.showHint(name) }
 		GamepadInput.shared.onMenuKey = { [weak self] in
 			guard let self = self else { return }
@@ -308,6 +325,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	{
 		connected = true
 		watchAt = Date(); watchShown = false
+		Log.add(2, "Курсор захоплено: \(view.window?.windowScene?.pointerLockState?.isLocked == true ? "так" : "ні")")
 		Log.add(2, "Кнопки на екрані: показ \(Prefs.controls), ховати \(Prefs.autoHide), сховані \(Prefs.padHidden.sorted()), прозорість \(Prefs.padAlpha), розмір \(Prefs.padScale); клавіатура \(GamepadInput.shared.keyboardConnected), розкладка \(KeyLayout.shared.layout)")
 		setLoading(nil)
 		Haptics.shared.resetTriggers()

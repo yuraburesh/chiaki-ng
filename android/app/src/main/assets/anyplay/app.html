@@ -1776,6 +1776,10 @@ function feelBox(){
   return row('Чутливість стіків', '', segHtml('sc', STK_C, sv('stickCurve')), STK_CN[sv('stickCurve')])
     + row('Мертва зона', '', segHtml('sd', STK_D, sv('stickDead')), 'Наскільки можна зрушити стік, поки персонаж стоїть. Більша: менше випадкових рухів від дотику.')
     + row('Хід стіка на екрані', '', segHtml('st', STK_T, sv('stickTravel')), 'Як далеко вести палець до повного відхилення. Довгий: легше йти, а не бігти.')
+    // 150: iPad/iPhone — клавіатура й миша як на Mac: розкладка гри і швидкість камери від миші чи трекпада
+    + (APPLE ? '<p class="cap mt">Клавіатура й миша</p>'
+      + row('Розкладка клавіш', '', segHtml('kl', ['GTA VI', 'GTA V', 'Інші ігри'], ['gta6', 'gta5', 'universal'].indexOf(f.keyLayout || 'gta6')), 'Як на Mac: W A S D рух, миша камера, Space стрибок, E сісти в авто. У машині W газ, S гальмо, режим перемикається сам.')
+      + row('Миша й трекпад', '', segHtml('ms', ['Повільно', 'Звичайно', 'Швидко', 'Дуже швидко'], [0.6, 1, 1.6, 2.4].indexOf(f.mouseSpeed == null ? 1 : +f.mouseSpeed)), 'Як швидко крутиться камера, коли ведеш мишею чи пальцем по трекпаду.') : '')
     + '<p class="cap mt">Вібрація</p>'
     + row('Вібрація гри', f.rumble > 0 ? 'rumble' : '', segHtml('vr', FEEL_R, f.rumble), 'Удари, вибухи, двигун машини: як моторчики DualSense.')
     + row('Відгук кнопок', f.buttons > 0 ? 'buttons' : '', segHtml('vb', FEEL_B, f.buttons), 'Тік на ✕ ○ □ △ і стрілках, клацання на L1 і R1, упор стіка на краю.')
@@ -1792,10 +1796,10 @@ function toggleRow(key, on, title, note, test){
     + '<span class="small">' + note + '</span></div>';
 }
 function feelWire(root, again){
-  root.querySelectorAll('[data-vr],[data-vb],[data-va],[data-vad],[data-vt],[data-sc],[data-sd],[data-st]').forEach(b => b.onclick = () => {
+  root.querySelectorAll('[data-vr],[data-vb],[data-va],[data-vad],[data-vt],[data-sc],[data-sd],[data-st],[data-kl],[data-ms]').forEach(b => b.onclick = () => {
     const d = b.dataset;
     if(d.vt){ try { native.feelTest(d.vt); } catch(e) {} return; }
-    const o = d.sc != null ? {stickCurve: +d.sc} : d.sd != null ? {stickDead: +d.sd} : d.st != null ? {stickTravel: +d.st} : d.vr != null ? {rumble: +d.vr} : d.vb != null ? {buttons: +d.vb} : d.vad != null ? {adaptive: d.vad === '1'} : {analog: d.va === '1'};
+    const o = d.kl != null ? {keyLayout: ['gta6', 'gta5', 'universal'][+d.kl]} : d.ms != null ? {mouseSpeed: [0.6, 1, 1.6, 2.4][+d.ms]} : d.sc != null ? {stickCurve: +d.sc} : d.sd != null ? {stickDead: +d.sd} : d.st != null ? {stickTravel: +d.st} : d.vr != null ? {rumble: +d.vr} : d.vb != null ? {buttons: +d.vb} : d.vad != null ? {adaptive: d.vad === '1'} : {analog: d.va === '1'};
     try { if(native && native.setFeel) FV = JSON.parse(native.setFeel(JSON.stringify(o))); else FV = Object.assign({}, FV, o); } catch(e) {}
     haptic();
     // одразу дати відчути нову силу

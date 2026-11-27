@@ -4,6 +4,8 @@ import UIKit
 
 final class HomeViewController: UIViewController, WebHost
 {
+	// 145: миша й трекпад у грі: iPad захоплює курсор, лише коли про це просить корінь вікна — питаємо гру
+	override var childViewControllerForPointerLock: UIViewController? { presentedViewController }
 	private var page: WebPage!
 	private var state = "login"        // login, pairing, wait, play, no_console, update, other_device, offline
 	private var session: [String: Any] = [:]
@@ -68,7 +70,7 @@ final class HomeViewController: UIViewController, WebHost
 	{
 		var o: [String: Any] = ["state": state, "loggedIn": loggedIn, "busy": busy, "admin": isAdmin, "skew": skew, "build": Cloud.build, "platform": UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "ios",
 			"user": loggedIn ? (session["user"] as? String ?? "") : "", "quality": Quality.json,
-			"pairShort": state == "pairing" ? pairShort : "", "pairBot": pairBot]
+			"pairShort": state == "pairing" ? pairShort : "", "pairBot": pairBot, "inGame": GameViewController.parked?.isRunning == true]
 		var s: [String: Any] = [:]
 		for k in ["next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt", "handoff", "handoffOffer"]
 		{
@@ -130,6 +132,7 @@ final class HomeViewController: UIViewController, WebHost
 			let kind = name == "adminPsnLogin" ? "login" : name
 			let uid = ((try? JSONSerialization.jsonObject(with: Data(arg.utf8))) as? [String: Any])?["userId"] ?? 0
 			page.eval("window.__anyplayAdmin && window.__anyplayAdmin(\(jsQuote(jsonText(["kind": kind, "ok": false, "userId": uid, "text": "Прив'язка приставки на iPhone ще не працює: зроби це з телефона на Android або з комп'ютера."]))))")
+		case "psSettings": GamepadInput.openHomeButtonSettings()
 		case "layout": present(PadSettingsViewController(), animated: true)   // 137: «Джойстик»
 		case "logout":
 			let a = UIAlertController(title: nil, message: "Вийти з AnyPlay на цьому пристрої?", preferredStyle: .alert)
@@ -197,6 +200,12 @@ final class HomeViewController: UIViewController, WebHost
 
 	private func play(takeover: Bool)
 	{
+		// 145: гра триває (вийшли на головну з меню гри) — просто повертаємось у неї
+		if let g = GameViewController.parked, g.isRunning, presentedViewController == nil
+		{
+			present(g, animated: true) { [weak self] in g.unpark(); self?.setNeedsUpdateOfPrefersPointerLocked() }
+			return
+		}
 		guard !busy else { return }
 		busy = true
 		render()
@@ -228,8 +237,8 @@ final class HomeViewController: UIViewController, WebHost
 			{
 			case .ready(let t):
 				let g = GameViewController(target: t, admin: isAdmin)
-				g.onFinish = { [weak self] in Task { await self?.refresh() } }
-				present(g, animated: true)
+				g.onFinish = { [weak self] in Task { await self?.refresh() }; self?.setNeedsUpdateOfPrefersPointerLocked() }
+				present(g, animated: true) { [weak self] in self?.setNeedsUpdateOfPrefersPointerLocked() }
 			case .error(let text, let code):
 				page.alert(code.isEmpty ? text : text + "\n\nКод для підтримки: " + code)
 			}

@@ -19,6 +19,8 @@ on:
       - 'cmake/OpenSSLExternalProject.cmake'
       - 'third-party/CMakeLists.txt'
       - '.github/workflows/anyplay-ios.yml'
+      - 'gui/res/anyplay-controls*.json'
+      - 'gui/include/anyplayvehicle.h'
 
 permissions:
   contents: read
@@ -96,6 +98,11 @@ jobs:
           # збігалася з самою програмою «AnyPlay» (ld: open() failed, errno=21)
           cp -R android/app/src/main/assets/anyplay ios/App/Resources/web
           cp android/app/src/main/assets/cacert.pem ios/App/Resources/cacert.pem
+          # 145: клавіатура й миша — ті самі розкладки, що на комп'ютері (GTA VI, GTA V, універсальна),
+          # і той самий визначник «пішки чи транспорт» за адаптивними курками
+          mkdir -p ios/App/Resources/web/keys
+          cp gui/res/anyplay-controls*.json ios/App/Resources/web/keys/
+          cp gui/include/anyplayvehicle.h ios/App/AnyPlay/anyplayvehicle.h
           sed -i '' "s/ANYPLAY_BUILD: \"1\"/ANYPLAY_BUILD: \"$BUILD\"/" ios/App/project.yml
           brew install xcodegen
           cd ios/App && xcodegen generate

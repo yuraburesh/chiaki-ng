@@ -377,8 +377,15 @@ final class GamepadOverlay: UIView
 		return z
 	}
 
+	private var touchLogged = false
+
 	override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?)
 	{
+		if !touchLogged
+		{
+			touchLogged = true
+			Log.add(2, "Кнопки на екрані: перший дотик (видимість \(alpha), сховано \(isHidden), розмір \(Int(bounds.width))×\(Int(bounds.height)), видно кнопок \(items.filter { vis($0.id) }.count))")
+		}
 		reveal()
 		for t in touches
 		{

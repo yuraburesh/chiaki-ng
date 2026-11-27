@@ -16,8 +16,6 @@ final class GamepadInput
 	var gamepadActive: Bool { padState.buttons != 0 || padState.l2 > 30 || padState.r2 > 30 || [padState.lx, padState.ly, padState.rx, padState.ry].contains { abs(Int($0)) > 8000 } }
 	private var keyState = PadState()
 	private var mouseState = PadState()
-	private var mouseDX: CGFloat = 0, mouseDY: CGFloat = 0
-	private var mouseDecay: Timer?
 	var onChange: ((PadState) -> Void)?
 	private var started = false
 
@@ -38,7 +36,7 @@ final class GamepadInput
 		// 134: клавіатура (Bluetooth чи чохол-клавіатура iPad) і миша/трекпад, як у програмі на комп'ютері
 		NotificationCenter.default.addObserver(forName: .GCKeyboardDidConnect, object: nil, queue: .main) { [weak self] _ in Log.add(2, "Клавіатура підключилась"); self?.attachKeyboard() }
 		// 141: для діагностики — коли клавіатура чи геймпад відпадають
-		NotificationCenter.default.addObserver(forName: .GCKeyboardDidDisconnect, object: nil, queue: .main) { [weak self] _ in Log.add(3, "Клавіатура відключилась"); self?.uiKeys = []; self?.readKeys() }
+		NotificationCenter.default.addObserver(forName: .GCKeyboardDidDisconnect, object: nil, queue: .main) { [weak self] _ in Log.add(3, "Клавіатура відключилась"); self?.downKeys = []; KeyLayout.shared.releaseAll(); self?.keyState = PadState() }
 		Log.add(2, "Під час старту: клавіатура \(GCKeyboard.coalesced != nil ? "є" : "немає"), геймпадів \(GCController.controllers().count), мишей \(GCMouse.mice().count)")
 		NotificationCenter.default.addObserver(forName: .GCMouseDidConnect, object: nil, queue: .main) { [weak self] n in
 			if let m = n.object as? GCMouse { self?.attachMouse(m) }
@@ -50,109 +48,118 @@ final class GamepadInput
 	/** Відпустити все (програму згорнули: інакше натиснута до цього клавіша «залипала») */
 	func reset()
 	{
-		padState = PadState(); keyState = PadState(); mouseState = PadState(); uiKeys = []
-		mouseDX = 0; mouseDY = 0
+		padState = PadState(); keyState = PadState(); mouseState = PadState(); downKeys = []
+		KeyLayout.shared.releaseAll()
+		accX = 0; accY = 0; smX = 0; smY = 0; mouseTimer?.invalidate(); mouseTimer = nil
 		onChange?(state)
 	}
 
 	var keyboardConnected: Bool { GCKeyboard.coalesced != nil }
 
-	// ── клавіатура: WASD рух, стрілки огляд, Space ✕, X ○, E □, F △, Q L1, R R1, / L2, правий Shift R2 (і миша) ──
+	// ── 145: клавіатура й миша — розкладка як на Mac (KeyLayout: режими «Пішки», «Транспорт», «Авіація»), ` — меню AnyPlay ──
+	/** Натиснули ` (меню AnyPlay) */
+	var onMenuKey: (() -> Void)?
+
 	private func attachKeyboard()
 	{
-		GCKeyboard.coalesced?.keyboardInput?.keyChangedHandler = { [weak self] _, _, _, _ in self?.readKeys() }
-	}
-
-	// 141: клавіші ще й через UIKit (GameViewController.pressesBegan): на частині iPad клавіатура не доходила через GameController
-	private var uiKeys: Set<Int> = []
-	private var keyLogged = false
-	func uiPress(_ code: Int, down: Bool)
-	{
-		if down { uiKeys.insert(code) } else { uiKeys.remove(code) }
-		readKeys()
-	}
-
-	private func readKeys()
-	{
-		let kb = GCKeyboard.coalesced?.keyboardInput
-		let ui = uiKeys
-		func on(_ c: GCKeyCode) -> Bool { ui.contains(c.rawValue) || (kb?.button(forKeyCode: c)?.isPressed ?? false) }
-		var s = PadState()
-		func b(_ pressed: Bool, _ bit: UInt32) { if pressed { s.buttons |= bit } }
-		b(on(.spacebar) || on(.returnOrEnter), Btn.cross)
-		b(on(.keyX) || on(.deleteOrBackspace), Btn.moon)
-		b(on(.keyE), Btn.box)
-		b(on(.keyF), Btn.pyramid)
-		b(on(.keyQ), Btn.l1)
-		b(on(.keyR), Btn.r1)
-		b(on(.leftShift), Btn.l3)
-		b(on(.keyC), Btn.r3)
-		b(on(.escape), Btn.options)
-		b(on(.keyM) || on(.tab), Btn.share)
-		if on(.tab) { s.buttons |= Btn.options }   // 139: Tab — меню AnyPlay (як Create + Options на геймпаді)
-		b(on(.keyP), Btn.ps)
-		b(on(.keyN) || on(.keyV), Btn.touchpad)
-		b(on(.one), Btn.up)
-		b(on(.two), Btn.down)
-		b(on(.three), Btn.left)
-		b(on(.four), Btn.right)
-		if on(.slash) || on(.keyZ) { s.l2 = 255 }
-		if on(.rightShift) || on(.keyT) { s.r2 = 255 }
-		func ax(_ neg: Bool, _ pos: Bool) -> Int16 { neg == pos ? 0 : (neg ? -32767 : 32767) }
-		s.lx = ax(on(.keyA), on(.keyD))
-		s.ly = ax(on(.keyW), on(.keyS))
-		s.rx = ax(on(.leftArrow), on(.rightArrow))
-		s.ry = ax(on(.upArrow), on(.downArrow))
-		DispatchQueue.main.async {
-			if !self.keyLogged && s != PadState()
-			{
-				self.keyLogged = true
-				Log.add(2, "Клавіатура: перше натискання (через UIKit: \(!ui.isEmpty), через GameController: \(kb != nil))")
-			}
-			self.keyState = s
+		KeyLayout.shared.onChange = { [weak self] in
+			guard let self = self else { return }
+			self.keyState = KeyLayout.shared.padState()
 			self.lastPadAt = Date()
 			self.onChange?(self.state)
 		}
+		GCKeyboard.coalesced?.keyboardInput?.keyChangedHandler = { [weak self] _, _, code, pressed in
+			DispatchQueue.main.async { self?.key(code.rawValue, down: pressed, from: "GameController") }
+		}
 	}
 
-	// ── миша/трекпад: рух — огляд (правий стік), ліва кнопка R2, права L2 ──
+	private var downKeys: Set<Int> = []
+	private var keyLogged = false
+
+	/** Клавіша (HID-код) з GameController або з UIKit (GameViewController.pressesBegan): обидва шляхи разом, повтори відкидаються */
+	func uiPress(_ code: Int, down: Bool) { key(code, down: down, from: "UIKit") }
+
+	private func key(_ code: Int, down: Bool, from: String)
+	{
+		if down == downKeys.contains(code) { return }
+		if down { downKeys.insert(code) } else { downKeys.remove(code) }
+		guard let name = KeyLayout.name(hid: code) else { return }
+		if !keyLogged && down { keyLogged = true; Log.add(2, "Клавіатура: перше натискання \(name) (через \(from))") }
+		if name == KeyLayout.menuKey { if down { onMenuKey?() }; return }
+		KeyLayout.shared.press(name, down)
+	}
+
+	// ── миша/трекпад: рух — правий стік (як на Mac: швидкість → відхилення, згладжування, мертва зона), кнопки й коліщатко — з розкладки ──
+	private var accX: CGFloat = 0, accY: CGFloat = 0
+	private var smX: CGFloat = 0, smY: CGFloat = 0
+	private var mouseTimer: Timer?
+	private var mouseTick = Date()
+	private var lastWheel = Date.distantPast
+	private var mouseLogged = false
+
 	private func attachMouse(_ m: GCMouse)
 	{
 		guard let mi = m.mouseInput else { return }
+		Log.add(2, "Миша/трекпад підключились")
 		mi.mouseMovedHandler = { [weak self] _, dx, dy in
 			DispatchQueue.main.async { self?.mouseMoved(CGFloat(dx), CGFloat(-dy)) }
 		}
-		mi.leftButton.pressedChangedHandler = { [weak self] _, _, p in
-			DispatchQueue.main.async { guard let self = self else { return }; self.mouseState.r2 = p ? 255 : 0; self.onChange?(self.state) }
-		}
-		mi.rightButton?.pressedChangedHandler = { [weak self] _, _, p in
-			DispatchQueue.main.async { guard let self = self else { return }; self.mouseState.l2 = p ? 255 : 0; self.onChange?(self.state) }
+		mi.leftButton.pressedChangedHandler = { _, _, p in DispatchQueue.main.async { KeyLayout.shared.press("MouseLeft", p) } }
+		mi.rightButton?.pressedChangedHandler = { _, _, p in DispatchQueue.main.async { KeyLayout.shared.press("MouseRight", p) } }
+		mi.middleButton?.pressedChangedHandler = { _, _, p in DispatchQueue.main.async { KeyLayout.shared.press("MouseMiddle", p) } }
+		mi.scroll.valueChangedHandler = { [weak self] _, _, y in
+			DispatchQueue.main.async {
+				guard let self = self, abs(y) > 0.5, Date().timeIntervalSince(self.lastWheel) > 0.18 else { return }
+				self.lastWheel = Date()
+				KeyLayout.shared.wheel(y > 0 ? "WheelUp" : "WheelDown")
+			}
 		}
 	}
 
 	private func mouseMoved(_ dx: CGFloat, _ dy: CGFloat)
 	{
-		// швидкість руху миші → відхилення стіка; без руху стік плавно повертається в центр
-		mouseDX = (mouseDX * 0.5 + dx * 0.06).clamped(-1, 1)
-		mouseDY = (mouseDY * 0.5 + dy * 0.06).clamped(-1, 1)
-		mouseState.rx = Int16((mouseDX * 32767).rounded())
-		mouseState.ry = Int16((mouseDY * 32767).rounded())
-		lastPadAt = Date()
-		onChange?(state)
-		if mouseDecay == nil
+		if !mouseLogged { mouseLogged = true; Log.add(2, "Миша/трекпад: перший рух (\(dx), \(dy))") }
+		accX += dx; accY += dy
+		if mouseTimer == nil
 		{
-			mouseDecay = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { [weak self] t in
-				guard let self = self else { t.invalidate(); return }
-				self.mouseDX *= 0.7; self.mouseDY *= 0.7
-				if abs(self.mouseDX) < 0.02 && abs(self.mouseDY) < 0.02
-				{
-					self.mouseDX = 0; self.mouseDY = 0
-					t.invalidate(); self.mouseDecay = nil
-				}
-				self.mouseState.rx = Int16((self.mouseDX * 32767).rounded())
-				self.mouseState.ry = Int16((self.mouseDY * 32767).rounded())
-				self.onChange?(self.state)
-			}
+			mouseTick = Date()
+			mouseTimer = Timer.scheduledTimer(withTimeInterval: 0.008, repeats: true) { [weak self] _ in self?.mouseStep() }
+		}
+	}
+
+	/** Те саме, що StreamSession::UpdateMouseRightStick на Mac */
+	private func mouseStep()
+	{
+		let full: CGFloat = 4000, dead: CGFloat = 0.15, stop = full * 0.0015
+		let dt = min(0.1, max(0.001, CGFloat(Date().timeIntervalSince(mouseTick))))
+		mouseTick = Date()
+		let gain = CGFloat(Prefs.mouseSpeed) * 2.5   // трекпад iPad дає менші кроки, ніж миша на Mac
+		let sx = accX / dt * gain, sy = accY / dt * gain
+		accX = 0; accY = 0
+		let raw = hypot(sx, sy), prev = hypot(smX, smY)
+		let activity = min(max(raw, prev) / (full * 0.25), 1)
+		let smoothMs = 60 + (30 - 60) * activity
+		let a = 1 - exp(-dt * 1000 / smoothMs)
+		smX += (sx - smX) * a; smY += (sy - smY) * a
+		let speed = hypot(smX, smY)
+		var nx: Int16 = 0, ny: Int16 = 0
+		if speed <= stop
+		{
+			smX = 0; smY = 0
+			mouseTimer?.invalidate(); mouseTimer = nil
+		}
+		else
+		{
+			let len = min(speed / full, 1)
+			let out = dead * min(len / 0.01, 1) + (1 - dead) * len
+			let k = out / speed
+			nx = Int16(((smX * k).clamped(-1, 1) * 32767).rounded())
+			ny = Int16(((smY * k).clamped(-1, 1) * 32767).rounded())
+		}
+		if nx != mouseState.rx || ny != mouseState.ry
+		{
+			mouseState.rx = nx; mouseState.ry = ny
+			onChange?(state)
 		}
 	}
 
@@ -242,5 +249,25 @@ enum Sticks
 		let n = ((len - d) / (1 - d)).clamped(0, 1)
 		let k = pow(n, exps[curve]) / len
 		return ((x * k).clamped(-1, 1), (y * k).clamped(-1, 1))
+	}
+}
+
+extension GamepadInput
+{
+	/** 145: iPadOS 27 сам вирішує, що робить кнопка PS (Home) у програмах: Налаштування → Загальні → Ігровий контролер.
+	 *  Там «у програмах» треба віддати її програмі, тоді наш вибір (кнопка йде в гру) діє. Відкриваємо цей екран;
+	 *  на старіших iOS або без такого виклику — просто Налаштування */
+	static func openHomeButtonSettings()
+	{
+		let sel = NSSelectorFromString("openControllerHomeButtonSettingsForActivity:")
+		if let m = class_getClassMethod(GCController.self, sel)
+		{
+			typealias F = @convention(c) (AnyClass, Selector, Int) -> Void
+			let f = unsafeBitCast(method_getImplementation(m), to: F.self)
+			f(GCController.self, sel, 0)   // customizeInAppAction
+			Log.add(2, "Кнопка PS: відкрили налаштування контролера")
+			return
+		}
+		if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
 	}
 }

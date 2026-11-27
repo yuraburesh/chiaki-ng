@@ -76,5 +76,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.any.play
         DEVELOPMENT_TEAM: 59DYYJ566R
         PRODUCT_NAME: AnyPlay
+        # 145: визначник «пішки чи транспорт» з програми для комп'ютера (C++, anyplayvehicle.h) — через VehicleBridge
+        SWIFT_OBJC_BRIDGING_HEADER: AnyPlay/AnyPlay-Bridging-Header.h
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
         ANYPLAY_BUILD: "1"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO

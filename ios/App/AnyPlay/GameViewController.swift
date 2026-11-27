@@ -28,6 +28,55 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	private var ended = false
 	private var connected = false
 	private var menuCombo = false
+
+	// ── 145: головна під час гри ──
+	/** Гра, з якої вийшли на головну, не закриваючи її */
+	static weak var parked: GameViewController?
+	private var parkedAway = false
+
+	private func park()
+	{
+		guard !ended else { return }
+		parkedAway = true
+		GameViewController.parked = self
+		pad.releaseAll(); touchState = PadState(); KeyLayout.shared.releaseAll()
+		sendController()
+		Log.add(2, "Вийшли на головну, гра триває")
+		presentingViewController?.dismiss(animated: true) { [onFinish] in onFinish?() }
+	}
+
+	/** Повернутись у гру з головної */
+	func unpark()
+	{
+		parkedAway = false
+		if GameViewController.parked === self { GameViewController.parked = nil }
+		videoView.resume()
+		session?.requestIDR()
+		becomeFirstResponder()
+		Log.add(2, "Повернулись з головної в гру")
+	}
+
+	var isRunning: Bool { !ended && session != nil }
+
+	private var hintLabel: UILabel?
+	private func showHint(_ text: String)
+	{
+		hintLabel?.removeFromSuperview()
+		let l = UILabel()
+		l.text = "  " + text + "  "
+		l.font = .systemFont(ofSize: 15, weight: .semibold)
+		l.textColor = .white
+		l.backgroundColor = UIColor(red: 34 / 255, green: 29 / 255, blue: 46 / 255, alpha: 0.85)
+		l.layer.cornerRadius = 12
+		l.layer.masksToBounds = true
+		l.sizeToFit()
+		l.frame.size.height = 34
+		l.center = CGPoint(x: view.bounds.midX, y: view.safeAreaInsets.top + 46)
+		l.isUserInteractionEnabled = false
+		view.addSubview(l)
+		hintLabel = l
+		UIView.animate(withDuration: 0.4, delay: 1.8, options: []) { l.alpha = 0 } completion: { _ in l.removeFromSuperview() }
+	}
 	private var busyRetries = 0
 	private var watchFrames: UInt64 = 0
 	private var watchAt = Date()
@@ -117,6 +166,13 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			// 138: ховаємо кнопки лише від справжнього геймпада (не від руху миші чи клавіатури)
 			if GamepadInput.shared.gamepadActive { self?.pad.physicalInput() }
 			self?.sendController()
+		}
+		// 145: клавіатура й миша як на Mac; ` — меню AnyPlay; режим «Пішки/Транспорт/Авіація» — підказка на екрані
+		KeyLayout.shared.startGame()
+		KeyLayout.shared.onMode = { [weak self] name in self?.showHint(name) }
+		GamepadInput.shared.onMenuKey = { [weak self] in
+			guard let self = self else { return }
+			if self.menu != nil { self.closeMenu() } else { self.showMenu("menu") }
 		}
 		videoView.onNeedKeyFrame = { [weak self] in self?.session?.requestIDR() }
 		NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
@@ -238,6 +294,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	{
 		connected = true
 		watchAt = Date(); watchShown = false
+		Log.add(2, "Кнопки на екрані: показ \(Prefs.controls), ховати \(Prefs.autoHide), сховані \(Prefs.padHidden.sorted()), прозорість \(Prefs.padAlpha), розмір \(Prefs.padScale); клавіатура \(GamepadInput.shared.keyboardConnected), розкладка \(KeyLayout.shared.layout)")
 		setLoading(nil)
 		Haptics.shared.resetTriggers()
 		heartbeat()
@@ -274,16 +331,18 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		end(msg)
 	}
 
-	func sessionRumble(left: Int, right: Int) { Haptics.shared.rumble(left: left, right: right) }
+	func sessionRumble(left: Int, right: Int) { Haptics.shared.rumble(left: left, right: right); KeyLayout.shared.noteRumble(left, right) }
 	// 130: адаптивні курки — окрема фішка, вмикається у «Вібрації»; вимкнено — курки звичайні
 	func sessionTriggers(typeL: Int, typeR: Int, data: [UInt8])
 	{
+		KeyLayout.shared.noteTriggers(typeL, typeR, data)   // 145: клавіатура сама перемикає «пішки / транспорт»
 		if Prefs.feel["adaptive"] as? Bool ?? false { Haptics.shared.triggerEffects(typeL: typeL, typeR: typeR, data: data) }
 		else { Haptics.shared.triggerEffects(typeL: 0, typeR: 0, data: []) }
 	}
 
 	private func sendController()
 	{
+		if parkedAway { if let s = session, connected, lastSent != PadState() { lastSent = PadState(); s.setController(PadState()) }; return }
 		guard connected, let s = session else
 		{
 			if !blockLogged && (touchState != PadState() || GamepadInput.shared.state != PadState())
@@ -511,6 +570,11 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		case "exit":
 			closeMenu()
 			finish()
+		case "psSettings": GamepadInput.openHomeButtonSettings()
+		case "home":
+			// 145: на головну, а гра лишається: «Грати» на головній повертає в неї без нового підключення
+			closeMenu()
+			park()
 		case "autohide":
 			Prefs.autoHide = Int(arg) ?? -1
 			pad.scheduleHide()
@@ -640,6 +704,9 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		session = nil
 		Haptics.shared.stopRumble()
 		GamepadInput.shared.onChange = nil
+		GamepadInput.shared.onMenuKey = nil
+		KeyLayout.shared.stopGame()
+		if GameViewController.parked === self { GameViewController.parked = nil }
 		UIApplication.shared.isIdleTimerDisabled = false
 		Task { _ = await Cloud.heartbeat(streaming: false) }
 	}

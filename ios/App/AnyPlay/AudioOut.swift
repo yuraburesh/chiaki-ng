@@ -25,7 +25,7 @@ final class AudioOut
 		self.rate = rate
 		guard let f = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: AVAudioChannelCount(self.channels), interleaved: false) else { return }
 		format = f
-		if running { node.stop(); engine.stop() }
+		if running { lock.unlock(); node.stop(); engine.stop(); lock.lock() }   // 145: див. stop()
 		engine.disconnectNodeOutput(node)
 		engine.connect(node, to: engine.mainMixerNode, format: f)
 		do
@@ -64,8 +64,11 @@ final class AudioOut
 
 	func stop()
 	{
-		lock.lock(); defer { lock.unlock() }
-		if running { node.stop(); engine.stop() }
+		// 145: зупинка плеєра кличе обробники черги, а вони беруть lock — тримаючи lock тут, програма зависала («Вийти з гри»)
+		lock.lock()
+		let was = running
 		running = false
+		lock.unlock()
+		if was { node.stop(); engine.stop() }
 	}
 }

@@ -291,7 +291,7 @@ body.wallet #methods{margin-top:6px}
   /* 138: «‹ Меню» завжди видно вгорі, навіть коли розділ прогорнуто вниз */
   position:sticky;top:-14px;z-index:3;margin-top:-14px;background:#0d0a16;border-bottom:1px solid var(--hair)}
 /* 139: керування меню геймпадом: вибраний пункт обведено */
-.padfocus{outline:2px solid #8fe3ff !important;outline-offset:3px;border-radius:4px}
+.padfocus{outline:none !important;box-shadow:inset 0 0 0 2px #8fe3ff,0 0 14px #8fe3ff55 !important}
 /* 138: повзунки не крутяться від гортання сторінки: рухаються лише, коли палець явно веде вбік */
 .sl{touch-action:pan-y}
 .sl input[type=range]{pointer-events:none}
@@ -707,6 +707,8 @@ function copy(t){ if(native) native.copy(String(t)); else if(navigator.clipboard
 function openUrl(u){ if(native) native.open(u); else window.open(u, '_blank'); }
 function closeApp(){ if(native) native.close(); else history.back(); }
 // команда програмі (вхід, гра, вихід тощо); виконує головний екран або гра, що відкрила цю сторінку
+// 137: iPhone/iPad (на iPad сторінка в програмі каже «Macintosh», тож дивимось і на дотик)
+const APPLE = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 function act(name, arg){ try { native && native.action && native.action(String(name), arg == null ? '' : String(arg)); } catch(e) {} }
 function nativeJson(fn, arg){ try { const t = native && native[fn] ? (arg === undefined ? native[fn]() : native[fn](arg)) : ''; return t ? JSON.parse(t) : null; } catch(e) { return null; } }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -858,7 +860,7 @@ function heroUser(){
       return '<span class="eyebrow">Гостьовий доступ</span>'
         + (end > 0 ? '<div class="timer play" id="tick" data-to="' + end + '">' + dur(end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>')
         + facts([end > 0 ? 'до <b>' + esc(fmtTime(end)) + '</b>' : '', psnFact(c)]) + '<p class="lead">Граєш, поки приставка вільна.</p>'
-        + '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>Грати</button></div>';
+        + '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>' + (H.inGame ? 'Повернутись у гру' : 'Грати') + '</button></div>';
     }
     let h = '<span class="eyebrow">' + (end > 0 ? 'Можна грати!' : 'Твоя гра') + '</span>';
     if(H.busy) return h + '<p class="big">Шукаємо приставку…</p><p class="lead">' + (end > 0 ? 'Твій час до <b>' + esc(fmtTime(end)) + '</b>. ' : '') + 'Це займає до хвилини.</p><div class="spin"></div>';
@@ -866,7 +868,7 @@ function heroUser(){
     const checking = !!(bk && bk.paymentChecking);   // гра в кредит: час вийшов, оплату продовження ще перевіряють
     h += facts([end > 0 ? 'до <b>' + esc(fmtTime(end)) + '</b>' : '', psnFact(c)]);
     if(checking) h += '<p class="lead">Оплату продовження ще перевіряємо, тому гра йде далі. Підтвердять, і час додасться сам.</p>';
-    return h + '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>Грати</button>'
+    return h + '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>' + (H.inGame ? 'Повернутись у гру' : 'Грати') + '</button>'
       + (checking ? '' : bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити<span class="lg"> бронювання</span></button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
   }
   // приставка тримає одне підключення: поки клієнт грає на іншому своєму пристрої, тут «Грати» немає (інакше той вибило б)
@@ -911,7 +913,7 @@ function heroHandoff(s, st){
   if(ho.role === 'friend' && st === 'play')
     return '<span class="eyebrow">Гра друга</span>' + (ho.end > 0 ? '<div class="timer play" id="tick" data-to="' + ho.end + '">' + dur(ho.end - nowTs()) + '</div>' : '<p class="big">Можна грати!</p>')
       + '<p class="lead">' + owner + ' передав тобі свою гру' + (until ? ' до <b>' + until + '</b>' : '') + '. Він може повернути її собі будь-коли, тоді гра тут зупиниться.</p>'
-      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>Грати</button><button type="button" class="btn ghost" data-hand="giveback">Повернути гру</button></div>');
+      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>' + (H.inGame ? 'Повернутись у гру' : 'Грати') + '</button><button type="button" class="btn ghost" data-hand="giveback">Повернути гру</button></div>');
   if(ho.role === 'owner' && ho.state === 'active' && st === 'other_device'){
     const fr = F && F.friends ? F.friends.find(f => f.id === ho.friend.id) : null, live = fr && fr.live;
     return '<span class="eyebrow">Гра в друга</span><p class="big">Зараз грає ' + friend + '</p>'
@@ -1691,23 +1693,24 @@ const HELP = [
     [['Геймпад'], 'Свій геймпад через Bluetooth чи кабель: кнопки на екрані горизонтально сховаються самі.'],
     [['Вийти'], 'Закінчити гру: меню AnyPlay → «Вийти з гри». Приставку вимикати не треба.']]]
 ];
-// 137: iPhone/iPad (на iPad сторінка в програмі каже «Macintosh», тож дивимось і на дотик)
-const APPLE = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-// 134: клавіатура й миша на iPad (GamepadInput.swift)
-const KEYS_IOS = ['Клавіатура й миша', [
-  [['W A S D'], 'Рух (лівий стік)'],
-  [['← ↑ ↓ →'], 'Огляд камерою (правий стік). Миша чи трекпад теж крутять камеру.'],
-  [['Space'], '✕, а також Enter'],
-  [['X'], '○, а також Backspace'],
-  [['E', 'F'], '□ і △'],
-  [['Q', 'R'], 'L1 і R1'],
-  [['Z'], 'L2 (прицілитись), також права кнопка миші'],
-  [['T'], 'R2 (стріляти, газ), також ліва кнопка миші і правий Shift'],
-  [['Shift', 'C'], 'L3 і R3'],
-  [['1 2 3 4'], 'Хрестовина: ↑ ↓ ← →'],
-  [['Esc', 'P'], 'OPTIONS і PS'],
-  [['M', 'N'], 'Create і тачпад'],
-  [['Tab'], 'Меню AnyPlay (на геймпаді: Create + Options разом)']]];
+// 145: клавіатура й миша на iPad — та сама розкладка, що на Mac (gui/res/anyplay-controls-gta6.json, KeyLayout.swift)
+const KEYS_IOS = ['Клавіатура й миша (як на Mac)', [
+  [['W A S D'], 'Рух. У транспорті: W газ, S гальмо, A D кермо'],
+  [['Миша', 'трекпад'], 'Камера (правий стік)'],
+  [['ПКМ', 'ЛКМ'], 'Приціл (L2) і постріл (R2)'],
+  [['Space'], 'Стрибок (✕), у транспорті ручне гальмо'],
+  [['Shift'], 'Біг (L3)'],
+  [['Ctrl'], 'Присісти (○)'],
+  [['E', 'F'], 'Взаємодія, сісти в авто і вийти (△)'],
+  [['R'], 'Ближній бій (□)'],
+  [['Q'], 'Укриття (R1)'],
+  [['Tab', '1–8'], 'Колесо зброї (L1) і зброя за номером'],
+  [['C'], 'Глянути назад (R3)'],
+  [['T X Z G'], 'Телефон, радіо, навігація, підірвати (стрілки)'],
+  [['Esc', 'M', 'P'], 'Пауза, мапа, кнопка PS'],
+  [['↑ ↓ ← →', 'Enter', 'Backspace'], 'Меню гри: вибір і назад'],
+  [['U'], 'Пішки чи транспорт вручну (режим і так перемикається сам)'],
+  [['`'], 'Меню AnyPlay (на геймпаді: Create + Options разом)']]];
 const GTA = {"gta6":[["Пішки",[["L2","Приціл, розмова"],["R2","Постріл, кинути, схопити"],["R1","Укриття, пірнути"],["△","Взаємодія, сісти в авто"],["○","Присісти / відпочити"],["✕","Стрибок, лізти, парашут"],["□","Ближній бій"],["L3","Біг, швидше плисти"],["R3","Глянути назад, з ПКМ огляд"],["L1","Сховати / колесо зброї"],["L1","Сховати або дістати зброю"],["↑","Телефон / WAiNK"],["←","Радіо / меню радіо"],["↓","Ціль / навігація"],["→","Підірвати / напарник"],["R1 + →","Змінити героя (Джейсон, Люсія)"],["L3 + R3","Концентрація"]]],["Транспорт",[["R2","Газ, педалі"],["L2","Гальмо, задній хід"],["✕","Ручне гальмо"],["△","Вийти / зупинитись і вийти"],["L3","Сигнал, нітро"],["○","Фари / пригнутися"],["R1","Стріляти з авто, жест"],["□","Удар, відбитись"],["R3","Крикнути / глянути назад"],["L1","Пістолет / зброя авто"],["↑","Телефон / взаємодія"],["←","Поворотник / меню авто"],["↓","Дані авто / навігація"],["→","Поворотник / напарник"],["R1 + →","Змінити героя (Джейсон, Люсія)"]]],["Авіація",[["R2","Тяга, набір висоти"],["L2","Менше тяги, зниження"],["□","Поворот вліво"],["○","Поворот вправо"],["L3","Шасі"],["R1","Зброя"],["△","Вийти"],["R3","Глянути назад"],["L1","Вибір зброї (тримай)"],["↑","Телефон"],["←","Радіо / меню"],["↓","Ціль / навігація"]]]],"gta5":[["Пішки",[["✕","Біг (спринт)"],["□","Стрибок / перелізти"],["L3","Режим стелсу (присісти)"],["R1","Укриття"],["R2","Вогонь / удар"],["L2","Прицілювання"],["L1","Колесо зброї"],["○","Перезарядка"],["→","Взаємодія"],["△","Сісти в транспорт, взаємодія"],["L3 + R3","Особлива здібність"],["Create","Змінити камеру"],["R3","Подивитися назад"],["↓","Колесо персонажів (утримувати)"],["↓","Масштаб радара"],["Create","Меню взаємодії"]]],["Транспорт",[["R2","Газ"],["L2","Гальмо / задній хід"],["R1","Ручне гальмо"],["△","Вийти з транспорту"],["L3","Клаксон"],["→","Фари"],["←","Радіо (колесо станцій)"],["○","Кінематографічна камера"],["✕","Пригнутися"],["L1","Прицілитися з авто"],["R1","Стріляти з авто"],["Create","Змінити камеру"],["R3","Подивитися назад"],["L3 + R3","Особлива здібність"],["□","Зброя транспорту"]]],["Авіація",[["R2","Газ (тяга)"],["L2","Гальмо / зниження"],["L1","Кермо напряму вліво"],["R1","Кермо напряму вправо"],["L3","Шасі"],["□","Зброя"],["R3","Камера зброї"],["△","Вийти"],["Create","Змінити камеру"]]]]};
 let gtaGame = 'gta6', gtaMode = 0;
 try { gtaGame = localStorage.getItem('gtaGame') || 'gta6'; } catch(e) {}
@@ -2113,9 +2116,9 @@ $('frAdd').addEventListener('keydown', e => { if(e.key === 'Enter') fAdd(); });
 $('frGifts').onclick = () => { haptic(); if(native && native.page) native.page('/app/book.html#gift'); };
 
 // ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
-const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й стіки'], ['console', 'Кнопки в GTA'], ['exit', 'Вийти з гри']];
+const PM = [['back', 'Повернутись у гру'], ['home', 'На головну'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й стіки'], ['console', 'Кнопки в GTA'], ['exit', 'Вийти з гри']];
 // розділ меню прихований: гостю й тому, хто грає в бронь друга, продовжувати нічого
-const pmHidden = p => ((G.guest || G.helperOf) && p === 'extend') || (G.admin && p === 'friends');
+const pmHidden = p => ((G.guest || G.helperOf) && p === 'extend') || (G.admin && p === 'friends') || (p === 'home' && !APPLE);
 let pmSel = 'back', pmDetail = false, G = {};
 function pmInit(){
   $('pm').classList.remove('hidden');
@@ -2125,6 +2128,7 @@ function pmInit(){
   $('pmNav').innerHTML = PM.filter(p => !pmHidden(p[0])).map(p => '<button type="button" data-p="' + p[0] + '"' + (p[0] === 'exit' ? ' class="exit"' : '') + '>' + (p[0] === 'friends' && G.helperOf ? 'Гра друга' : p[1]) + '</button>').join('');
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
     if(b.dataset.p === 'back'){ closeApp(); return; }
+    if(b.dataset.p === 'home'){ act('home'); return; }   // 145: головна, гра лишається
     const changed = pmSel !== b.dataset.p;
     pmSel = b.dataset.p; pmDetail = true; haptic(); if(changed) anim($('pm')); pmRender();
   });
@@ -2186,7 +2190,8 @@ function pmRender(){
   view = null; viewTok++; netStop();
   const until = G.left >= 0 ? hm(pmEnd()) : '';
   let h = '';
-  if(pmSel === 'back') h = '<p class="cap">Гра йде далі</p><p class="lead">Поки меню відкрите, гра на приставці не зупиняється.</p>';
+  if(pmSel === 'back') h = '<p class="cap">Гра йде далі</p><p class="lead">Поки меню відкрите, гра на приставці не зупиняється.</p>'
+    + (G.guest ? '<p class="small">Гостьовий доступ від адміністратора: бронювати й продовжувати не потрібно.</p>' : '');
   else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити бронювання</p>'; view = 'extend'; loadExtend(); }
   else if(pmSel === 'friends') h = pmFriends();
   else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="small">Нова якість: перепідключення на кілька секунд. Кольори й статистика змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
@@ -2197,6 +2202,8 @@ function pmRender(){
         : 'Пересунь кнопки, зміни розмір, додай «Постріл», «Машина» та інші. Горизонтально геймпад через Bluetooth ховає кнопки сам, вертикально вони завжди на екрані.')
     + '</p><div class="actions"><button type="button" class="btn" data-act="layout" data-arg="map">' + (APPLE ? 'Джойстик' : 'Джойстик: які кнопки') + '</button>' + (APPLE ? '' : '<button type="button" class="btn ghost" data-act="layout">Розташування</button>')
     + '<button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
+    + (APPLE ? '<div class="setrow"><div class="top2"><span class="t">Кнопка PS на геймпаді</span></div><span class="small">Якщо PS відкриває меню iPad чи «Ігри» Apple: у Налаштуваннях iPad, розділ ігрового контролера, для кнопки Home у програмах обери, щоб нею керувала програма (або вимкни дію системи). Тоді PS працює як на приставці.</span>'
+      + '<div class="actions"><button type="button" class="btn ghost sm" data-act="psSettings">Відкрити налаштування</button></div></div>' : '')
     + (G.controls === false ? '' : ahBox())
     + '<p class="cap" style="margin-top:16px">Стіки й вібрація</p>' + feelBox();
   else if(pmSel === 'exit') h = '<p class="cap bad">Вийти з гри</p><p class="lead">Трансляція закриється, але час гри йде далі.'

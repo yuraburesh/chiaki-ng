@@ -102,7 +102,7 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 	  function fit(){
 	    var o = typeof window.orientation === 'number' ? Math.abs(window.orientation) === 90 : (window.matchMedia && matchMedia('(orientation: landscape)').matches);
 	    var sw = screen.width, sh = screen.height, dw = o ? Math.max(sw, sh) : Math.min(sw, sh);
-	    var k = 1.5, w = Math.round(dw / k);
+	    var k = 1.25, w = Math.round(dw / k);   // 145: було 1,5 — кнопки завеликі, сторінки не влазили
 	    var m = document.querySelector('meta[name=viewport]');
 	    if(!m){ m = document.createElement('meta'); m.name = 'viewport'; document.head.appendChild(m); }
 	    m.setAttribute('content', 'width=' + w + ', initial-scale=' + k + ', minimum-scale=' + k + ', maximum-scale=' + k + ', user-scalable=no, viewport-fit=cover');

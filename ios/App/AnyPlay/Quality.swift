@@ -111,8 +111,9 @@ enum Prefs
 	{
 		// 134: на iPad кнопки типово не ховаються (екран великий, а сховані кнопки там здавалися відсутніми)
 		// 138: новий ключ — старий вибір «ховати одразу» на iPad ховав кнопки горизонтально, і здавалось, що їх немає
-		get { d.object(forKey: "autohide138") as? Int ?? (UIDevice.current.userInterfaceIdiom == .pad ? 0 : -1) }
-		set { d.set(newValue, forKey: "autohide138") }
+		// 145: як на телефоні — з'являються від дотику, зникають за секунду після (власник хоче так і на iPad)
+		get { d.object(forKey: "autohide145") as? Int ?? -1 }
+		set { d.set(newValue, forKey: "autohide145") }
 	}
 
 	static var controls: Bool
@@ -138,6 +139,13 @@ enum Prefs
 	{
 		get { (d.object(forKey: "padScale") as? Double ?? 1).clamped(0.7, 1.5) }
 		set { d.set(newValue, forKey: "padScale") }
+	}
+
+	/** 145: чутливість миші й трекпада (камера), як на Mac: 0,3…3 */
+	static var mouseSpeed: Double
+	{
+		get { (d.object(forKey: "mouseSpeed") as? Double ?? 1).clamped(0.3, 3) }
+		set { d.set(newValue, forKey: "mouseSpeed") }
 	}
 
 	static var padAlpha: Double

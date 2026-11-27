@@ -271,10 +271,13 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		if(event.source and InputDevice.SOURCE_CLASS_JOYSTICK != InputDevice.SOURCE_CLASS_JOYSTICK)
 			return false
 		fun Float.signedAxis() = (this * Short.MAX_VALUE).toInt().toShort()
-		motionControllerState.leftX = event.getAxisValue(MotionEvent.AXIS_X).signedAxis()
-		motionControllerState.leftY = event.getAxisValue(MotionEvent.AXIS_Y).signedAxis()
-		motionControllerState.rightX = event.getAxisValue(MotionEvent.AXIS_Z).signedAxis()
-		motionControllerState.rightY = event.getAxisValue(MotionEvent.AXIS_RZ).signedAxis()
+		// AnyPlay 138: мертва зона й чутливість стіків з налаштувань
+		val (lx, ly) = com.metallic.chiaki.anyplay.AnyPlaySticks.shape(event.getAxisValue(MotionEvent.AXIS_X), event.getAxisValue(MotionEvent.AXIS_Y))
+		val (rx, ry) = com.metallic.chiaki.anyplay.AnyPlaySticks.shape(event.getAxisValue(MotionEvent.AXIS_Z), event.getAxisValue(MotionEvent.AXIS_RZ))
+		motionControllerState.leftX = lx.signedAxis()
+		motionControllerState.leftY = ly.signedAxis()
+		motionControllerState.rightX = rx.signedAxis()
+		motionControllerState.rightY = ry.signedAxis()
 		if(com.metallic.chiaki.anyplay.AnyPlayGamepads.genericSony(event.device))
 		{
 			// загальний драйвер Sony: курки на осях RX/RY (від мінімуму до максимуму), правий стік на Z/RZ

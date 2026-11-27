@@ -209,6 +209,7 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 			{
 				o.removeValue(forKey: "amp")
 				Prefs.feel = o
+				Sticks.reload()
 			}
 		case "feelTest":
 			Haptics.shared.demo(m["w"] as? String ?? "")

@@ -876,7 +876,7 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 	private fun moveStick(s: Stick, x: Float, y: Float)
 	{
 		val it = s.item ?: return
-		val travel = it.hw * 0.56f
+		val travel = it.hw * 0.56f * AnyPlaySticks.travelK()   // 138: хід стіка з налаштувань
 		var dx = (x - s.cx) / travel
 		var dy = (y - s.cy) / travel
 		val len = hypot(dx, dy)
@@ -1134,10 +1134,13 @@ class GamepadView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 		state.buttons = mask
 		state.l2State = (l2 * 255).roundToInt().coerceIn(0, 255).toUByte()
 		state.r2State = (r2 * 255).roundToInt().coerceIn(0, 255).toUByte()
-		state.leftX = quantize(leftStick.dx)
-		state.leftY = quantize(leftStick.dy)
-		state.rightX = quantize(rightStick.dx)
-		state.rightY = quantize(rightStick.dy)
+		// 138: мертва зона й чутливість (трохи відхилив — персонаж іде, до краю — біжить)
+		val (lx, ly) = AnyPlaySticks.shape(leftStick.dx, leftStick.dy)
+		val (rx, ry) = AnyPlaySticks.shape(rightStick.dx, rightStick.dy)
+		state.leftX = quantize(lx)
+		state.leftY = quantize(ly)
+		state.rightX = quantize(rx)
+		state.rightY = quantize(ry)
 		// копія з окремими об'єктами дотиків: стан читає інший потік
 		stateChangedCallback?.invoke(state.copy(touches = state.touches.map { it.copy() }.toTypedArray()))
 	}

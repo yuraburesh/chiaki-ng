@@ -47,7 +47,7 @@ object AnyPlayHaptics
 	private fun settings(c: Context): IntArray = cache ?: prefs(c).let {
 		intArrayOf(it.getInt(KEY_RUMBLE, 2).coerceIn(0, 3), it.getInt(KEY_BUTTONS, 1).coerceIn(0, 2), if(it.getBoolean(KEY_ANALOG, false)) 1 else 0,
 			if(it.getBoolean(KEY_ADAPTIVE, false)) 1 else 0)
-	}.also { cache = it; adaptiveOn = it[3] == 1 }
+	}.also { cache = it; adaptiveOn = it[3] == 1; AnyPlaySticks.load(c) }
 
 	fun adaptiveTriggers(c: Context) = settings(c)[3] == 1
 
@@ -58,7 +58,7 @@ object AnyPlayHaptics
 	fun buttonsLevel(c: Context) = settings(c)[1]
 	fun analogTriggers(c: Context) = settings(c)[2] == 1
 
-	fun json(c: Context): JSONObject = JSONObject()
+	fun json(c: Context): JSONObject = AnyPlaySticks.put(JSONObject())
 		.put("rumble", rumbleLevel(c))
 		.put("buttons", buttonsLevel(c))
 		.put("analog", analogTriggers(c))
@@ -74,6 +74,7 @@ object AnyPlayHaptics
 		if(o.has("analog")) e.putBoolean(KEY_ANALOG, o.optBoolean("analog", false))
 		if(o.has("adaptive")) e.putBoolean(KEY_ADAPTIVE, o.optBoolean("adaptive", false))
 		e.apply()
+		AnyPlaySticks.set(c, o)
 		cache = null
 		settings(c)
 		if(rumbleLevel(c) == 0)

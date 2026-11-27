@@ -480,7 +480,7 @@ final class GamepadOverlay: UIView
 	private func moveStick(_ i: Int, _ p: CGPoint)
 	{
 		let it = item(i == 0 ? "lstick" : "rstick")
-		let travel = it.size.width / 2 * 0.56
+		let travel = it.size.width / 2 * 0.56 * Sticks.travelK   // 138: хід стіка з налаштувань
 		var dx = (p.x - sticks[i].origin.x) / travel, dy = (p.y - sticks[i].origin.y) / travel
 		let len = hypot(dx, dy)
 		if len > 1 { dx /= len; dy /= len }
@@ -520,7 +520,9 @@ final class GamepadOverlay: UIView
 		if sticks[0].click { s.buttons |= Btn.l3 }
 		if sticks[1].click { s.buttons |= Btn.r3 }
 		if Date() < touchpadPressedUntil { s.buttons |= Btn.touchpad }
-		s.lx = q(sticks[0].dx); s.ly = q(sticks[0].dy); s.rx = q(sticks[1].dx); s.ry = q(sticks[1].dy)
+		// 138: мертва зона й чутливість (трохи відхилив — персонаж іде, до краю — біжить)
+		let (lx, ly) = Sticks.shape(sticks[0].dx, sticks[0].dy), (rx, ry) = Sticks.shape(sticks[1].dx, sticks[1].dy)
+		s.lx = q(lx); s.ly = q(ly); s.rx = q(rx); s.ry = q(ry)
 		onChange?(s)
 		setNeedsDisplay()
 	}

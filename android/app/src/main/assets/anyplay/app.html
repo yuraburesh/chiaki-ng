@@ -287,7 +287,12 @@ body.wallet #methods{margin-top:6px}
 .pm-left button.on{opacity:1;background:linear-gradient(90deg,#ffffff1f,transparent);padding-left:12px}
 .pm-left button.exit{color:var(--bad)}
 .pm-right{overflow-y:auto;min-width:0;padding:14px 0 16px;display:flex;flex-direction:column;gap:10px}
-.pm-back{display:none;font:500 14px var(--display);letter-spacing:1.6px;text-transform:uppercase;color:var(--mute);align-self:flex-start;padding:2px 0}
+.pm-back{display:none;font:500 15px var(--display);letter-spacing:1.6px;text-transform:uppercase;color:var(--ink);align-self:stretch;text-align:left;padding:12px 0 10px;
+  /* 138: «‹ Меню» завжди видно вгорі, навіть коли розділ прогорнуто вниз */
+  position:sticky;top:-14px;z-index:3;margin-top:-14px;background:#0d0a16;border-bottom:1px solid var(--hair)}
+/* 138: повзунки не крутяться від гортання сторінки: рухаються лише, коли палець явно веде вбік */
+.sl{touch-action:pan-y}
+.sl input[type=range]{pointer-events:none}
 .pm-right #bar{position:sticky;bottom:-16px;background:#0d0a16;box-shadow:0 16px 0 #0d0a16;border-top:1px solid var(--hair);padding:10px 0 12px;margin-top:6px}
 .pm-right #bar .in{flex-direction:column;align-items:stretch;gap:8px;margin:0}
 .pm-right #barBtn{width:100%;min-width:0}
@@ -611,7 +616,7 @@ main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
 
     <!-- 125: вібрація (гра, кнопки, курки L2/R2) -->
     <div id="vFeel" class="hidden">
-      <div class="vhead"><div><h2 class="vtitle">Вібрація</h2><p class="hint">Відчуй гру руками, як на DualSense.</p></div></div>
+      <div class="vhead"><div><h2 class="vtitle">Стіки й вібрація</h2><p class="hint">Як реагують стіки і як відчувається гра в руках.</p></div></div>
       <div id="feel" style="max-width:560px"></div>
     </div>
 
@@ -742,7 +747,7 @@ const MODE = ROUTE === 'menu' ? 'menu' : ['book','mine','extend','psn','help','q
 document.documentElement.classList.add('m-' + MODE); document.body.classList.add('m-' + MODE);
 
 const VIEWS = {gate: 'vGate', home: 'vHome', book: 'vBook', wallet: 'vWallet', extend: 'vExtend', psn: 'vPsn', help: 'vHelp', quality: 'vQuality', friends: 'vFriends', feel: 'vFeel', admpsn: 'vAdmPsn', admshared: 'vAdmShared'};
-const TITLES = {admpsn: 'Свої PSN клієнтів', admshared: 'Спільний PSN', book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати', quality: 'Зображення', friends: 'Друзі', feel: 'Вібрація'};
+const TITLES = {admpsn: 'Свої PSN клієнтів', admshared: 'Спільний PSN', book: 'Бронювання', wallet: 'Баланс', extend: 'Продовжити бронювання', psn: 'Мій акаунт PSN', help: 'Як керувати', quality: 'Зображення', friends: 'Друзі', feel: 'Стіки й вібрація'};
 let view = null, viewTok = 0, method = null, busy = false;
 
 function hideViews(){ Object.values(VIEWS).forEach(id => $(id).classList.add('hidden')); }
@@ -980,7 +985,7 @@ function renderSide(){
   tiles.push(
     ['data-tab="quality"', 'pic', 'Картинка', ['', String(q.name || 'Авто').replace(/^Авто: /, '')]],
     ['data-act="layout" data-arg="map"', 'pad', 'Джойстик', ['', 'на екрані']],
-    ['data-tab="feel"', 'vib', 'Вібрація', ['', FEEL_R[feelInfo().rumble] || 'Середня']]);
+    ['data-tab="feel"', 'vib', 'Стіки', ['', 'і вібрація']]);
   if(!H.admin){
     tiles.push(['data-tab="psn"', 'psn', 'Мій PSN', psn]);
     if(document.body.classList.contains('friends')) tiles.push(['data-tab="friends"', 'gift', 'Друзі', ['', 'і подарунки']]);
@@ -1746,6 +1751,9 @@ function loadHelp(){
 }
 
 // ── 125: вібрація (AnyPlayHaptics.kt) і статистика під час гри (AnyPlayStatsHud.kt) ──
+// 138: стіки (AnyPlaySticks.kt, Sticks у GamepadInput.swift)
+const STK_C = ['Плавно', 'Звичайно', 'Різко'], STK_D = ['Мала', 'Середня', 'Велика'], STK_T = ['Короткий', 'Середній', 'Довгий'];
+const STK_CN = ['Легке відхилення: персонаж іде повільно, біг лише біля краю. Найточніше.', 'Іти до половини ходу, далі біг.', 'Біг майже з першого руху, для швидкої реакції.'];
 const FEEL_R = ['Вимк.', 'Слабка', 'Середня', 'Сильна'], FEEL_B = ['Вимк.', 'Легка', 'Сильна'], HUD = ['Вимк.', 'Коротко', 'Докладно'];
 let FV = null;
 function feelInfo(){ return nativeJson('feel') || FV || {rumble: 2, buttons: 1, analog: false, amp: true}; }
@@ -1756,7 +1764,12 @@ function feelBox(){
   const f = FV = feelInfo();
   const row = (t, test, seg, note) => '<div class="setrow"><div class="top2"><span class="t">' + t + '</span>'
     + (test ? '<button type="button" class="try" data-vt="' + test + '">Спробувати</button>' : '') + '</div>' + seg + '<span class="small">' + note + '</span></div>';
-  return row('Вібрація гри', f.rumble > 0 ? 'rumble' : '', segHtml('vr', FEEL_R, f.rumble), 'Удари, вибухи, двигун машини: як моторчики DualSense.')
+  const sv = (k) => f[k] == null ? 1 : +f[k];
+  return row('Чутливість стіків', '', segHtml('sc', STK_C, sv('stickCurve')), STK_CN[sv('stickCurve')])
+    + row('Мертва зона', '', segHtml('sd', STK_D, sv('stickDead')), 'Наскільки можна зрушити стік, поки персонаж стоїть. Більша: менше випадкових рухів від дотику.')
+    + row('Хід стіка на екрані', '', segHtml('st', STK_T, sv('stickTravel')), 'Як далеко вести палець до повного відхилення. Довгий: легше йти, а не бігти.')
+    + '<p class="cap mt">Вібрація</p>'
+    + row('Вібрація гри', f.rumble > 0 ? 'rumble' : '', segHtml('vr', FEEL_R, f.rumble), 'Удари, вибухи, двигун машини: як моторчики DualSense.')
     + row('Відгук кнопок', f.buttons > 0 ? 'buttons' : '', segHtml('vb', FEEL_B, f.buttons), 'Тік на ✕ ○ □ △ і стрілках, клацання на L1 і R1, упор стіка на краю.')
     // 130: курки — дві окремі фішки, кожну можна ввімкнути чи вимкнути
     + '<p class="cap mt">Додатково</p>'
@@ -1771,10 +1784,10 @@ function toggleRow(key, on, title, note, test){
     + '<span class="small">' + note + '</span></div>';
 }
 function feelWire(root, again){
-  root.querySelectorAll('[data-vr],[data-vb],[data-va],[data-vad],[data-vt]').forEach(b => b.onclick = () => {
+  root.querySelectorAll('[data-vr],[data-vb],[data-va],[data-vad],[data-vt],[data-sc],[data-sd],[data-st]').forEach(b => b.onclick = () => {
     const d = b.dataset;
     if(d.vt){ try { native.feelTest(d.vt); } catch(e) {} return; }
-    const o = d.vr != null ? {rumble: +d.vr} : d.vb != null ? {buttons: +d.vb} : d.vad != null ? {adaptive: d.vad === '1'} : {analog: d.va === '1'};
+    const o = d.sc != null ? {stickCurve: +d.sc} : d.sd != null ? {stickDead: +d.sd} : d.st != null ? {stickTravel: +d.st} : d.vr != null ? {rumble: +d.vr} : d.vb != null ? {buttons: +d.vb} : d.vad != null ? {adaptive: d.vad === '1'} : {analog: d.va === '1'};
     try { if(native && native.setFeel) FV = JSON.parse(native.setFeel(JSON.stringify(o))); else FV = Object.assign({}, FV, o); } catch(e) {}
     haptic();
     // одразу дати відчути нову силу
@@ -1820,7 +1833,34 @@ function renderPicture(){
     };
     el.onchange = picSend;
   });
+  safeRange($('picList'));
   renderSharp();
+}
+// 138: повзунок змінюється, лише коли палець явно веде вбік (не від гортання й не від випадкового дотику),
+// і від того місця, де був, а не стрибком туди, куди торкнувся
+function safeRange(root){
+  root.querySelectorAll('input[type=range]').forEach(el => {
+    const box = el.closest('.sl') || el.parentNode;
+    let st = null;
+    box.addEventListener('pointerdown', e => { st = {x: e.clientX, y: e.clientY, v: +el.value, on: false, id: e.pointerId}; });
+    box.addEventListener('pointermove', e => {
+      if(!st || e.pointerId !== st.id) return;
+      const dx = e.clientX - st.x, dy = e.clientY - st.y;
+      if(!st.on){
+        if(Math.abs(dy) > 8 && Math.abs(dy) >= Math.abs(dx)){ st = null; return; }
+        if(Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        st.on = true; st.x = e.clientX; try { box.setPointerCapture(e.pointerId); } catch(_) {} haptic();
+      }
+      const w = el.getBoundingClientRect().width || 1, min = +el.min, max = +el.max, step = +el.step || 1;
+      const v = Math.max(min, Math.min(max, Math.round((st.v + (e.clientX - st.x) / w * (max - min)) / step) * step));
+      if(v !== +el.value){ el.value = v; el.dispatchEvent(new Event('input')); }
+      e.preventDefault();
+    });
+    const end = () => { if(st && st.on) el.dispatchEvent(new Event('change')); st = null; };
+    box.addEventListener('pointerup', end);
+    box.addEventListener('pointercancel', end);
+    box.addEventListener('click', e => e.preventDefault());
+  });
 }
 function picSend(){ try { native && native.setPicture && native.setPicture(JSON.stringify(PV)); } catch(e) {} }
 const SHARP = [[0, 'Вимкнено', 'картинка як є'], [1, 'Помірна', 'чіткіше, природно (радимо)'], [2, 'Сильна', 'найчіткіше, краще для великого екрана']];
@@ -2070,7 +2110,7 @@ $('frAdd').addEventListener('keydown', e => { if(e.key === 'Enter') fAdd(); });
 $('frGifts').onclick = () => { haptic(); if(native && native.page) native.page('/app/book.html#gift'); };
 
 // ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
-const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й вібрація'], ['console', 'Кнопки в GTA'], ['exit', 'Вийти з гри']];
+const PM = [['back', 'Повернутись у гру'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й стіки'], ['console', 'Кнопки в GTA'], ['exit', 'Вийти з гри']];
 // розділ меню прихований: гостю й тому, хто грає в бронь друга, продовжувати нічого
 const pmHidden = p => ((G.guest || G.helperOf) && p === 'extend') || (G.admin && p === 'friends');
 let pmSel = 'back', pmDetail = false, G = {};
@@ -2110,7 +2150,7 @@ function pmRender(){
     + '</p><div class="actions"><button type="button" class="btn" data-act="layout" data-arg="map">' + (APPLE ? 'Джойстик' : 'Джойстик: які кнопки') + '</button>' + (APPLE ? '' : '<button type="button" class="btn ghost" data-act="layout">Розташування</button>')
     + '<button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
     + (G.controls === false ? '' : ahBox())
-    + '<p class="cap" style="margin-top:16px">Вібрація</p>' + feelBox();
+    + '<p class="cap" style="margin-top:16px">Стіки й вібрація</p>' + feelBox();
   else if(pmSel === 'exit') h = '<p class="cap bad">Вийти з гри</p><p class="lead">Трансляція закриється, але час гри йде далі.'
     + (until ? ' Повернутись можна з головного екрана кнопкою «Грати» до <b>' + until + '</b>.' : ' Повернутись можна з головного екрана кнопкою «Грати».')
     + '</p><div class="actions"><button type="button" class="btn" data-act="exit">Вийти з гри</button><button type="button" class="btn ghost" id="pmStay">Залишитись</button></div>';

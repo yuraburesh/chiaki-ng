@@ -52,6 +52,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	override func viewDidLoad()
 	{
 		super.viewDidLoad()
+		Sticks.reload()
 		view.backgroundColor = .black
 		view.addSubview(videoView)
 		pad.onChange = { [weak self] s in self?.touchState = s; self?.sendController() }

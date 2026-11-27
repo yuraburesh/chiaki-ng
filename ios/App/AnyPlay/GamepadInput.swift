@@ -1,6 +1,7 @@
 // AnyPlay для iPhone та iPad: справжній геймпад (DualSense, DualShock 4, Xbox, MFi) через GameController.
 // iOS розпізнає DualSense повністю: кнопки на своїх місцях, тачпад, вібрація й адаптивні курки (див. Haptics).
 import GameController
+import UIKit
 
 final class GamepadInput
 {
@@ -165,10 +166,10 @@ final class GamepadInput
 		else if let d4 = g as? GCDualShockGamepad { b(d4.touchpadButton.isPressed, Btn.touchpad) }
 		s.l2 = UInt8((g.leftTrigger.value.clamped(0, 1) * 255).rounded())
 		s.r2 = UInt8((g.rightTrigger.value.clamped(0, 1) * 255).rounded())
-		s.lx = axis(g.leftThumbstick.xAxis.value)
-		s.ly = axis(-g.leftThumbstick.yAxis.value)     // у PS5 вгору — від'ємне
-		s.rx = axis(g.rightThumbstick.xAxis.value)
-		s.ry = axis(-g.rightThumbstick.yAxis.value)
+		// 138: мертва зона й чутливість з налаштувань; у PS5 вгору — від'ємне
+		let (lx, ly) = Sticks.shape(CGFloat(g.leftThumbstick.xAxis.value), CGFloat(-g.leftThumbstick.yAxis.value))
+		let (rx, ry) = Sticks.shape(CGFloat(g.rightThumbstick.xAxis.value), CGFloat(-g.rightThumbstick.yAxis.value))
+		s.lx = axis(Float(lx)); s.ly = axis(Float(ly)); s.rx = axis(Float(rx)); s.ry = axis(Float(ry))
 		padState = s
 		lastPadAt = Date()
 		onChange?(state)
@@ -183,4 +184,33 @@ enum Btn
 	static let left: UInt32 = 1 << 4, right: UInt32 = 1 << 5, up: UInt32 = 1 << 6, down: UInt32 = 1 << 7
 	static let l1: UInt32 = 1 << 8, r1: UInt32 = 1 << 9, l3: UInt32 = 1 << 10, r3: UInt32 = 1 << 11
 	static let options: UInt32 = 1 << 12, share: UInt32 = 1 << 13, touchpad: UInt32 = 1 << 14, ps: UInt32 = 1 << 15
+}
+
+/** 138: чутливість стіків (як AnyPlaySticks.kt на Android): мертва зона, крива відгуку, хід екранного стіка. Зберігається в Prefs.feel */
+enum Sticks
+{
+	private static let exps: [CGFloat] = [2.2, 1.6, 1]          // плавно, звичайно, різко
+	private static let deads: [CGFloat] = [0.03, 0.08, 0.15]    // мала, середня, велика
+	private static let travels: [CGFloat] = [0.8, 1, 1.4]       // короткий, середній, довгий
+	private static var curve = 1, dead = 1, travel = 1
+
+	/** Перечитати з Prefs.feel (на старті й після зміни в налаштуваннях) */
+	static func reload()
+	{
+		let f = Prefs.feel
+		func v(_ k: String) -> Int { ((f[k] as? NSNumber)?.intValue ?? 1).clamped(0, 2) }
+		curve = v("stickCurve"); dead = v("stickDead"); travel = v("stickTravel")
+	}
+
+	static var travelK: CGFloat { travels[travel] }
+
+	/** Відхилення (-1..1) → що йде в гру: мертва зона й крива за довжиною, напрямок той самий */
+	static func shape(_ x: CGFloat, _ y: CGFloat) -> (CGFloat, CGFloat)
+	{
+		let len = hypot(x, y), d = deads[dead]
+		if len <= d { return (0, 0) }
+		let n = ((len - d) / (1 - d)).clamped(0, 1)
+		let k = pow(n, exps[curve]) / len
+		return ((x * k).clamped(-1, 1), (y * k).clamped(-1, 1))
+	}
 }

@@ -28,6 +28,9 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	private var ended = false
 	private var connected = false
 	private var menuCombo = false
+	private var watchFrames: UInt64 = 0
+	private var watchAt = Date()
+	private var watchShown = false
 	private var navHeld: Set<String> = []
 	private var heldFromMenu: UInt32 = 0
 
@@ -233,6 +236,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	func sessionConnected()
 	{
 		connected = true
+		watchAt = Date(); watchShown = false
 		setLoading(nil)
 		Haptics.shared.resetTriggers()
 		heartbeat()
@@ -350,6 +354,24 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		// статистика (як на комп'ютері): кадри, швидкість, пінг, втрати
 		let (fin, bytes, lost) = s.counters()
 		let now = Date()
+		// 142: приставку вимкнули чи пропав інтернет — кадри перестали йти. Не висіти з чорним екраном:
+		// за 5 с показати, що чекаємо, за 25 с — завершити з поясненням
+		if !backgrounded
+		{
+			if fin != watchFrames { watchFrames = fin; watchAt = now; if watchShown { watchShown = false; setLoading(nil) } }
+			else
+			{
+				let quiet = now.timeIntervalSince(watchAt)
+				if quiet > 5 && !watchShown && menu == nil { watchShown = true; setLoading("Немає картинки від приставки. Чекаємо…") }
+				if quiet > 25
+				{
+					Log.add(3, "Від приставки \(Int(quiet)) с немає кадрів: трансляцію закрито")
+					end("Зв'язок з приставкою пропав: вона вимкнулась або перестав працювати інтернет.")
+					return
+				}
+			}
+		}
+		else { watchAt = now }
 		if Prefs.hud > 0, let prev = statPrev
 		{
 			let dt = max(0.5, now.timeIntervalSince(prev.0))

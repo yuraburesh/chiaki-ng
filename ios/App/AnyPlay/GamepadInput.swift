@@ -207,6 +207,7 @@ final class GamepadInput
 		let (lx, ly) = Sticks.shape(CGFloat(g.leftThumbstick.xAxis.value), CGFloat(-g.leftThumbstick.yAxis.value))
 		let (rx, ry) = Sticks.shape(CGFloat(g.rightThumbstick.xAxis.value), CGFloat(-g.rightThumbstick.yAxis.value))
 		s.lx = axis(Float(lx)); s.ly = axis(Float(ly)); s.rx = axis(Float(rx)); s.ry = axis(Float(ry))
+		if s.buttons & Btn.ps != 0 && padState.buttons & Btn.ps == 0 { Log.add(2, "Геймпад: PS дійшла до програми") }
 		padState = s
 		lastPadAt = Date()
 		onChange?(state)

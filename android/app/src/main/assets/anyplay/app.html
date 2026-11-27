@@ -2116,9 +2116,9 @@ $('frAdd').addEventListener('keydown', e => { if(e.key === 'Enter') fAdd(); });
 $('frGifts').onclick = () => { haptic(); if(native && native.page) native.page('/app/book.html#gift'); };
 
 // ── меню під час гри (як пауза в GTA): ліворуч розділи, праворуч зміст ──
-const PM = [['back', 'Повернутись у гру'], ['home', 'На головну'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й стіки'], ['console', 'Кнопки в GTA'], ['exit', 'Вийти з гри']];
+const PM = [['back', 'Повернутись у гру'], ['ps', 'Кнопка PS'], ['home', 'На головну'], ['extend', 'Продовжити бронювання'], ['friends', 'Друзі'], ['quality', 'Зображення'], ['controls', 'Кнопки й стіки'], ['console', 'Кнопки в GTA'], ['exit', 'Вийти з гри']];
 // розділ меню прихований: гостю й тому, хто грає в бронь друга, продовжувати нічого
-const pmHidden = p => ((G.guest || G.helperOf) && p === 'extend') || (G.admin && p === 'friends') || (p === 'home' && !APPLE);
+const pmHidden = p => ((G.guest || G.helperOf) && p === 'extend') || (G.admin && p === 'friends') || ((p === 'home' || p === 'ps') && !APPLE);
 let pmSel = 'back', pmDetail = false, G = {};
 function pmInit(){
   $('pm').classList.remove('hidden');
@@ -2129,6 +2129,7 @@ function pmInit(){
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
     if(b.dataset.p === 'back'){ closeApp(); return; }
     if(b.dataset.p === 'home'){ act('home'); return; }   // 145: головна, гра лишається
+    if(b.dataset.p === 'ps'){ haptic(); act('psTap'); return; }   // 146: PS на приставку (iPad забирає PS геймпада собі)
     const changed = pmSel !== b.dataset.p;
     pmSel = b.dataset.p; pmDetail = true; haptic(); if(changed) anim($('pm')); pmRender();
   });
@@ -2202,7 +2203,7 @@ function pmRender(){
         : 'Пересунь кнопки, зміни розмір, додай «Постріл», «Машина» та інші. Горизонтально геймпад через Bluetooth ховає кнопки сам, вертикально вони завжди на екрані.')
     + '</p><div class="actions"><button type="button" class="btn" data-act="layout" data-arg="map">' + (APPLE ? 'Джойстик' : 'Джойстик: які кнопки') + '</button>' + (APPLE ? '' : '<button type="button" class="btn ghost" data-act="layout">Розташування</button>')
     + '<button type="button" class="btn ghost" data-act="controls">' + (G.controls === false ? 'Показати кнопки' : 'Сховати кнопки') + '</button></div>'
-    + (APPLE ? '<div class="setrow"><div class="top2"><span class="t">Кнопка PS на геймпаді</span></div><span class="small">Якщо PS відкриває меню iPad чи «Ігри» Apple: у Налаштуваннях iPad, розділ ігрового контролера, для кнопки Home у програмах обери, щоб нею керувала програма (або вимкни дію системи). Тоді PS працює як на приставці.</span>'
+    + (APPLE ? '<div class="setrow"><div class="top2"><span class="t">Кнопка PS на геймпаді</span></div><span class="small">Меню приставки відкривається без налаштувань: Create + Options разом, далі «Кнопка PS». Щоб і сама PS на геймпаді йшла на приставку, у Налаштуваннях iPad (ігровий контролер, кнопка Home) віддай її програмі.</span>'
       + '<div class="actions"><button type="button" class="btn ghost sm" data-act="psSettings">Відкрити налаштування</button></div></div>' : '')
     + (G.controls === false ? '' : ahBox())
     + '<p class="cap" style="margin-top:16px">Стіки й вібрація</p>' + feelBox();

@@ -28,6 +28,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	private var ended = false
 	private var connected = false
 	private var menuCombo = false
+	private var extraButtons: UInt32 = 0
 
 	// ── 145: головна під час гри ──
 	/** Гра, з якої вийшли на головну, не закриваючи її */
@@ -377,7 +378,8 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			heldFromMenu &= phys.buttons
 			phys.buttons &= ~heldFromMenu
 		}
-		let merged = st.merged(phys)
+		var merged = st.merged(phys)
+		merged.buttons |= extraButtons
 		if merged == lastSent { return }
 		lastSent = merged
 		s.setController(merged)
@@ -571,6 +573,15 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			closeMenu()
 			finish()
 		case "psSettings": GamepadInput.openHomeButtonSettings()
+		case "psTap":
+			// 146: кнопка PS з меню AnyPlay — працює одразу, без налаштувань iPad (iPadOS 27 забирає PS геймпада собі)
+			closeMenu()
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+				guard let self = self else { return }
+				self.extraButtons = Btn.ps; self.sendController()
+				Log.add(2, "Кнопка PS з меню AnyPlay")
+				DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.extraButtons = 0; self?.sendController() }
+			}
 		case "home":
 			// 145: на головну, а гра лишається: «Грати» на головній повертає в неї без нового підключення
 			closeMenu()

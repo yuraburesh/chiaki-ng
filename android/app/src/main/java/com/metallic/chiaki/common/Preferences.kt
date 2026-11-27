@@ -81,7 +81,7 @@ class Preferences(context: Context)
 
 	val motionEnabledKey get() = resources.getString(R.string.preferences_motion_enabled_key)
 	var motionEnabled
-		get() = sharedPreferences.getBoolean(motionEnabledKey, true)
+		get() = sharedPreferences.getBoolean(motionEnabledKey, false)   // AnyPlay 149: датчики руху телефона типово вимкнені (GTA їх не бере, а старий телефон гальмував)
 		set(value) { sharedPreferences.edit().putBoolean(motionEnabledKey, value).apply() }
 
 	val buttonHapticEnabledKey get() = resources.getString(R.string.preferences_button_haptic_enabled_key)

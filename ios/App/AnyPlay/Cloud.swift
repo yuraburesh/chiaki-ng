@@ -77,7 +77,7 @@ enum Cloud
 	/** 136: журнал програми для підтримки (як на Android): адмін попросив (sendLog) або збій гри */
 	static func uploadLog(reason: String, note: String = "")
 	{
-		if reason != "request" && Date().timeIntervalSince(logSentAt) < 120 { return }
+		if reason != "request" && reason != "complaint" && Date().timeIntervalSince(logSentAt) < 120 { return }
 		logSentAt = Date()
 		let d = UIDevice.current
 		var model = utsname(); uname(&model)

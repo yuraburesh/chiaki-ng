@@ -298,11 +298,14 @@ object AnyPlayCloud
 	 * Надіслати журнал на сервер у фоні. reason: request (адмін попросив), error (збій), app.
 	 * Самі (не request) — не частіше ніж раз на 2 хв.
 	 */
-	fun uploadLog(context: Context, reason: String, note: String = "", force: Boolean = false)
+	fun uploadLog(context: Context, reason: String, note: String = "", force: Boolean = false, onDone: ((Int) -> Unit)? = null)
 	{
 		val app = context.applicationContext
 		if(token(app).isEmpty())
+		{
+			onDone?.invoke(-2)
 			return
+		}
 		val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 		val now = System.currentTimeMillis()
 		if(reason == "request")
@@ -342,8 +345,9 @@ object AnyPlayCloud
 				conn.outputStream.use { it.write(body) }
 				val code = conn.responseCode
 				AnyPlayDiag.i("Журнал ($reason) надіслано: ${text.size / 1024} КБ тексту, ${body.size / 1024} КБ стиснуто, відповідь $code")
+				onDone?.invoke(code)
 			}
-			catch(e: Throwable) { AnyPlayDiag.w("Журнал не надіслано: ${e.javaClass.simpleName}") }   // 130: і нестача пам'яті теж
+			catch(e: Throwable) { AnyPlayDiag.w("Журнал не надіслано: ${e.javaClass.simpleName}"); onDone?.invoke(-1) }   // 130: і нестача пам'яті теж
 			finally { conn?.disconnect() }
 		}.apply { isDaemon = true; name = "anyplay-log" }.start()
 	}

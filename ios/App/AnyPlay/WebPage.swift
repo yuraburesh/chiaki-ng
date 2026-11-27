@@ -129,6 +129,7 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 		  open: function(u){ post({t: 'open', u: String(u)}); },
 		  close: function(){ post({t: 'close'}); },
 		  share: function(x){ post({t: 'share', x: String(x)}); },
+		  sendLog: function(){ post({t: 'sendLog'}); },
 		  watch: function(c){ post({t: 'watch', c: String(c)}); },
 		  page: function(p){ post({t: 'page', p: String(p)}); },
 		  psnLogin: function(c){ post({t: 'psnLogin', c: !!c}); },
@@ -177,6 +178,10 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 			if let s = m["u"] as? String, s.hasPrefix("https://") || s.hasPrefix("tg:"), let u = URL(string: s) { UIApplication.shared.open(u) }
 		case "close":
 			onClose?()
+		case "sendLog":
+			// 149: клієнт сам надіслав журнал (меню гри)
+			Cloud.uploadLog(reason: "complaint", note: "Клієнт сам надіслав журнал")
+			eval("typeof toast === 'function' && toast('Журнал надіслано, дякуємо')")
 		case "share":
 			guard let text = m["x"] as? String, let p = presenter else { return }
 			let a = UIActivityViewController(activityItems: [text], applicationActivities: nil)

@@ -287,6 +287,7 @@ body.wallet #methods{margin-top:6px}
 .pm-left button.on{opacity:1;background:linear-gradient(90deg,#ffffff1f,transparent);padding-left:12px}
 .pm-left button.exit{color:var(--bad)}
 .pm-right{overflow-y:auto;min-width:0;padding:14px 0 16px;display:flex;flex-direction:column;gap:10px}
+.pm-close{font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--ink);padding:6px 0 6px 12px}
 .pm-back{display:none;font:500 15px var(--display);letter-spacing:1.6px;text-transform:uppercase;color:var(--ink);align-self:stretch;text-align:left;padding:12px 0 10px;
   /* 138: «‹ Меню» завжди видно вгорі, навіть коли розділ прогорнуто вниз */
   position:sticky;top:-14px;z-index:3;margin-top:-14px;background:#0d0a16;border-bottom:1px solid var(--hair)}
@@ -659,7 +660,7 @@ main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
       <div id="pmSlot"></div>
     </div>
   </div>
-  <div class="foot"><span id="pmNet"></span><span>Закрити меню: «Назад»</span></div>
+  <div class="foot"><span id="pmNet"></span><button type="button" class="pm-close" id="pmClose">Повернутись у гру ›</button></div>
 </section>
 
 <!-- оплата -->
@@ -2135,6 +2136,7 @@ function pmInit(){
     pmSel = b.dataset.p; pmDetail = true; haptic(); if(changed) anim($('pm')); pmRender();
   });
   $('pmBack').onclick = () => { pmDetail = false; anim($('pm')); pmRender(); };
+  $('pmClose').onclick = () => { haptic(); closeApp(); };   // 149: була підказка «Назад», яку натискали як кнопку
   pmSel = PM.some(p => p[0] === ARG) && !pmHidden(ARG) ? ARG : 'back'; pmDetail = pmSel !== 'back' && !!ARG;
   pmTick(); anim($('pm')); pmRender();
   wFetch();
@@ -2193,7 +2195,9 @@ function pmRender(){
   const until = G.left >= 0 ? hm(pmEnd()) : '';
   let h = '';
   if(pmSel === 'back') h = '<p class="cap">Гра йде далі</p><p class="lead">Поки меню відкрите, гра на приставці не зупиняється.</p>'
-    + (G.guest ? '<p class="small">Гостьовий доступ від адміністратора: бронювати й продовжувати не потрібно.</p>' : '');
+    + (G.guest ? '<p class="small">Гостьовий доступ від адміністратора: бронювати й продовжувати не потрібно.</p>' : '')
+    + '<p class="small" style="margin-top:14px">Гра гальмує чи глючить? Надішли журнал: ми побачимо, що сталося.</p>'
+    + '<div class="actions"><button type="button" class="btn ghost sm" id="pmLog">Надіслати журнал</button></div>';
   else if(pmSel === 'extend'){ h = '<p class="cap">Продовжити бронювання</p>'; view = 'extend'; loadExtend(); }
   else if(pmSel === 'friends') h = pmFriends();
   else if(pmSel === 'quality'){ h = '<p class="cap">Зображення</p><p class="small">Нова якість: перепідключення на кілька секунд. Кольори й статистика змінюються одразу.</p>'; view = 'quality'; loadQuality(); }
@@ -2221,6 +2225,7 @@ function pmRender(){
   $('pmText').querySelectorAll('[data-ah]').forEach(b => b.onclick = () => {
     haptic(); G.autoHide = +b.dataset.ah; act('autohide', b.dataset.ah); pmRender();
   });
+  if($('pmLog')) $('pmLog').onclick = () => { haptic(); try { native.sendLog(); } catch(e) {} $('pmLog').disabled = true; $('pmLog').textContent = 'Надсилаємо…'; };
   if($('pmStay')) $('pmStay').onclick = () => { pmSel = 'back'; pmDetail = false; pmRender(); };
   $('pmRight').scrollTop = 0;
 }

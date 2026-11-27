@@ -158,6 +158,17 @@ class AnyPlayBridge(private val activity: Activity, private val web: WebView, pr
 		}
 	}
 
+	/** 149: «Надіслати журнал» вручну (меню гри, допомога): без обмеження частоти, з результатом на екрані */
+	@JavascriptInterface
+	fun sendLog()
+	{
+		AnyPlayCloud.uploadLog(activity, "complaint", "Клієнт сам надіслав журнал", force = true) { code ->
+			activity.runOnUiThread {
+				Toast.makeText(activity, if(code == 200) "Журнал надіслано, дякуємо" else "Журнал не надіслано (код $code). Спробуй ще раз", Toast.LENGTH_LONG).show()
+			}
+		}
+	}
+
 	@JavascriptInterface
 	fun copy(text: String)
 	{
@@ -380,6 +391,7 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 {
 	private lateinit var web: WebView
 	private lateinit var progress: View
+	private var progressText: TextView? = null
 	private var finished = false
 
 	@SuppressLint("SetJavaScriptEnabled")
@@ -427,16 +439,24 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 			{
 				handle(Uri.parse(url))
 			}
+			// 149: поки сторінка Sony вантажиться — не білий екран, а «Відкриваємо…»; показалась — ховаємо
+			override fun onPageCommitVisible(view: WebView, url: String)
+			{
+				if(!finished && progressText?.text?.startsWith("Відкриваємо") == true)
+					progress.visibility = View.GONE
+			}
 		}
+		web.setBackgroundColor(AnyPlayStyle.BG1)
 		frame.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 		progress = LinearLayout(activity).apply {
 			orientation = LinearLayout.VERTICAL
 			gravity = Gravity.CENTER
 			background = AnyPlayStyle.background()
-			visibility = View.GONE
+			visibility = View.VISIBLE
 			addView(ProgressBar(activity))
 			addView(TextView(activity).apply {
-				text = "Перевіряємо вхід у Sony…"
+				progressText = this
+				text = "Відкриваємо сторінку входу Sony…"
 				textSize = 16f
 				typeface = AnyPlayStyle.body(activity)
 				setTextColor(AnyPlayStyle.INK)
@@ -482,6 +502,7 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 			return true
 		}
 		finished = true
+		progressText?.text = "Перевіряємо вхід у Sony…"
 		progress.visibility = View.VISIBLE
 		web.stopLoading()
 		anyplayIo.execute {

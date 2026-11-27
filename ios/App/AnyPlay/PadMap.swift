@@ -28,7 +28,7 @@ final class PadMapView: UIView
 	private static var cached: Art?
 	private static var images: [String: UIImage] = [:]
 
-	var hidden: Set<String> = [] { didSet { setNeedsDisplay() } }
+	var off: Set<String> = [] { didSet { setNeedsDisplay() } }
 	var onToggle: ((String) -> Void)?
 
 	private var k: CGFloat = 1, ox: CGFloat = 0, oy: CGFloat = 0
@@ -87,7 +87,7 @@ final class PadMapView: UIView
 		setNeedsDisplay()
 	}
 
-	private func on(_ part: String) -> Bool { !hidden.contains(PadMapView.idOf(part)) }
+	private func on(_ part: String) -> Bool { !off.contains(PadMapView.idOf(part)) }
 
 	private func draw(_ l: Layer?, dark: Bool = false, alpha: CGFloat = 1)
 	{
@@ -277,7 +277,7 @@ final class PadSettingsViewController: UIViewController
 		note.textAlignment = .center
 		note.text = "Торкнись кнопки на малюнку, щоб сховати її з екрана або повернути. Блакитне світіння — кнопка є на екрані."
 
-		map.hidden = Prefs.padHidden
+		map.off = Prefs.padHidden
 		map.onToggle = { [weak self] id in self?.toggle(id) }
 		map.translatesAutoresizingMaskIntoConstraints = false
 
@@ -356,7 +356,7 @@ final class PadSettingsViewController: UIViewController
 		let hide = !h.contains(id)
 		if hide { h.insert(id) } else { h.remove(id) }
 		Prefs.padHidden = h
-		map.hidden = h
+		map.off = h
 		note.text = "\(PadMapView.title(id)): " + (hide ? "сховано з екрана. Торкнись ще раз, щоб повернути." : "знову на екрані.")
 	}
 
@@ -381,7 +381,7 @@ final class PadSettingsViewController: UIViewController
 		Prefs.padL3R3 = false
 		Prefs.padScale = 1
 		Prefs.padAlpha = 0.7
-		map.hidden = []
+		map.off = []
 		l3.setOn(false, animated: true)
 		size.setValue(1, animated: true)
 		opacity.setValue(0.7, animated: true)

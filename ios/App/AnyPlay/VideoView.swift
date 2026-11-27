@@ -182,6 +182,13 @@ final class VideoView: UIView
 		if display.status == .failed { display.flushAndRemoveImage() }
 	}
 
+	/** 151: нове підключення при зміні якості — остання картинка лишається на екрані, поки не прийде нова */
+	func resetKeepImage()
+	{
+		format = nil; vps = nil; sps = nil; pps = nil; needKey = true; paused = false
+		display.flush()
+	}
+
 	/** Нове підключення: старий формат і кадри не потрібні */
 	func reset()
 	{

@@ -283,7 +283,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		let s = Session(video: videoView)
 		s.delegate = self
 		session = s
-		videoView.reset()
+		if switchView != nil { videoView.resetKeepImage() } else { videoView.reset() }
 		connected = false
 		let profile = Quality.profile
 		if let err = s.create(target: target, profile: profile)
@@ -324,6 +324,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 	func sessionConnected()
 	{
 		connected = true
+		if switchView != nil { switchFrames = videoView.shownCount; finishSwitch() }
 		watchAt = Date(); watchShown = false
 		Log.add(2, "Курсор захоплено: \(view.window?.windowScene?.pointerLockState?.isLocked == true ? "так" : "ні")")
 		Log.add(2, "Кнопки на екрані: показ \(Prefs.controls), ховати \(Prefs.autoHide), сховані \(Prefs.padHidden.sorted()), прозорість \(Prefs.padAlpha), розмір \(Prefs.padScale); клавіатура \(GamepadInput.shared.keyboardConnected), розкладка \(KeyLayout.shared.layout)")
@@ -632,14 +633,63 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		}
 	}
 
+	// 151: нова якість діє з нового підключення (так влаштована PS5). Щоб це не виглядало як вимкнули й увімкнули:
+	// остання картинка лишається, плавно розмивається, посередині «Міняємо якість…», нова картинка проступає крізь розмиття
+	private var switchView: UIVisualEffectView?
+
 	func qualityChanged()
 	{
-		// нова якість діє з нового підключення
 		closeMenu()
+		guard !ended else { return }
+		let lan = target.lanAddr != nil
+		Log.add(2, "Якість: \(Quality.name), плавне перепідключення (\(lan ? "домашня мережа" : "PSN"))")
+		if switchView == nil
+		{
+			let v = UIVisualEffectView(effect: nil)
+			v.frame = view.bounds
+			v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+			let spin = UIActivityIndicatorView(style: .medium)
+			spin.color = .white
+			spin.startAnimating()
+			let l = UILabel()
+			l.text = "Міняємо якість: \(Quality.name). Кілька секунд…"
+			l.textColor = .white
+			l.font = .systemFont(ofSize: 15, weight: .medium)
+			l.textAlignment = .center
+			l.numberOfLines = 0
+			let col = UIStackView(arrangedSubviews: [spin, l])
+			col.axis = .vertical
+			col.spacing = 10
+			col.alignment = .center
+			col.alpha = 0
+			col.translatesAutoresizingMaskIntoConstraints = false
+			v.contentView.addSubview(col)
+			NSLayoutConstraint.activate([col.centerXAnchor.constraint(equalTo: v.contentView.centerXAnchor), col.centerYAnchor.constraint(equalTo: v.contentView.centerYAnchor),
+				col.widthAnchor.constraint(lessThanOrEqualTo: v.contentView.widthAnchor, constant: -48)])
+			view.insertSubview(v, aboveSubview: pad)
+			switchView = v
+			UIView.animate(withDuration: 0.35) { v.effect = UIBlurEffect(style: .dark); col.alpha = 1 }
+		}
 		session?.close()
-		setLoading("Якість: \(Quality.name). Підключаюсь заново…")
-		DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.reconnectFresh() }
+		session = nil
+		connected = false
+		// приставці потрібна мить, щоб закрити попередню трансляцію; через PSN — довше
+		DispatchQueue.main.asyncAfter(deadline: .now() + (lan ? 0.8 : 2.5)) { [weak self] in self?.reconnectFresh() }
 	}
+
+	/** Нова картинка пішла — розмиття плавно тане */
+	private func finishSwitch(_ tries: Int = 0)
+	{
+		guard let v = switchView else { return }
+		if videoView.shownCount == switchFrames && tries < 40
+		{
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.finishSwitch(tries + 1) }
+			return
+		}
+		switchView = nil
+		UIView.animate(withDuration: 0.45, animations: { v.effect = nil; v.contentView.alpha = 0 }) { _ in v.removeFromSuperview() }
+	}
+	private var switchFrames: UInt64 = 0
 
 	/** Нове підключення зі свіжим ключем від сервера */
 	private func reconnectFresh()

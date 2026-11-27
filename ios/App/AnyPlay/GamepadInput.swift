@@ -30,12 +30,16 @@ final class GamepadInput
 			if let c = n.object as? GCController { self?.attach(c) }
 		}
 		NotificationCenter.default.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { [weak self] _ in
+			Log.add(3, "Геймпад відключився")
 			self?.padState = PadState()
 			if let s = self?.state { self?.onChange?(s) }
 		}
 		GCController.controllers().forEach(attach)
 		// 134: клавіатура (Bluetooth чи чохол-клавіатура iPad) і миша/трекпад, як у програмі на комп'ютері
-		NotificationCenter.default.addObserver(forName: .GCKeyboardDidConnect, object: nil, queue: .main) { [weak self] _ in self?.attachKeyboard() }
+		NotificationCenter.default.addObserver(forName: .GCKeyboardDidConnect, object: nil, queue: .main) { [weak self] _ in Log.add(2, "Клавіатура підключилась"); self?.attachKeyboard() }
+		// 141: для діагностики — коли клавіатура чи геймпад відпадають
+		NotificationCenter.default.addObserver(forName: .GCKeyboardDidDisconnect, object: nil, queue: .main) { [weak self] _ in Log.add(3, "Клавіатура відключилась"); self?.uiKeys = []; self?.readKeys() }
+		Log.add(2, "Під час старту: клавіатура \(GCKeyboard.coalesced != nil ? "є" : "немає"), геймпадів \(GCController.controllers().count), мишей \(GCMouse.mice().count)")
 		NotificationCenter.default.addObserver(forName: .GCMouseDidConnect, object: nil, queue: .main) { [weak self] n in
 			if let m = n.object as? GCMouse { self?.attachMouse(m) }
 		}
@@ -46,7 +50,7 @@ final class GamepadInput
 	/** Відпустити все (програму згорнули: інакше натиснута до цього клавіша «залипала») */
 	func reset()
 	{
-		padState = PadState(); keyState = PadState(); mouseState = PadState()
+		padState = PadState(); keyState = PadState(); mouseState = PadState(); uiKeys = []
 		mouseDX = 0; mouseDY = 0
 		onChange?(state)
 	}
@@ -56,12 +60,23 @@ final class GamepadInput
 	// ── клавіатура: WASD рух, стрілки огляд, Space ✕, X ○, E □, F △, Q L1, R R1, / L2, правий Shift R2 (і миша) ──
 	private func attachKeyboard()
 	{
-		GCKeyboard.coalesced?.keyboardInput?.keyChangedHandler = { [weak self] kb, _, _, _ in self?.readKeys(kb) }
+		GCKeyboard.coalesced?.keyboardInput?.keyChangedHandler = { [weak self] _, _, _, _ in self?.readKeys() }
 	}
 
-	private func readKeys(_ k: GCKeyboardInput)
+	// 141: клавіші ще й через UIKit (GameViewController.pressesBegan): на частині iPad клавіатура не доходила через GameController
+	private var uiKeys: Set<Int> = []
+	private var keyLogged = false
+	func uiPress(_ code: Int, down: Bool)
 	{
-		func on(_ c: GCKeyCode) -> Bool { k.button(forKeyCode: c)?.isPressed ?? false }
+		if down { uiKeys.insert(code) } else { uiKeys.remove(code) }
+		readKeys()
+	}
+
+	private func readKeys()
+	{
+		let kb = GCKeyboard.coalesced?.keyboardInput
+		let ui = uiKeys
+		func on(_ c: GCKeyCode) -> Bool { ui.contains(c.rawValue) || (kb?.button(forKeyCode: c)?.isPressed ?? false) }
 		var s = PadState()
 		func b(_ pressed: Bool, _ bit: UInt32) { if pressed { s.buttons |= bit } }
 		b(on(.spacebar) || on(.returnOrEnter), Btn.cross)
@@ -89,6 +104,11 @@ final class GamepadInput
 		s.rx = ax(on(.leftArrow), on(.rightArrow))
 		s.ry = ax(on(.upArrow), on(.downArrow))
 		DispatchQueue.main.async {
+			if !self.keyLogged && s != PadState()
+			{
+				self.keyLogged = true
+				Log.add(2, "Клавіатура: перше натискання (через UIKit: \(!ui.isEmpty), через GameController: \(kb != nil))")
+			}
 			self.keyState = s
 			self.lastPadAt = Date()
 			self.onChange?(self.state)

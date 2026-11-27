@@ -211,6 +211,8 @@ final class GamepadOverlay: UIView
 				let i = it.id == "lstick" ? 0 : 1
 				let s = sticks[i], ring = it.size.width / 2, knob = ring * 0.55
 				let active = s.touch != nil
+				// 141: горизонтально стік з'являється під пальцем, коли торкнувся, і зникає, коли відпустив
+				if landscape && !active { continue }
 				if solid { solidStick(ctx, s, ring, knob, active); continue }
 				UIColor.white.withAlphaComponent((active ? 0.18 : 0.1) * alphaK).setFill()
 				let ringPath = UIBezierPath(ovalIn: CGRect(x: s.origin.x - ring, y: s.origin.y - ring, width: 2 * ring, height: 2 * ring))
@@ -361,6 +363,13 @@ final class GamepadOverlay: UIView
 	private func stickZone(_ i: Int) -> CGRect
 	{
 		let it = item(i == 0 ? "lstick" : "rstick")
+		// 141: горизонтально стік ставиш будь-де на своїй половині екрана (кнопки мають перевагу)
+		if landscape
+		{
+			let mid = area.midX
+			return i == 0 ? CGRect(x: area.minX, y: area.minY, width: mid - area.minX, height: area.height)
+				: CGRect(x: mid, y: area.minY, width: area.maxX - mid, height: area.height)
+		}
 		let grow = it.size.width * (landscape ? 1.9 : 1.3)
 		var z = it.frame.insetBy(dx: -grow, dy: -grow).intersection(area)
 		let mid = (item("lstick").center.x + item("rstick").center.x) / 2

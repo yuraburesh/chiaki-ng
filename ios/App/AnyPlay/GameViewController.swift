@@ -123,6 +123,31 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		timers.append(Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() })
 	}
 
+	// 141: клавіатура через UIKit (додатково до GameController)
+	override var canBecomeFirstResponder: Bool { true }
+
+	override func viewDidAppear(_ animated: Bool)
+	{
+		super.viewDidAppear(animated)
+		becomeFirstResponder()
+	}
+
+	private func keyPresses(_ presses: Set<UIPress>, down: Bool) -> Bool
+	{
+		var handled = false
+		for p in presses
+		{
+			guard let k = p.key, !k.modifierFlags.contains(.command) else { continue }
+			GamepadInput.shared.uiPress(k.keyCode.rawValue, down: down)
+			handled = true
+		}
+		return handled
+	}
+
+	override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) { if !keyPresses(presses, down: true) { super.pressesBegan(presses, with: event) } }
+	override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) { if !keyPresses(presses, down: false) { super.pressesEnded(presses, with: event) } }
+	override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) { if !keyPresses(presses, down: false) { super.pressesCancelled(presses, with: event) } }
+
 	override func viewDidLayoutSubviews()
 	{
 		super.viewDidLayoutSubviews()
@@ -424,7 +449,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		guard let m = menu else { return }
 		menu = nil
 		m.detach()
-		UIView.animate(withDuration: 0.15, animations: { m.web.alpha = 0 }) { _ in m.web.removeFromSuperview() }
+		UIView.animate(withDuration: 0.15, animations: { m.web.alpha = 0 }) { _ in m.web.removeFromSuperview(); self.becomeFirstResponder() }
 		sendController()
 	}
 

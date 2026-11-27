@@ -137,9 +137,13 @@ final class PsnLoginViewController: UIViewController, WKNavigationDelegate
 		// попередній вхід не підставляємо: окреме сховище без cookie
 		let cfg = WKWebViewConfiguration()
 		cfg.websiteDataStore = .nonPersistent()
+		// звичайний Safari: Sony інколи не пускає «вбудовані» вікна. 147: справжній рядок цього пристрою + «Safari»
+		// (раніше підставляли старий iPhone — на iPad із новою системою Sony довго перевіряла такого «гостя»)
+		cfg.applicationNameForUserAgent = "Version/18.0 Mobile/15E148 Safari/604.1"
 		web = WKWebView(frame: .zero, configuration: cfg)
-		// звичайний Safari: Sony інколи не пускає «вбудовані» вікна
-		web.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+		web.isOpaque = false
+		web.backgroundColor = view.backgroundColor
+		web.scrollView.backgroundColor = view.backgroundColor
 		web.navigationDelegate = self
 		web.translatesAutoresizingMaskIntoConstraints = false
 		view.addSubview(web)
@@ -149,10 +153,16 @@ final class PsnLoginViewController: UIViewController, WKNavigationDelegate
 		let spin = UIActivityIndicatorView(style: .large)
 		spin.color = .white
 		spin.startAnimating()
-		let note = UILabel()
-		note.text = "Перевіряємо вхід у Sony…"
+		note.text = "Відкриваємо сторінку входу Sony…"
 		note.textColor = .white
-		let col = UIStackView(arrangedSubviews: [spin, note])
+		note.numberOfLines = 0
+		note.textAlignment = .center
+		retry.setTitle("Спробувати ще раз", for: .normal)
+		retry.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+		retry.tintColor = UIColor(red: 143 / 255, green: 227 / 255, blue: 1, alpha: 1)
+		retry.isHidden = true
+		retry.addTarget(self, action: #selector(retryTap), for: .touchUpInside)
+		let col = UIStackView(arrangedSubviews: [spin, note, retry])
 		col.axis = .vertical
 		col.spacing = 14
 		col.alignment = .center
@@ -171,8 +181,54 @@ final class PsnLoginViewController: UIViewController, WKNavigationDelegate
 			web.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 			busy.topAnchor.constraint(equalTo: web.topAnchor), busy.bottomAnchor.constraint(equalTo: web.bottomAnchor),
 			busy.leadingAnchor.constraint(equalTo: web.leadingAnchor), busy.trailingAnchor.constraint(equalTo: web.trailingAnchor),
-			col.centerXAnchor.constraint(equalTo: busy.centerXAnchor), col.centerYAnchor.constraint(equalTo: busy.centerYAnchor)])
-		if let u = Psn.pageURL(create: create) { web.load(URLRequest(url: u)) }
+			col.centerXAnchor.constraint(equalTo: busy.centerXAnchor), col.centerYAnchor.constraint(equalTo: busy.centerYAnchor),
+			col.widthAnchor.constraint(lessThanOrEqualTo: busy.widthAnchor, constant: -48)])
+		openSony()
+	}
+
+	// 147: поки сторінка Sony вантажиться — не білий екран, а що відбувається; надовго затягнулось — «Спробувати ще раз»
+	private let note = UILabel()
+	private let retry = UIButton(type: .system)
+	private var slowWork: DispatchWorkItem?
+	private var shownPage = false
+	private var openedAt = Date()
+
+	private func openSony()
+	{
+		shownPage = false
+		openedAt = Date()
+		busy.isHidden = false
+		retry.isHidden = true
+		note.text = "Відкриваємо сторінку входу Sony…"
+		slowWork?.cancel()
+		let w = DispatchWorkItem { [weak self] in
+			guard let self = self, !self.shownPage, !self.finished else { return }
+			self.note.text = "Sony відповідає повільно. Зачекай ще трохи або спробуй ще раз."
+			self.retry.isHidden = false
+			Log.add(3, "Вхід PSN: сторінка Sony не відкрилась за 12 с")
+		}
+		slowWork = w
+		DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: w)
+		if let u = Psn.pageURL(create: create) { web.load(URLRequest(url: u, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)) }
+	}
+
+	@objc private func retryTap() { web.stopLoading(); openSony() }
+
+	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!)
+	{
+		guard !finished, !shownPage else { return }
+		shownPage = true
+		slowWork?.cancel()
+		busy.isHidden = true
+		Log.add(2, "Вхід PSN: сторінка Sony відкрилась за \(Int(Date().timeIntervalSince(openedAt) * 1000)) мс")
+	}
+
+	func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error)
+	{
+		guard !finished else { return }
+		note.text = "Не вдалося відкрити сторінку Sony. Перевір інтернет і спробуй ще раз."
+		retry.isHidden = false
+		busy.isHidden = false
 	}
 
 	@objc private func closeTap() { dismiss(animated: true) }
@@ -185,6 +241,9 @@ final class PsnLoginViewController: UIViewController, WKNavigationDelegate
 		finished = true
 		web.stopLoading()
 		let code = URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "code" }?.value ?? ""
+		slowWork?.cancel()
+		retry.isHidden = true
+		note.text = "Перевіряємо вхід у Sony…"
 		if code.isEmpty
 		{
 			dismiss(animated: true) { self.onDone("Sony не завершила вхід. Спробуй ще раз.") }
@@ -210,6 +269,11 @@ final class PsnLoginViewController: UIViewController, WKNavigationDelegate
 
 	func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error)
 	{
-		_ = handle((error as NSError).userInfo[NSURLErrorFailingURLErrorKey] as? URL)
+		if handle((error as NSError).userInfo[NSURLErrorFailingURLErrorKey] as? URL) { return }
+		if (error as NSError).code == NSURLErrorCancelled { return }
+		guard !finished, !shownPage else { return }
+		note.text = "Не вдалося відкрити сторінку Sony. Перевір інтернет і спробуй ще раз."
+		retry.isHidden = false
+		busy.isHidden = false
 	}
 }

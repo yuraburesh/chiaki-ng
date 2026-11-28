@@ -9,6 +9,37 @@
 
 include(FetchContent)
 
+# 153: трансляція з телефона не з'єднувалась із SFU зовсім (глядач вічно «З'єднуємось…»). На Android libSRTP
+# збирається без OpenSSL (див. нижче ENABLE_OPENSSL OFF), а без нього в libSRTP немає AES-GCM. Але libdatachannel із
+# вбудованою libSRTP вважає, що GCM є завжди (DtlsSrtpTransport::IsGcmSupported() повертає true), і в DTLS пропонує
+# SRTP_AEAD_AES_256_GCM:SRTP_AEAD_AES_128_GCM:SRTP_AES128_CM_SHA1_80. Cloudflare обирає GCM, після рукостискання
+# libSRTP не може його ввімкнути («SRTP profile is not supported») — з'єднання гравця переходить у failed.
+# Виправлення: та сама перевірка, що в libdatachannel для системної libSRTP, — питаємо саму libSRTP, чи вміє вона GCM.
+# Без GCM пропонуємо лише SRTP_AES128_CM_SHA1_80 (обов'язковий для WebRTC, RFC 8827), його Cloudflare підтримує.
+# Правка в джерелах робиться під час налаштування збірки, один раз (повторно вже нічого не міняє), атомарно.
+function(anyplay_libdatachannel_srtp_no_gcm src_dir)
+	set(_f "${src_dir}/src/impl/dtlssrtptransport.cpp")
+	if(NOT EXISTS "${_f}")
+		message(FATAL_ERROR "libdatachannel: немає ${_f}")
+	endif()
+	file(READ "${_f}" _src)
+	set(_old "#if RTC_SYSTEM_SRTP\n\t// system libSRTP may not have GCM support")
+	set(_new "#if 1 // AnyPlay 153: libSRTP без OpenSSL (Android) не має GCM — питаємо саму libSRTP\n\t// system libSRTP may not have GCM support")
+	string(FIND "${_src}" "AnyPlay 153: libSRTP" _done)
+	if(_done GREATER -1)
+		message(STATUS "AnyPlay live: SRTP без GCM — правку вже застосовано")
+		return()
+	endif()
+	string(FIND "${_src}" "${_old}" _at)
+	if(_at EQUAL -1)
+		message(FATAL_ERROR "libdatachannel: не знайдено IsGcmSupported() у ${_f} — перевір правку AnyPlay 153 для нової версії")
+	endif()
+	string(REPLACE "${_old}" "${_new}" _src "${_src}")
+	file(WRITE "${_f}.anyplay-tmp" "${_src}")
+	file(RENAME "${_f}.anyplay-tmp" "${_f}")
+	message(STATUS "AnyPlay live: SRTP без GCM (лише AES128_CM_SHA1_80) — правку застосовано")
+endfunction()
+
 set(ANYPLAY_LIBDATACHANNEL_TAG "v0.24.6")
 set(ANYPLAY_LIBDATACHANNEL_COMMIT "6b1e2e620f1e37f0eafeee702eaea0043cb305fd")
 
@@ -68,6 +99,9 @@ function(anyplay_add_libdatachannel)
 	endforeach()
 	if(NOT TARGET LibDataChannel::LibDataChannelStatic)
 		message(FATAL_ERROR "libdatachannel: ціль LibDataChannel::LibDataChannelStatic не з'явилась")
+	endif()
+	if(ANDROID)
+		anyplay_libdatachannel_srtp_no_gcm("${libdatachannel_SOURCE_DIR}")
 	endif()
 	message(STATUS "AnyPlay live: libdatachannel ${ANYPLAY_LIBDATACHANNEL_TAG} (${libdatachannel_SOURCE_DIR})")
 endfunction()

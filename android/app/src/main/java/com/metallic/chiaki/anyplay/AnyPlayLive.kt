@@ -213,7 +213,9 @@ object AnyPlayLive
 
 	private fun fail(t: String)
 	{
-		teardown(false)
+		// 153: кімнату на сервері закриваємо (true): інакше глядач, що вже відкрив посилання, до 90 с бачив вічне
+		// «З'єднуємось…» (треки гравця записані, а з'єднання з SFU так і не було), тепер — «Трансляцію завершено»
+		teardown(true)
 		setState("error", t)
 		message(t)
 	}
@@ -295,6 +297,8 @@ object AnyPlayLive
 		}
 		if(LiveNative.state() != "connected")
 		{
+			// 153: у журнал — у якому стані лишилось з'єднання (failed — ICE/DTLS не вдалось; деталі в рядках AnyPlayLive: rtc error)
+			AnyPlayDiag.w("Трансляція: з'єднання з SFU не встановлено, стан ${LiveNative.state()}")
 			failed("Не вдалося з'єднатися з сервером трансляцій. Можливо, мережа блокує WebRTC.")
 			return
 		}
@@ -468,6 +472,8 @@ object AnyPlayLive
 			}
 		}
 		known.retainAll(seen)
+		val history = lastChatId < 0   // перша відповідь кімнати — це історія, її тостами не показуємо
+		val fresh = ArrayList<JSONObject>()
 		synchronized(lock) {
 			code = room.optString("code", code)
 			webLink = room.optString("webLink", webLink)
@@ -476,13 +482,24 @@ object AnyPlayLive
 			viewers = list
 			o.optJSONArray("chat")?.let { arr ->
 				for(i in 0 until arr.length())
-					arr.optJSONObject(i)?.let { c -> if(c.optLong("id") > lastChatId || lastChatId < 0) chat.add(c) }
+					arr.optJSONObject(i)?.let { c -> if(c.optLong("id") > lastChatId || lastChatId < 0) { chat.add(c); fresh.add(c) } }
 			}
 			while(chat.size > CHAT_KEEP)
 				chat.removeAt(0)
 		}
 		if(o.has("lastChatId"))
 			lastChatId = maxOf(lastChatId, o.optLong("lastChatId"))
+		// 153: чат глядачів гравець бачив лише в меню гри («Друзі»), тож посеред гри не знав, що йому пишуть.
+		// Нові повідомлення глядачів (і «… дивиться» / «… вийшов») — коротким тостом поверх гри; свої — ні.
+		if(!history && state == "live")
+		{
+			val lines = fresh.filter { it.optString("role") != "player" }.takeLast(2).map { c ->
+				val name = c.optString("name")
+				(if(c.optString("kind") == "system" || name.isEmpty()) c.optString("text") else "$name: ${c.optString("text")}").take(140)
+			}.filter { it.isNotBlank() }
+			if(lines.isNotEmpty())
+				message(lines.joinToString("\n"))
+		}
 		// новий глядач: ключовий кадр зараз і ще раз за 3 с (перший він може проминути, поки підключає відео)
 		if(newcomer && state == "live")
 		{

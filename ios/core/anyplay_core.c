@@ -7,6 +7,7 @@
 #include <chiaki/session.h>
 #include <chiaki/controller.h>
 #include <chiaki/remote/holepunch.h>
+#include "anyplay_live_hooks.h"
 
 #include <opus.h>
 
@@ -77,6 +78,7 @@ static void core_event_cb(ChiakiEvent *event, void *user)
 static bool core_video_cb(uint8_t *buf, size_t buf_size, int32_t frames_lost, bool frame_recovered, void *user)
 {
 	AnyPlayCore *core = user;
+	anyplay_live_tap_video(buf, buf_size);   // 157: трансляція друзям (копія в чергу, лише коли йде ефір)
 	if(!core->cb.video)
 		return true;
 	return core->cb.video(core->cb.user, buf, buf_size, frames_lost, frame_recovered);
@@ -94,6 +96,7 @@ static void core_audio_header_cb(ChiakiAudioHeader *header, void *user)
 	core->channels = header->channels ? header->channels : 2;
 	core->rate = header->rate ? header->rate : 48000;
 	core->frame_size = header->frame_size ? header->frame_size : 480;
+	anyplay_live_tap_audio_header(core->channels, core->rate, core->frame_size);
 	core->opus = opus_decoder_create((opus_int32)core->rate, (int)core->channels, &err);
 	if(!core->opus)
 		CHIAKI_LOGE(&core->log, "AnyPlay iOS: Opus decoder failed (%d)", err);
@@ -112,6 +115,7 @@ static void core_audio_header_cb(ChiakiAudioHeader *header, void *user)
 static void core_audio_frame_cb(uint8_t *buf, size_t buf_size, void *user)
 {
 	AnyPlayCore *core = user;
+	anyplay_live_tap_opus(buf, buf_size);   // 157: звук гри глядачам як є
 	if(!core->opus || !core->pcm || !core->cb.audio)
 		return;
 	int n = opus_decode(core->opus, buf, (opus_int32)buf_size, core->pcm, (int)core->pcm_frames, 0);
@@ -263,7 +267,10 @@ int anyplay_core_start(AnyPlayCore *core)
 		return CHIAKI_ERR_INVALID_DATA;
 	ChiakiErrorCode err = chiaki_session_start(&core->session);
 	if(err == CHIAKI_ERR_SUCCESS)
+	{
 		core->started = true;
+		anyplay_live_set_session(core);
+	}
 	return err;
 }
 
@@ -277,6 +284,7 @@ void anyplay_core_free(AnyPlayCore *core)
 {
 	if(!core)
 		return;
+	anyplay_live_unset_session(core);
 	if(core->started)
 	{
 		chiaki_session_stop(&core->session);

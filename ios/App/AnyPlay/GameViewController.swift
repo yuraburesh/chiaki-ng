@@ -116,13 +116,15 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		l.backgroundColor = UIColor(red: 34 / 255, green: 29 / 255, blue: 46 / 255, alpha: 0.85)
 		l.layer.cornerRadius = 12
 		l.layer.masksToBounds = true
-		l.sizeToFit()
-		l.frame.size.height = 34
-		l.center = CGPoint(x: view.bounds.midX, y: view.safeAreaInsets.top + 46)
+		l.numberOfLines = 0   // 157: повідомлення глядачів трансляції бувають у два рядки
+		l.textAlignment = .center
+		let fit = l.sizeThatFits(CGSize(width: min(view.bounds.width - 32, 560), height: 200))
+		l.frame.size = CGSize(width: min(fit.width + 8, view.bounds.width - 32), height: max(34, fit.height + 14))
+		l.center = CGPoint(x: view.bounds.midX, y: view.safeAreaInsets.top + 30 + l.frame.height / 2)
 		l.isUserInteractionEnabled = false
 		view.addSubview(l)
 		hintLabel = l
-		UIView.animate(withDuration: 0.4, delay: 1.8, options: []) { l.alpha = 0 } completion: { _ in l.removeFromSuperview() }
+		UIView.animate(withDuration: 0.4, delay: text.count > 40 ? 3.5 : 1.8, options: []) { l.alpha = 0 } completion: { _ in l.removeFromSuperview() }
 	}
 	private var busyRetries = 0
 	private var watchFrames: UInt64 = 0
@@ -228,6 +230,10 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			if self.menu != nil { self.closeMenu() } else { self.showMenu("menu") }
 		}
 		videoView.onNeedKeyFrame = { [weak self] in self?.session?.requestIDR() }
+		// 157: трансляція друзям — меню оновлюється, повідомлення глядачів поверх гри, перехід на H.264 плавним перепідключенням
+		AnyPlayLive.shared.onChange = { [weak self] in self?.menu?.push() }
+		AnyPlayLive.shared.onMessage = { [weak self] t in self?.showHint(t) }
+		AnyPlayLive.shared.reconnectGame = { [weak self] in self?.qualityChanged() }
 		NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
 		NotificationCenter.default.addObserver(self, selector: #selector(foreground), name: UIApplication.didBecomeActiveNotification, object: nil)
 		UIApplication.shared.isIdleTimerDisabled = true
@@ -473,6 +479,8 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 			else if let left = r.json["left"] as? Int { endAt = Date().addingTimeInterval(Double(left)) }
 			continues = r.json["continues"] as? Bool ?? false
 			if r.json["sendLog"] as? Bool == true { Cloud.uploadLog(reason: "request", note: "Адміністратор попросив журнал (гра)") }
+			// 157: адмін дивиться цю гру — відео прихованою трансляцією
+			AnyPlayLive.shared.adminWatch((r.json["preview"] as? [String: Any])?["live"] as? Bool == true)
 			guest = r.json["guest"] as? Bool ?? guest
 			if (r.json["continue"] as? Bool) == false
 			{
@@ -838,6 +846,10 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		GamepadInput.shared.onChange = nil
 		GamepadInput.shared.onMenuKey = nil
 		KeyLayout.shared.stopGame()
+		AnyPlayLive.shared.gameEnded()
+		AnyPlayLive.shared.onChange = nil
+		AnyPlayLive.shared.onMessage = nil
+		AnyPlayLive.shared.reconnectGame = nil
 		if GameViewController.parked === self { GameViewController.parked = nil }
 		UIApplication.shared.isIdleTimerDisabled = false
 		Task { _ = await Cloud.heartbeat(streaming: false) }

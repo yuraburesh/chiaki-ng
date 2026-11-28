@@ -82,7 +82,7 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 			"picture": jsonText(Prefs.picture),
 			"feel": jsonText(Prefs.feel.merging(["amp": true]) { a, _ in a }),
 			"hud": String(Prefs.hud),
-			"live": jsonText(["supported": false])
+			"live": jsonText(AnyPlayLive.shared.info())
 		]
 	}
 
@@ -222,6 +222,18 @@ final class WebPage: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 			Haptics.shared.demo(m["w"] as? String ?? "")
 		case "setHud":
 			Prefs.hud = m["n"] as? Int ?? 0
+		case "liveDo":
+			// 157: трансляція друзям з меню гри
+			let a = m["a"] as? String ?? ""
+			switch m["n"] as? String ?? ""
+			{
+			case "start": AnyPlayLive.shared.start(gameAudio: a != "0")
+			case "stop": AnyPlayLive.shared.stop()
+			case "audio": AnyPlayLive.shared.setGameAudio(a == "1")
+			case "chat": AnyPlayLive.shared.sendChat(a)
+			default: break
+			}
+			push()
 		default:
 			break
 		}

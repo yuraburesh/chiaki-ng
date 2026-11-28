@@ -108,6 +108,33 @@ enum
  */
 int anyplay_core_lan_find(const char *mac_hex, const char *regist_key, int search_ms, int wake_ms, char *addr_out, size_t addr_size);
 
+// ── 157: трансляція друзям (WebRTC через libdatachannel; сигналізацію робить AnyPlayLive.swift через наш сервер) ──
+int anyplay_live_available(void);
+void anyplay_live_set_log(void (*cb)(const char *line));
+/** Чи є заголовок відео гри (SPS/PPS), без нього трансляцію не почати */
+int anyplay_live_header_ready(void);
+/** "H.264" | "H.265" | "" */
+void anyplay_live_codec(char *out, size_t n);
+int64_t anyplay_live_game_bytes(void);
+/** ice_urls — адреси STUN через \n. 0 — добре, інакше текст помилки в err_out */
+int anyplay_live_create(const char *ice_urls, int pace_kbps, char *err_out, size_t err_n);
+int anyplay_live_gathered(void);
+/** Наш offer SDP; повертає потрібний розмір буфера (з нулем) */
+size_t anyplay_live_local_sdp(char *out, size_t n);
+int anyplay_live_apply_answer(const char *sdp, char *err_out, size_t err_n);
+/** new | connecting | connected | disconnected | failed | closed | off */
+void anyplay_live_state(char *out, size_t n);
+int anyplay_live_open_channel(int id, const char *label, int ordered, int max_retransmits);
+int anyplay_live_send(int id, const char *text);
+void anyplay_live_go_live(int game_audio);
+void anyplay_live_set_game_audio(int on);
+void anyplay_live_set_video_on(int on);
+void anyplay_live_request_keyframe(void);
+int anyplay_live_take_key_wanted(void);
+/** [кадрів прийшло, надіслано, пропущено, ключових, байтів надіслано, черга мс, rtt мс, втрати %, переповнень] */
+void anyplay_live_stats(int64_t *out9);
+void anyplay_live_close(int events_channel);
+
 #ifdef __cplusplus
 }
 #endif

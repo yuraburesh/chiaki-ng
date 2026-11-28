@@ -35,7 +35,7 @@ final class Session
 		info.height = profile.height
 		info.max_fps = profile.fps
 		info.bitrate = profile.bitrate
-		info.h265 = true
+		info.h265 = !AnyPlayLive.wantH264   // 157: хто веде трансляції — гра в H.264 (її показують усі браузери)
 		withUnsafeMutableBytes(of: &info.psn_account_id) { p in
 			for (i, b) in target.accountId.prefix(8).enumerated() { p[i] = b }
 		}

@@ -165,6 +165,12 @@ object AnyPlayQuality
 		val profile = p.videoProfile
 		if(profile.codec != Codec.CODEC_H265)
 			return profile
+		// 155: гравець веде трансляції — гра в H.264, бо H.265 більшість браузерів глядачів не показує
+		if(liveH264(context))
+		{
+			val h264 = ConnectVideoProfile.preset(p.resolution.preset, p.fps.preset, Codec.CODEC_H264)
+			return p.bitrate?.let { h264.copy(bitrate = it) } ?: h264
+		}
 		val broken = System.currentTimeMillis() < prefs(context).getLong(KEY_HEVC_BROKEN, 0)
 		// 118.1: Android 10 і старші (телефони до ~2019, як Galaxy S7 з журналу власника) — H.264: їхні декодери H.265
 		// на потоці PS5 1080p не встигали брати кадри («Failed to get input buffer»), а H.264 вони тягнуть упевнено
@@ -174,6 +180,10 @@ object AnyPlayQuality
 		val h264 = ConnectVideoProfile.preset(p.resolution.preset, p.fps.preset, Codec.CODEC_H264)
 		return p.bitrate?.let { h264.copy(bitrate = it) } ?: h264
 	}
+
+	private const val KEY_LIVE_H264 = "liveH264"
+	fun liveH264(context: Context): Boolean = prefs(context).getBoolean(KEY_LIVE_H264, false)
+	fun setLiveH264(context: Context, on: Boolean) { prefs(context).edit().putBoolean(KEY_LIVE_H264, on).apply() }
 
 	/** У грі з H.265 картинка так і не з'явилась (декодер не створився або не показав жодного кадру): два тижні — H.264 */
 	fun hevcFailed(context: Context)

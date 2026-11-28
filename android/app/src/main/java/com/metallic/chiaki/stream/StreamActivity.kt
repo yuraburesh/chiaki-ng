@@ -478,6 +478,8 @@ class StreamActivity : AppCompatActivity()
 		if(loadSince == 0L)
 			loadSince = SystemClock.elapsedRealtime()
 		AnyPlayLive.onMessage = liveToast
+		// 155: трансляція просить гру у форматі H.264 (його показують усі браузери) — перепідключаємо гру плавно
+		AnyPlayLive.reconnectGame = { runOnUiThread { if(!isFinishing) anyplaySmoothReconnect("Трансляція: гра в H.264 для всіх браузерів") } }
 		if(anyplayFirstResume)
 		{
 			anyplayFirstResume = false
@@ -1331,8 +1333,22 @@ class StreamActivity : AppCompatActivity()
 			AnyPlayLive.gameEnded()
 		if(AnyPlayLive.onMessage === liveToast)
 			AnyPlayLive.onMessage = null
+		AnyPlayLive.reconnectGame = null
 		controlsJobs.values.forEach { it.cancel() }
 		controlsJobs.clear()
+	}
+
+	/** 152/155: перепідключення гри без чорного екрана (зміна якості, формат відео для трансляції) */
+	private fun anyplaySmoothReconnect(why: String)
+	{
+		val lan = viewModel.session.connectInfo.psnToken == null
+		AnyPlayDiag.i("$why, плавне перепідключення (${if(lan) "домашня мережа" else "PSN"})")
+		showQualityOverlay {
+			viewModel.session.shutdown()
+			anyplaySelfRetryWindow()
+			loadSince = SystemClock.elapsedRealtime()
+			anyplayFreshConnect(if(lan) 800 else 2500)
+		}
 	}
 
 	private fun reconnect()
@@ -1496,14 +1512,7 @@ class StreamActivity : AppCompatActivity()
 			// нова якість діє з нового підключення (так влаштована PS5). 152: плавно — остання картинка лишається
 			// розмитою, посередині «Міняємо якість…», нова картинка з'являється з-під неї
 			anyplayMenu?.dismiss()
-			val lan = viewModel.session.connectInfo.psnToken == null
-			AnyPlayDiag.i("Якість: ${AnyPlayQuality.name(this@StreamActivity)}, плавне перепідключення (${if(lan) "домашня мережа" else "PSN"})")
-			showQualityOverlay {
-				viewModel.session.shutdown()
-				anyplaySelfRetryWindow()
-				loadSince = SystemClock.elapsedRealtime()
-				anyplayFreshConnect(if(lan) 800 else 2500)
-			}
+			anyplaySmoothReconnect("Якість: ${AnyPlayQuality.name(this@StreamActivity)}")
 		}
 	}
 

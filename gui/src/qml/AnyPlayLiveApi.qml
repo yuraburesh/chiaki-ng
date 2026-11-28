@@ -96,7 +96,7 @@ QtObject {
     readonly property var viewers: (f("viewers") || []).map(v => Object.assign({}, v, { id: v.uid !== undefined ? v.uid : (v.memberId !== undefined ? v.memberId : v.id) }))
     readonly property string tgLink: String(f("link", "watchUrl") || "")          // для Telegram (міні-застосунок)
     readonly property string webLink: String(f("webLink") || "")                  // для браузера: …/app/watch.html?r=КОД
-    readonly property string watchUrl: tgLink || webLink                           // що копіюємо й шлемо в Telegram
+    readonly property string watchUrl: webLink || tgLink                           // 155: що копіюємо й шлемо — пряме посилання (відкривається будь-де, і в Telegram теж)
     readonly property string code: String(f("code") || "")                        // 6 символів («AB3K9M»)
     // QR: сервер картинки не дає — малюємо самі (AnyPlayQr) з посилання для браузера (відкривається і без Telegram)
     readonly property string qr: String(f("qr") || "")

@@ -16,6 +16,9 @@ import org.json.JSONObject
 
 object AnyPlayLive
 {
+	/** 155: екран гри дає спосіб плавно перепідключити гру (щоб перейти на H.264 для трансляції) */
+	@Volatile var reconnectGame: (() -> Unit)? = null
+
 	private const val POLL_MS = 2000L
 	private const val KEY_GAP_MS = 3000L
 	private const val CHAT_KEEP = 60
@@ -135,6 +138,44 @@ object AnyPlayLive
 			if(!LiveNative.headerReady())
 			{
 				message("Зачекай кілька секунд, поки з'явиться картинка гри, і спробуй ще раз.")
+				return@post
+			}
+			// 155: H.265 більшість браузерів не показує (глядач бачив вічне «з'єднуємось») — гру перепідключаємо в H.264,
+			// і трансляція стартує, щойно прийде нова картинка. Вибір запам'ятовується для наступних ігор
+			if(LiveNative.codec() == "H.265" && reconnectGame != null)
+			{
+				AnyPlayQuality.setLiveH264(context, true)
+				gen++
+				val g = gen
+				setState("starting", "Перемикаю гру на формат, який показують усі браузери…")
+				reconnectGame?.invoke()
+				val until = android.os.SystemClock.elapsedRealtime() + 45000
+				fun waitH264()
+				{
+					worker().postDelayed({
+						if(g != gen || state != "starting")
+							return@postDelayed
+						if(LiveNative.headerReady() && LiveNative.codec() == "H.264")
+						{
+							gameAudio = withGameAudio
+							everLive = false
+							republishTries = 0
+							lastChatId = -1
+							synchronized(lock) { chat.clear(); viewers = JSONArray(); code = ""; webLink = ""; tgLink = "" }
+							known.clear()
+							setState("starting", "Запускаю трансляцію…")
+							beginServer(g)
+						}
+						else if(android.os.SystemClock.elapsedRealtime() > until)
+						{
+							setState("off")
+							message("Гра ще не перепідключилась. Спробуй увімкнути трансляцію ще раз за хвилину.")
+						}
+						else
+							waitH264()
+					}, 1000)
+				}
+				waitH264()
 				return@post
 			}
 			gen++

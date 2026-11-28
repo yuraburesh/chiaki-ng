@@ -159,7 +159,7 @@ AnyPlayLive::AnyPlayLive(AnyPlayCloud *cloud, QmlBackend *backend, QObject *pare
 	chiaki_controller_state_set_idle(&remote_state_);
 	QSettings st;
 	quality_ = QStringLiteral("game");
-	compat_video_ = st.value(QStringLiteral("anyplay/live_compat_h264"), false).toBool();
+	compat_video_ = st.value(QStringLiteral("anyplay/live_compat_h264"), true).toBool();
 	game_audio_ = st.value(QStringLiteral("anyplay/live_game_audio"), true).toBool();
 	mic_on_ = st.value(QStringLiteral("anyplay/live_mic"), false).toBool();
 	voices_on_ = st.value(QStringLiteral("anyplay/live_voices"), true).toBool();
@@ -347,7 +347,7 @@ void AnyPlayLive::tapGameOpus(const uint8_t *data, size_t size)
 bool AnyPlayLive::compatVideoWanted()
 {
 #ifdef ANYPLAY_HAVE_LIVE
-	return QSettings().value(QStringLiteral("anyplay/live_compat_h264"), false).toBool();
+	return QSettings().value(QStringLiteral("anyplay/live_compat_h264"), true).toBool();
 #else
 	return false;
 #endif

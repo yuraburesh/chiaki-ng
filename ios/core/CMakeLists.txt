@@ -32,4 +32,5 @@ target_sources(anyplay-core PRIVATE
 target_include_directories(anyplay-core PRIVATE "${ANYPLAY_GUI_DIR}/include")
 # без Opus-кодування: звук гри йде з PS5 як є, мікрофона й голосів глядачів на iPhone поки немає
 target_compile_definitions(anyplay-core PRIVATE ANYPLAY_IOS_LIVE ANYPLAY_LIVE_NO_OPUS)
+set_target_properties(anyplay-core PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_link_libraries(anyplay-core PUBLIC LibDataChannel::LibDataChannelStatic)

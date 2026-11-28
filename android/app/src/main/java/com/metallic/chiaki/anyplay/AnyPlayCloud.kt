@@ -422,11 +422,15 @@ object AnyPlayCloud
 			else
 				PlayError("Приставка є в акаунті PSN, але на ній вимкнено дистанційне відтворення або вона вимкнена повністю. Напиши в підтримку через бота.",
 					"PSN-LIST ${devices.size} PS5, RP off")
+		// 155: ключі прив'язки й для гри через PSN — щоб підключитися напряму до зовнішньої адреси приставки,
+		// якщо «пробити» не вдасться (мобільний інтернет)
+		val host = console.optJSONObject("host") ?: JSONObject()
+		fun key(k: String): ByteArray = try { Base64.decode(host.optString(k), Base64.DEFAULT).takeIf { it.size == 0x10 } } catch(e: Exception) { null } ?: ByteArray(0x10)
 		val info = ConnectInfo(
 			ps5 = true,
 			host = "",
-			registKey = ByteArray(0x10),
-			morning = ByteArray(0x10),
+			registKey = key("rp_regist_key"),
+			morning = key("rp_key"),
 			videoProfile = AnyPlayQuality.videoProfile(context),   // 118: H.264, якщо H.265 на цьому телефоні не показує картинку
 			psnToken = token,
 			psnAccountId = account,

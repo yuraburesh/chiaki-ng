@@ -58,6 +58,10 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 	// AnyPlay: поки PSN пробиває з'єднання, сесію не можна звільняти — це зробить фоновий потік
 	private val psnLock = Any()
 	private var psnPending: Session? = null
+	// 155: перехід з PSN на пряме підключення: якщо й напряму не вийде, показуємо справжню причину (помилку PSN)
+	@Volatile private var psnFallback: StreamStatePsnFailed? = null
+	@Volatile private var everConnected = false
+	private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 	private val psnAbandoned = HashSet<Session>()
 
 	fun shutdown()
@@ -100,6 +104,11 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 			return
 		try
 		{
+			if(connectInfo.psnToken != null)
+			{
+				psnFallback = null   // нова спроба через PSN — і запасний шлях напряму знову можливий
+				everConnected = false
+			}
 			val session = Session(connectInfo, logManager.createNewFile().file.absolutePath, logVerbose)
 			_state.value = StreamStateConnecting
 			session.eventCallback = { event -> if(this.session === session) eventCallback(event) }
@@ -127,7 +136,27 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 							val step = session.psnStep()
 							val diag = ChiakiPsn.diag()
 							AnyPlayDiag.e("PSN connect failed: step $step, error ${err.value} ($err), HTTP ${diag.http}, curl ${diag.curl}: ${diag.line}")
-							_state.postValue(StreamStatePsnFailed(err, step, diag))
+							val failed = StreamStatePsnFailed(err, step, diag)
+							// 155: приставка назвала свою зовнішню адресу — пробуємо напряму (працює, коли на її роутері прокинуто порти)
+							val addr = if(step >= 5 && psnFallback == null) session.psnConsoleAddr() else ""
+							val ci = connectInfo
+							if(addr.isNotEmpty() && ci.registKey.any { it != 0.toByte() } && ci.morning.any { it != 0.toByte() })
+							{
+								AnyPlayDiag.i("PSN: «пробити» не вдалось (крок $step), пробуємо напряму на зовнішню адресу приставки")
+								psnFallback = failed
+								mainHandler.post {
+									if(this.session !== session)
+										return@post
+									session.eventCallback = null
+									session.setSurface(null)
+									session.dispose()
+									this.session = null
+									connectInfo = ci.copy(host = addr, psnToken = null, psnAccountId = null, psnDuid = null)
+									resume()
+								}
+							}
+							else
+								_state.postValue(failed)
 						}
 					}
 				}.apply { name = "anyplay-psn"; isDaemon = true }.start()
@@ -148,13 +177,18 @@ class StreamSession(var connectInfo: ConnectInfo, val logManager: LogManager, va
 	{
 		when(event)
 		{
-			is ConnectedEvent -> _state.postValue(StreamStateConnected)
-			is QuitEvent -> _state.postValue(
-				StreamStateQuit(
-					event.reason,
-					event.reasonString
-				)
-			)
+			is ConnectedEvent -> { everConnected = true; _state.postValue(StreamStateConnected) }
+			is QuitEvent ->
+			{
+				val fb = psnFallback
+				if(fb != null && !everConnected)
+				{
+					AnyPlayDiag.i("Напряму теж не вийшло (${event.reason}): на роутері приставки не прокинуто порти")
+					_state.postValue(fb)
+				}
+				else
+					_state.postValue(StreamStateQuit(event.reason, event.reasonString))
+			}
 			is LoginPinRequestEvent -> _state.postValue(
 				StreamStateLoginPinRequest(
 					event.pinIncorrect

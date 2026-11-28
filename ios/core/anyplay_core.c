@@ -243,6 +243,14 @@ int anyplay_core_psn_connect(AnyPlayCore *core, const char *duid_hex)
 
 int anyplay_core_psn_step(AnyPlayCore *core) { return core ? atomic_load(&core->psn_step) : 0; }
 
+int anyplay_core_psn_console_addr(AnyPlayCore *core, char *out, size_t out_len)
+{
+	if(!core || !core->holepunch || !out || !out_len)
+		return -1;
+	out[0] = '\0';
+	return chiaki_holepunch_session_get_console_addr(core->holepunch, out, out_len) ? 0 : -1;
+}
+
 void anyplay_core_psn_cancel(AnyPlayCore *core)
 {
 	if(core && core->holepunch)

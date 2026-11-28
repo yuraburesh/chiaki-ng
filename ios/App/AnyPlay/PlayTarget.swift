@@ -45,7 +45,11 @@ enum PlayTarget
 				? .error("Приставку не знайдено в акаунті PSN. Напиши в підтримку через бота.", "PSN-LIST 0 PS5")
 				: .error("На приставці вимкнено дистанційне відтворення або вона вимкнена повністю. Напиши в підтримку через бота.", "PSN-LIST RP off")
 		}
-		return .ready(PlayReady(token: token, accountId: account, duid: dev.duid, guest: session["guest"] as? Bool ?? false))
+		// 155: ключі прив'язки й для гри через PSN — щоб підключитися напряму до зовнішньої адреси, якщо «пробити» не вдасться
+		let host = console["host"] as? [String: Any] ?? [:]
+		func b64(_ k: String) -> [UInt8] { Data(base64Encoded: host[k] as? String ?? "").map { [UInt8]($0) } ?? [] }
+		return .ready(PlayReady(token: token, accountId: account, duid: dev.duid, guest: session["guest"] as? Bool ?? false,
+			registKey: b64("rp_regist_key"), morning: b64("rp_key")))
 	}
 
 	/** 136: телефон у тій самій мережі, що й приставка — підключення напряму, як на комп'ютері (за секунди) */

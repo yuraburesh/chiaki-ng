@@ -161,6 +161,12 @@ CHIAKI_EXPORT bool chiaki_holepunch_session_get_stun_allocation(
     ChiakiHolepunchSession session, int32_t *allocation_increment, bool *random_allocation);
 
 /**
+ * AnyPlay: the console's public IPv4 address as announced in its connection candidates (after punch_hole was attempted).
+ * @return true if known (written to out), false otherwise
+ */
+CHIAKI_EXPORT bool chiaki_holepunch_session_get_console_addr(ChiakiHolepunchSession session, char *out, size_t out_len);
+
+/**
  * Generate a unique device identifier for the client.
  *
  * @param[out] out Buffer to write the identifier to, must be at least `CHIAKI_DUID_STR_SIZE` bytes

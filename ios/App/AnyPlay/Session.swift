@@ -110,6 +110,14 @@ final class Session
 	/** Довго (до хвилини), не з головного потоку. 0 — успіх */
 	func psnConnect(duid: String) -> Int32 { anyplay_core_psn_connect(core, duid) }
 	var psnStep: Int { Int(anyplay_core_psn_step(core)) }
+	/** 155: зовнішня адреса приставки, яку вона назвала через PSN (для прямого підключення, якщо «пробити» не вдалось) */
+	var consoleAddr: String?
+	{
+		var buf = [CChar](repeating: 0, count: 64)
+		guard anyplay_core_psn_console_addr(core, &buf, buf.count) == 0 else { return nil }
+		let a = String(cString: buf)
+		return a.isEmpty ? nil : a
+	}
 	func psnCancel() { anyplay_core_psn_cancel(core) }
 
 	func start() -> Int32

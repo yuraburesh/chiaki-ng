@@ -336,6 +336,7 @@ typedef struct session_t
     int32_t stun_allocation_increment;
     bool stun_random_allocation;
     bool force_port_guessing;
+    char console_public_addr[INET6_ADDRSTRLEN]; // AnyPlay 155: зовнішня адреса приставки з її кандидатів (для прямого підключення)
     int port_guessing_count;
     int port_guessing_socks;
     StunServer stun_server_list[10];
@@ -734,6 +735,14 @@ CHIAKI_EXPORT bool chiaki_holepunch_session_get_stun_allocation(
     return true;
 }
 
+CHIAKI_EXPORT bool chiaki_holepunch_session_get_console_addr(ChiakiHolepunchSession session, char *out, size_t out_len)
+{
+    if(!session || !out || !out_len || !session->console_public_addr[0])
+        return false;
+    snprintf(out, out_len, "%s", session->console_public_addr);
+    return true;
+}
+
 CHIAKI_EXPORT ChiakiErrorCode chiaki_holepunch_generate_client_device_uid(
     char *out, size_t *out_size)
 {
@@ -793,6 +802,7 @@ CHIAKI_EXPORT Session* chiaki_holepunch_session_init(
     session->stun_random_allocation = false;
     session->stun_allocation_increment = -1;
     session->force_port_guessing = false;
+    session->console_public_addr[0] = '\0';
     session->port_guessing_count = RANDOM_ALLOCATION_GUESSES_NUMBER;
     session->port_guessing_socks = RANDOM_ALLOCATION_SOCKS_NUMBER;
     session->num_stun_servers = 0;
@@ -1636,6 +1646,25 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_holepunch_session_punch_hole(Session* sessi
     for(size_t i = 0; i < console_req->num_candidates; i++)
     {
         print_candidate(session->log, &console_req->candidates[i]);
+    }
+    // AnyPlay 155: зовнішня адреса приставки (STATIC, інакше STUN) — якщо «пробити» не вдасться (мобільний інтернет
+    // міняє порт для кожного з'єднання), програма підключиться до неї напряму, коли на роутері приставки прокинуто порти
+    for(int pass = 0; pass < 2 && !session->console_public_addr[0]; pass++)
+    {
+        for(size_t i = 0; i < console_req->num_candidates; i++)
+        {
+            Candidate *c = &console_req->candidates[i];
+            if(c->type != (pass == 0 ? CANDIDATE_TYPE_STATIC : CANDIDATE_TYPE_STUN) || !c->addr[0] || strchr(c->addr, ':'))
+                continue;
+            if(!strncmp(c->addr, "0.", 2) || !strncmp(c->addr, "10.", 3) || !strncmp(c->addr, "192.168.", 8) || !strncmp(c->addr, "127.", 4))
+                continue;
+            unsigned a = 0, b = 0;
+            if(sscanf(c->addr, "%u.%u", &a, &b) == 2 && a == 172 && b >= 16 && b <= 31)
+                continue;
+            snprintf(session->console_public_addr, sizeof(session->console_public_addr), "%s", c->addr);
+            CHIAKI_LOGI(session->log, "AnyPlay: console public address %s (%s, port %u)", c->addr, pass == 0 ? "static" : "stun", (unsigned)c->port);
+            break;
+        }
     }
     Candidate selected_candidate;
     err = check_candidates(session, session->local_candidates, console_req->candidates, console_req->num_candidates, &sock, &selected_candidate);

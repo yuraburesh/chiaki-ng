@@ -55,6 +55,8 @@ AnyPlayCore *anyplay_core_create(const AnyPlayConnect *info, const AnyPlayCallba
 int anyplay_core_psn_connect(AnyPlayCore *core, const char *duid_hex);
 /** Крок з'єднання через PSN: 1 роутер, 2 сесія Sony, 3 STUN, 4 приставка приєднується, 5 пряме з'єднання, 6 готово */
 int anyplay_core_psn_step(AnyPlayCore *core);
+/** 155: зовнішня адреса приставки з обміну через PSN (після спроби «пробити»): 0 — є, інакше немає */
+int anyplay_core_psn_console_addr(AnyPlayCore *core, char *out, size_t out_len);
 void anyplay_core_psn_cancel(AnyPlayCore *core);
 int anyplay_core_start(AnyPlayCore *core);
 void anyplay_core_stop(AnyPlayCore *core);

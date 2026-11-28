@@ -710,6 +710,17 @@ JNIEXPORT jint JNICALL JNI_FCN(sessionPsnConnect)(JNIEnv *env, jobject obj, jlon
 	return CHIAKI_ERR_SUCCESS;
 }
 
+// AnyPlay 155: зовнішня адреса приставки з обміну через PSN (порожньо — невідома). Коли «пробити» не вдалось
+// (мобільний інтернет міняє порт для кожного з'єднання), програма пробує напряму на цю адресу
+JNIEXPORT jstring JNICALL JNI_FCN(sessionPsnConsoleAddr)(JNIEnv *env, jobject obj, jlong ptr)
+{
+	AndroidChiakiSession *session = (AndroidChiakiSession *)ptr;
+	char buf[64] = { 0 };
+	if(!session || !session->holepunch || !chiaki_holepunch_session_get_console_addr(session->holepunch, buf, sizeof(buf)))
+		buf[0] = '\0';
+	return E->NewStringUTF(env, buf);
+}
+
 // AnyPlay: крок з'єднання через PSN, на якому сесія зараз або де вона зупинилась (0 — ще не починали, 6 — з'єднано)
 JNIEXPORT jint JNICALL JNI_FCN(sessionPsnStep)(JNIEnv *env, jobject obj, jlong ptr)
 {

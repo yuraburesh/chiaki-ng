@@ -101,6 +101,7 @@ private class ChiakiNative
 		@JvmStatic external fun setCrashFile(path: String)
 		@JvmStatic external fun psnDiag(): String
 		@JvmStatic external fun sessionPsnStep(ptr: Long): Int
+		@JvmStatic external fun sessionPsnConsoleAddr(ptr: Long): String
 		@JvmStatic external fun sessionVideoStats(ptr: Long): LongArray?
 		@JvmStatic external fun sessionNetStats(ptr: Long): LongArray?
 		@JvmStatic external fun sessionRequestKeyFrame(ptr: Long, reason: String)
@@ -409,6 +410,8 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	/** AnyPlay: крок з'єднання через PSN, на якому зупинились: 1 роутер, 2 сесія на серверах Sony, 3 своя адреса (STUN),
 	 * 4 приставка приєднується, 5 пряме з'єднання з приставкою, 6 з'єднано */
 	fun psnStep(): Int = if(nativePtr != 0L) ChiakiNative.sessionPsnStep(nativePtr) else 0
+	/** AnyPlay 155: зовнішня адреса приставки, яку вона назвала через PSN (порожньо — невідома) */
+	fun psnConsoleAddr(): String = if(nativePtr != 0L) ChiakiNative.sessionPsnConsoleAddr(nativePtr) else ""
 	/** AnyPlay: кадрів прийшло, показано, втрачено, байтів відео (наростаючі від початку сесії);
 	 * з 118 ще [4] декодер є (1/0), [5] скільки разів декодер створено заново, [6] помилок виводу декодера */
 	fun videoStats(): LongArray? = if(nativePtr != 0L) ChiakiNative.sessionVideoStats(nativePtr) else null

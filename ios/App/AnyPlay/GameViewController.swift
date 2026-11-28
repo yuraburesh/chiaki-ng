@@ -6,7 +6,10 @@ import GameController
 
 final class GameViewController: UIViewController, SessionDelegate, WebHost
 {
-	private let target: PlayReady
+	private var target: PlayReady
+	// 155: «пробити» через PSN не вдалось — пробуємо напряму на зовнішню адресу приставки (працює, коли на її роутері прокинуто порти)
+	private var directFromPsn = false
+	private var psnFailNote = ""
 	private let admin: Bool
 	private let videoView = VideoView()
 	private let pad = GamepadOverlay()
@@ -313,7 +316,7 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		if target.lanAddr != nil
 		{
 			// 136: домашня мережа — без PSN, одразу гра
-			loadingText.text = "Приставка поруч, підключаємось напряму…"
+			loadingText.text = directFromPsn ? "Підключаємось до приставки напряму через інтернет…" : "Приставка поруч, підключаємось напряму…"
 			if s.start() != 0 { end("Не вдалося почати гру. Спробуй ще раз.") }
 			return
 		}
@@ -331,7 +334,22 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 				guard self.session === s, !self.ended else { return }
 				if r != 0
 				{
-					self.end("Не вдалося з'єднатися з приставкою (крок \(s.psnStep), помилка \(r)). Перевір інтернет і спробуй ще раз.")
+					let step = s.psnStep
+					self.psnFailNote = step >= 5
+						? "Не вдалося з'єднатися з приставкою через цю мережу (крок \(step), помилка \(r)). Так буває з мобільним інтернетом: оператор не пропускає пряме з'єднання з приставкою. Спробуй через Wi-Fi або іншу мережу, а якщо не допоможе, напиши в підтримку через бота."
+						: "Не вдалося з'єднатися з приставкою (крок \(step), помилка \(r)). Перевір інтернет і спробуй ще раз."
+					// 155: приставка назвала свою зовнішню адресу — пробуємо напряму (якщо на її роутері прокинуто порти)
+					if step >= 5, !self.directFromPsn, let addr = s.consoleAddr, self.target.registKey.count == 16, self.target.morning.count == 16
+					{
+						Log.add(2, "PSN: «пробити» не вдалось (крок \(step), помилка \(r)), пробуємо напряму на зовнішню адресу приставки")
+						self.directFromPsn = true
+						s.close()
+						self.session = nil
+						self.target.lanAddr = addr
+						self.connect()
+						return
+					}
+					self.end(self.psnFailNote)
 					return
 				}
 				self.loadingText.text = "Запускаємо гру…"
@@ -787,10 +805,12 @@ final class GameViewController: UIViewController, SessionDelegate, WebHost
 		DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.reconnectFresh() }
 	}
 
-	private func end(_ text: String)
+	private func end(_ given: String)
 	{
 		guard !ended else { return }
 		ended = true
+		// 155: і напряму не вийшло (порти на роутері приставки не прокинуто) — пояснюємо справжню причину
+		let text = directFromPsn && !connected && !psnFailNote.isEmpty ? psnFailNote : given
 		Log.add(3, "Гра закінчилась: " + text)
 		Cloud.uploadLog(reason: "error", note: "Гра закінчилась: " + text)
 		cleanup()

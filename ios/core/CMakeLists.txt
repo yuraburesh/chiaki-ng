@@ -18,3 +18,19 @@ add_library(anyplay-core STATIC
 	anyplay_core.c)
 target_include_directories(anyplay-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(anyplay-core PUBLIC chiaki-lib opus)
+
+# 157: трансляція друзям з iPhone та iPad — libdatachannel і спільна з комп'ютером та Android медіа-частина
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include(AnyPlayLibDataChannel)
+set(ANYPLAY_GUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../gui")
+target_sources(anyplay-core PRIVATE
+	anyplay_live_hooks.h
+	anyplay_live.cpp
+	"${ANYPLAY_GUI_DIR}/include/anyplaylivemedia.h"
+	"${ANYPLAY_GUI_DIR}/src/anyplaylivemedia.cpp")
+target_include_directories(anyplay-core PRIVATE "${ANYPLAY_GUI_DIR}/include")
+# без Opus-кодування: звук гри йде з PS5 як є, мікрофона й голосів глядачів на iPhone поки немає
+target_compile_definitions(anyplay-core PRIVATE ANYPLAY_IOS_LIVE ANYPLAY_LIVE_NO_OPUS)
+set_target_properties(anyplay-core PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(anyplay-core PUBLIC LibDataChannel::LibDataChannelStatic)

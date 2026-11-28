@@ -63,8 +63,8 @@ function(anyplay_add_libdatachannel)
 	set(sctp_build_programs OFF)
 	set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-	if(ANDROID)
-		# 124: на Android OpenSSL збирається разом з програмою (ExternalProject) уже під час збірки, тож перевірки
+	if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+		# 124: на Android (157: і на iOS) OpenSSL збирається разом з програмою (ExternalProject) уже під час збірки, тож перевірки
 		# libSRTP «чи є OpenSSL» на етапі налаштування не пройшли б. libSRTP бере власне шифрування
 		# (AES-CM, HMAC-SHA1): для 10–20 Мбіт/с цього досить. DTLS у libdatachannel однаково через OpenSSL.
 		set(ENABLE_OPENSSL OFF)
@@ -100,7 +100,7 @@ function(anyplay_add_libdatachannel)
 	if(NOT TARGET LibDataChannel::LibDataChannelStatic)
 		message(FATAL_ERROR "libdatachannel: ціль LibDataChannel::LibDataChannelStatic не з'явилась")
 	endif()
-	if(ANDROID)
+	if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		anyplay_libdatachannel_srtp_no_gcm("${libdatachannel_SOURCE_DIR}")
 	endif()
 	message(STATUS "AnyPlay live: libdatachannel ${ANYPLAY_LIBDATACHANNEL_TAG} (${libdatachannel_SOURCE_DIR})")

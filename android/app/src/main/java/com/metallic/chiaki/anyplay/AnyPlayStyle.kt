@@ -122,6 +122,30 @@ object AnyPlayStyle
 				}
 				(b.layoutParams as? android.widget.LinearLayout.LayoutParams)?.gravity = android.view.Gravity.CENTER_VERTICAL
 			}
+		// 153: кнопки вікна рівно в ряд на всю ширину, однакові, з відступом від країв (на Galaxy S7 «Оновити» вилазила за край)
+		val bar = (d.getButton(DialogInterface.BUTTON_POSITIVE)?.parent as? android.widget.LinearLayout) ?: return
+		if(bar.orientation != android.widget.LinearLayout.HORIZONTAL)
+			return
+		val pad = dp(c, 20f).toInt()
+		bar.setPadding(pad, dp(c, 4f).toInt(), pad, dp(c, 18f).toInt())
+		var first = true
+		for(i in 0 until bar.childCount)
+		{
+			val v = bar.getChildAt(i)
+			if(v !is TextView)
+			{
+				v.visibility = android.view.View.GONE   // розпірка між кнопками
+				continue
+			}
+			if(v.visibility != android.view.View.VISIBLE)
+				continue
+			val lp = android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+			lp.marginStart = if(first) 0 else dp(c, 10f).toInt()
+			lp.gravity = android.view.Gravity.CENTER_VERTICAL
+			v.layoutParams = lp
+			v.setPadding(dp(c, 8f).toInt(), v.paddingTop, dp(c, 8f).toInt(), v.paddingBottom)
+			first = false
+		}
 	}
 
 	/** Текст вікна з помилкою: пояснення, а нижче дрібним блідим рядком технічний код для підтримки (якщо є) */

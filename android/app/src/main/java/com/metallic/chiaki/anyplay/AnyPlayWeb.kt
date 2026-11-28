@@ -460,7 +460,9 @@ class PsnLoginDialog(private val activity: Activity, private val create: Boolean
 				textSize = 16f
 				typeface = AnyPlayStyle.body(activity)
 				setTextColor(AnyPlayStyle.INK)
-				setPadding(0, (16 * density).toInt(), 0, 0)
+				// 153: у вертикальному LinearLayout текст займає всю ширину — без цього він стояв ліворуч, а не під колом
+				gravity = Gravity.CENTER
+				setPadding((24 * density).toInt(), (16 * density).toInt(), (24 * density).toInt(), 0)
 			})
 		}
 		frame.addView(progress, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))

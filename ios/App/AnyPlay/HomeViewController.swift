@@ -72,7 +72,7 @@ final class HomeViewController: UIViewController, WebHost
 			"user": loggedIn ? (session["user"] as? String ?? "") : "", "quality": Quality.json,
 			"pairShort": state == "pairing" ? pairShort : "", "pairBot": pairBot, "inGame": GameViewController.parked?.isRunning == true]
 		var s: [String: Any] = [:]
-		for k in ["next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt", "handoff", "handoffOffer"]
+		for k in ["next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt", "guestOther", "handoff", "handoffOffer"]
 		{
 			if let v = session[k] { s[k] = v }
 		}

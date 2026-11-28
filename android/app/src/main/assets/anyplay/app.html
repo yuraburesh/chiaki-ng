@@ -182,7 +182,7 @@ h2{font:600 22px/1.15 var(--display);letter-spacing:2px;text-transform:uppercase
 .day.on span{color:#221d2ebf}
 .times{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:6px}
 .times button{background:#ffffff0a;border:1px solid var(--edge);border-radius:2px;padding:7px 0 6px;font:500 17px/1.25 var(--body);font-variant-numeric:tabular-nums;text-align:center}
-.times button small{display:block;font-size:11.5px;color:var(--faint);font-weight:500}
+.times button small{display:block;font-size:11.5px;color:var(--faint);font-weight:500;white-space:nowrap}
 .times button.on{background:var(--ink);color:var(--dark);border-color:var(--ink)}
 .times button.on small{color:#221d2eb3}
 .times button.now{border-color:var(--gold)}
@@ -474,6 +474,149 @@ main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
   main>.inner>#vGate:not(.hidden){margin:auto 0;min-height:0}
   main>.inner>#vHome .foot2{margin-top:28px}
 }
+
+/* ── 153: лад на всіх екранах: рівні відступи, нічого не обрізано, кнопки в один рядок ── */
+/* 153: порожні блоки (передача гри, запити в друзі) не дають подвійного відступу */
+.wcol>:empty{display:none}
+/* 153: головна внизу: номер збірки й «Вийти» в одному рядку по центру. Кнопка «Оновити» тут лише горизонтально на телефоні,
+   інакше вище вже є рядок «Оновлення» */
+.foot2{align-items:center}
+#ver{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
+.foot2 .upd{display:none;margin-left:0}
+@media (max-height:499px) and (orientation:landscape){.foot2 .upd{display:inline-block}}
+/* 153: кнопка нижньої панелі завжди в один рядок */
+#barBtn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 153: «Як керувати»: картки щільно колонками (без дірок між картками різної висоти), примітка внизу видна повністю */
+.hgrid{display:block;column-width:280px;column-gap:10px}
+.hcard{display:inline-block;width:100%;margin:0 0 10px;-webkit-column-break-inside:avoid;break-inside:avoid;page-break-inside:avoid;vertical-align:top}
+#helpBody>.small{margin:2px 0 8px}
+/* 153: «Зображення» без зайвого відступу вгорі, коли заголовок сховано */
+.m-single #qList,.m-menu #qList{margin-top:0}
+
+/* 153: баланс — спершу поповнення, валюта балансу згорнута нижче */
+#wCur{display:flex;width:100%;margin-bottom:8px}
+#wCur button{flex:1 1 0;padding:9px 6px}
+#wAmts{display:flex;gap:6px}
+#wAmts button{flex:1 1 0;min-width:0}
+#wAmts button[data-amt=own]{flex:1.35 1 0}
+.wcurbox .capx{margin-bottom:6px}
+.wcurbox .capx .more{text-transform:none}
+#wBal{margin-bottom:6px}
+/* 153: рахунок на оплату кроками 1–2–3 */
+.paybox{gap:10px}
+.pbhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pbt{font:600 15px/1.3 var(--body);min-width:0}
+.pbhead .chip{flex:0 0 auto}
+.psteps{display:flex;flex-direction:column;border-top:1px solid var(--hair)}
+.pstep{padding:10px 0;border-bottom:1px solid var(--hair)}
+.pstep:last-child{border-bottom:0;padding-bottom:0}
+.phead{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;column-gap:10px}
+.phead>i{font-style:normal;width:24px;height:24px;border-radius:50%;border:1px solid var(--cyan);color:var(--cyan);display:grid;place-items:center;font:600 13px/1 var(--display);align-self:start}
+.phead>span{min-width:0}
+.pstep .phead .btn{width:auto;margin-top:0}
+.pt{display:block;font:500 14.5px/1.35 var(--body);color:var(--ink);padding-top:2px}
+.pt b{font-weight:600;color:var(--gold);white-space:nowrap}
+.ps{display:block;font-size:12.5px;line-height:1.4;color:var(--faint);margin-top:1px}
+.pstep .btn{margin-top:8px;width:100%;min-width:0;white-space:nowrap}
+.ps.pmore{margin-top:10px}
+.preq{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;margin-top:6px}
+.preq>span{min-width:0}
+.preq small{display:block;font-size:11.5px;line-height:1.3;color:var(--faint)}
+.preq b{display:block;font:600 16px/1.3 var(--body);font-variant-numeric:tabular-nums;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
+.pstep .preq .btn{margin-top:0;width:auto}
+.pbfoot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;border-top:1px solid var(--hair);padding-top:10px}
+.pbfoot .btn{flex:1 1 100%;width:100%;min-width:0}
+.preq .psum{font:500 24px/1.2 var(--display);letter-spacing:.5px;color:var(--gold)}
+.pbfoot .xlink{padding:4px 0}
+.paybox .pbrow{flex-direction:row;margin-top:0}
+.paybox .pbrow .btn{width:auto}
+/* 153: вікно оплати: ті самі кроки, «Я вже переказав» з'являється після «Оплатити» чи «Копіювати» */
+#payReq .psteps{border-top:0}
+#payForm{margin-top:16px}
+#payDoneBox{margin-bottom:8px}
+#payDoneBox .field{padding:10px 2px}
+/* 153: на iPad вікно оплати — сіткою (сума ліворуч, кроки праворуч), а не вузькою колонкою (правило 132 робило з неї flex) */
+#sheet main>.inner.grid2{display:grid;align-content:start}
+#sheet main>.inner.grid2>*{min-width:0}
+
+/* 153: друзі: рівні відступи, подарунки під списком, кнопки поруч */
+#vFriends .wcol{gap:18px}
+#vFriends .fgrow{display:flex;align-items:center;gap:12px}
+#vFriends .fgrow .small{flex:1 1 auto;min-width:0}
+#vFriends .fgrow .btn{flex:0 0 auto;width:auto}
+#vFriends .actions .btn{flex:1 1 auto}
+
+/* 153: меню гри: права частина гортається сама й ніколи не заходить під нижній рядок «Повернутись у гру» */
+#pm{display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr)}
+.pm-grid{grid-template-rows:minmax(0,1fr);overflow:hidden}
+.pm-left,.pm-right{min-height:0}
+.pm-right{padding-bottom:22px}
+#pm[data-sel=extend] .pm-right{padding-bottom:16px}
+#pm:not([data-sel=extend]) .pm-right{-webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 22px),transparent);mask-image:linear-gradient(180deg,#000 calc(100% - 22px),transparent)}
+.foot{align-items:center}
+#pmText>.small,#pmText>.lead{margin-top:6px}
+#pmText>.cap+.small,#pmText>.cap+.lead{margin-top:0}
+#pmText>.row{margin-top:4px}
+#pmText>.actions{margin-top:10px}
+#pmText .actions .btn{flex:1 1 auto}
+#pmText .actions .btn:only-child{flex:0 0 auto}
+#pmText .sysline{font-style:italic;opacity:.75}
+
+/* 153: телефон вертикально */
+@media (max-width:700px) and (orientation:portrait),(max-width:520px){
+  #bar .btn{font-size:15px;letter-spacing:1.2px;padding-left:10px;padding-right:10px}
+  /* назва плитки («Підтримка») вміщується повністю й на вузькому телефоні */
+  .tile{column-gap:5px;padding-left:7px;padding-right:5px}
+  .tile .tt{font-size:12px;letter-spacing:-.3px}
+  .wpend .wlead{display:none}
+  .paybox{padding:12px}
+  #vWallet .wcol{gap:18px}
+  /* друзі: список, запити, «Додати друга», а подарунки — останніми */
+  #vFriends{display:flex;flex-direction:column;gap:18px}
+  #vFriends>.wcol{display:contents}
+  #vFriends>.wcol:first-child>div:first-child{order:0}
+  #vFriends #frHand{order:1}
+  #vFriends .wcol>.fr{order:2}
+  #vFriends #frIn{order:3}
+  #vFriends .wcol>.fadd{order:4}
+  #vFriends .wcol>.fgift{order:5}
+  #vFriends .actions{flex-direction:row}
+  #vFriends .actions .btn{width:auto;padding-left:8px;padding-right:8px;font-size:14.5px;letter-spacing:1.3px}
+}
+/* 153: телефон горизонтально */
+@media (max-height:500px) and (min-width:560px){
+  .wlead{font-size:13px}
+  .wbig{font-size:clamp(44px,15vh,60px)}
+  .wpend .wlead{display:none}
+  #vWallet .wcol{gap:14px}
+  .paybox{padding:10px 12px}
+  .pstep{padding:8px 0}
+  #vFriends.grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  /* назва «Друзі» вже на вкладці вгорі */
+  #vFriends>.wcol:first-child>div:first-child{display:none}
+  #vFriends .wcol{gap:14px}
+  #vFriends .actions .btn{font-size:13.5px;letter-spacing:1.2px;padding:9px 10px}
+  #vFriends .own{margin-top:4px}
+  /* «Як керувати»: обидва перемикачі в один рядок */
+  #helpBody{display:flex;flex-wrap:wrap;gap:0 10px}
+  #helpBody>.hseg{flex:1 1 250px;min-width:0;margin-bottom:8px}
+  #helpBody>.hgrid,#helpBody>.small{flex:1 1 100%}
+  .hseg .seg button{padding:6px 4px;font-size:13.5px}
+  .hcard{padding:7px 10px 2px;margin-bottom:8px}
+  .hgrid{column-gap:8px}
+  .hrow{padding:4px 0}
+  /* меню гри: кнопки компактні, поруч */
+  #pm .btn{font-size:14px;letter-spacing:1.3px;padding:9px 12px}
+  #pm .btn.sm{font-size:12.5px;padding:7px 11px}
+  .pm-right{gap:8px}
+  #pmText .lead{font-size:13.5px}
+  /* «Продовжити» в меню: менше висоти на пояснення й способи оплати, щоб над кнопкою внизу було видно варіанти */
+  #pm #extInfo{font-size:13px;line-height:1.35}
+  #pm #extModes.mt,#pm #extPick.mt{margin-top:8px}
+  #pm .method button{padding:6px 9px}
+  .pm-right #bar{padding:6px 0 8px}
+  .hrow{grid-template-columns:76px minmax(0,1fr)}
+}
 </style>
 </head>
 <body>
@@ -534,18 +677,19 @@ main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
         <div><h2 class="vtitle">Баланс</h2>
           <div class="timer wbig"><span class="balv"></span></div>
           <p class="small hidden" id="wOther"></p>
-          <p class="lead" style="margin-top:8px">Передоплата за гру: броні й продовження <b>одним натиском</b>, без переказу. Не обов'язково, можна щоразу й переказом.</p>
+          <p class="lead wlead" style="margin-top:8px">Передоплата за гру: броні й продовження <b>одним натиском</b>, без переказу. Не обов'язково, можна щоразу й переказом.</p>
         </div>
-        <div><p class="cap">Валюта балансу</p>
-          <div class="amts c3" id="wBal"></div>
-          <p class="small" id="wBalHint" style="margin-top:6px">Поповнюй будь-чим: суму перерахуємо за курсом НБУ.</p>
-          <div class="paybox hidden" id="wBalBox"></div>
-        </div>
+        <!-- 153: спершу поповнення (чим платиш, сума, рахунок з кроками), а валюта балансу — рідкісне налаштування нижче, згорнуте -->
         <div><p class="cap">Поповнити</p>
           <div class="seg hidden" id="wCur"></div>
           <div class="amts" id="wAmts"></div>
           <div class="own hidden" id="wOwn"><input class="field" id="wOwnAmt" inputmode="numeric" maxlength="7" autocomplete="off" aria-label="Сума поповнення"><button type="button" class="btn sm" id="wOwnGo">Поповнити</button></div>
           <div id="wPending"></div>
+        </div>
+        <div class="wcurbox"><p class="cap capx">Валюта балансу<button type="button" class="more" id="wBalTog">Змінити</button></p>
+          <div class="amts c3 hidden" id="wBal"></div>
+          <p class="small" id="wBalHint">Поповнюй будь-чим: суму перерахуємо за курсом НБУ.</p>
+          <div class="paybox hidden" id="wBalBox"></div>
         </div>
       </div>
       <div class="wcol">
@@ -579,17 +723,18 @@ main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
         <div><h2 class="vtitle">Друзі</h2><p class="hint vtitle lhide">Дивись гру друзів, говори з ними, передавай гру й даруй години.</p></div>
         <div id="frHand"></div>
         <div class="fr"><p class="cap">Друзі</p><div id="frList"></div></div>
+        <!-- 153: подарунки під списком друзів (ліва колонка), щоб горизонтально праворуч нічого не обрізалось, а ліворуч не було пустоти -->
+        <div class="fgift"><p class="cap">Подарунки</p>
+          <div class="fgrow"><p class="small">Поповни другу баланс або забронюй йому години.</p>
+          <button type="button" class="btn ghost sm" id="frGifts">Подарувати</button></div></div>
       </div>
       <div class="wcol">
         <div id="frIn"></div>
-        <div><p class="cap">Додати друга</p>
+        <div class="fadd"><p class="cap">Додати друга</p>
           <p class="small">Надішли посилання чи свій код або впиши код друга чи його нік у Telegram.</p>
           <div class="actions"><button type="button" class="btn" id="frShare">Запросити друга</button><button type="button" class="btn ghost" id="frCopy">Мій код</button></div>
           <div class="own"><input class="field" id="frAdd" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Код друга або @нік" aria-label="Код друга або нік у Telegram"><button type="button" class="btn sm" id="frAddGo">Додати</button></div>
         </div>
-        <div class="fgift"><p class="cap">Подарунки</p>
-          <p class="small">Поповни другу баланс або забронюй йому години.</p>
-          <div class="actions"><button type="button" class="btn ghost" id="frGifts">Подарувати</button></div></div>
       </div>
     </div>
 
@@ -675,10 +820,14 @@ main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
     </div>
     <div>
       <div id="payReq"></div>
-      <div id="payForm" class="mt">
-        <p class="small">Ім'я відправника платежу (необов'язково, допомагає швидше знайти оплату)</p>
-        <input class="field" id="paySender" maxlength="60" autocomplete="off">
-        <div class="actions"><button type="button" class="btn" id="payDone">Я оплатив</button><button type="button" class="btn ghost bad" id="payCancel">Скасувати цю бронь</button></div>
+      <div id="payForm">
+        <!-- 153: «Я вже переказав» з'являється, коли клієнт уже відкрив оплату чи скопіював реквізити -->
+        <div id="payDoneBox" class="hidden">
+          <input class="field" id="paySender" maxlength="60" autocomplete="off" placeholder="Ім'я відправника (необов'язково)" aria-label="Ім'я відправника платежу">
+          <p class="small" style="margin-top:4px">Допомагає швидше знайти оплату.</p>
+          <div class="actions"><button type="button" class="btn" id="payDone">Я вже переказав</button></div>
+        </div>
+        <div class="actions"><button type="button" class="btn ghost bad" id="payCancel">Скасувати цю бронь</button></div>
       </div>
       <div id="payWait" class="hidden mt"><p class="lead" id="payWaitText"></p><div class="spin"></div></div>
       <div id="payOk" class="hidden mt"><p class="lead" id="payOkText"></p><div class="actions"><button type="button" class="btn" id="payClose">Готово</button></div></div>
@@ -871,6 +1020,19 @@ function heroUser(){
     if(checking) h += '<p class="lead">Оплату продовження ще перевіряємо, тому гра йде далі. Підтвердять, і час додасться сам.</p>';
     return h + '<div class="actions"><button type="button" class="btn" data-act="play"><i class="tri"></i>' + (H.inGame ? 'Повернутись у гру' : 'Грати') + '</button>'
       + (checking ? '' : bk ? '<button type="button" class="btn ghost" data-tab="extend">Продовжити<span class="lg"> бронювання</span></button>' : '<button type="button" class="btn ghost" data-tab="book" data-sub="new">Забронювати час</button>') + '</div>';
+  }
+  // 153: гостьовий доступ, а приставка зараз зайнята: хто грає (інший гість — можна «Грати замість») або до коли бронь
+  if(st === 'wait' && s.guestAccess && !bk){
+    const go = s.guestOther, free = s.guestFreeAt > 0 ? esc(fmtTime(s.guestFreeAt)) : '';
+    if(s.guestWait === 'kicked') return '<span class="eyebrow">Гостьовий доступ</span><p class="big">Доступ на паузі</p>'
+      + '<p class="lead">Адміністратор поки відключив твій гостьовий доступ. Напиши в підтримку, якщо це помилка.</p>';
+    if(go && go.canTakeover) return '<span class="eyebrow">Гостьовий доступ</span><p class="big">Зараз грає ' + esc(go.name || 'інший гість') + '</p>'
+      + '<p class="lead">Це теж гість. Можеш забрати приставку: у нього гра зупиниться за кілька секунд, і почнеш грати ти.</p>'
+      + (H.busy ? '<div class="spin"></div>' : '<div class="actions"><button type="button" class="btn" data-act="takeover"><i class="tri"></i>Грати замість</button>'
+        + '<button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>');
+    return '<span class="eyebrow">Гостьовий доступ</span><p class="big">Приставка зайнята</p>'
+      + '<p class="lead">Зараз іде оплачена гра' + (free ? ' до <b>' + free + '</b>' : '') + '. Коли вона закінчиться, тут з\'явиться «Грати».</p>'
+      + '<div class="actions"><button type="button" class="btn ghost" data-act="refresh">Перевірити ще раз</button></div>';
   }
   // приставка тримає одне підключення: поки клієнт грає на іншому своєму пристрої, тут «Грати» немає (інакше той вибило б)
   if(st === 'other_device'){
@@ -1093,7 +1255,8 @@ function renderStarts(){
   if(!starts.length){ el.innerHTML = '<div class="note">На цей день такий час уже не вміщується. Обери інший день або меншу тривалість.</div>'; return; }
   const soon = Date.now() / 1000 + 900;   // вільно просто зараз: найближчий час підписуємо «зараз»
   starts.forEach(s => { const c = document.createElement('button'); c.type = 'button'; c.className = (s === start ? 'on' : '') + (s < soon ? ' now' : '');
-    c.innerHTML = hm(s) + '<small>' + (s < soon ? 'зараз, ' : '') + 'до ' + hm(s + (t ? t.hours * 3600 : 0)) + '</small>';
+    // 153: «зараз» замість «зараз, до …» — інакше перша кнопка в два рядки й ряд кривий (кінець гри видно на панелі внизу)
+    c.innerHTML = hm(s) + '<small>' + (s < soon ? 'зараз' : 'до ' + hm(s + (t ? t.hours * 3600 : 0))) + '</small>';
     c.onclick = () => { start = s === start ? 0 : s; haptic(); renderStarts(); renderBar(); }; el.appendChild(c); });
 }
 function renderBar(){
@@ -1172,28 +1335,36 @@ function openPay(p, from){
   $('payPart').classList.toggle('hidden', !wp);
   $('payPart').textContent = wp ? 'Ще ' + money(wp.amount, wp.currency || cur, wp.symbol) + ' спишемо з балансу, щойно надійде ця доплата.' : '';
   $('payCancel').dataset.sure = ''; $('payCancel').textContent = top ? 'Скасувати поповнення' : 'Скасувати цю бронь';
-  const req = $('payReq'); req.innerHTML = '';
-  const rows = [{label: 'Сума', value: p.amount + ' ' + p.currency, copyValue: p.amount, copy: true}].concat(p.requisites || []);
-  // коментар до переказу («AnyPlay T5»): за ним автоперевірка теж знаходить платіж
-  if(p.comment && !rows.some(x => x.value === p.comment)) rows.push({label: 'Коментар до переказу', value: p.comment, copy: true});
-  rows.forEach(x => { const d = document.createElement('div'); d.className = 'req';
-    d.innerHTML = '<div><span>' + esc(x.label) + '</span><b>' + esc(x.value) + '</b></div>';
-    if(x.url){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm ghost'; b.textContent = 'Відкрити'; b.onclick = () => openUrl(x.value); d.appendChild(b); }
-    else if(x.copy){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm ghost'; b.textContent = 'Копіювати'; b.onclick = () => copy(x.copyValue || x.value); d.appendChild(b); }
-    req.appendChild(d); });
-  if(p.payUrl){ const d = document.createElement('div'); d.className = 'actions'; d.innerHTML = '<button type="button" class="btn">Відкрити сторінку оплати</button>'; d.firstChild.onclick = () => openUrl(p.payUrl); req.appendChild(d); }
+  // 153: реквізити кроками (куди, рівно скільки, що далі); коментар до переказу («AnyPlay T5») — серед реквізитів
+  $('payReq').innerHTML = payStepsHtml(p, from);
+  payOpenedAt = nowTs(); payReveal();
   const review = p.status === 'pending_review';
   $('payForm').classList.toggle('hidden', review); $('payWait').classList.toggle('hidden', !review); $('payOk').classList.add('hidden');
-  if(review){ $('payWaitText').textContent = top ? 'Позначку «Я оплатив» отримали. Перевіряємо платіж, це займає до кількох хвилин. Можна закрити це вікно: гроші з\'являться на балансі самі.'
-    : 'Позначку «Я оплатив» отримали. Перевіряємо платіж, це займає до кількох хвилин. Можна закрити це вікно: час додасться сам.'; startPayPoll(); }
+  if(review){ $('payWaitText').textContent = top ? 'Позначку «Я вже переказав» отримали. Перевіряємо платіж, це займає до кількох хвилин. Можна закрити це вікно: гроші з\'являться на балансі самі.'
+    : 'Позначку «Я вже переказав» отримали. Перевіряємо платіж, це займає до кількох хвилин. Можна закрити це вікно: час додасться сам.'; startPayPoll(); }
   clearInterval(payTick); payTick = setInterval(payTimer, 1000); payTimer();
   $('sheet').querySelector('main').scrollTop = 0;
 }
+// 153: «Я вже переказав» і ім'я відправника — лише коли клієнт уже відкрив оплату чи скопіював реквізити (або минуло 3 хв чи час вийшов)
+let payOpenedAt = 0;
+const payKey = () => P ? (payFrom === 'topup' ? 't' + tpId(P) : 'b' + P.id) : '';
+function payReveal(){
+  if(!P) return;
+  const on = payReady(payKey(), payOpenedAt) || (P.holdUntil > 0 && P.holdUntil <= nowTs());
+  $('payDoneBox').classList.toggle('hidden', !on);
+}
+$('payReq').addEventListener('click', e => {
+  const b = e.target.closest('[data-pcopy],[data-purl]'); if(!b || !P) return;
+  haptic();
+  if(b.dataset.purl) openUrl(b.dataset.purl); else copy(b.dataset.pcopy);
+  payMark(payKey()); payReveal();
+});
 function payTimer(){
   if(!P) return;
   const left = P.holdUntil - nowTs(), mmss = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
   $('payTimer').textContent = P.status === 'pending_review' || !(P.holdUntil > 0) ? '' : left > 0 ? (payFrom === 'topup' ? 'Чекаємо переказ ще ' : 'Місце за тобою ще ') + mmss
-    : 'Час на оплату вийшов. Якщо вже оплатив, натисни «Я оплатив».';
+    : 'Час на оплату вийшов. Якщо вже переказав, натисни «Я вже переказав».';
+  payReveal();
 }
 function closePay(){
   clearInterval(payTick); clearInterval(payPoll); P = null;
@@ -1453,6 +1624,9 @@ const tpId = p => p.topupId != null ? p.topupId : p.id;
 const tpBase = p => p.base != null ? +p.base : Math.floor(+p.amount + 1e-9);   // сума без «копійок» для впізнавання платежу
 const tpCur = p => p.currency || curOf(p.method);
 const idv = s => /^\d+$/.test(String(s)) ? +s : s;
+// 153: валюту балансу розгорнуто кнопкою «Змінити»; способи поповнення називаємо тим, чим платять
+let wBalOpen = false;
+const TOP_NAME = {UAH: 'Картка', PLN: 'BLIK', USDT: 'USDT'};
 async function loadWallet(keep){
   const tok = viewTok;
   if(!WDet || !keep) loadingView();
@@ -1472,7 +1646,7 @@ async function wPollTick(){
   const grew = (r.json.balances || []).some(b => +b.amount > wBal(b.currency) + 0.005);
   WDet = r.json; setWallet({balances: WDet.balances || [], primary: WDet.primary || (W && W.primary)});
   // перемальовуємо лише коли щось змінилось: інакше збилось би «Натисни ще раз, щоб скасувати»
-  if(JSON.stringify([WDet.balances, WDet.pending, WDet.history, topCur, topAmt, busy]) !== wDataKey) renderWallet();
+  if(wDataKeyNow() !== wDataKey) renderWallet();
   if(grew){ haptic(); toast('Баланс поповнено. Зараз на балансі ' + wText() + '.'); act('refresh'); }
 }
 function histWhen(ts){
@@ -1480,22 +1654,62 @@ function histWhen(ts){
   const d = new Date((ts - skew) * 1000), y = new Date(Date.now() - 864e5), t = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
   return d.toDateString() === new Date().toDateString() ? 'сьогодні о ' + t : d.toDateString() === y.toDateString() ? 'вчора о ' + t : d.getDate() + '.' + pad2(d.getMonth() + 1) + ' о ' + t;
 }
-function payboxHtml(p){
-  const id = esc(tpId(p)), cur = tpCur(p), mm = (WDet && WDet.topup && WDet.topup.methods || []).find(x => x.code === p.method);
-  const h = '<div class="paybox" data-tp="' + id + '"><span class="small">' + esc(p.method === 'uah' ? 'Переказ на картку AnyPlay' : 'Переказ: ' + (mm ? mm.label : cur)) + '</span>'
-    + '<div class="amount">' + money(+p.amount, cur, p.symbol) + '</div>';
-  if(p.status === 'pending_review') return h + '<span class="small">Позначку «Я оплатив» отримали. Перевіряємо платіж: гроші з\'являться на балансі самі, зазвичай за кілька хвилин.</span>'
-    + '<div class="actions" style="flex-direction:row;align-items:center"><span class="chip wait">перевіряємо оплату</span><button type="button" class="btn sm ghost" data-tpay="' + id + '">Реквізити</button></div></div>';
-  return h + '<span class="small">' + (p.auto === false ? 'Переказуй точну суму до копійки, а потім натисни «Я оплатив»: адміністратор перевірить оплату, і гроші з\'являться на балансі.'
-      : 'Переказуй точну суму до копійки: оплата знайдеться сама за 1–2 хв.') + (p.holdUntil > 0 ? ' Чекаємо переказ до ' + esc(fmtTime(p.holdUntil)) + '.' : '') + '</span>'
-    + '<div class="actions"><button type="button" class="btn" data-tpay="' + id + '">Оплатити</button><button type="button" class="btn ghost" data-tdone="' + id + '">Я оплатив</button></div>'
-    + '<button type="button" class="xlink" data-tcancel="' + id + '">Скасувати поповнення</button></div>';
+// 153: рахунок на оплату кроками: 1) куди (кнопка «Оплатити» відкриває банк або реквізити з «Копіювати»), 2) рівно скільки, 3) що далі.
+// Кнопки мають data-pcopy (скопіювати) і data-purl (відкрити); key — щоб запам'ятати, що клієнт уже взявся платити
+const PAY_SEEN = 'apPaySeen';
+function paySeen(key){ try { return (localStorage.getItem(PAY_SEEN) || '').split(',').includes(key); } catch(e) { return !!(paySeen.m || {})[key]; } }
+function payMark(key){
+  if(!key || paySeen(key)) return false;
+  paySeen.m = Object.assign(paySeen.m || {}, {[key]: 1});
+  try { localStorage.setItem(PAY_SEEN, (localStorage.getItem(PAY_SEEN) || '').split(',').filter(Boolean).slice(-30).concat(key).join(',')); } catch(e) {}
+  return true;
 }
+function payStepsHtml(p, what){
+  const cur = p.currency || curOf(p.method), sum = money(+p.amount, cur, p.symbol), uah = p.method === 'uah';
+  const reqs = (p.requisites || []).slice();
+  if(p.comment && !(uah && p.payUrl) && !reqs.some(x => x.value === p.comment)) reqs.push({label: 'Коментар до переказу', value: p.comment, copy: true});
+  const reqHtml = reqs.map(x => '<div class="preq"><span><small>' + esc(x.label) + '</small><b>' + esc(x.value) + '</b></span>'
+    + (x.url ? '<button type="button" class="btn sm ghost" data-purl="' + esc(x.value) + '">Відкрити</button>'
+      : x.copy ? '<button type="button" class="btn sm ghost" data-pcopy="' + esc(x.value) + '">Копіювати</button>' : '') + '</div>').join('');
+  const card = reqs.some(x => x.label === 'Картка');
+  // крок: номер, заголовок і підпис в один рядок (праворуч може бути кнопка), а кнопки й реквізити під ним на всю ширину
+  const step = (n, t, s, body, side) => '<div class="pstep"><div class="phead"><i>' + n + '</i><span><span class="pt">' + t + '</span>' + (s ? '<span class="ps">' + s + '</span>' : '') + '</span>'
+    + (side || '') + '</div>' + (body || '') + '</div>';
+  let h = '<div class="psteps">';
+  if(p.payUrl) h += step(1, 'Натисни «Оплатити»', uah ? 'відкриється банк, сума вже вписана' : 'відкриється сторінка оплати',
+    '<button type="button" class="btn" data-purl="' + esc(p.payUrl) + '">Оплатити ' + esc(sum) + '</button>'
+    + (reqHtml ? '<span class="ps pmore">' + (card ? 'Або переказуй на картку:' : 'Або переказуй за реквізитами:') + '</span>' + reqHtml : ''));
+  else h += step(1, card ? 'Скопіюй номер картки' : 'Скопіюй реквізити', '', reqHtml || '<span class="ps">Реквізити надішле бот.</span>');
+  h += step(2, 'Переказуй рівно, до копійки', p.auto === false ? 'так ми впізнаємо твій платіж' : 'за копійками оплата знайдеться сама',
+    '<div class="preq"><b class="psum">' + esc(sum) + '</b><button type="button" class="btn sm ghost" data-pcopy="' + esc(p.amount) + '">Копіювати</button></div>');
+  const done = what === 'topup' ? 'гроші з\'являться на балансі самі' : what === 'extend' ? 'час додасться сам' : 'бронь підтвердиться сама';
+  h += p.auto === false ? step(3, 'Натисни «Я вже переказав»', 'адміністратор перевірить оплату, і ' + done)
+    : step(3, 'Чекай 1–2 хвилини', upFirst(done));
+  return h + '</div>';
+}
+// кнопку «Я вже переказав» видно, коли клієнт уже відкрив оплату чи скопіював реквізити, або рахунку вже кілька хвилин
+function payReady(key, since){ return paySeen(key) || (since > 0 && nowTs() - since > 180); }
+function payboxHtml(p){
+  const id = esc(tpId(p)), cur = tpCur(p);
+  const h = '<div class="paybox" data-tp="' + id + '"><div class="pbhead"><span class="pbt">Поповнення на ' + money(+p.amount, cur, p.symbol) + '</span>'
+    + (p.status === 'pending_review' ? '<span class="chip wait">перевіряємо оплату</span>' : '') + '</div>';
+  if(p.status === 'pending_review') return h + '<span class="small">Позначку «Я вже переказав» отримали. Перевіряємо платіж: гроші з\'являться на балансі самі, зазвичай за кілька хвилин.</span>'
+    + '<div class="actions pbrow"><button type="button" class="btn sm ghost" data-tpay="' + id + '">Реквізити</button></div></div>';
+  const ready = payReady('t' + tpId(p), +p.created || 0);
+  return h + payStepsHtml(p, 'topup')
+    + '<div class="pbfoot">' + (ready ? '<button type="button" class="btn ghost" data-tdone="' + id + '">Я вже переказав</button>' : '')
+    + '<span class="small">' + (p.holdUntil > 0 ? 'Чекаємо переказ до ' + esc(fmtTime(p.holdUntil)) : '') + '</span>'
+    + '<button type="button" class="xlink" data-tcancel="' + id + '">Скасувати поповнення</button></div></div>';
+}
+// 153: той самий ключ і для опитування (раніше ключі різнились, і екран перемальовувався щоразу, збиваючи «Натисни ще раз»);
+// у ключі й те, чи вже видно «Я вже переказав» (через 3 хв кнопка з'являється сама)
+function wDataKeyNow(){ return JSON.stringify([WDet.balances, WDet.pending, WDet.history, topCur, topAmt, busy, WDet.currency, balAsk, balPrev, wBalOpen,
+  (WDet.pending || []).map(p => payReady('t' + tpId(p), +p.created || 0))]); }
 function renderWallet(){
   if(!WDet) return;
   const t = WDet.topup || {}, curs = (t.methods || []).map(m => curOf(m.code)).filter((c, i, a) => a.indexOf(c) === i);
   if(!curs.includes(topCur)) topCur = curs.includes(W && W.primary) ? W.primary : curs[0] || (W && W.primary) || 'UAH';
-  wDataKey = JSON.stringify([WDet.balances, WDet.pending, WDet.history, topCur, topAmt, busy, WDet.currency, balAsk, balPrev]);
+  wDataKey = wDataKeyNow();
   document.querySelectorAll('.balv').forEach(e => e.textContent = wText());
   const main = wMain(), others = (W && W.balances || []).filter(b => b.currency !== main.currency && +b.amount > 0);
   const res = (WDet.reserved || []).filter(b => +b.amount > 0), lines = [];
@@ -1508,6 +1722,11 @@ function renderWallet(){
   const bc = WDet.currency || main.currency || 'UAH', bl = (WDet.currencies || ['UAH', 'PLN', 'USDT']).map(x => typeof x === 'string' ? x : (x && x.code) || '').filter(Boolean);
   $('wBal').innerHTML = bl.map(c => '<button type="button" data-bal="' + esc(c) + '" class="' + ((balAsk || bc) === c ? 'on' : '') + '"' + (busy ? ' disabled' : '') + '>'
     + esc((CUR_NAME[c] || c) + (c === 'USDT' ? '' : ' ' + SYM[c])) + '</button>').join('');
+  // 153: вибір валюти балансу згорнуто: видно, у чому баланс, і «Змінити»
+  const bOpen = wBalOpen || !!balAsk || !!balPrev;
+  $('wBal').classList.toggle('hidden', !bOpen);
+  $('wBalTog').textContent = bOpen ? 'Згорнути' : 'Змінити';
+  $('wBalHint').textContent = (bOpen ? '' : 'Баланс у валюті ' + ({UAH: 'гривні', PLN: 'злоті'}[bc] || 'USDT') + '. ') + 'Поповнюй будь-чим: суму перерахуємо за курсом НБУ.';
   $('wBalHint').classList.toggle('hidden', !!balPrev);
   $('wBalBox').classList.toggle('hidden', !balPrev);
   if(balPrev){
@@ -1520,7 +1739,9 @@ function renderWallet(){
   }
   // валюту поповнення обирають, лише коли способів оплати кілька
   $('wCur').classList.toggle('hidden', curs.length < 2);
-  $('wCur').innerHTML = curs.map(c => '<button type="button" data-cur="' + esc(c) + '" class="' + (c === topCur ? 'on' : '') + '">' + esc(CUR_NAME[c] || c) + '</button>').join('');
+  // 153: тут — чим платиш (а не валюта балансу), тож і назви способів: «Картка», «BLIK», «USDT»
+  $('wCur').innerHTML = curs.map(c => '<button type="button" data-cur="' + esc(c) + '" class="' + (c === topCur ? 'on' : '') + '">' + esc(TOP_NAME[c] || CUR_NAME[c] || c) + '</button>').join('');
+  $('vWallet').classList.toggle('wpend', (WDet.pending || []).length > 0);
   const open = (WDet.pending || []).filter(p => p.status === 'hold' && tpCur(p) === topCur), amts = ((t.amounts || {})[topCur] || []).map(Number);
   const sel = topAmt > 0 ? topAmt : open.length ? tpBase(open[0]) : 0, own = topAmt === -1 || (sel > 0 && !amts.includes(sel));
   $('wAmts').innerHTML = amts.map(a => '<button type="button" data-amt="' + a + '" class="' + (a === sel ? 'on' : '') + '"' + (busy ? ' disabled' : '') + '>' + money(a, topCur) + '</button>').join('')
@@ -1604,6 +1825,13 @@ async function balCurrency(c, preview){
 $('vWallet').addEventListener('click', e => {
   const b = e.target.closest('button'); if(!b || b.disabled || b.dataset.tab) return;
   const find = id => (WDet && WDet.pending || []).find(p => String(tpId(p)) === id);
+  // 153: кроки рахунку: «Оплатити» відкриває банк, «Копіювати» копіює; після цього з'являється «Я вже переказав»
+  if(b.dataset.purl || b.dataset.pcopy != null){
+    haptic(); if(b.dataset.purl) openUrl(b.dataset.purl); else copy(b.dataset.pcopy);
+    const box = b.closest('[data-tp]'); if(box && payMark('t' + box.dataset.tp)) renderWallet();
+    return;
+  }
+  if(b.id === 'wBalTog'){ haptic(); wBalOpen = !($('wBalTog').textContent === 'Згорнути'); if(!wBalOpen){ balAsk = ''; balPrev = null; } renderWallet(); return; }
   if(b.dataset.bal){ haptic(); balCurrency(b.dataset.bal, true); }
   else if(b.dataset.balok){ haptic(); balCurrency(balAsk, false); }
   else if(b.dataset.balno){ balAsk = ''; balPrev = null; renderWallet(); }
@@ -2194,6 +2422,7 @@ window.__anyplayPad = function(cmd){
 function pmRender(){
   $('pmNav').querySelectorAll('[data-p]').forEach(b => b.classList.toggle('on', b.dataset.p === pmSel));
   $('pm').classList.toggle('detail', pmDetail);
+  $('pm').dataset.sel = pmSel;   // 153: CSS знає відкритий розділ (у «Продовжити» внизу закріплена кнопка, без затемнення краю)
   ['loading', 'vExtend', 'vQuality', 'vHelp', 'bar'].forEach(id => $(id).classList.add('hidden'));
   view = null; viewTok++; netStop();
   const until = G.left >= 0 ? hm(pmEnd()) : '';
@@ -2254,14 +2483,15 @@ function pmFriends(){
   let h = '<p class="cap">Друзі</p>';
   if(F && !fFeat('friends')) return h + '<p class="lead">Друзі зараз вимкнені.</p>';
   h += handBox();
-  if(canHand() && !OH) h += '<p class="small">Складна місія? Передай гру другу, повернути можна будь-коли. Обери друга:</p>';
-  h += '<div class="fr">' + friendsList() + '</div>';
+  const none = F && !(F.friends || []).length;
+  if(canHand() && !OH && !none) h += '<p class="small">Складна місія? Передай гру другу, повернути можна будь-коли. Обери друга:</p>';
   // 139: запросити друга прямо з меню гри; передати гру («доступ другу») можна тому, хто вже в друзях
-  if(F && !(F.friends || []).length){
-    h += '<p class="small">Передати гру другу (він пограє замість тебе, а повернути гру можна будь-коли) можна тому, хто вже у тебе в друзях.</p>';
+  // 153: без друзів — одне пояснення замість трьох абзаців, код і кнопки одним блоком
+  if(none){
+    h += '<p class="small">Друзів поки немає. Додай друга, і зможеш передати йому гру: він пограє замість тебе, а повернути гру можна будь-коли.</p>';
     if(F.me && F.me.code) h += '<div class="row"><span><span class="t">Мій код друга</span><span class="s">' + esc(F.me.code) + '</span></span></div>'
       + '<div class="actions"><button type="button" class="btn" id="pmInvite">Запросити друга</button><button type="button" class="btn ghost" id="pmCode">Копіювати код</button></div>';
-  }
+  } else h += '<div class="fr">' + friendsList() + '</div>';
   h += liveBox();
   if(F && (F.friends || []).length) h += '<p class="small" style="margin-top:6px">Додати ще друзів можна на головному екрані, вкладка «Друзі».</p>';
   return h;
@@ -2293,8 +2523,9 @@ function liveBox(){
   if(v.length) h += '<p class="small" style="margin-top:6px">Дивляться: ' + v.map(x => esc(x.name)).join(', ') + '</p>';
   const chat = (LV.chat || []).slice(-8);
   h += '<p class="cap" style="margin-top:10px">Чат</p>'
-    + (chat.length ? chat.map(c => '<p class="small"><b>' + esc(c.name) + ':</b> ' + esc(c.text) + '</p>').join('') : '<p class="small">Повідомлень ще немає.</p>')
-    + '<div class="actions"><input id="liveMsg" type="text" maxlength="300" placeholder="Написати глядачам" style="flex:1;min-width:0">'
+    // 153: рядки без імені (службові: «X дивиться») — без «:» спереду, приглушено курсивом
+    + (chat.length ? chat.map(c => c.name ? '<p class="small"><b>' + esc(c.name) + ':</b> ' + esc(c.text) + '</p>' : '<p class="small sysline">' + esc(c.text) + '</p>').join('') : '<p class="small">Повідомлень ще немає.</p>')
+    + '<div class="actions"><input id="liveMsg" class="field" type="text" maxlength="300" placeholder="Написати глядачам" style="flex:1 1 160px;min-width:0">'
     + '<button type="button" class="btn ghost" data-live="chat">Надіслати</button></div>';
   h += '<div class="actions"><button type="button" class="btn ghost" data-live="audio" data-arg="' + (LV.gameAudio ? '0' : '1') + '">' + (LV.gameAudio ? 'Вимкнути звук гри для глядачів' : 'Увімкнути звук гри для глядачів') + '</button>'
     + '<button type="button" class="btn ghost" data-live="stop">Зупинити трансляцію</button></div>';

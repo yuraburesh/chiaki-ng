@@ -725,7 +725,7 @@ class AnyPlayActivity: AppCompatActivity(), AnyPlayHost
 		updater.offerJson()?.let { o.put("update", it) }   // 118: нова версія для рядка на головному екрані
 		// зі стану сервера лише те, що показує сторінка: ключів доступу до PSN тут немає
 		val s = JSONObject()
-		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt", "handoff", "handoffOffer"))
+		for(k in arrayOf("next", "booking", "closed", "myPsn", "myPsnReady", "myPsnStatus", "otherDevice", "otherSeen", "canTakeover", "guest", "guestAccess", "guestWait", "guestFreeAt", "guestOther", "handoff", "handoffOffer"))
 			session.opt(k)?.let { s.put(k, it) }
 		session.optJSONObject("console")?.let { s.put("console", JSONObject().put("psn", it.optString("psn")).put("own", it.optBoolean("own"))) }
 		// баланс клієнта {balances, primary}: сторінка показує вкладку «Баланс» і оплату з балансу лише коли він є

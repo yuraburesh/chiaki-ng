@@ -617,6 +617,29 @@ main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
   .pm-right #bar{padding:6px 0 8px}
   .hrow{grid-template-columns:76px minmax(0,1fr)}
 }
+
+/* ── 154: екран входу по центру екрана, рядки рівні; «Як це працює» без рисок; вкладки влазять у горизонтальному телефоні ── */
+.big,.lead{text-wrap:balance}
+body.isgate main>.inner{min-height:100%;display:flex;flex-direction:column}
+main>.inner>#vGate:not(.hidden){margin:auto 0;min-height:0;padding:12px 0}
+#vGate .hero{gap:10px;width:100%}
+#vGate .actions{justify-content:center;margin-top:6px}
+#vGate .btn{min-width:0}
+#vGate .small{margin-top:14px}
+@media (max-width:700px) and (orientation:portrait),(max-width:520px){
+  #vGate .hero{max-width:340px}
+  #vGate .actions{width:100%}
+}
+@media (max-height:500px) and (min-width:560px){
+    .brand span{display:none}
+  .brand{padding-bottom:8px}
+  .nav button{padding:7px 8px 6px;letter-spacing:1.2px}
+}
+.how .row{min-height:0;padding:5px 0;border-bottom:0}
+.how .row>span:last-child{display:none}
+.how .row .s{margin-top:1px}
+.how+div{margin-top:6px}
+.how+div>.cap{padding-top:14px;border-top:1px solid var(--hair)}
 </style>
 </head>
 <body>
@@ -631,7 +654,7 @@ main{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
       <button type="button" data-tab="quality">Зображення</button>
       <button type="button" data-tab="friends" class="noadmin fonly">Друзі</button>
       <button type="button" data-tab="psn" class="noadmin">Мій PSN</button>
-      <button type="button" data-tab="help">Як керувати</button>
+      <button type="button" data-tab="help">Керування</button>
     </nav>
     <div class="who" id="who"><button type="button" class="bal noadmin wonly" data-tab="wallet" aria-label="Баланс"><small>Баланс</small><span class="balv"></span></button><b id="whoName"></b><button type="button" class="lnk" data-act="logout">Вийти</button></div>
   </header>
@@ -913,7 +936,7 @@ function failView(r, retry){
 }
 // 125: розділ з'являється з рухом (рядки по черзі); оновлення вже відкритого розділу — без анімації
 function anim(el){ if(!el) return; el.classList.add('anim'); clearTimeout(el._a); el._a = setTimeout(() => el.classList.remove('anim'), 700); }
-function show(v){ const was = !$(VIEWS[v]).classList.contains('hidden'); hideViews(); $('loading').classList.add('hidden'); $(VIEWS[v]).classList.remove('hidden'); if(!was) anim($('main')); }
+function show(v){ const was = !$(VIEWS[v]).classList.contains('hidden'); hideViews(); $('loading').classList.add('hidden'); $(VIEWS[v]).classList.remove('hidden'); document.body.classList.toggle('isgate', v === 'gate'); if(!was) anim($('main')); }
 function bar(text, hint, enabled, fn, big){ $('bar').classList.remove('hidden'); $('barBtn').textContent = text;
   $('barHint').innerHTML = (big ? '<b class="bwhen">' + esc(big) + '</b>' : '') + esc(hint || '');
   $('barHint').classList.toggle('hidden', !hint); $('barBtn').disabled = !enabled; $('barBtn').onclick = fn; }
@@ -986,7 +1009,7 @@ function renderGate(){
         + '<p class="big paircode">' + esc(code) + '</p>' : '') + '<div class="spin"></div>'
       + '<div class="actions">' + (code ? '<button type="button" class="btn" data-act="openTg">Відкрити Telegram</button>' : '')
       + '<button type="button" class="btn ghost" data-act="cancelLogin">Скасувати</button></div>'
-    : '<span class="eyebrow">Ласкаво просимо</span><p class="big">Грай у PS5 зі свого телефона</p><p class="lead">Увійди через Telegram: той самий акаунт, що й у боті.</p>'
+    : '<span class="eyebrow">Ласкаво просимо</span><p class="big">Грай у PS5 ' + (H.platform === 'ipad' ? 'на своєму iPad' : 'зі свого телефона') + '</p><p class="lead">Увійди через Telegram: той самий акаунт, що й у боті.</p>'
       + '<div class="actions"><button type="button" class="btn" data-act="login">Увійти через Telegram</button>'
       + '<button type="button" class="btn ghost" data-act="loginCode">Telegram на іншому пристрої</button></div>')
     + '<p class="small" style="margin-top:14px">AnyPlay для ' + ({ios: 'iPhone', ipad: 'iPad'}[H.platform] || 'Android') + ', збірка ' + esc(H.build || '') + '</p>';

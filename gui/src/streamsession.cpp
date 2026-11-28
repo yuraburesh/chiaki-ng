@@ -3310,6 +3310,14 @@ ChiakiErrorCode StreamSession::ConnectPsnConnection(QString duid, bool ps5)
 	return err;
 }
 
+QString StreamSession::PsnConsoleAddr()
+{
+	char buf[64] = { 0 };
+	if(!holepunch_session || !chiaki_holepunch_session_get_console_addr(holepunch_session, buf, sizeof(buf)))
+		return QString();
+	return QString::fromLatin1(buf);
+}
+
 void StreamSession::CancelPsnConnection(bool stop_thread)
 {
 	chiaki_holepunch_main_thread_cancel(holepunch_session, stop_thread);

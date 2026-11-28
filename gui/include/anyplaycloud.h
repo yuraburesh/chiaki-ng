@@ -25,6 +25,7 @@ class AnyPlayCloud : public QObject
 	Q_PROPERTY(QString otherDevice READ otherDevice NOTIFY changed)   // other_device: на якому пристрої клієнт зараз грає
 	// «Грати тут» (115): сервер у стані other_device дозволяє забрати гру на цей пристрій
 	Q_PROPERTY(bool canTakeover READ canTakeover NOTIFY changed)
+	Q_PROPERTY(QString guestOther READ guestOther NOTIFY changed)   // 155: приставку тримає інший гість (ім'я) — можна «Грати замість»
 	Q_PROPERTY(int otherSeen READ otherSeen NOTIFY changed)               // секунд від останнього сигналу того пристрою, -1 — невідомо
 	Q_PROPERTY(bool takeoverWaiting READ takeoverWaiting NOTIFY takeoverChanged)   // після «Грати тут»: забираємо гру або чекаємо, поки той пристрій відпустить приставку
 	Q_PROPERTY(QString takeoverText READ takeoverText NOTIFY takeoverChanged)      // напис на цей час («Чекаємо, поки «…» відпустить приставку…»), інакше ""
@@ -112,6 +113,7 @@ public:
 	bool guest() const { return guest_; }
 	QString otherDevice() const { return other_device_; }
 	bool canTakeover() const { return can_takeover_; }
+	QString guestOther() const { return guest_other_; }
 	int otherSeen() const { return other_seen_; }
 	bool takeoverWaiting() const;
 	QString takeoverText() const;
@@ -298,6 +300,7 @@ private:
 	qint64 end_ = 0, next_start_ = 0, next_end_ = 0, skew_ = 0;
 	qint64 own_end_ = 0;
 	bool continues_ = false;
+	QString guest_other_;
 	bool guest_ = false;            // гостьовий доступ (сервер каже «guest» у сесії)
 	// ── телеметрія гри: раз на секунду знімаємо показники трансляції, у heartbeat ідуть середні за проміжок ──
 	struct StatWindow { int n = 0; double fps_stream = 0, fps_shown = 0, bitrate = 0, loss = 0; int dropped = 0; };

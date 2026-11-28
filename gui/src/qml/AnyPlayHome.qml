@@ -897,6 +897,7 @@ Rectangle {
                             role: "big"; size: home.bigSize
                             text: home.guestOpen ? qsTr("Приставка вільна")
                                 : home.cloud.nextStart ? qsTr("Вже скоро!")
+                                : home.cloud.guestOther ? qsTr("Зараз грає %1").arg(home.cloud.guestOther)
                                 : home.cloud.guest === true ? qsTr("Приставка зайнята") : qsTr("Немає оплачених броней")
                         }
                         ApText {
@@ -916,6 +917,8 @@ Rectangle {
                                         + (c.playPsn ? " " + (c.playOwn ? qsTr("Акаунт PSN: %1 (твій).") : qsTr("Акаунт PSN: %1 (спільний).")).arg(c.playPsn) : "");
                                 if (c.nextStart)
                                     return qsTr("До початку гри <b>%1–%2</b>. Доступ відкриється сам рівно в цей час, програму можна не закривати.").arg(c.formatTime(c.nextStart)).arg(c.formatTime(c.nextEnd));
+                                if (c.guestOther)   // 155: приставку тримає інший гість — можна забрати
+                                    return qsTr("%1 теж має гостьовий доступ і зараз грає. Можеш забрати приставку собі: у нього гра зупиниться, і він отримає пояснення.").arg(c.guestOther);
                                 if (c.guest === true)   // гість, а на приставці зараз чужа оплачена гра
                                     return qsTr("У тебе гостьовий доступ, але зараз на приставці оплачена гра іншого гравця. Кнопка «Грати» з'явиться тут, щойно приставка звільниться. Свій час можна забронювати просто зараз.");
                                 return qsTr("Обери час і оплати прямо тут. Приставка відкриється сама в час твоєї гри.");
@@ -940,6 +943,12 @@ Rectangle {
                                 height: primaryBtn.height
                                 text: qsTr("Продовжити бронювання")
                                 onClicked: extendPopup.open()
+                            }
+                            ApButton {   // 155: інший гість грає — забрати приставку собі
+                                visible: home.st === "wait" && !!home.cloud.guestOther
+                                height: primaryBtn.height
+                                text: home.cloud.takeoverWaiting === true ? qsTr("Забираємо…") : qsTr("▶ Грати замість")
+                                onClicked: home.cloud.takeover()
                             }
                             ApButton {   // гість може забронювати свій час, тоді його ніхто не перерве
                                 visible: home.guestPlay

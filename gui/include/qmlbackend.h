@@ -368,6 +368,9 @@ private:
     HostMAC auto_connect_mac = {};
     QString auto_connect_nickname = "";
     QString wakeup_nickname = "";
+    // AnyPlay 155: ключі прив'язки приставки для прямого підключення, якщо через PSN «пробити» не вдалось
+    QByteArray psn_direct_regist, psn_direct_morning;
+    bool psn_direct_tried = false;
     bool wakeup_start = false;
     QMap<QString, PsnHost> psn_hosts = {};
     QMap<QString, PsnHost> psn_nickname_hosts = {};

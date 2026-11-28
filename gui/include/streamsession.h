@@ -426,6 +426,8 @@ class StreamSession : public QObject
 		void SetAudioVolume(int volume) { audio_volume = volume; }
 		bool GetCantDisplay()	{ return cant_display; }
 		ChiakiErrorCode ConnectPsnConnection(QString duid, bool ps5);
+		/** AnyPlay 155: зовнішня адреса приставки з обміну через PSN (порожньо — невідома) */
+		QString PsnConsoleAddr();
 		void CancelPsnConnection(bool stop_thread);
 
 		ChiakiLog *GetChiakiLog()				{ return log.GetChiakiLog(); }

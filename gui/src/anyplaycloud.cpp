@@ -481,6 +481,7 @@ void AnyPlayCloud::applySession(const QJsonObject &o)
 	other_device_ = st == "other_device" ? o.value("otherDevice").toString() : QString();
 	// «Грати тут» (сервер етапу 5; старий сервер цих полів не шле — кнопки немає)
 	can_takeover_ = st == "other_device" && o.value("canTakeover").toBool();
+	guest_other_ = st == "wait" ? o.value("guestOther").toObject().value("name").toString() : QString();
 	other_seen_ = st == "other_device" && o.contains("otherSeen") ? o.value("otherSeen").toInt(-1) : -1;
 	if(st == "play")
 		moved_text_.clear();

@@ -913,6 +913,27 @@ void QmlBackend::psnCancel(bool stop_thread)
 
 void QmlBackend::checkPsnConnection(const ChiakiErrorCode &err)
 {
+    // AnyPlay 155: «пробити» не вдалось (мережа клієнта міняє порт для кожного з'єднання) — пробуємо напряму
+    // на зовнішню адресу, яку приставка назвала через PSN (працює, коли на її роутері прокинуто порти)
+    if(err != CHIAKI_ERR_SUCCESS && session && !psn_direct_tried && psn_direct_regist.size() == 0x10 && psn_direct_morning.size() == 0x10)
+    {
+        const QString addr = session->PsnConsoleAddr();
+        if(!addr.isEmpty())
+        {
+            psn_direct_tried = true;
+            qCInfo(chiakiGui) << "AnyPlay: PSN punch failed (" << chiaki_error_string(err) << "), trying the console's public address directly";
+            StreamSessionConnectInfo info = session_info;
+            info.host = addr;
+            info.duid.clear();
+            info.psn_token.clear();
+            info.regist_key = psn_direct_regist;
+            info.morning = psn_direct_morning;
+            teardownSession();
+            wakeup_nickname.clear();
+            createSession(info);
+            return;
+        }
+    }
     switch(err)
     {
         case CHIAKI_ERR_SUCCESS:
@@ -1653,6 +1674,9 @@ void QmlBackend::connectToHost(int index, QString nickname)
     }
     else
     {
+        psn_direct_regist = server.registered_host.GetRPRegistKey();
+        psn_direct_morning = server.registered_host.GetRPKey();
+        psn_direct_tried = false;
         StreamSessionConnectInfo info(
                 settings,
                 server.psn_host.GetTarget(),

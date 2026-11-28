@@ -44,8 +44,8 @@ ColumnLayout {
     // ── стан ──
     readonly property string srvState: typeof cloud.previewState === "string" ? cloud.previewState : ""
     readonly property int build: live && live.build ? Number(live.build) : 0
-    readonly property bool unsupported: srvState === "unsupported"
-        || (!!live && (live.platform === "android" || (build > 0 && build < 110)))
+    readonly property bool unsupported: (typeof cloud.previewLive !== "string" || cloud.previewLive === "")
+        && (srvState === "unsupported" || (!!live && ((live.platform === "android" && build < 156) || (build > 0 && build < 110))))
     readonly property bool hasImage: watching && cloud.previewImage !== ""
     function nowSrv() { tick; return Date.now() / 1000 + (cloud.clockSkew || 0); }
     readonly property int waited: { tick; return watching && st.since > 0 ? Math.max(0, Math.floor((Date.now() - st.since) / 1000)) : 0; }
@@ -57,7 +57,7 @@ ColumnLayout {
     }
     readonly property int nextIn: { tick; return cloud.previewNext > 0 ? Math.max(0, Math.round(cloud.previewNext - nowSrv())) : -1; }
     // що показати: unsupported | wait | offline | none (довго немає кадру) | ok | stale
-    readonly property string state_: !watching ? "" : unsupported ? "unsupported"
+    readonly property string state_: !watching ? "" : (typeof cloud.previewLive === "string" && cloud.previewLive !== "") ? "live" : unsupported ? "unsupported"
         : hasImage ? (frameAge > 8 ? "stale" : "ok")
         : srvState === "offline" ? "offline"
         : waited >= 40 ? "none" : "wait"
@@ -85,7 +85,7 @@ ColumnLayout {
     }
     Timer {   // забираємо кадр раз на 1,5 с; кожен запит ще й продовжує прохання до програми клієнта
         interval: 1500; repeat: true; triggeredOnStart: true
-        running: pv.visible && pv.watching && !pv.unsupported
+        running: pv.visible && pv.watching   // 156: і для «без перегляду»: запит адміна вмикає відео прихованою трансляцією
         onTriggered: pv.load()
     }
     Timer { interval: 1000; repeat: true; running: pv.visible && pv.watching; onTriggered: pv.tick++ }
@@ -98,6 +98,7 @@ ColumnLayout {
             visible: pv.state_ !== ""
             text: {
                 switch (pv.state_) {
+                case "live": return qsTr("відео наживо");
                 case "unsupported": return qsTr("без перегляду");
                 case "wait": return qsTr("чекаю, %1 с").arg(pv.waited);
                 case "offline": return qsTr("клієнт не в грі");
@@ -107,7 +108,7 @@ ColumnLayout {
                 }
                 return "";
             }
-            kind: ({ unsupported: "bad", wait: "live", offline: "wait", none: "bad", ok: "ok", stale: "wait" })[pv.state_] || ""
+            kind: ({ live: "ok", unsupported: "bad", wait: "live", offline: "wait", none: "bad", ok: "ok", stale: "wait" })[pv.state_] || ""
         }
         Item { Layout.fillWidth: true; Layout.preferredHeight: 1 }
         ApButton {
@@ -125,12 +126,25 @@ ColumnLayout {
     Rectangle {
         visible: pv.watching && !pv.unsupported
         Layout.fillWidth: true
-        Layout.preferredHeight: width * 9 / 16
-        Layout.maximumWidth: pv.big ? 100000 : 420
+        Layout.preferredHeight: liveView.active ? width * 9 / 16 + 200 : width * 9 / 16
+        Layout.maximumWidth: pv.big ? 100000 : (liveView.active ? 640 : 420)
         color: "#40000000"
         border.width: 1
         border.color: ap.hair
+        // 156: гравець веде приховану трансляцію для адміна — справжнє відео замість знімків
+        Loader {
+            id: liveView
+            anchors.fill: parent
+            anchors.margins: 1
+            active: pv.watching && typeof pv.cloud.previewLive === "string" && pv.cloud.previewLive !== "" && pv.cloud.webEngine === true
+            sourceComponent: AnyPlayWebPage {
+                url: pv.cloud.webAppUrl("watch.html?r=" + encodeURIComponent(pv.cloud.previewLive))
+                title: qsTr("Відео наживо")
+                showBack: false
+            }
+        }
         Image {
+            visible: !liveView.active
             anchors.fill: parent
             anchors.margins: 1
             fillMode: Image.PreserveAspectFit
@@ -140,7 +154,7 @@ ColumnLayout {
             opacity: pv.state_ === "stale" ? 0.55 : 1
         }
         ColumnLayout {   // поки кадру немає: що відбувається і скільки чекати
-            visible: !pv.hasImage
+            visible: !pv.hasImage && !liveView.active
             anchors.centerIn: parent
             width: parent.width - 32
             spacing: 10

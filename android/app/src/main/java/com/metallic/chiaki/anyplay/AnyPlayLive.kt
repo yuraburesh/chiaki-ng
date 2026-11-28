@@ -49,6 +49,8 @@ object AnyPlayLive
 	private val chat = ArrayList<JSONObject>()
 	private var lastChatId = -1L
 	private var gameAudio = true
+	// 156: прихована трансляція лише для адміна (він дивиться гру клієнта відео замість знімків): гравець її не бачить
+	@Volatile private var hidden = false
 	private var eventsCh = -1
 	private var gen = 0
 	private var everLive = false
@@ -75,10 +77,14 @@ object AnyPlayLive
 	}
 
 	private fun changed() = main.post { onChange?.invoke() }
-	private fun message(m: String) = main.post { onMessage?.invoke(m) }
+	private fun message(m: String) { if(!hidden) main.post { onMessage?.invoke(m) } }
 
 	/** Знімок для меню гри (будь-який потік) */
 	fun info(): JSONObject = synchronized(lock) {
+		if(hidden)
+			return@synchronized JSONObject().put("supported", supported).put("state", "off").put("text", "").put("code", "")
+				.put("webLink", "").put("tgLink", "").put("viewers", JSONArray()).put("maxViewers", maxViewers).put("chat", JSONArray())
+				.put("gameAudio", gameAudio).put("gameKbps", gameKbps).put("sentKbps", 0)
 		JSONObject()
 			.put("supported", supported)
 			.put("state", state)
@@ -128,6 +134,12 @@ object AnyPlayLive
 	{
 		app = context.applicationContext
 		worker().post {
+			if(hidden && state != "off")
+			{
+				teardown(true)   // ішов перегляд адміна: замість нього — звичайна трансляція гравця
+				setState("off")
+			}
+			hidden = false
 			if(state != "off" && state != "error")
 				return@post
 			if(!supported)
@@ -190,6 +202,44 @@ object AnyPlayLive
 		}
 	}
 
+	/**
+	 * 156: адмін дивиться гру клієнта (сервер у сигналі гри: preview.live) — прихована трансляція, лише для адміна, у H.264.
+	 * on=false — адмін більше не дивиться: прихований ефір закриваємо. Звичайну трансляцію гравця не чіпаємо.
+	 */
+	fun adminWatch(context: Context, on: Boolean)
+	{
+		if(!supported)
+			return
+		worker().post {
+			if(on)
+			{
+				if(state != "off" && state != "error")
+					return@post
+				if(!LiveNative.headerReady() || LiveNative.codec() != "H.264")
+					return@post   // H.265 браузер адміна може не показати: лишаються знімки
+				app = context.applicationContext
+				hidden = true
+				gen++
+				gameAudio = true
+				everLive = false
+				republishTries = 0
+				lastChatId = -1
+				synchronized(lock) { chat.clear(); viewers = JSONArray(); code = ""; webLink = ""; tgLink = "" }
+				known.clear()
+				AnyPlayDiag.i("Адмін дивиться гру: прихована трансляція для нього")
+				setState("starting", "")
+				beginServer(gen)
+			}
+			else if(hidden && state != "off")
+			{
+				AnyPlayDiag.i("Адмін більше не дивиться: прихована трансляція закрита")
+				teardown(true)
+				hidden = false
+				setState("off")
+			}
+		}
+	}
+
 	fun stop()
 	{
 		val hh = h ?: return
@@ -235,7 +285,7 @@ object AnyPlayLive
 	{
 		if(g != gen)
 			return
-		val r = api("/api/live/start", JSONObject().put("quality", "720p").put("gameAudio", gameAudio).put("access", "link"))
+		val r = api("/api/live/start", JSONObject().put("quality", "720p").put("gameAudio", gameAudio).put("access", "link").put("hidden", hidden))
 		val tok = r.json.optString("token")
 		if(r.status != 200 || tok.isEmpty())
 		{
@@ -257,6 +307,13 @@ object AnyPlayLive
 		// 153: кімнату на сервері закриваємо (true): інакше глядач, що вже відкрив посилання, до 90 с бачив вічне
 		// «З'єднуємось…» (треки гравця записані, а з'єднання з SFU так і не було), тепер — «Трансляцію завершено»
 		teardown(true)
+		if(hidden)
+		{
+			AnyPlayDiag.i("Перегляд адміна відео не вдався: $t")
+			hidden = false
+			setState("off")
+			return
+		}
 		setState("error", t)
 		message(t)
 	}

@@ -248,7 +248,7 @@ AnyPlayLive::AnyPlayLive(AnyPlayCloud *cloud, QmlBackend *backend, QObject *pare
 		}
 		// гра закінчилась (бронь, вихід, передали другові): трансляцію вимикаємо
 		teardown(true);
-		emit message(tr("Гра закінчилась, трансляцію вимкнено."));
+		say(tr("Гра закінчилась, трансляцію вимкнено."));
 	});
 	session_ = backend->qmlSession();
 	if(session_)
@@ -487,8 +487,15 @@ void AnyPlayLive::updateStatusText()
 void AnyPlayLive::fail(const QString &text)
 {
 	teardown(!token_.isEmpty());
+	if(hidden_)
+	{
+		qWarning().noquote() << "[anyplay-live] hidden admin stream failed:" << text;
+		hidden_ = false;
+		setState(QStringLiteral("off"));
+		return;
+	}
 	setState(QStringLiteral("error"), text);
-	emit message(text);
+	say(text);
 }
 
 // ───────────────────────────── гра: кодек, потік, кадри ─────────────────────────────
@@ -540,7 +547,7 @@ void AnyPlayLive::gameTick()
 	{
 		hold_until_ms_ = 0;
 		teardown(true);
-		emit message(tr("Гра не повернулась за 3 хвилини, трансляцію вимкнено."));
+		say(tr("Гра не повернулась за 3 хвилини, трансляцію вимкнено."));
 	}
 #endif
 }
@@ -595,23 +602,38 @@ void AnyPlayLive::start(const QString &quality, bool gameAudio)
 	Q_UNUSED(quality);   // глядачі бачать гру такою ж, як гравець: якості для трансляції окремо немає
 #ifndef ANYPLAY_HAVE_LIVE
 	Q_UNUSED(gameAudio);
-	emit message(unsupported_text_);
+	say(unsupported_text_);
 #else
+	if(hidden_ && state_ != QLatin1String("off"))
+	{
+		teardown(true);   // ішов перегляд адміна: замість нього — звичайна трансляція гравця
+		setState(QStringLiteral("off"));
+	}
+	hidden_ = false;
 	if(state_ != QLatin1String("off") && state_ != QLatin1String("error"))
 		return;
 	if(!backend_->qmlSession())
 	{
-		emit message(tr("Трансляцію можна ввімкнути під час гри."));
+		say(tr("Трансляцію можна ввімкнути під час гри."));
 		return;
 	}
 	if(!currentHeader().valid())
 	{
-		emit message(tr("Зачекай кілька секунд, поки з'явиться картинка гри, і спробуй ще раз."));
+		say(tr("Зачекай кілька секунд, поки з'явиться картинка гри, і спробуй ще раз."));
 		return;
 	}
 	game_audio_ = gameAudio;
 	QSettings().setValue(QStringLiteral("anyplay/live_game_audio"), game_audio_);
+	prepareStart();
+	qInfo().noquote() << "[anyplay-live] start: game" << game_codec_ << game_kbps_ << "kbps, need" << needKbps()
+	                  << "kbps, gameAudio" << game_audio_;
+	checkUplink();
+#endif
+}
 
+void AnyPlayLive::prepareStart()
+{
+#ifdef ANYPLAY_HAVE_LIVE
 	generation_++;
 	ever_live_ = false;
 	republish_tries_ = 0;
@@ -634,9 +656,36 @@ void AnyPlayLive::start(const QString &quality, bool gameAudio)
 			fail(tr("Трансляція не запустилась: сервер трансляцій не відповів вчасно. Спробуй ще раз."));
 	});
 	connect_timer_.start(40000);
-	qInfo().noquote() << "[anyplay-live] start: game" << game_codec_ << game_kbps_ << "kbps, need" << needKbps()
-	                  << "kbps, gameAudio" << game_audio_;
-	checkUplink();
+#endif
+}
+
+void AnyPlayLive::adminWatch(bool on)
+{
+#ifdef ANYPLAY_HAVE_LIVE
+	if(on)
+	{
+		if(state_ != QLatin1String("off") && state_ != QLatin1String("error"))
+			return;   // уже йде (своя трансляція гравця чи прихована): адмін приєднається до неї
+		if(!backend_->qmlSession() || !currentHeader().valid() || currentHeader().codec != anyplaylive::Codec::H264)
+			return;   // H.265 браузер адміна може не показати: лишаються знімки
+		hidden_ = true;
+		game_audio_ = true;
+		prepareStart();
+		const int base = qMax(needKbps(), 4000);
+		pace_kbps_ = qMax(base * 2, base + 8000);   // без перевірки інтернету: не навантажуємо канал гравця пробним потоком
+		qInfo().noquote() << "[anyplay-live] admin is watching: hidden stream, game" << game_codec_ << game_kbps_ << "kbps";
+		setState(QStringLiteral("starting"));
+		beginServer();
+	}
+	else if(hidden_ && state_ != QLatin1String("off"))
+	{
+		qInfo().noquote() << "[anyplay-live] admin stopped watching: hidden stream closed";
+		teardown(true);
+		hidden_ = false;
+		setState(QStringLiteral("off"));
+	}
+#else
+	Q_UNUSED(on);
 #endif
 }
 
@@ -737,6 +786,7 @@ void AnyPlayLive::beginServer()
 	body["quality"] = QStringLiteral("720p");
 	body["gameAudio"] = game_audio_;
 	body["access"] = QStringLiteral("link");
+	body["hidden"] = hidden_;
 	const quint32 gen = generation_;
 	api(kApiStart, body, [this, gen](bool ok, int status, const QJsonObject &o) {
 		if(gen != generation_)
@@ -758,7 +808,7 @@ void AnyPlayLive::beginServer()
 		last_poll_ok_ms_ = nowMs();
 		applyRoomState(o);
 		if(ever_live_ && !old_code.isEmpty() && code_ != old_code)
-			emit message(tr("Інтернету не було довго, тож кімната трансляції нова: надішли друзям нове посилання."));
+			say(tr("Інтернету не було довго, тож кімната трансляції нова: надішли друзям нове посилання."));
 		negotiatePublish();
 	});
 }
@@ -1165,9 +1215,9 @@ void AnyPlayLive::goLive()
 	}
 	reconcileVoices();
 	if(again)
-		emit message(tr("Трансляція знову в ефірі."));
+		say(tr("Трансляція знову в ефірі."));
 	else
-		emit message(tr("Трансляцію ввімкнено. Надішли друзям посилання."));
+		say(tr("Трансляцію ввімкнено. Надішли друзям посилання."));
 	qInfo().noquote() << "[anyplay-live]" << (again ? "back live" : "live") << "room" << room_id_ << "code" << code_
 	                  << "codec" << game_codec_ << "session" << session_id_;
 #endif
@@ -1343,7 +1393,7 @@ void AnyPlayLive::stop()
 	const bool was_error = state_ == QLatin1String("error");
 	teardown(!was_error);
 	if(!was_error)
-		emit message(tr("Трансляцію вимкнено."));
+		say(tr("Трансляцію вимкнено."));
 }
 
 // ───────────────────────────── черга змін SFU ─────────────────────────────
@@ -1400,7 +1450,7 @@ void AnyPlayLive::poll()
 				return;
 			}
 			teardown(false);
-			emit message(errorText(status, o, tr("Трансляцію завершено.")));
+			say(errorText(status, o, tr("Трансляцію завершено.")));
 			return;
 		}
 		if(!ok)
@@ -1419,7 +1469,7 @@ void AnyPlayLive::applyRoomState(const QJsonObject &o)
 		&& (state_ == QLatin1String("live") || state_ == QLatin1String("reconnecting")))
 	{
 		teardown(false);
-		emit message(tr("Трансляцію завершено на сервері."));
+		say(tr("Трансляцію завершено на сервері."));
 		return;
 	}
 	bool any = false;
@@ -1802,7 +1852,7 @@ void AnyPlayLive::takeControl()
 		return;
 	qInfo() << "[anyplay-live] player took the control back";
 	releaseRemote(true);
-	emit message(tr("Керування знову в тебе."));
+	say(tr("Керування знову в тебе."));
 }
 
 void AnyPlayLive::grantControl(qint64 uid)
@@ -1822,7 +1872,7 @@ void AnyPlayLive::grantControl(qint64 uid)
 			return;
 		if(!ok)
 		{
-			emit message(errorText(status, o, tr("Не вдалося передати керування. Спробуй ще раз.")));
+			say(errorText(status, o, tr("Не вдалося передати керування. Спробуй ще раз.")));
 			return;
 		}
 		applyRoomState(o);
@@ -1830,7 +1880,7 @@ void AnyPlayLive::grantControl(qint64 uid)
 		if(sfu.value(QStringLiteral("granted")).isBool() && !sfu.value(QStringLiteral("granted")).toBool())
 			qWarning() << "[anyplay-live] SFU did not grant canReply yet (helper may not be subscribed)";
 		if(control_member_ == uid)
-			emit message(tr("Керування передано. Керує: %1. Забрати можна кнопкою PS або в меню.").arg(control_name_));
+			say(tr("Керування передано. Керує: %1. Забрати можна кнопкою PS або в меню.").arg(control_name_));
 	});
 }
 
@@ -1873,7 +1923,7 @@ void AnyPlayLive::sendChat(const QString &text)
 	api(kApiChat, body, [this](bool ok, int status, const QJsonObject &o) {
 		if(!ok)
 		{
-			emit message(status == 429 ? tr("Не так швидко: зачекай секунду.") : errorText(status, o, tr("Повідомлення не надіслано.")));
+			say(status == 429 ? tr("Не так швидко: зачекай секунду.") : errorText(status, o, tr("Повідомлення не надіслано.")));
 			return;
 		}
 		if(o.value(QStringLiteral("message")).isObject())
@@ -1901,7 +1951,7 @@ void AnyPlayLive::kick(qint64 uid)
 		if(ok)
 			applyRoomState(o);
 		else
-			emit message(errorText(status, o, tr("Не вдалося прибрати глядача.")));
+			say(errorText(status, o, tr("Не вдалося прибрати глядача.")));
 	});
 }
 
@@ -1922,7 +1972,7 @@ void AnyPlayLive::invite(qint64 friendUserId)
 {
 	if(token_.isEmpty() || !friendUserId)
 	{
-		emit message(tr("Спершу ввімкни трансляцію, потім запрошуй друзів."));
+		say(tr("Спершу ввімкни трансляцію, потім запрошуй друзів."));
 		return;
 	}
 	QJsonObject body;
@@ -1930,16 +1980,16 @@ void AnyPlayLive::invite(qint64 friendUserId)
 	api(kApiInvite, body, [this](bool ok, int status, const QJsonObject &o) {
 		if(!ok)
 		{
-			emit message(errorText(status, o, tr("Не вдалося надіслати запрошення.")));
+			say(errorText(status, o, tr("Не вдалося надіслати запрошення.")));
 			return;
 		}
 		const QJsonArray skipped = o.value(QStringLiteral("skipped")).toArray();
 		if(!o.value(QStringLiteral("sent")).toArray().isEmpty())
-			emit message(tr("Запрошення надіслано в Telegram."));
+			say(tr("Запрошення надіслано в Telegram."));
 		else if(!skipped.isEmpty() && skipped.at(0).toObject().value(QStringLiteral("error")).toString() == QLatin1String("rate"))
-			emit message(tr("Цьому другові вже надіслано запрошення. Повторити можна за 2 хвилини."));
+			say(tr("Цьому другові вже надіслано запрошення. Повторити можна за 2 хвилини."));
 		else
-			emit message(tr("Запросити можна лише друзів."));
+			say(tr("Запросити можна лише друзів."));
 	});
 }
 
@@ -1975,7 +2025,7 @@ void AnyPlayLive::applyHandoff(const QJsonObject &h)
 			accept_waiting_ = false;
 			handoff_timer_.stop();
 			qInfo() << "[anyplay-live] handoff started by the owner: connecting";
-			emit message(tr("Друг передав тобі гру. Підключаємось до приставки…"));
+			say(tr("Друг передав тобі гру. Підключаємось до приставки…"));
 			cloud_->takeover();   // ключі вже в сервера для нас; повтори, поки приставка зайнята, як у «Грати тут»
 		}
 		if(st != QLatin1String("ready") && !(st == QLatin1String("active") && accept_waiting_))
@@ -2041,7 +2091,7 @@ void AnyPlayLive::prepareHandover(qint64 uid)
 	const Member p = people_.value(uid);
 	if(!p.userId || !p.isFriend)
 	{
-		emit message(tr("Передати гру можна лише другові, що увійшов через Telegram або програму."));
+		say(tr("Передати гру можна лише другові, що увійшов через Telegram або програму."));
 		return;
 	}
 	QJsonObject body;
@@ -2051,7 +2101,7 @@ void AnyPlayLive::prepareHandover(qint64 uid)
 		if(!ok)
 		{
 			handoff_start_pending_ = false;
-			emit message(errorText(status, o, tr("Не вдалося підготувати передачу гри. Спробуй ще раз.")));
+			say(errorText(status, o, tr("Не вдалося підготувати передачу гри. Спробуй ще раз.")));
 			return;
 		}
 		const QJsonObject h = o.value(QStringLiteral("handoff")).toObject();
@@ -2132,7 +2182,7 @@ void AnyPlayLive::returnFull()
 	updateStatusText();
 	emit controlChanged();
 	emit changed();
-	emit message(tr("Повертаємо гру тобі…"));
+	say(tr("Повертаємо гру тобі…"));
 	qInfo() << "[anyplay-live] handoff: owner takes the game back";
 	cloud_->takeover();
 }
@@ -2144,7 +2194,7 @@ void AnyPlayLive::acceptHandover(const QString &id)
 	if(st == QLatin1String("active"))
 	{
 		accept_waiting_ = false;
-		emit message(tr("Підключаємось до приставки…"));
+		say(tr("Підключаємось до приставки…"));
 		cloud_->takeover();
 		return;
 	}
@@ -2315,7 +2365,7 @@ void AnyPlayLive::openMic()
 		qWarning().noquote() << "[anyplay-live] microphone:" << SDL_GetError();
 		mic_on_ = false;
 		emit changed();
-		emit message(tr("Мікрофон не вдалося відкрити. Перевір, чи він під'єднаний."));
+		say(tr("Мікрофон не вдалося відкрити. Перевір, чи він під'єднаний."));
 		return;
 	}
 	SDL_PauseAudioDevice(media_->mic_dev, 0);

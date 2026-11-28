@@ -83,6 +83,7 @@ class AnyPlayCloud : public QObject
 	// 115: стан перегляду з відповіді сервера (оновлюється і на 204): ok | wait | offline | unsupported; "" — старий сервер;
 	// error — запит не вдався (немає броні, немає права, немає зв'язку)
 	Q_PROPERTY(QString previewState READ previewState NOTIFY previewChanged)
+	Q_PROPERTY(QString previewLive READ previewLive NOTIFY previewChanged)       // 156: код прихованої трансляції гравця для адміна (відео), "" — лише знімки
 	Q_PROPERTY(qint64 previewNext READ previewNext NOTIFY previewChanged)        // X-Preview-Next: коли програма клієнта найпізніше дізнається про запит (час сервера, 0 — невідомо)
 	Q_PROPERTY(qint64 previewFrameAt READ previewFrameAt NOTIFY previewChanged)  // X-Preview-At: коли сервер отримав останній кадр (час сервера, 0 — кадру ще не було)
 	// ── CRM усередині програми (К10) ──
@@ -233,6 +234,7 @@ public:
 	QString previewImage() const { return preview_image_; }
 	qint64 previewAt() const { return preview_at_; }
 	QString previewState() const { return preview_state_; }
+	QString previewLive() const { return preview_live_; }
 	qint64 previewNext() const { return preview_next_; }
 	qint64 previewFrameAt() const { return preview_frame_at_; }
 	Q_INVOKABLE void loadPreview(qint64 bookingId, qint64 userId = 0);   // адмін: забрати останній кадр гри клієнта (гість без броні — за userId)
@@ -301,6 +303,7 @@ private:
 	qint64 own_end_ = 0;
 	bool continues_ = false;
 	QString guest_other_;
+	qint64 admin_live_until_ms_ = 0;   // 156: до коли адмін дивиться відео (прихована трансляція)
 	bool guest_ = false;            // гостьовий доступ (сервер каже «guest» у сесії)
 	// ── телеметрія гри: раз на секунду знімаємо показники трансляції, у heartbeat ідуть середні за проміжок ──
 	struct StatWindow { int n = 0; double fps_stream = 0, fps_shown = 0, bitrate = 0, loss = 0; int dropped = 0; };
@@ -377,6 +380,7 @@ private:
 	qint64 preview_at_ = 0;
 	bool preview_loading_ = false;
 	QString preview_state_;
+	QString preview_live_;
 	qint64 preview_next_ = 0, preview_frame_at_ = 0;
 	qint64 preview_until_ms_ = 0;                            // до коли надсилати кадри (час цього комп'ютера)
 	int preview_width_ = 480;

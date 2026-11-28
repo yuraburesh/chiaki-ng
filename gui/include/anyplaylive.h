@@ -105,7 +105,7 @@ public:
 	bool supported() const;
 	QString unsupportedText() const { return unsupported_text_; }
 	QVariantMap features() const { return features_; }
-	QString state() const { return state_; }
+	QString state() const { return hidden_ ? QStringLiteral("off") : state_; }
 	QString statusText() const { return status_text_; }
 	QString quality() const { return quality_; }
 	bool gameAudio() const { return game_audio_; }
@@ -127,16 +127,16 @@ public:
 	int liveKbps() const { return live_kbps_; }
 	int liveHeight() const { return live_height_; }
 	QString roomId() const { return room_id_; }
-	QString code() const { return code_; }
+	QString code() const { return hidden_ ? QString() : code_; }
 	QString link() const { return link_; }
 	QString webLink() const { return web_link_; }
 	QString botLink() const { return bot_link_; }
 	QString qr() const { return qr_; }
 	int viewerLimit() const { return viewer_limit_; }
-	QVariantList viewers() const { return viewers_; }
-	int viewerCount() const { return viewers_.size(); }
-	QVariantList chat() const { return chat_; }
-	int chatUnread() const { return chat_unread_; }
+	QVariantList viewers() const { return hidden_ ? QVariantList() : viewers_; }
+	int viewerCount() const { return hidden_ ? 0 : viewers_.size(); }
+	QVariantList chat() const { return hidden_ ? QVariantList() : chat_; }
+	int chatUnread() const { return hidden_ ? 0 : chat_unread_; }
 	qint64 controlUid() const { return control_member_; }
 	QString controlName() const { return control_name_; }
 	bool controlActive() const { return remote_active_; }
@@ -149,6 +149,8 @@ public:
 	Q_INVOKABLE void loadConfig();
 	Q_INVOKABLE void start(const QString &quality = QStringLiteral("720p"), bool gameAudio = true);
 	Q_INVOKABLE void stop();
+	/** 156: адмін дивиться гру клієнта (сервер: preview.live) — прихована трансляція лише для нього; false — закрити */
+	void adminWatch(bool on);
 	Q_INVOKABLE void setQuality(const QString &quality);
 	Q_INVOKABLE void setGameAudio(bool on);
 	Q_INVOKABLE void setMicOn(bool on);
@@ -187,6 +189,9 @@ private:
 	QString errorText(int status, const QJsonObject &o, const QString &fallback) const;
 
 	void setState(const QString &state, const QString &text = QString());
+	void say(const QString &text) { if(!hidden_) emit message(text); }
+	void prepareStart();
+	bool hidden_ = false;   // 156: прихована трансляція для перегляду адміном (гравець її не бачить)
 	void fail(const QString &text);
 	void teardown(bool tellServer);
 	void checkUplink();

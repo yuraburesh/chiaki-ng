@@ -2884,6 +2884,21 @@ void AnyPlayCloud::applyExtras(const QJsonObject &o)
 				preview_timer.start();
 				previewTick();
 			}
+			// 156: адмін хоче відео — прихована трансляція (знімки йдуть і далі, поки вона не запрацює)
+			if(pv.value("live").toBool())
+			{
+				admin_live_until_ms_ = preview_until_ms_ + 25000;   // наступний сигнал серверу може бути аж за 20 с
+				if(AnyPlayLive *live = AnyPlayLive::instance())
+					live->adminWatch(true);
+				QTimer::singleShot(qMax<qint64>(1000, admin_live_until_ms_ - QDateTime::currentMSecsSinceEpoch() + 500), this, [this]() {
+					if(admin_live_until_ms_ && QDateTime::currentMSecsSinceEpoch() > admin_live_until_ms_)
+					{
+						admin_live_until_ms_ = 0;
+						if(AnyPlayLive *live = AnyPlayLive::instance())
+							live->adminWatch(false);
+					}
+				});
+			}
 		}
 		else
 		{
@@ -3184,6 +3199,7 @@ void AnyPlayCloud::loadPreview(qint64 bookingId, qint64 userId)
 		const qint64 at = reply->rawHeader("X-Preview-At").trimmed().toLongLong();
 		if(status == 200 || status == 204)
 		{
+			preview_live_ = QString::fromLatin1(reply->rawHeader("X-Preview-Live")).trimmed();
 			preview_state_ = state;
 			preview_next_ = next;
 			if(at > 0)
